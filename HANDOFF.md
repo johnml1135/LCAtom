@@ -4,7 +4,7 @@ Copy the block below into a fresh session.
 
 ---
 
-Implement the approved LibLCM Change Sets plan in this repository.
+Implement the approved LCAtom plan in this repository.
 
 Start by reading, in order:
 

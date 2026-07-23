@@ -49,7 +49,7 @@ reinterprets the JSON independently.
 
 The initial solution should separate:
 
-1. `SIL.LCModel.ChangeSets.Contract`
+1. `SIL.LCAtom.Contract`
    - immutable contract DTOs;
    - closed JSON serialization;
    - schema/version validation;
@@ -57,22 +57,22 @@ The initial solution should separate:
    - intent digest;
    - canonical 128-bit ID utilities;
    - no LibLCM dependency.
-2. `SIL.LCModel.ChangeSets.Model`
+2. `SIL.LCAtom.Model`
    - canonical semantic snapshot;
    - model-surface coverage manifest;
    - LibLCM normalization adapters;
    - semantic and artifact digests.
-3. `SIL.LCModel.ChangeSets.Runner`
+3. `SIL.LCAtom.Runner`
    - identity resolution;
    - assessment and expected effects;
    - semantic lowering into an output-only mutation plan;
    - preconditions and conflict diagnostics;
    - atomic apply, read-back, invariant validation, and receipt.
-4. `SIL.LCModel.ChangeSets.Diff`
+4. `SIL.LCAtom.Diff`
    - two-way mechanical diff;
    - common-ancestor three-way comparison;
    - deterministic ordered-sequence edit synthesis.
-5. `SIL.LCModel.ChangeSets.Cli`
+5. `SIL.LCAtom.Cli`
    - optional process/JSON adapter for Python and isolated evaluation;
    - owns project lifecycle only as a host, never as core semantics.
 6. Test and conformance projects

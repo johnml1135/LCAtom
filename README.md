@@ -1,6 +1,8 @@
-# LibLCM Change Sets
+# LCAtom
 
-LibLCM Change Sets is the canonical C# contract and reference runner for applying portable,
+*Atomic operations on FieldWorks' LibLCM data.*
+
+LCAtom is the canonical C# contract and reference runner for applying portable,
 reviewable, semantic CRUD+ change sets to an already-loaded LibLCM model.
 
 The project is deliberately storage- and workflow-agnostic. A change set can come from a file,

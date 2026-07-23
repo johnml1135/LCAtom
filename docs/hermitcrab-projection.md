@@ -2,7 +2,7 @@
 
 Grammar-editing consumers (Linguistic Assistant, PanGloss handoffs) reason in **HermitCrab (HC)
 constructs** — phonological rewrite rules, natural classes, affix templates, inflectional affixes.
-LibLCM-crud does not. Its canonical contract is expressed against **LibLCM objects** (`Ph*`, `Mo*`,
+LCAtom does not. Its canonical contract is expressed against **LibLCM objects** (`Ph*`, `Mo*`,
 `Fs*`), and the HC grammar those consumers run is *derived* from those objects by HCLoader, not
 stored. This document fixes how HC-shaped intent relates to the canonical contract.
 
