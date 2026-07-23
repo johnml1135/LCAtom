@@ -13,6 +13,7 @@ This repository is initially a specification and implementation plan. Start with
 - [Architecture and decisions](docs/architecture.md)
 - [Normative change-set contract](docs/change-set-contract.md)
 - [Custom fields](docs/custom-fields.md)
+- [HermitCrab projection](docs/hermitcrab-projection.md)
 - [Conflict and rebase semantics](docs/conflicts-and-rebase.md)
 - [Implementation plan](docs/implementation-plan.md)
 - [Implementation-session handoff](HANDOFF.md)
@@ -36,10 +37,40 @@ It does not own:
 - linguistic entity matching between unrelated projects;
 - arbitrary C#, Python, reflection, or raw-property mutation;
 - UI behavior;
+- the Notebook, scripture, and interlinear-text analysis surface, which remains FieldWorks-centric;
 - a competing implementation in Flexicon, GramTrans, FlexToolsMCP, or FieldWorks.
 
 LibLCM remains the authority for model invariants, persistence, ownership, and undo/redo. This
 runner is the semantic interoperability layer above it.
+
+## Motivating consumers
+
+This runner exists because several independent tools each need the same thing — a mechanical,
+repeatable, reviewable, sequenceable, and rebasable way to update the LibLCM model for **dictionaries
+and grammars** — and each is otherwise forced to hand-roll raw property mutation against LibLCM. It is
+being built for them, and they are expected to be refactored to call this compiled engine rather than
+each reimplementing apply, ordering, delete-closure, and conflict semantics:
+
+- **Linguistic Assistant** — an AI quality-assurance and language-documentation assistant that
+  *emits* canonical Change Sets (lexical, morphophonology, and bilingual sense-link tiers) from corpus
+  and parallel-text evidence. It already speaks this contract's vocabulary and independently reached
+  the same "no CRDT for ordered grammar" conclusion; this repository is the conforming runner it
+  targets.
+- **PanGloss** — a Rust HermitCrab/FST morphological-parsing engine that emits FieldWorks
+  investigation handoffs when a grammar fails to parse a word. The grammar and morphophonology edits
+  those handoffs motivate are realized as Change Sets against the LibLCM grammar model.
+- **Flexicon** — [github.com/MattGyverLee/flexicon](https://github.com/MattGyverLee/flexicon) — a
+  Python (`pyflexicon`) wrapper over LibLCM for reading and writing FLEx projects.
+- **FlexToolsMCP** — [github.com/MattGyverLee/FlexToolsMCP](https://github.com/MattGyverLee/FlexToolsMCP)
+  — an MCP server that lets AI assistants manipulate FLEx lexicon data in natural language over the
+  LibLCM/flexlibs API surface.
+- **GramTrans** — [github.com/MattGyverLee/GramTrans](https://github.com/MattGyverLee/GramTrans) — a
+  FlexTools module that transfers grammar components (phonology, morphology, lexicon scaffolding,
+  templates) between FLEx projects.
+
+The shared scope is dictionaries and grammars, including the phonological and morphological model that
+Hermit Crab and PanGloss consume. It deliberately excludes the Notebook, scripture, and
+interlinear-text analysis surface, which stays FieldWorks-centric.
 
 ## Governing invariant
 

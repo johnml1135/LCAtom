@@ -24,9 +24,26 @@ It does not initially live in:
 - Flexicon, GramTrans, or FlexToolsMCP, because Python/tool-specific behavior must not become the
   normative executor.
 
-Those projects are clients, adapters, and sources of use cases. FieldWorks should present previews,
-collect approval, coordinate its shell undo behavior, call this runner, and show receipts. It
-must not reinterpret the JSON independently.
+Those projects are not competitors but the motivating clients, adapters, and sources of use cases.
+This runner exists to give them one mechanical, repeatable, reviewable, sequenceable, and rebasable
+way to update the LibLCM model for dictionaries and grammars, replacing the raw property mutation each
+hand-rolls today:
+
+- Linguistic Assistant — an AI QA/documentation assistant that emits canonical Change Sets (lexical,
+  morphophonology, and bilingual tiers) and targets this runner as its conforming applier;
+- PanGloss — a Rust HermitCrab/FST parser whose grammar-fix handoffs are realized as Change Sets
+  against the LibLCM grammar model;
+- Flexicon ([github.com/MattGyverLee/flexicon](https://github.com/MattGyverLee/flexicon)) — a Python
+  (`pyflexicon`) LibLCM wrapper for FLEx projects;
+- FlexToolsMCP ([github.com/MattGyverLee/FlexToolsMCP](https://github.com/MattGyverLee/FlexToolsMCP))
+  — an MCP server over FLEx lexicon data;
+- GramTrans ([github.com/MattGyverLee/GramTrans](https://github.com/MattGyverLee/GramTrans)) —
+  grammar-component transfer between FLEx projects.
+
+They are expected to be refactored to call this compiled runner rather than each reimplementing apply,
+ordering, delete-closure, and conflict semantics. FieldWorks should present previews, collect
+approval, coordinate its shell undo behavior, call this runner, and show receipts. No client
+reinterprets the JSON independently.
 
 ## Package shape
 

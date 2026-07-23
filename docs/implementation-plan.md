@@ -173,8 +173,8 @@ Exit: conflict behavior is fully documented by executable fixtures.
 5. Publish package, schema, fixtures, compatibility matrix, and migration/version policy.
 6. Run conformance against pinned LibLCM and representative real FieldWorks projects.
 
-Exit: Flexicon, GramTrans, FlexToolsMCP, FieldWorks, and other tools can call the same compiled
-semantics without reimplementing them.
+Exit: Linguistic Assistant, PanGloss, Flexicon, GramTrans, FlexToolsMCP, FieldWorks, and other tools
+can call the same compiled semantics without reimplementing them.
 
 ## Test strategy
 
