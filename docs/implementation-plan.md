@@ -56,8 +56,9 @@ Exit: a LibLCM-free package gives identical parsing and hashes on every target.
 7. Add exact `.fwdata` byte digest as a separate host utility.
 8. Import LibLCM normalization edge cases as conformance fixtures.
 
-Exit: save/reopen and canonically equivalent models have stable semantic digests; meaningful rich
-text differences remain visible.
+Exit: save/reopen and canonically equivalent models have stable semantic digests; classifying a
+newly shipped LibLCM member leaves the digest of a model that does not populate it unchanged;
+meaningful rich text differences remain visible.
 
 ## Phase 3 — assessment and mutation-plan spine
 
@@ -170,7 +171,8 @@ Exit: conflict behavior is fully documented by executable fixtures.
 2. Keep host project opening/saving outside core interfaces.
 3. Build a `net48` compatibility/conformance adapter suitable for FieldWorks integration.
 4. Document pythonnet as possible but prefer process isolation initially.
-5. Publish package, schema, fixtures, compatibility matrix, and migration/version policy.
+5. Publish package, schema, fixtures, supported LibLCM/FieldWorks versions, and the drift and
+   migration policy.
 6. Run conformance against pinned LibLCM and representative real FieldWorks projects.
 
 Exit: Linguistic Assistant, PanGloss, Flexicon, GramTrans, FlexToolsMCP, FieldWorks, and other tools
@@ -184,6 +186,12 @@ Required test classes:
 - fixed and randomized canonical-ID tests;
 - canonical JSON/digest vectors;
 - model inventory drift tests;
+- additive-stability tests proving an additive manifest or LibLCM change preserves semantic digests,
+  and that a `projectionVersion` bump changes them;
+- effect-drift tests: a changed default surfaces a delta, and an equivalent but improved lowering
+  produces a different Mutation Plan with identical effect digests and no drift diagnostic;
+- cross-version ingestibility tests, including an older runner refusing an unknown operation kind
+  with an actionable required-version message;
 - normalization and rich-text property tests;
 - per-operation positive and negative tests;
 - collision and wrong-type tests;

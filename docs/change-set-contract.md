@@ -10,7 +10,7 @@ Illustrative shape:
 
 ```json
 {
-  "contractVersion": "1.0",
+  "contractVersions": { "lexical": "1.0" },
   "changeSetId": "agent_AAECAwQFBgcICQoLDA0ODw",
   "operations": [
     {
@@ -27,6 +27,16 @@ Illustrative shape:
   "extensions": {}
 }
 ```
+
+`contractVersions` maps each endpoint group to the contract major/minor the Change Set was authored
+against. The group is the leading segment of `kind`. The map must name exactly the groups the
+operation array uses: a missing group is a validation error, and a padded one is too, because the map
+is hashed and must depend only on authored content.
+
+The map does not compute compatibility. Ingestibility is decided by strict closed parsing; the
+declared versions exist so that a runner which cannot honor one can say which group, which version
+was required, and which it carries, letting the operator upgrade or rewrite instead of receiving a
+partial application. See [versioning](architecture.md#versioning).
 
 The operation array is authoritative execution order. The runner never silently reorders it.
 Dependencies validate whether that order is legal. Planning may resolve the identity of a later
@@ -139,8 +149,8 @@ Assessment must expose the complete delete closure:
 - counts and a deterministic effect digest.
 
 Assessment generates baseline-relative `expectedEffects`; they are not mutable fields filled into
-the canonical Change Set. When apply or re-assessment is compared with a prior Assessment and
-finds a changed cascade, emit a rebase warning with the full delta. The application/user decides.
+the canonical Change Set. A changed cascade discovered on apply or re-assessment is one instance of
+the general rule in [drift](#drift): emit the full delta and let the application or user decide.
 A missing, already-deleted object is deterministically ignorable only when prior baseline identity
 and intent prove it is the same deletion, not an unresolved target.
 
@@ -174,7 +184,8 @@ Use RFC 8785 JSON Canonicalization Scheme bytes, then SHA-256.
 
 The intent digest includes executable desired content:
 
-- contract version;
+- declared contract group versions, which depend only on the operations authored and never on the
+  runner's own version table;
 - operation order;
 - operation IDs, because dependencies refer to them;
 - operation kinds;
@@ -210,6 +221,13 @@ semantic digest are not interchangeable.
 The snapshot is an inspectable deterministic projection of every supported semantic model member.
 The digest is derived from its RFC 8785 canonical JSON form.
 
+The preimage includes `projectionVersion`, so two different projections can never yield equal hex.
+It excludes runner, LibLCM assembly, and coverage-manifest versions, which are implementation facts
+carried as provenance. The projection is additive-stable: members semantically indistinguishable from
+absent are omitted entirely, so classifying a newly shipped LibLCM member leaves the digest of an
+unpopulated model unchanged. Where LibLCM distinguishes unset from set-to-default, so does the
+projection. See [versioning](architecture.md#projection-stability).
+
 Normalization follows LibLCM:
 
 - plain Unicode and MultiUnicode alternatives use LibLCM's in-memory NFD representation;
@@ -237,9 +255,30 @@ policy-independent options. It contains:
 - warnings, conflicts, and hard errors with stable diagnostic codes;
 - impact summary;
 - applicability;
-- runner, contract, model, and manifest versions.
+- ingestibility, naming any declared group version the runner cannot honor and the version it carries;
+- effect drift against a supplied prior Assessment, if one was given;
+- runner, declared contract group, projection, model, and manifest versions.
 
 Warnings do not silently become errors or approvals. The host owns application policy.
+
+### Drift
+
+`expectedEffects` are the compatibility oracle. When a Change Set is re-assessed or applied against a
+prior Assessment, any difference in expected effects is a typed diagnostic carrying the full delta,
+resolved by application policy and never auto-accepted.
+
+Assessment determinism is conditioned on the runner/version matrix, so this one rule covers both
+kinds of drift: the baseline moved, or the tools did. An operator on a newer build sees a changed
+default, a reclassified member, or a new lowering as an effect delta to review — never as a silent
+reinterpretation.
+
+Comparison is over effects, never the Mutation Plan. An improved lowering produces a different plan
+and identical effects, and treating that as drift would train operators to dismiss the warnings that
+matter. Effect digests must therefore be stable under lowering optimization, which is a conformance
+obligation with fixtures.
+
+The reviewer sees one review regardless of cause. See
+[review equivalence](conflicts-and-rebase.md#review-equivalence).
 
 ## Application Receipt
 
@@ -252,7 +291,8 @@ and the unit of work commits. It contains:
 - canonical-ID-to-storage-GUID mappings;
 - actual effect closure;
 - warnings explicitly accepted by the caller;
-- runner and LibLCM/model versions.
+- runner, projection, and LibLCM/model versions, so a stored result digest remains interpretable
+  after a dependency bump.
 
 No receipt is emitted for a rolled-back application, except a distinct failure report that cannot
 be mistaken for a realized state edge.

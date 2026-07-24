@@ -28,7 +28,9 @@ Examples:
 - a same-type GUID already exists and values would be overwritten/reused;
 - delete cascade changed;
 - display-only custom-field metadata differs;
-- baseline digest drift does not affect the operation's unique target or meaning.
+- baseline digest drift does not affect the operation's unique target or meaning;
+- a newer runner lowers the same intent differently, or a changed default or reclassified member
+  moves the expected effects.
 
 ### Genuine semantic conflict
 
@@ -69,8 +71,8 @@ Normative rule:
 
 Two operations must not be conflated:
 
-- **Reassessment** evaluates unchanged intent against a new baseline and produces a new Assessment.
-  The intent digest cannot change.
+- **Reassessment** evaluates unchanged intent against a new baseline, a new runner or projection
+  version, or both, and produces a new Assessment. The intent digest cannot change.
 - **Rebase** may produce an amended Change Set when a unique mechanical anchor rewrite is needed.
   It returns an explicit old-intent-to-new-intent record and the amended Change Set has a new
   digest.
@@ -117,6 +119,23 @@ Given common ancestor O and descendants A and B:
 The engine reports enough data for a UI or LLM to explain and amend conflicts. It does not impose a
 merge-queue or approval policy.
 
+## Review equivalence
+
+A reviewer asks one question — *these actions will happen, this is the resulting state delta; is that
+what I intended?* — and the answer does not depend on why the assessment moved. A changed baseline and
+a changed engine produce the same review. Cause is recorded as an attribute of the diagnostic, never
+as a separate category, artifact, or workflow.
+
+Ordered actions and the state delta are both presented. Execution order governs legality and is shown
+for comprehension. Where order carries meaning it is already visible in the state delta, because
+ordered model properties are sequences and a position change is a state change.
+
+Effect-set equality is therefore the unit a reviewing application needs. When a reassessment produces
+an effect set identical to one already reviewed, nothing has changed for the reviewer, whatever moved
+underneath. When it differs, the delta is the review. This repository supplies the comparison and the
+stable effect digests that make it checkable. Whether a prior approval carries is application policy
+and remains host-owned.
+
 ## Diagnostic requirements
 
 Diagnostics require:
@@ -125,6 +144,8 @@ Diagnostics require:
 - category/disposition;
 - operation and target IDs;
 - baseline, expected, and observed facts;
+- what moved since the compared Assessment — baseline, runner or projection version, or both —
+  recorded as an attribute rather than as the diagnostic's category;
 - candidate resolutions when deterministic mechanisms exist;
 - effect/cascade differences;
 - concise human-readable explanation;

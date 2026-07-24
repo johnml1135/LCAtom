@@ -186,17 +186,80 @@ This is the guard against a supposedly complete diff silently ignoring data.
 
 ## Versioning
 
-One `contractVersion` applies to the entire Change Set. There is no independent per-operation
-version.
+Compatibility is **detected, not declared**. A version number is a human claim about behavior, and
+the failure most worth catching is a change wrongly believed compatible — exactly what a claim cannot
+catch. This design already observes behavior directly, so observation governs and version numbers
+serve a much smaller role. See
+[ADR 0002](adr/0002-effect-comparison-over-declared-compatibility.md).
 
-Released semantics are immutable within a major version. Breaking interpretation requires a new
-major contract version and, where feasible, an explicit migration tool. The runner reports:
+Three mechanisms, each with one job:
 
-- contract version;
-- runner version;
-- LibLCM assembly/model version;
-- coverage-manifest version;
-- canonicalization/snapshot version.
+1. **Strict closed parsing** decides whether a Change Set can be ingested at all. It is the only
+   mechanism that can, because an operation the runner does not understand cannot be lowered, so no
+   behavior exists to observe.
+2. **Declared group versions** make that refusal actionable — naming what to upgrade to or rewrite.
+   They are not inputs to a compatibility computation.
+3. **Effect comparison** decides whether an ingestible Change Set still means what it meant, by
+   re-assessing and diffing `expectedEffects` against the recorded Assessment.
+
+The governing cut for digests is **interface versions may enter them; implementation versions never
+do**:
+
+| Axis | Kind | Where it appears |
+| --- | --- | --- |
+| Contract group versions | interface | intent digest |
+| `projectionVersion` | interface | semantic digest preimage |
+| Runner version | implementation | Assessment/Receipt provenance |
+| LibLCM assembly/model version | implementation | Assessment/Receipt provenance |
+| Coverage-manifest version | implementation | Assessment/Receipt provenance |
+
+A runner patch release must never change an identity, so implementation versions stay out of every
+preimage while remaining reported provenance.
+
+### Effect comparison
+
+Version drift and baseline drift are the same event: the world moved under a recorded Assessment. They
+are handled by one rule. When a Change Set is re-assessed or applied against a prior Assessment, any
+difference in `expectedEffects` is a typed diagnostic carrying the full delta, resolved by
+application policy and never auto-accepted.
+
+Comparison is over effects, not the Mutation Plan. An improved lowering yields a different plan and
+identical effects; treating plan inequality as drift would warn on every upgrade and train operators
+to click through the warnings that matter. A changed default, by contrast, moves the effects and is
+therefore surfaced — which is the property being protected.
+
+### Contract groups
+
+Contract versions are **per endpoint group**. Operation `kind` is already group-namespaced
+(`lexical/entry/create`); the leading segment is the group, aligned to the coverage manifest's
+coherent domain families. A Change Set declares a `contractVersions` map naming exactly the groups
+its operations use, validated as neither short nor padded, so the hashed map depends only on authored
+content and never on the runner's own version table. There is no independent per-*operation* version.
+
+Released semantics are immutable within a group's major version. A runner that cannot honor a
+declared group version rejects the Change Set and names the group, the version required, and the
+version it carries. This repository does not maintain a compatibility matrix or a governed
+additive/non-additive classification; effect comparison supersedes both.
+
+### Projection stability
+
+The semantic projection is **additive-stable**: members semantically indistinguishable from absent
+are omitted entirely, so classifying a newly shipped LibLCM member is digest-preserving for every
+model that does not populate it. Where LibLCM distinguishes unset from set-to-default, the projection
+must too.
+
+`projectionVersion` bumps only on observable projection change — altered normalization, non-additive
+reclassification, changed rich-text classification. It is folded into the semantic digest preimage,
+so additive upgrades preserve stored digests while non-additive changes cannot produce colliding hex.
+
+A digest mismatch across projection versions is not a broken lineage. It is the trigger to re-assess
+and compare effects. Additive stability exists to keep that re-assessment rare; folding the version
+into the preimage exists so two different projections cannot yield equal hex.
+
+The one genuine coupling between projection and contract is caught by the same oracle: if the
+projection stops distinguishing something an operation can set, that operation has become a semantic
+no-op, and the effect delta makes it visible rather than leaving it to a version bump nobody
+classified correctly.
 
 Unknown operation kinds or semantic properties are rejected. Optional tool data lives only in an
 explicit `extensions` object and is ignored by execution and excluded from semantic-state and
