@@ -45,7 +45,9 @@ Examples:
 - a sequence item has multiple plausible target gaps;
 - a custom field has the same class/name but incompatible type;
 - an entity was deleted on one side and semantically edited on the other;
-- a required reference target was replaced by multiple candidates.
+- a required reference target was replaced by multiple candidates;
+- a storage GUID is occupied by a different LibLCM type (an authored storage-GUID override is the
+  escape hatch, producing amended intent).
 
 ### Hard error / defect
 
@@ -57,6 +59,7 @@ Examples:
 - invalid 22-character ID suffix;
 - forbidden unknown semantic property;
 - dependency/order violation;
+- a referenced target is neither present in the baseline nor created earlier in the same Change Set;
 - a declared prerequisite Change Set is absent from the applied history, or the prerequisite chain
   contains a cycle;
 - unsupported model member;

@@ -125,6 +125,11 @@ Frame-vs-fill is a classification axis over the `Ph*`/`Mo*`/`Fs*` surface. Every
 member carries one tag, and that single tag drives both the fail-closed behavior above and the
 [model coverage manifest](architecture.md#model-coverage). The two concerns share one classification.
 
+("Projection" throughout this document is the HermitCrab authoring surface — the `Expand`/reverse-HCLoader
+layer — and is unrelated to the semantic-snapshot `projectionVersion` in
+[versioning](architecture.md#projection-stability), which versions the canonical projection of the
+LibLCM model. The two are distinct concepts that happen to share the word.)
+
 ## Worked decompositions
 
 Each HC one-liner expands to a coherent bundle of canonical operations against a baseline. Property

@@ -13,6 +13,7 @@ atomically through LibLCM's unit-of-work machinery.
 This repository is initially a specification and implementation plan. Start with:
 
 - [Architecture and decisions](docs/architecture.md)
+- [Rationale](docs/rationale.md)
 - [Decision records](docs/adr/)
 - [Normative change-set contract](docs/change-set-contract.md)
 - [Custom fields](docs/custom-fields.md)

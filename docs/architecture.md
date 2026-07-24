@@ -75,7 +75,11 @@ The initial solution should separate:
 5. `SIL.LCAtom.Cli`
    - optional process/JSON adapter for Python and isolated evaluation;
    - owns project lifecycle only as a host, never as core semantics.
-6. Test and conformance projects
+6. `SIL.LCAtom.HermitCrab`
+   - the HermitCrab authoring-surface projection (`Expand`/reverse-HCLoader), a versioned projection
+     rather than canonical intent, owned alongside the runner as its own package and CLI verbs per
+     [ADR 0001](adr/0001-hermitcrab-projection-not-canonical.md).
+7. Test and conformance projects
    - contract unit tests;
    - LibLCM integration tests;
    - normative JSON fixtures;
@@ -95,7 +99,9 @@ runner-filled mutable fields.
 
 Read-only evaluation of one intent digest against one semantic baseline. It records applicability,
 resolved identities, before-state evidence, mutation plan, expected effects, warnings, conflicts,
-impact, and runtime/model versions.
+impact, and runtime/model versions. This summary is not exhaustive; the
+[contract](change-set-contract.md#assessment) lists the normative fields, including ingestibility and
+effect drift.
 
 ### Application Receipt
 
@@ -188,6 +194,11 @@ Semantic properties additionally carry a **comparison class** — unordered, pos
 semantically ordered (feeding) — declaring how far drift comparison reaches into neighbors. See
 [comparison footprint](change-set-contract.md#comparison-footprint). It is reviewed and
 reclassifiable like any other manifest attribute.
+
+Members on the HermitCrab-projected `Ph*`/`Mo*`/`Fs*` surface additionally carry a **frame/fill tag**
+(structure-establishing versus structure-filling) — the single classification that drives both
+fail-closed expansion and coverage; see
+[HermitCrab projection](hermitcrab-projection.md#coverage-manifest-unification).
 
 CI fails when an upgraded LibLCM package introduces or changes an unclassified member, when a
 classification has no rationale, or when an operation family does not cover its declared model

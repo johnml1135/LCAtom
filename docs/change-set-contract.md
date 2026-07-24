@@ -147,8 +147,10 @@ Normally the entity suffix becomes the LibLCM storage GUID. A receipt records th
 The runner preflights every proposed storage GUID before mutation.
 
 - Same canonical ID and compatible expected entity/type may be reused or updated only according to
-  the authored operation semantics. Always emit a warning enumerating values that would be
-  overwritten or reused. The caller/application decides whether to proceed.
+  the authored operation semantics. Emit a warning enumerating values that would be overwritten or
+  reused, and the caller/application decides whether to proceed — except the already-realized
+  creation whose identity and complete expected structure agree, which is resolved deterministically
+  with no warning (see [deterministic resolution](conflicts-and-rebase.md#outcomes)).
 - A GUID occupied by an unrelated entity of the same broad type is also at least a warning; never
   silently assume identity merely because the type matches.
 - A GUID occupied by a different LibLCM type is a genuine semantic conflict that blocks
@@ -338,7 +340,8 @@ policy-independent options. It contains:
 - expected effects and effect digests;
 - warnings, conflicts, and hard errors with stable diagnostic codes;
 - impact summary;
-- applicability;
+- applicability — whether the Change Set applies to this baseline at all, distinct from the
+  per-group ingestibility below;
 - ingestibility, naming any declared group version the runner cannot honor and the version it carries;
 - effect drift against a supplied prior Assessment, if one was given;
 - runner, declared contract group, projection, model, and manifest versions.
@@ -431,7 +434,8 @@ and the unit of work commits. It contains:
 - baseline and result semantic digests;
 - per-operation outcomes;
 - canonical-ID-to-storage-GUID mappings;
-- actual effect closure;
+- actual effect closure — the observed effects, i.e. the read-back realized set, as distinct from
+  the assessment's expected effects;
 - warnings explicitly accepted by the caller;
 - runner, projection, and LibLCM/model versions, so a stored result digest remains interpretable
   after a dependency bump.
