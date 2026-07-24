@@ -223,9 +223,15 @@ Required test classes:
   the footprint while the referenced container's own churn is not;
 - pre-flight tests: an unchanged engine and footprint skip the re-check, a clean pre-flight advances
   the anchor to ready-to-apply without re-review, and an effect delta stops with the delta;
-- prerequisite tests: a `requires` GUID absent from the applied history is a hard error that cannot
-  be forced, a present prerequisite permits apply, a cyclic chain is rejected, and a dependent Change
-  Set is assessed and tested against the state with its prerequisite chain applied;
+- prerequisite tests: a `requires` entry absent from the applied history is a hard error that cannot
+  be forced, a present prerequisite permits apply, a cyclic prerequisite graph is rejected, a diamond
+  (two independent prerequisites of one dependent) resolves, and a dependent is assessed and tested
+  against the state with its full prerequisite closure applied in topological order;
+- identity-stability tests: editing or rebasing a Change Set moves its intent digest but never its
+  frozen `changeSetId`, and an applied-log entry whose stored intent digest differs from the Change
+  Set now presented is surfaced rather than reported as already-applied;
+- apply-binding tests: apply refuses with a hard error when given no prior Assessment, and stops with
+  a drift diagnostic when the bound Assessment's footprint has moved;
 - normalization and rich-text property tests;
 - per-operation positive and negative tests;
 - collision and wrong-type tests;

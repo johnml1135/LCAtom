@@ -60,8 +60,9 @@ Examples:
 - forbidden unknown semantic property;
 - dependency/order violation;
 - a referenced target is neither present in the baseline nor created earlier in the same Change Set;
-- a declared prerequisite Change Set is absent from the applied history, or the prerequisite chain
+- a declared prerequisite Change Set is absent from the applied history, or the prerequisite graph
   contains a cycle;
+- apply is invoked with no bound prior Assessment;
 - unsupported model member;
 - broken LibLCM invariant;
 - rollback failure.
@@ -80,8 +81,8 @@ Two operations must not be conflated:
 - **Reassessment** evaluates unchanged intent against a new baseline, a new runner or projection
   version, or both, and produces a new Assessment. The intent digest cannot change.
 - **Rebase** may produce an amended Change Set when a unique mechanical anchor rewrite is needed.
-  It returns an explicit old-intent-to-new-intent record and the amended Change Set has a new
-  digest.
+  It returns an explicit old-intent-to-new-intent record and the amended Change Set has a new intent
+  digest but keeps its frozen `changeSetId`, so references to it never break.
 
 Reassessment may update:
 
@@ -106,7 +107,8 @@ intent. Reassessment or rebase may not update:
 
 The Change Set intent digest remains unchanged after reassessment because runner evidence is not
 embedded in intent. Any actual Change Set amendment, including an authored-anchor rewrite,
-produces a new intent digest.
+produces a new intent digest while preserving the frozen `changeSetId`
+(see [identity](change-set-contract.md#change-set-identity-vs-content-digest)).
 
 ## Three-way conflict principles
 

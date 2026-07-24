@@ -12,7 +12,7 @@ Illustrative shape:
 {
   "contractVersions": { "lexical": "1.0" },
   "changeSetId": "agent_AAECAwQFBgcICQoLDA0ODw",
-  "requires": "agent_9y8x7w6v5u4t3s2r1q0p",
+  "requires": ["agent_9y8x7w6v5u4t3s2r1q0p"],
   "operations": [
     {
       "operationId": "agent_EBESEhMUFRYXGBkaGxwdHg",
@@ -45,40 +45,44 @@ proposed entity, but an operation cannot execute against an entity before its cr
 
 ### Prerequisites
 
-A Change Set may declare a single optional prerequisite — another Change Set that must already be in
-the project's applied history before this one may apply:
+A Change Set may declare prerequisites — other Change Sets that must already be in the project's
+applied history before this one may apply:
 
 ```json
-"requires": "agent_9y8x7w6v5u4t3s2r1q0p"
+"requires": ["agent_9y8x7w6v5u4t3s2r1q0p", "agent_5t4s3r2q1p0o9n8m7l6k"]
 ```
 
-The prerequisite is verified against the [applied-change log](applied-log.md): the referenced GUID
-must be present. Presence means "was applied at some point," which is exactly the guarantee this
-field makes — *this change must be in the history of LibLCM.* Whether the prerequisite's effects are
-still in force is not this field's job; the ordinary [comparison footprint](#comparison-footprint)
-catches a dependent Change Set whose required structure was later removed, because that structure is
-in its footprint.
+Each prerequisite is verified against the [applied-change log](applied-log.md): the referenced
+`changeSetId` must be present. Presence means "was applied at some point," which is exactly the
+guarantee this field makes — *this change must be in the history of LibLCM.* Whether a prerequisite's
+effects are still in force is not this field's job; the ordinary
+[comparison footprint](#comparison-footprint) catches a dependent Change Set whose required structure
+was later removed, because that structure is in its footprint.
 
-The link is single-parent, forming a **tree of chains, never a graph**: a Change Set has at most one
-prerequisite, several may share one, and none may merge two. A change that genuinely needs two
-independent predecessors chains them (make one require the other) or is authored as one Change Set.
-The prerequisite chain must be acyclic; a cycle is a hard error.
+Prerequisites form a **directed acyclic graph**, not a single-parent tree: a Change Set may require
+several independent predecessors, so two independently-authored Change Sets — for example a lexical
+one and a grammar one — can both be prerequisites of a third without imposing a false order between
+them. See [ADR 0004](adr/0004-prerequisite-graph-stable-ids-bound-apply.md). The reachable
+prerequisite graph must be acyclic; a cycle anywhere in the closure is a hard error, detected by
+topological sort.
 
 The dependency cannot be overridden at apply time. A missing prerequisite is a hard
 [dependency/order error](conflicts-and-rebase.md#outcomes) — never a warning, never forceable. It can
-only be *removed*, by editing the Change Set to drop `requires`, which is an authored change and so
-produces a new intent digest.
+only be *removed*, by editing the Change Set to drop the entry, which is an authored change and so
+moves the intent digest, though not the frozen `changeSetId` (see [identity](#change-set-identity-vs-content-digest)).
 
 Assessment and conformance tests evaluate a dependent Change Set against the state LibLCM would be in
-with its prerequisite chain already applied. In a live project that state already exists because the
-prerequisites are in history; in fixtures it is constructed by applying the chain first.
+with its full prerequisite closure already applied, in topological order. In a live project that
+state already exists because the prerequisites are in history; in fixtures it is constructed by
+applying the closure first.
 
 Omission always means “leave untouched.” Clearing, detaching, removing, and deleting require
 explicit verbs. JSON `null` is never overloaded to mean several different mutations.
 
 `set` means unconditional desired semantic value. Baseline `before` evidence belongs to an
-Assessment, not portable intent. If apply is given a prior Assessment and current before-state
-differs, that drift is a diagnostic condition, not a reinterpretation of `set`; application policy
+Assessment, not portable intent. Apply is bound to a prior Assessment (see
+[Application Receipt](#application-receipt)); when the current before-state differs from it,
+that drift is a diagnostic condition, not a reinterpretation of `set`; application policy
 chooses whether warnings may proceed. Structural guards deliberately authored as part of intent
 (for example an expected target type) are different: they are hashed and enforced.
 
@@ -211,6 +215,23 @@ unchanged authored anchors. If the authored anchors themselves must change, expl
 an amended Change Set and new digest only when exactly one gap preserves the ordering intent. If
 several positions are plausible, the operation conflicts.
 
+### Change Set identity vs content digest
+
+The `changeSetId` is a **stable identity**: it is seeded from the intent digest of the Change Set as
+first authored — a 128-bit truncation, encoded in the suffix convention above — and then **frozen**.
+It never changes when the Change Set is later edited or rebased, so `requires` links and
+[applied-change log](applied-log.md) entries that reference it never dangle. It is the linkage target.
+
+The **intent digest** is the live content hash — recomputed on every edit, full SHA-256. It carries
+the content-addressing properties: identical authored intent produces an identical digest
+(deduplication), and any content change moves it (tamper-evidence). An amendment or rebase therefore
+moves the intent digest while keeping `changeSetId` fixed.
+
+The applied-log records both: it matches on the frozen `changeSetId` (was this Change Set applied?)
+and stores the intent digest, so a later apply whose content differs from the recorded one is
+surfaced rather than silently treated as identical. See
+[ADR 0004](adr/0004-prerequisite-graph-stable-ids-bound-apply.md).
+
 ## Canonical JSON and hashes
 
 Use RFC 8785 JSON Canonicalization Scheme bytes, then SHA-256.
@@ -230,7 +251,9 @@ The intent digest includes executable desired content:
 
 It excludes:
 
-- Change Set ID, avoiding a circular/content-address ambiguity;
+- Change Set ID, which is seeded from the initial intent digest and then frozen; excluding it keeps
+  the digest a pure function of content and non-circular (see
+  [identity](#change-set-identity-vs-content-digest));
 - pretty formatting;
 - rationale, confidence, and provenance, which are review metadata rather than executable meaning;
 - assessment before-state;
@@ -439,6 +462,11 @@ and the unit of work commits. It contains:
 - warnings explicitly accepted by the caller;
 - runner, projection, and LibLCM/model versions, so a stored result digest remains interpretable
   after a dependency bump.
+
+Apply requires a prior Assessment and refuses to run without one: the Assessment's footprint digest
+binds apply to a specific evaluated baseline, so a footprint that has moved since stops apply with a
+drift diagnostic rather than proceeding, and a bare apply with no bound Assessment is a hard error.
+See [ADR 0004](adr/0004-prerequisite-graph-stable-ids-bound-apply.md).
 
 Apply requires an opaque applier identity from the host and writes exactly one
 [applied-change log](applied-log.md) entry inside the same unit of work. That entry is excluded from

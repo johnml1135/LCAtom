@@ -13,18 +13,18 @@ repository and may be discarded without loss of this record.
 uses for named one-time markers such as `TeStyles` and `FlexStyles`. `CmResource` has exactly two
 properties, and both are used:
 
-- `Version` (`Guid`) holds the Change Set GUID. **This is the only field used for matching.**
+- `Version` (`Guid`) holds the stable `changeSetId`. **This is the field used for identity matching.**
 - `Name` (`Unicode`) holds a packed, single-line provenance string.
 
 ## Record format
 
 ```
-Version = <change set GUID>
-Name    = LCAtom|<format>|<timestamp>|<user>|<description>
+Version = <changeSetId>
+Name    = LCAtom|<format>|<timestamp>|<user>|<intentDigest>|<description>
 ```
 
 Every field before the description is fixed-width or constrained, so the description is a free tail
-and **no escaping is needed**: parse by splitting on the first four `|` and taking the remainder.
+and **no escaping is needed**: parse by splitting on the first five `|` and taking the remainder.
 
 | Field | Rule |
 | --- | --- |
@@ -32,6 +32,7 @@ and **no escaping is needed**: parse by splitting on the first four `|` and taki
 | `<format>` | decimal format version, currently `1` |
 | `<timestamp>` | UTC ISO 8601 basic, fixed 16 characters, e.g. `20260724T055701Z` |
 | `<user>` | applier identity, at most 64 characters, may be empty, must not contain `\|` or control characters |
+| `<intentDigest>` | the Change Set's intent digest recorded at apply, fixed-length lowercase hex, no `\|` |
 | `<description>` | free single-line text, at most 128 characters, may contain `\|` |
 
 No length limit is declared on `Unicode` model properties in `MasterLCModel.xml`, and the 100-character
@@ -71,6 +72,11 @@ leaves no entry. Exactly one entry is written per applied Change Set.
   *not* mean `G`'s effects are still present — a later Change Set or a manual edit may have changed
   or reverted them.
 - **Absence** of GUID `G`: LCAtom never applied `G` to this project. This is the idempotence check.
+- **Content check**: `G` present but the stored `<intentDigest>` differing from the Change Set now
+  under consideration is surfaced — same identity, different content — rather than reported as a clean
+  "already applied." Matching is on the stable `changeSetId`; the digest catches drift in what that
+  identity refers to (the Flyway/Liquibase checksum pattern; see
+  [ADR 0004](adr/0004-prerequisite-graph-stable-ids-bound-apply.md)).
 - The log says nothing about non-LCAtom edits. Projects will carry manual FieldWorks edits
   indefinitely and those leave no entry. The log is a positive record of LCAtom applications only.
 - The log travels inside the project, so restoring an older backup correctly restores the older log.
