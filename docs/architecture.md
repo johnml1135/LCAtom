@@ -176,7 +176,18 @@ Every class and field is classified as one of:
 - `custom-field`;
 - `derived-read-only`;
 - `internal`;
+- `runner-bookkeeping`;
 - `unsupported`.
+
+`runner-bookkeeping` marks model surface this runner writes but deliberately omits from the semantic
+projection and from expected effects — currently only the
+[applied-change log](applied-log.md). It is distinct from `unsupported`: the runner does write here,
+and the exclusion is what keeps timestamps and identities out of every digest.
+
+Semantic properties additionally carry a **comparison class** — unordered, positionally ordered, or
+semantically ordered (feeding) — declaring how far drift comparison reaches into neighbors. See
+[comparison footprint](change-set-contract.md#comparison-footprint). It is reviewed and
+reclassifiable like any other manifest attribute.
 
 CI fails when an upgraded LibLCM package introduces or changes an unclassified member, when a
 classification has no rationale, or when an operation family does not cover its declared model

@@ -16,6 +16,7 @@ This repository is initially a specification and implementation plan. Start with
 - [Decision records](docs/adr/)
 - [Normative change-set contract](docs/change-set-contract.md)
 - [Custom fields](docs/custom-fields.md)
+- [Applied-change log](docs/applied-log.md)
 - [HermitCrab projection](docs/hermitcrab-projection.md)
 - [Conflict and rebase semantics](docs/conflicts-and-rebase.md)
 - [Implementation plan](docs/implementation-plan.md)
@@ -31,6 +32,7 @@ This repository owns:
 - canonical semantic snapshots and digests;
 - deterministic two-way and common-ancestor three-way mechanical diff;
 - assessment, planning, conflict diagnostics, rebase, atomic apply, read-back, and receipts;
+- a thin applied-change log written into the project for provenance and idempotence;
 - conformance fixtures proving that all supported clients receive the same behavior.
 
 It does not own:

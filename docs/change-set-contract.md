@@ -280,6 +280,47 @@ obligation with fixtures.
 The reviewer sees one review regardless of cause. See
 [review equivalence](conflicts-and-rebase.md#review-equivalence).
 
+### Comparison footprint
+
+Drift is judged over a Change Set's **comparison footprint** — the model facts its meaning depends
+on — never over the whole project. This is what keeps drift meaningful while linguists keep editing
+the project in FieldWorks indefinitely: an unrelated edit does not touch the footprint, so the review
+stays silent.
+
+One rule fixes the footprint's reach: **it extends into another object exactly when this Change Set's
+meaning depends on that object.** That happens in exactly three ways.
+
+1. **The operation's own owned target** — always in the footprint, in full: the object the operation
+   targets and the state it owns, the same ownership boundary as *fill, never frame*
+   ([ADR 0001](adr/0001-hermitcrab-projection-not-canonical.md)). For unordered data this is the
+   entire footprint.
+2. **A relationship the operation authors** — placing a lexeme into a template slot or a class *is*
+   the change, so the referenced template or class is in the footprint. A referenced object the
+   operation does not author is not: a lexeme's own membership changing is surfaced, but the internal
+   state of a template the lexeme merely references is not — unless authoring that membership is what
+   the operation does.
+3. **Ordered neighbors**, to the depth the ordering's semantics require — see the classes below.
+
+This yields three **comparison classes** for a model property, each a declared attribute of the
+coverage manifest and migratable as understanding improves:
+
+| Class | Footprint reach into neighbors | Examples |
+| --- | --- | --- |
+| Unordered (`col`) | none — the owned target only | lexicon entries, feature structures |
+| Positionally ordered (`seq`) | neighbor **identity** (the left/right links) | template slots, sense order |
+| Semantically ordered (`seq`, feeding) | neighbor **full state** | `PhPhonData.PhonRules` |
+
+The third class exists because phonological rule order is feeding/bleeding: a neighbor rule editing
+its own content changes the surface form this rule produces, so the neighbor's *state*, not merely
+its identity, is part of this Change Set's meaning. Positionally ordered data has no such coupling —
+a neighbor's internal edits do not change what the operation means; only a change to *which* object
+is adjacent does. Reclassifying a property between these buckets is a declared manifest change.
+
+The footprint defines what an effect set must span; effect comparison remains the oracle. A cheap
+identity-and-adjacency check over the footprint may pre-filter *possibly drifted, re-assess*, but may
+never conclude *clean* — only a fresh effect comparison grants that, because the feeding class proves
+identity alone can miss a real change.
+
 ## Application Receipt
 
 A core receipt is emitted only after all operations, read-back, and invariant validation succeed
@@ -293,6 +334,11 @@ and the unit of work commits. It contains:
 - warnings explicitly accepted by the caller;
 - runner, projection, and LibLCM/model versions, so a stored result digest remains interpretable
   after a dependency bump.
+
+Apply requires an opaque applier identity from the host and writes exactly one
+[applied-change log](applied-log.md) entry inside the same unit of work. That entry is excluded from
+the semantic snapshot and from expected effects, so it never reaches any digest; including it would
+make every effect digest unique and change the project's semantic digest on every apply.
 
 No receipt is emitted for a rolled-back application, except a distinct failure report that cannot
 be mistaken for a realized state edge.

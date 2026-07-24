@@ -15,7 +15,9 @@ Examples:
 - refreshing a sequence anchor when exactly one gap preserves intent;
 - treating equivalent LibLCM-normalized text as equal;
 - recognizing an already-realized creation only when identity and complete expected structure
-  agree.
+  agree;
+- the whole-project baseline digest moved but the Change Set's comparison footprint and effects are
+  unchanged — the normal state of a project under ongoing manual editing.
 
 ### Warning / application-policy decision
 
@@ -28,7 +30,6 @@ Examples:
 - a same-type GUID already exists and values would be overwritten/reused;
 - delete cascade changed;
 - display-only custom-field metadata differs;
-- baseline digest drift does not affect the operation's unique target or meaning;
 - a newer runner lowers the same intent differently, or a changed default or reclassified member
   moves the expected effects.
 
@@ -135,6 +136,28 @@ an effect set identical to one already reviewed, nothing has changed for the rev
 underneath. When it differs, the delta is the review. This repository supplies the comparison and the
 stable effect digests that make it checkable. Whether a prior approval carries is application policy
 and remains host-owned.
+
+## What is compared
+
+A reviewer's practical question is *what does LCAtom actually check to decide something changed?* It
+does not diff the whole project — under normal use the project changes constantly for reasons no
+Change Set caused. It checks each Change Set's **comparison footprint**: the facts its meaning depends
+on, and nothing else. In plain terms:
+
+- **For unordered data** (most of the lexicon), the question is *did the thing I am editing change?* —
+  the target object itself.
+- **For ordered data** (template slots, sense order), it adds *are my neighbors still the same
+  items?* — the left/right links, not the neighbors' contents. A neighbor editing its own internals
+  is not my concern; a neighbor being replaced, or a new item inserted beside me, is.
+- **For phonological rule order**, it adds the neighbors' *contents* too, because rule order is
+  feeding/bleeding: an adjacent rule changing what it does changes what my rule produces.
+
+A membership change to the object itself is always shown — a lexeme joining a new template or class is
+a change to that lexeme. The template's or class's own internal churn is not shown, unless placing the
+lexeme there is what the Change Set is doing. The normative definition and the migratable
+per-property classification live in the
+[comparison footprint](change-set-contract.md#comparison-footprint). Effect comparison remains the
+final word; the footprint is what makes the cheap "still clean?" check possible.
 
 ## Diagnostic requirements
 

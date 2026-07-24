@@ -16,6 +16,9 @@ engine.
 5. Prove whole-change-set commit and rollback with `UndoableUnitOfWorkHelper`, including read-back
    before commit.
 6. Record exact supported LibLCM/model versions.
+7. Verify `LexDb.Resources` is safe to use for the [applied-change log](applied-log.md): FieldWorks
+   tolerates unknown `CmResource` entries inertly, Chorus Send/Receive unions rather than conflicts
+   them, and `CmResource.Name` accepts the capped length.
 
 Exit: target matrix and transaction boundary are demonstrated by executable tests.
 
@@ -103,8 +106,12 @@ For each family add:
 - conflicts/rebase;
 - conformance tests.
 
+Write the [applied-change log](applied-log.md) entry inside the same unit of work, classified
+`runner-bookkeeping` so it reaches neither the snapshot nor expected effects, and expose the
+GUID-matched "already applied?" query over it.
+
 Exit: a mixed multi-operation Change Set applies atomically and rollback restores the exact semantic
-baseline after failures injected at every operation boundary.
+baseline after failures injected at every operation boundary, leaving no log entry.
 
 ## Phase 5 — custom fields
 
@@ -192,6 +199,13 @@ Required test classes:
   produces a different Mutation Plan with identical effect digests and no drift diagnostic;
 - cross-version ingestibility tests, including an older runner refusing an unknown operation kind
   with an actionable required-version message;
+- applied-log tests: entries never move the semantic digest or any effect digest, foreign
+  `CmResource` entries survive untouched, rollback leaves none, malformed input is rejected rather
+  than truncated, and the description may contain the delimiter;
+- comparison-footprint tests: an unrelated edit elsewhere in the project produces no drift; a change
+  to a positionally ordered neighbor's identity does, while that neighbor's internal edit does not;
+  a feeding phonological neighbor's content edit does; and a membership the operation authors is in
+  the footprint while the referenced container's own churn is not;
 - normalization and rich-text property tests;
 - per-operation positive and negative tests;
 - collision and wrong-type tests;
