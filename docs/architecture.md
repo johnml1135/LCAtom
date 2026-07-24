@@ -175,6 +175,15 @@ Application Failure; it never returns both. If rollback itself fails, throw a de
 exception after collecting all safely available diagnostics. The runner cannot mark LibLCM's cache
 object as poisoned, so the exception contract requires the host to discard that cache instance.
 
+Apply requires exclusive write access for its duration. LibLCM does not enforce single-writer — a
+colliding `Save` or `BeginUndoTask` (a host autosave, or a shutdown save on a background thread) calls
+`Rollback(0)` and destroys the open change set — so the host must guarantee no other writer runs during
+apply, and the runner treats an unexpected transaction state at task end as an external-collision
+diagnostic rather than its own rollback. A rolled-back apply must also invalidate the derived caches
+LibLCM's rollback leaves stale (headword, homograph, monomorphemic-morph) or discard the cache, and
+lowering must never open a nested unit of work. See
+[ADR 0006](adr/0006-engine-reality-apply-readback-preflight.md).
+
 FieldWorks integration may require an application-provided transaction/undo coordinator so the
 runner participates correctly in the shell's undo stack. This changes host coordination, not the
 one-change-set atomicity rule.

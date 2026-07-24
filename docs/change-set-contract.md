@@ -106,7 +106,12 @@ these semantic families:
 - create, configure, set as default, or update a writing system, including seeding the analysis and
   vernacular writing-system lists a bootstrapped project needs (creation is the two-step
   `Create(tag)` then `Set(ws)` with current-vs-full-list sync; see
-  [Flexicon harvest](flexicon-harvest.md)).
+  [Flexicon harvest](flexicon-harvest.md));
+- move an owned object to a different owner (reparent), as one operation, never delete-plus-create;
+- compound graph operations whose reach is known only by running them — merge two entities, convert an
+  entity's subclass with reference redirect, or change an entity's GUID (create the target-GUID entity,
+  then merge the original into it). These carry no static footprint and force full re-assessment; see
+  [ADR 0008](adr/0008-operation-model-reparent-and-compound-ops.md).
 
 Operations are model-aware. A lexical-entry create is not a generic “create object of class name.”
 Closed schemas expose only meaningful, supported properties.
@@ -287,9 +292,14 @@ It excludes:
 The formal intent projection written in Phase 1 must contain exactly these included fields and no
 others. Digests are rendered as `sha256:` followed by 64 lowercase hexadecimal characters.
 
-Ordered arrays remain ordered. Collections classified as unordered are sorted by their canonical
-identity in the semantic snapshot. Dates, binary values, floating-point policy if any, writing
-systems, and rich-text properties must have explicit canonical encodings and conformance vectors.
+Ordered arrays remain ordered. Collections classified as unordered are sorted by **byte-ordinal
+comparison of the UTF-8 encoding of the canonical identity string** (prefix included); decoding to a
+GUID and comparing is forbidden, because that disagrees across languages. Object member names sort per
+RFC 8785 (UTF-16 code-unit order), via a JCS-conformant serializer. Floating-point custom fields are
+forbidden, so no float ever enters a digest. Dates (`GenDate`), binary values, writing systems, and
+rich-text properties must have explicit canonical encodings and conformance vectors. Text is normalized
+against a **versioned, shipped normalization-data artifact** (`nfc_fw`), not the ambient platform's
+Unicode tables. See [ADR 0007](adr/0007-cross-language-digest-determinism.md).
 
 The raw `.fwdata` artifact receives a separate SHA-256 over exact bytes. Artifact digest and
 semantic digest are not interchangeable.
@@ -461,7 +471,11 @@ the check pass. Two axes can move it: the engine version and the footprint's bas
 moved since the anchor, determinism guarantees identical effects and the Change Set needs no
 re-check. Otherwise a pre-flight re-assesses and compares effects over the footprint; on a loaded
 model this is near-instantaneous, because it is scoped to the footprint rather than the model, and it
-may run automatically when an item is viewed.
+may run automatically when an item is viewed. This near-instantaneous property is conditioned on the
+host warming LibLCM's incoming-reference index at project load, off the interactive path;
+`ReferringObjects` has a first-touch whole-project cost otherwise. Whole-project snapshot work
+(onboarding, two-way diff, first baseline digest) is inherently expensive and is not subject to this
+promise. See [ADR 0006](adr/0006-engine-reality-apply-readback-preflight.md).
 
 A clean pre-flight — identical effects — advances the anchor to the current engine version and
 footprint digest and marks the Change Set ready to apply. This is a fast-forward, not a new review:

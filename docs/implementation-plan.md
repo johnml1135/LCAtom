@@ -31,6 +31,14 @@ engine.
     non-undoable unit of work before the data unit of work, no save occurs while a task is open, a
     metadata-only change still persists, and a failed data phase leaves a defined-but-empty field
     rather than orphaned data referencing an unpersisted field.
+11. Warm LibLCM's incoming-reference index at project load, off the interactive path, and confirm
+    pre-flight is interactive-fast only after warm-up
+    ([ADR 0006](adr/0006-engine-reality-apply-readback-preflight.md)).
+12. Ship and version the normalization-data artifact (`nfc_fw`) and generate canonical-JSON/digest
+    conformance vectors from C#, Python, and Rust to prove byte-for-byte agreement
+    ([ADR 0007](adr/0007-cross-language-digest-determinism.md)).
+13. Spike exclusive-write coordination and external-collision detection, and confirm no semantic side
+    effect is task-close-only ([ADR 0006](adr/0006-engine-reality-apply-readback-preflight.md)).
 
 Exit: target matrix and transaction boundary are demonstrated by executable tests.
 
@@ -240,6 +248,14 @@ Required test classes:
 - Flexicon-derived regression fixtures for LibLCM ordering/cascade gotchas (see
   [Flexicon harvest](flexicon-harvest.md)): schema-mutation-in-UoW, dangling stratum refs on delete,
   orphan-on-dereference, first-component-becomes-primary, and attach-owned-child-before-set;
+- transaction-hazard tests: a rolled-back apply invalidates the headword/homograph/monomorphemic
+  caches (or discards the cache), an external writer colliding mid-apply is reported as a collision
+  rather than a self-rollback, and lowering never opens a nested unit of work;
+- reparent and compound-op tests: move-between-owners is one operation with a correct effect set, and
+  merge / subclass-convert / GUID-change (create-target-then-merge) carry a read-back-derived
+  footprint and force full re-assessment;
+- cross-language conformance: identical canonical JSON and digests from C#/Python/Rust over shared
+  vectors, including the pinned sort comparator and the shipped normalization data;
 - normalization and rich-text property tests;
 - per-operation positive and negative tests;
 - collision and wrong-type tests;

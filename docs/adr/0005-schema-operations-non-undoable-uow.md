@@ -38,10 +38,15 @@ project is new and should mirror them rather than invent a pattern. See
 3. `Save`/`Commit` is never called while any unit of work is open; a commit happens only after a
    phase's task has closed.
 4. Schema changes are **one-way**. LibLCM's data rollback cannot revert them, and — like FieldWorks —
-   LCAtom does not try. A Change Set whose schema phase succeeds but whose data phase then fails and
-   rolls back leaves the custom field defined but empty: benign, idempotently reusable on retry, and
-   surfaced rather than hidden. Where consistency cannot be assured, the cache is discarded per the
-   existing rollback-failure contract.
+   LCAtom does not try. A Change Set whose schema phase succeeds but whose data phase then fails leaves
+   the custom field defined but empty. That leftover is **not automatically idempotent**:
+   `AddCustomField` throws on a duplicate name (`LcmMetaDataCache.cs:967-983`), so a retry must run the
+   [custom-field](../custom-fields.md) ensure/resolve pre-check (absent → create; present and
+   compatible → reuse) *before* `AddCustomField`, every time, including after a crash. Because the
+   schema phase writes no applied-log entry of its own, a crash between the schema commit and the data
+   phase leaves the idempotence check reporting "never applied"; the retry is safe only because that
+   ensure pre-check treats the existing field as reuse. Where consistency cannot be assured, the cache
+   is discarded per the rollback-failure contract.
 5. The commit gate must treat a metadata-only change as dirty (mirroring
    `HaveAnyModifiedCustomProperties`), so a schema-only Change Set is not a silent no-op.
 6. Read-back after a schema change rebuilds metadata-dependent projections against the new flid rather
