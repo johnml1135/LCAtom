@@ -12,6 +12,7 @@ Illustrative shape:
 {
   "contractVersions": { "lexical": "1.0" },
   "changeSetId": "agent_AAECAwQFBgcICQoLDA0ODw",
+  "requires": "agent_9y8x7w6v5u4t3s2r1q0p",
   "operations": [
     {
       "operationId": "agent_EBESEhMUFRYXGBkaGxwdHg",
@@ -41,6 +42,36 @@ partial application. See [versioning](architecture.md#versioning).
 The operation array is authoritative execution order. The runner never silently reorders it.
 Dependencies validate whether that order is legal. Planning may resolve the identity of a later
 proposed entity, but an operation cannot execute against an entity before its creator operation.
+
+### Prerequisites
+
+A Change Set may declare a single optional prerequisite — another Change Set that must already be in
+the project's applied history before this one may apply:
+
+```json
+"requires": "agent_9y8x7w6v5u4t3s2r1q0p"
+```
+
+The prerequisite is verified against the [applied-change log](applied-log.md): the referenced GUID
+must be present. Presence means "was applied at some point," which is exactly the guarantee this
+field makes — *this change must be in the history of LibLCM.* Whether the prerequisite's effects are
+still in force is not this field's job; the ordinary [comparison footprint](#comparison-footprint)
+catches a dependent Change Set whose required structure was later removed, because that structure is
+in its footprint.
+
+The link is single-parent, forming a **tree of chains, never a graph**: a Change Set has at most one
+prerequisite, several may share one, and none may merge two. A change that genuinely needs two
+independent predecessors chains them (make one require the other) or is authored as one Change Set.
+The prerequisite chain must be acyclic; a cycle is a hard error.
+
+The dependency cannot be overridden at apply time. A missing prerequisite is a hard
+[dependency/order error](conflicts-and-rebase.md#outcomes) — never a warning, never forceable. It can
+only be *removed*, by editing the Change Set to drop `requires`, which is an authored change and so
+produces a new intent digest.
+
+Assessment and conformance tests evaluate a dependent Change Set against the state LibLCM would be in
+with its prerequisite chain already applied. In a live project that state already exists because the
+prerequisites are in history; in fixtures it is constructed by applying the chain first.
 
 Omission always means “leave untouched.” Clearing, detaching, removing, and deleting require
 explicit verbs. JSON `null` is never overloaded to mean several different mutations.
@@ -186,6 +217,7 @@ The intent digest includes executable desired content:
 
 - declared contract group versions, which depend only on the operations authored and never on the
   runner's own version table;
+- the declared prerequisite, if any, so removing it produces a new intent digest;
 - operation order;
 - operation IDs, because dependencies refer to them;
 - operation kinds;
@@ -320,6 +352,22 @@ The footprint defines what an effect set must span; effect comparison remains th
 identity-and-adjacency check over the footprint may pre-filter *possibly drifted, re-assess*, but may
 never conclude *clean* — only a fresh effect comparison grants that, because the feeding class proves
 identity alone can miss a real change.
+
+### Pre-flight and re-anchoring
+
+The stored comparison anchor is the footprint's digest plus the engine version (runner, LibLCM, and
+projection) — not the whole-project digest, which would move on every unrelated edit and never let
+the check pass. Two axes can move it: the engine version and the footprint's baseline. If neither has
+moved since the anchor, determinism guarantees identical effects and the Change Set needs no
+re-check. Otherwise a pre-flight re-assesses and compares effects over the footprint; on a loaded
+model this is near-instantaneous, because it is scoped to the footprint rather than the model, and it
+may run automatically when an item is viewed.
+
+A clean pre-flight — identical effects — advances the anchor to the current engine version and
+footprint digest and marks the Change Set ready to apply. This is a fast-forward, not a new review:
+[review equivalence](conflicts-and-rebase.md#review-equivalence) already established that identical
+effects mean nothing changed for the reviewer. A pre-flight that finds an effect delta stops and
+hands the delta to the application or user, exactly as any other drift.
 
 ## Application Receipt
 

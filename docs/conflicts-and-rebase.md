@@ -57,6 +57,8 @@ Examples:
 - invalid 22-character ID suffix;
 - forbidden unknown semantic property;
 - dependency/order violation;
+- a declared prerequisite Change Set is absent from the applied history, or the prerequisite chain
+  contains a cycle;
 - unsupported model member;
 - broken LibLCM invariant;
 - rollback failure.

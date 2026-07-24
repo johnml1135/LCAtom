@@ -206,6 +206,11 @@ Required test classes:
   to a positionally ordered neighbor's identity does, while that neighbor's internal edit does not;
   a feeding phonological neighbor's content edit does; and a membership the operation authors is in
   the footprint while the referenced container's own churn is not;
+- pre-flight tests: an unchanged engine and footprint skip the re-check, a clean pre-flight advances
+  the anchor to ready-to-apply without re-review, and an effect delta stops with the delta;
+- prerequisite tests: a `requires` GUID absent from the applied history is a hard error that cannot
+  be forced, a present prerequisite permits apply, a cyclic chain is rejected, and a dependent Change
+  Set is assessed and tested against the state with its prerequisite chain applied;
 - normalization and rich-text property tests;
 - per-operation positive and negative tests;
 - collision and wrong-type tests;
