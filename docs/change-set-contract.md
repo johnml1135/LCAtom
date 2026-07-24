@@ -102,7 +102,11 @@ these semantic families:
 - delete an entity through LibLCM ownership semantics;
 - define, update supported metadata for, or delete a custom field;
 - create or update a reversal index entry and its sense links;
-- set or clear publication and show-in-dictionary flags on entries and senses.
+- set or clear publication and show-in-dictionary flags on entries and senses;
+- create, configure, set as default, or update a writing system, including seeding the analysis and
+  vernacular writing-system lists a bootstrapped project needs (creation is the two-step
+  `Create(tag)` then `Set(ws)` with current-vs-full-list sync; see
+  [Flexicon harvest](flexicon-harvest.md)).
 
 Operations are model-aware. A lexical-entry create is not a generic “create object of class name.”
 Closed schemas expose only meaningful, supported properties.

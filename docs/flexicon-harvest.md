@@ -22,8 +22,11 @@ LCAtom's C# core. What is valuable is the scar tissue below, re-implemented inde
 - **Non-uniform list roots** — `AnalyzingAgentsOC` is a bare `LcmOwningCollection` with no
   `PossibilitiesOS`; per-chart `ICmOverlay` has no project-level list. Any generic possibility-list
   family must not assume every list has `PossibilitiesOS`.
-- **Writing-system lifecycle** — create/delete/set-default, full-list vs current-list sync. Not
-  modeled in LCAtom; **scope decision pending** (project-config, not lexicon/grammar content).
+- **Writing-system lifecycle** — create/delete/set-default, full-list vs current-list sync. **In
+  scope**: LCAtom bootstraps projects, so this is an operation family. Creation is a two-step
+  `Create(tag)` then `Set(ws)` (`System/WritingSystemOperations.py:246-267`); skipping `Set` leaves a
+  detached writing system that errors on the next FLEx open, and the current-vs-full list must be kept
+  in sync via `AddToCurrent*WritingSystems`, not raw string-list assignment.
 - **System-list deletion guard** — Flexicon's `DeleteList` refuses on well-known roots
   (SemanticDomainList, PartsOfSpeech, …); LCAtom's generic delete family has no such policy guard.
 
