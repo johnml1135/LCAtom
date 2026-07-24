@@ -100,7 +100,9 @@ these semantic families:
 - insert, remove, or move a sequence member;
 - explicitly clear a value;
 - delete an entity through LibLCM ownership semantics;
-- define, update supported metadata for, or delete a custom field.
+- define, update supported metadata for, or delete a custom field;
+- create or update a reversal index entry and its sense links;
+- set or clear publication and show-in-dictionary flags on entries and senses.
 
 Operations are model-aware. A lexical-entry create is not a generic “create object of class name.”
 Closed schemas expose only meaningful, supported properties.
@@ -184,6 +186,16 @@ Assessment must expose the complete delete closure:
 - inbound references that LibLCM will remove or modify;
 - custom values affected;
 - counts and a deterministic effect digest.
+
+De-referencing does not cascade. Clearing or replacing an atomic reference, or removing a member from
+a reference collection, does not delete the previously-referenced object even when it was owned
+interior with no remaining referent — LibLCM leaves it an orphan. Expected effects must surface such
+orphans, and an operation that replaces a reference to an owned member is responsible for the
+compensating cleanup, or effects under-report. Symmetrically, the delete closure's promise to
+enumerate "inbound references that LibLCM will remove or modify" is only as complete as LibLCM's own
+cleanup: some back-references (for example a grammar stratum's) can be left dangling rather than
+cleaned, so conformance verifies the closure against real deletions rather than assuming it. See
+[Flexicon harvest](flexicon-harvest.md).
 
 Assessment generates baseline-relative `expectedEffects`; they are not mutable fields filled into
 the canonical Change Set. A changed cascade discovered on apply or re-assessment is one instance of

@@ -159,6 +159,15 @@ pass. Only then is the unit committed.
 There is no partial-apply mode. Individual operation services construct or execute inside the
 provided application scope; they never own a nested transaction.
 
+**Open risk — schema mutation inside the outer unit of work.** Flexicon learned by data loss (1,392
+stranded senses) that calling LibLCM's `AddCustomField` while a unit of work is already open creates
+the field in memory only; the operation appears to succeed, then `SaveChanges` throws and the
+`.fwdata` is left referencing a field whose schema addition never persisted. A `customField/define`
+operation inside the single outer Change Set unit of work may reproduce this. Whether
+schema-changing operations must instead commit in their own prior unit of work — breaking the
+one-outer-UoW rule for that one family — is validated by a Phase 0 spike before v1 (see
+[implementation plan](implementation-plan.md) and [Flexicon harvest](flexicon-harvest.md)).
+
 LibLCM undo/redo is the v1 rollback mechanism. Do not build a shadow project, handwritten inverse
 log, or filesystem transaction. The apply API returns either an Application Receipt or a typed
 Application Failure; it never returns both. If rollback itself fails, throw a dedicated critical

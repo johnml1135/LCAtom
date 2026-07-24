@@ -19,6 +19,7 @@ This repository is initially a specification and implementation plan. Start with
 - [Custom fields](docs/custom-fields.md)
 - [Applied-change log](docs/applied-log.md)
 - [HermitCrab projection](docs/hermitcrab-projection.md)
+- [Flexicon harvest](docs/flexicon-harvest.md)
 - [Conflict and rebase semantics](docs/conflicts-and-rebase.md)
 - [Implementation plan](docs/implementation-plan.md)
 - [Implementation-session handoff](HANDOFF.md)

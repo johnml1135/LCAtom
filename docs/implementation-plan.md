@@ -26,6 +26,10 @@ engine.
 9. Adapt the FwData/LibLCM host plumbing (project load, cache lifecycle, UOW helper, headless
    UI/progress shims, rich-text mapping) by copy-and-adapt from `FwDataMiniLcmBridge` under its MIT
    license, not a shared package; see [ADR 0003](adr/0003-feasibility-findings.md).
+10. Spike `customField/define` inside versus outside the outer apply unit of work against real
+    LibLCM: confirm whether an in-UoW `AddCustomField` corrupts the project (Flexicon issue #21) and,
+    if so, require schema-changing operations to commit in their own prior unit of work. See
+    [Flexicon harvest](flexicon-harvest.md).
 
 Exit: target matrix and transaction boundary are demonstrated by executable tests.
 
@@ -232,6 +236,9 @@ Required test classes:
   Set now presented is surfaced rather than reported as already-applied;
 - apply-binding tests: apply refuses with a hard error when given no prior Assessment, and stops with
   a drift diagnostic when the bound Assessment's footprint has moved;
+- Flexicon-derived regression fixtures for LibLCM ordering/cascade gotchas (see
+  [Flexicon harvest](flexicon-harvest.md)): schema-mutation-in-UoW, dangling stratum refs on delete,
+  orphan-on-dereference, first-component-becomes-primary, and attach-owned-child-before-set;
 - normalization and rich-text property tests;
 - per-operation positive and negative tests;
 - collision and wrong-type tests;
