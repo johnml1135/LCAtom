@@ -26,10 +26,11 @@ engine.
 9. Adapt the FwData/LibLCM host plumbing (project load, cache lifecycle, UOW helper, headless
    UI/progress shims, rich-text mapping) by copy-and-adapt from `FwDataMiniLcmBridge` under its MIT
    license, not a shared package; see [ADR 0003](adr/0003-feasibility-findings.md).
-10. Spike `customField/define` inside versus outside the outer apply unit of work against real
-    LibLCM: confirm whether an in-UoW `AddCustomField` corrupts the project (Flexicon issue #21) and,
-    if so, require schema-changing operations to commit in their own prior unit of work. See
-    [Flexicon harvest](flexicon-harvest.md).
+10. Verify the custom-field schema pattern from
+    [ADR 0005](adr/0005-schema-operations-non-undoable-uow.md): metadata operations run in their own
+    non-undoable unit of work before the data unit of work, no save occurs while a task is open, a
+    metadata-only change still persists, and a failed data phase leaves a defined-but-empty field
+    rather than orphaned data referencing an unpersisted field.
 
 Exit: target matrix and transaction boundary are demonstrated by executable tests.
 

@@ -38,9 +38,9 @@ LCAtom's C# core. What is valuable is the scar tissue below, re-implemented inde
    `docs/CUSTOM_FIELDS.md:27-51`: Flexicon refuses schema mutation while `CurrentDepth>0` because it
    once stranded 1,392 senses (issue #21). In-UoW `AddCustomField` creates the flid in-memory only;
    `SaveChanges` throws "Commit at wrong place"; the `.fwdata` persists data referencing a field whose
-   schema addition never saved. **This conflicts with LCAtom's one-outer-UoW-per-Change-Set rule** —
-   see the flagged risk in [architecture](architecture.md#cache-and-transaction-ownership) and the
-   Phase 0 spike.
+   schema addition never saved. Resolved by
+   [ADR 0005](adr/0005-schema-operations-non-undoable-uow.md): mirroring FieldWorks, the custom-field
+   family runs first in its own non-undoable unit of work, one-way, never saving while a task is open.
 
 ### Delete / de-reference closure
 

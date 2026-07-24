@@ -111,6 +111,11 @@ these semantic families:
 Operations are model-aware. A lexical-entry create is not a generic “create object of class name.”
 Closed schemas expose only meaningful, supported properties.
 
+Custom-field definition is a metadata (schema) change, not a data change: it executes first, in a
+separate non-undoable unit of work, and is one-way — LibLCM cannot roll it back with the data, so a
+failed data phase leaves a defined-but-empty field. See
+[ADR 0005](adr/0005-schema-operations-non-undoable-uow.md).
+
 ## IDs and GUID mapping
 
 Change Set IDs, operation IDs, and proposed entity IDs use this textual convention:

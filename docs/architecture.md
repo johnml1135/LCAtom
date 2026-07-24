@@ -152,21 +152,22 @@ Core APIs accept an already-loaded `LcmCache`. They do not:
 
 Preview and assessment are non-mutating.
 
-Apply uses one outer LibLCM `UndoableUnitOfWorkHelper` for the entire Change Set. Rollback remains
-enabled until all operations execute, the model is read back, and postconditions and invariants
-pass. Only then is the unit committed.
+Apply uses one outer LibLCM `UndoableUnitOfWorkHelper` for the entire Change Set's data operations.
+Rollback remains enabled until all operations execute, the model is read back, and postconditions and
+invariants pass. Only then is the unit committed. Custom-field (metadata) operations are the
+exception: they run first in a separate non-undoable unit of work and are one-way; see
+[ADR 0005](adr/0005-schema-operations-non-undoable-uow.md).
 
 There is no partial-apply mode. Individual operation services construct or execute inside the
 provided application scope; they never own a nested transaction.
 
-**Open risk — schema mutation inside the outer unit of work.** Flexicon learned by data loss (1,392
-stranded senses) that calling LibLCM's `AddCustomField` while a unit of work is already open creates
-the field in memory only; the operation appears to succeed, then `SaveChanges` throws and the
-`.fwdata` is left referencing a field whose schema addition never persisted. A `customField/define`
-operation inside the single outer Change Set unit of work may reproduce this. Whether
-schema-changing operations must instead commit in their own prior unit of work — breaking the
-one-outer-UoW rule for that one family — is validated by a Phase 0 spike before v1 (see
-[implementation plan](implementation-plan.md) and [Flexicon harvest](flexicon-harvest.md)).
+**Schema operations are a separate non-undoable phase.** Custom-field definition is a metadata
+change, not a data change: `AddCustomField` is untracked and cannot be rolled back, and saving while
+a data task is open corrupts the project (Flexicon's 1,392-sense loss). Mirroring FieldWorks'
+own "Add Custom Field" path, LCAtom runs the custom-field family first in its own non-undoable unit
+of work, never saves while a task is open, and treats those schema changes as one-way — a data-phase
+rollback leaves a benign defined-but-empty field, not orphaned data. See
+[ADR 0005](adr/0005-schema-operations-non-undoable-uow.md) and [Flexicon harvest](flexicon-harvest.md).
 
 LibLCM undo/redo is the v1 rollback mechanism. Do not build a shadow project, handwritten inverse
 log, or filesystem transaction. The apply API returns either an Application Receipt or a typed
