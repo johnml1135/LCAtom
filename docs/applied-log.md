@@ -75,6 +75,22 @@ leaves no entry. Exactly one entry is written per applied Change Set.
   indefinitely and those leave no entry. The log is a positive record of LCAtom applications only.
 - The log travels inside the project, so restoring an older backup correctly restores the older log.
 
+## Sync behavior
+
+FieldWorks projects sync between machines with Chorus Send/Receive, a 3-way XML merge. Distinct
+entries — different `Version` GUIDs — always union: LibChorus retains every unmatched insertion and
+never drops one, so two operators applying different Change Sets and then syncing both keep their
+entries. For that union to be free of a spurious order-ambiguity note, FieldWorks must register
+`CmResource` as GUID-keyed and order-irrelevant — the pattern Chorus's own append-only `.ChorusNotes`
+log already uses. That registration lives in FLExBridge and is verified in Phase 0.
+See [ADR 0003](adr/0003-feasibility-findings.md).
+
+The one collision is two entries written under the *same* `Version` GUID with different `Name` text —
+a race applying the same Change Set on two diverged copies before either syncs. Chorus keeps one and
+overwrites the other's `Name`. This costs only provenance: the GUID still appears exactly once, so
+the idempotence check (which reads only the GUID) is unaffected, and the record was never
+authoritative.
+
 ## Foreign entries
 
 Entries whose `Name` lacks the `LCAtom` prefix belong to FieldWorks or other tools. They are never

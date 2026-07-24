@@ -13,12 +13,19 @@ engine.
    - a small `net48` FieldWorks-compatible consumer;
    - a `net8.0` CLI/test host.
 4. Prove an already-loaded `LcmCache` can be passed into the runner without lifecycle ownership.
-5. Prove whole-change-set commit and rollback with `UndoableUnitOfWorkHelper`, including read-back
-   before commit.
-6. Record exact supported LibLCM/model versions.
-7. Verify `LexDb.Resources` is safe to use for the [applied-change log](applied-log.md): FieldWorks
-   tolerates unknown `CmResource` entries inertly, Chorus Send/Receive unions rather than conflicts
-   them, and `CmResource.Name` accepts the capped length.
+5. Prove whole-change-set commit and rollback with `UndoableUnitOfWorkHelper.Do`, including
+   footprint-scoped snapshot read-back before commit.
+6. Prove effect capture by before/after semantic-snapshot diff scoped via the public
+   `ICmObject.AllOwnedObjects` and `ICmObject.ReferringObjects`, confirming no dependence on LibLCM's
+   internal, consumer-invisible undo records ([ADR 0003](adr/0003-feasibility-findings.md)).
+7. Record exact supported LibLCM/model versions.
+8. Verify `LexDb.Resources` is safe for the [applied-change log](applied-log.md): FieldWorks tolerates
+   unknown `CmResource` entries inertly, `CmResource.Name` accepts the capped length, and — confirmed
+   at the LibChorus level, to be re-confirmed in FLExBridge — Send/Receive unions distinct-GUID
+   additions rather than conflicting them, with `CmResource` registered GUID-keyed and order-irrelevant.
+9. Adapt the FwData/LibLCM host plumbing (project load, cache lifecycle, UOW helper, headless
+   UI/progress shims, rich-text mapping) by copy-and-adapt from `FwDataMiniLcmBridge` under its MIT
+   license, not a shared package; see [ADR 0003](adr/0003-feasibility-findings.md).
 
 Exit: target matrix and transaction boundary are demonstrated by executable tests.
 
@@ -72,7 +79,10 @@ meaningful rich text differences remain visible.
 4. Implement before-state and expected-effects capture in Assessment, never by mutating Change Set
    intent. Define effects as read-back snapshot deltas honoring the four obligations —
    read-back-not-replay, canonical identity, identity-aware structural delta, transition hashing —
-   per [expected effects](change-set-contract.md#expected-effects).
+   per [expected effects](change-set-contract.md#expected-effects). Capture is a footprint-scoped
+   before/after snapshot diff, not consumption of a LibLCM change feed (none is exposed); scope the
+   snapshot to the footprint plus the delete/reference closure enumerated via the public
+   `ICmObject.AllOwnedObjects` and `ICmObject.ReferringObjects`.
 5. Implement conflict taxonomy and stable diagnostics.
 6. Implement read-only `Assess(changeSet, cache)`.
 7. Add resource/depth/count limits for untrusted declarative input.

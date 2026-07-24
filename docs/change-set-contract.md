@@ -293,11 +293,15 @@ The effect set is a collection of identity-keyed field transitions:
 
 Four rules make it load-bearing.
 
-1. **Read back, do not replay.** The effect set is what LibLCM actually changed after the unit of
-   work, so it includes the engine's own consequences — ownership cascade on delete, inbound
-   reference cleanup, engine-computed defaults — beyond the fields the operations name. The effect
-   set is the [comparison footprint](#comparison-footprint) plus that cascade closure. Replaying
-   intended writes would omit exactly the consequences review exists to catch.
+1. **Read back, do not replay.** Effects are captured by comparing the footprint-scoped semantic
+   snapshot taken before the unit of work with one taken after — not by replaying the operations'
+   intended writes. LibLCM exposes no consumable change feed and its internal undo records are not
+   reachable from a consumer assembly ([ADR 0003](adr/0003-feasibility-findings.md)), so the
+   before/after snapshot diff is the mechanism, not an optimization. Capturing the true after-state
+   is what surfaces the engine's own consequences — ownership cascade on delete, inbound reference
+   cleanup, engine-computed defaults — beyond the fields the operations name, so the effect set is
+   the [comparison footprint](#comparison-footprint) plus that cascade closure. Replaying intended
+   writes would omit exactly the consequences review exists to catch.
 2. **Canonical identity, never storage GUIDs.** Fields and objects are keyed by canonical ID, so the
    same semantic change yields the same effect on any runner and across create-then-realize. Raw
    LibLCM GUIDs never enter an effect or its digest.
