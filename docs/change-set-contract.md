@@ -273,6 +273,54 @@ Normalization follows LibLCM:
 The snapshot includes enough identity, ownership, reference, order, and definition information to
 support diff, expected effects, rebase, and read-back validation.
 
+## Expected effects
+
+An expected effect is a **delta of the Canonical Semantic Snapshot**, scoped to the change and read
+back from LibLCM — not a replay of the operations. It is the artifact behind drift detection,
+approval continuity, and the pre-flight check, so its digest must be stable and portable or all
+three fail. It reuses the snapshot representation above and is not a separate format.
+
+The effect set is a collection of identity-keyed field transitions:
+
+```json
+{
+  "canonicalId": "agent_ICEiIyQlJicoKSorLC0uLw",
+  "field": "lexical/sense/gloss",
+  "before": { "en": "run quickly on foot" },
+  "after":  { "en": "move quickly on foot" }
+}
+```
+
+Four rules make it load-bearing.
+
+1. **Read back, do not replay.** The effect set is what LibLCM actually changed after the unit of
+   work, so it includes the engine's own consequences — ownership cascade on delete, inbound
+   reference cleanup, engine-computed defaults — beyond the fields the operations name. The effect
+   set is the [comparison footprint](#comparison-footprint) plus that cascade closure. Replaying
+   intended writes would omit exactly the consequences review exists to catch.
+2. **Canonical identity, never storage GUIDs.** Fields and objects are keyed by canonical ID, so the
+   same semantic change yields the same effect on any runner and across create-then-realize. Raw
+   LibLCM GUIDs never enter an effect or its digest.
+3. **Identity-aware structural delta.** Scalars carry `before`/`after` values. Ordered properties
+   carry explicit moves keyed by neighbor identity, never a positional array rewrite, so inserting
+   one item does not report every following item as changed. References are distinguished from owned
+   values; MultiString carries per-writing-system transitions; rich strings carry per-run
+   transitions. Values are canonicalized and normalized per the snapshot rules before comparison, so
+   equivalent forms never produce a spurious delta.
+4. **Hash the transition, not the destination.** The effect digest is the RFC 8785 hash of the full
+   set of `(canonicalId, field, before, after)` deltas over the footprint-plus-cascade. Both sides
+   are included because approval is of a transition: a changed `before` on a touched field must move
+   the digest even when the `after` is unchanged, or a stored approval would silently carry to a
+   transition no one reviewed. The digest excludes everything the coverage manifest classifies as
+   non-semantic (`derived-read-only`, `internal`, `runner-bookkeeping`) and every value the engine
+   assigns non-deterministically; a value the engine assigns deterministically is computed at
+   assessment time and included.
+
+`before`, `after`, and the derived delta are three views a reviewing application may render; the
+digest is over the one canonical delta beneath them. The `before` states an effect records are the
+same footprint-scoped snapshot the [pre-flight anchor](#pre-flight-and-re-anchoring) stores — effects,
+the anchor, and the drift oracle are one artifact seen three ways.
+
 ## Assessment
 
 Assessment is deterministic for the same Change Set, semantic baseline, runner/version matrix, and
@@ -295,7 +343,8 @@ Warnings do not silently become errors or approvals. The host owns application p
 
 ### Drift
 
-`expectedEffects` are the compatibility oracle. When a Change Set is re-assessed or applied against a
+`expectedEffects`, defined in [expected effects](#expected-effects), are the compatibility oracle.
+When a Change Set is re-assessed or applied against a
 prior Assessment, any difference in expected effects is a typed diagnostic carrying the full delta,
 resolved by application policy and never auto-accepted.
 

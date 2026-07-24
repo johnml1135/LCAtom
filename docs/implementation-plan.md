@@ -70,14 +70,19 @@ meaningful rich text differences remain visible.
 2. Implement GUID collision preflight before any mutation.
 3. Define the output-only LibLCM Mutation Plan.
 4. Implement before-state and expected-effects capture in Assessment, never by mutating Change Set
-   intent.
+   intent. Define effects as read-back snapshot deltas honoring the four obligations —
+   read-back-not-replay, canonical identity, identity-aware structural delta, transition hashing —
+   per [expected effects](change-set-contract.md#expected-effects).
 5. Implement conflict taxonomy and stable diagnostics.
 6. Implement read-only `Assess(changeSet, cache)`.
 7. Add resource/depth/count limits for untrusted declarative input.
 8. Distinguish reassessment (same intent) from explicit rebase output (new intent when authored
    anchors must change).
 
-Exit: assessments are deterministic and preview all modeled consequences without mutation.
+Exit: assessments are deterministic and preview all modeled consequences without mutation; effect
+digests are computed over read-back snapshot deltas in canonical identity, are stable under a
+lowering that changes the plan but not the resulting state, and move when a `before` or `after` on
+a touched field moves.
 
 ## Phase 4 — minimal vertical operation slice
 
