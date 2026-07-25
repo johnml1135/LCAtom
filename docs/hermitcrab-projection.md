@@ -130,23 +130,34 @@ layer — and is unrelated to the semantic-snapshot `projectionVersion` in
 [versioning](architecture.md#projection-stability), which versions the canonical projection of the
 LibLCM model. The two are distinct concepts that happen to share the word.)
 
-## Strata — reach the channel HermitCrab reads
+## Lockstep with HermitCrab and the FieldWorks grammar creator
 
-HermitCrab supports strata as first-class objects (`Stratum`, with a name and a morphological-rule
-order, in an ordered `Language.Strata`). `HCLoader` always creates `Morphology`, `Clitics`, and
-`Surface`, and builds additional named strata **from the `MoMorphologicalData.ParserParameters` text**
-(`<HC><Strata>…</Strata></HC>`), assigning rules to them by **matching rule-name strings** and logging
-`InvalidStrata` when a name does not resolve.
+**This is reverse engineering, not design.** LCAtom's grammar API must be **exactly the set of LibLCM
+inputs that FieldWorks' `HCLoader` consumes** — nothing less, or the user cannot control the projected
+grammar; nothing pointless, or we offer controls wired to nothing. Two normative requirements follow:
 
-The model's own `MoStratum` objects and the five `StratumRA` reference fields are **read nowhere in
-FieldWorks except three presence checks** (`MorphTypeAtomicLauncher`, `LiftMerger`) — neither
-HermitCrab nor XAmple consults them. So writing `StratumRA` accomplishes nothing for the parse loop.
+1. **100% lockstep with HermitCrab** (`../machine`, `src/SIL.Machine.Morphology.HermitCrab`). Every
+   construct the HC `Language` model can represent must be authorable through LCAtom in a friendly way.
+   HC's model is the coverage yardstick ([ADR 0010](adr/0010-hermitcrab-experimentation-is-the-primary-purpose.md)).
+2. **100% lockstep with the grammar creator** (`FieldWorks/Src/LexText/ParserCore/HCLoader.cs`). The
+   authoritative map is *HC construct ← the LibLCM fields HCLoader actually reads*. That map — not the
+   LibLCM model's apparent shape — defines the grammar write-surface, its ordering dependencies, its
+   reliance on virtual/synthetic properties, and its silent-skip failure modes. Both are versioned
+   dependencies: when either changes, the map is re-derived and the API re-checked.
 
-Per [ADR 0010](adr/0010-hermitcrab-experimentation-is-the-primary-purpose.md), stratum support means
-reaching the channel that works: LCAtom exposes stratum authoring at the HC-construct level and the
-runner writes `ParserParameters` (and keeps rule names consistent with it), rather than populating the
-vestigial model members. Rule-name-based binding is fragile by construction, so renaming a rule must be
-treated as also editing the stratum configuration.
+### Strata — what projects actually contain
+
+Empirically, in every project sampled (including a dedicated HermitCrab project): **zero `MoStratum`
+objects**, and `MoMorphologicalData.ParserParameters` contains only `<XAmple>` tuning
+(`MaxNulls`, `MaxPrefixes`, …) with **no `<HC>` element and no `<Strata>` section**. So every real
+project runs on the three strata `HCLoader` hardcodes — `Morphology`, `Clitics`, `Surface`.
+
+`HCLoader` *can* build more, from `<HC><Strata>…</Strata></HC>` in that text field, binding rules to
+strata by **name-string matching**; and the model's `MoStratum` / `StratumRA` members are read nowhere
+in FieldWorks except three presence checks. But since nobody writes either channel, stratum
+configuration is **not a v1 requirement** — the requirement is only that LCAtom never disturbs the
+default three. If stratum authoring is ever wanted, the reachable channel is `ParserParameters`, and
+its name-string binding makes a rule rename also a stratum edit.
 
 ## Authoring input and round-trip
 

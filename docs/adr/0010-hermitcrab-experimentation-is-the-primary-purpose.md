@@ -40,22 +40,29 @@ labor is already declared from the other side.
    environments, co-occurrence rules — is the **primary completeness criterion**. LibLCM's model
    surface remains the storage target and must still be 100% classified for safety, but *HC construct
    coverage* is what defines "grammar complete."
-2. **Reachability beats fidelity to vestigial model surface.** Where a LibLCM member is inert to
-   HermitCrab, writing it accomplishes nothing for the primary loop. Where HermitCrab honors a channel
-   the model does not represent cleanly, LCAtom must still reach it. Strata are the worked example:
-   HC has first-class `Stratum` objects, `HCLoader` builds them from
-   `MoMorphologicalData.ParserParameters` text and rule-name matching, and the model's `MoStratum` /
-   `StratumRA` members are read nowhere in FieldWorks except three presence checks. Supporting strata
-   therefore means reaching the channel HermitCrab actually reads — not populating the vestigial one.
-3. **Iteration speed is a product requirement, not an optimization.** The loop is run repeatedly on
+2. **100% lockstep with both engines, by reverse engineering — not design.** LCAtom's grammar API is
+   *exactly* the set of LibLCM inputs `HCLoader` consumes: nothing less (the user could not control the
+   grammar) and nothing pointless (controls wired to nothing). The authoritative artifact is the map
+   *HC construct ← LibLCM fields actually read*, derived from
+   `FieldWorks/Src/LexText/ParserCore/HCLoader.cs`, together with HC's own `Language` model from
+   `../machine`. Both are versioned dependencies: when either changes, the map is re-derived and the API
+   re-checked. See [HermitCrab projection](../hermitcrab-projection.md#lockstep-with-hermitcrab-and-the-fieldworks-grammar-creator).
+3. **Judge model surface by what projects contain, not by what code permits.** Strata are the cautionary
+   example: HC supports strata first-class and `HCLoader` can build extra ones from a
+   `ParserParameters` XML string, so "HC supports it, therefore we must author it" *looked* compelling.
+   But in every project sampled there are **zero `MoStratum` objects** and `ParserParameters` holds only
+   `<XAmple>` tuning with no `<HC>`/`<Strata>` section — every real project runs on the three hardcoded
+   strata. Stratum configuration is therefore not a v1 requirement; not disturbing the default three
+   is. Coverage claims get checked against real `.fwdata`, not against what a code path allows.
+4. **Iteration speed is a product requirement, not an optimization.** The loop is run repeatedly on
    one project, so assess → project → parse → compare must stay fast. This is what makes the
    incoming-reference warm-up ([ADR 0006](0006-engine-reality-apply-readback-preflight.md)) and
    footprint-scoped assessment load-bearing rather than nice-to-have.
-4. **Comparability is a product requirement.** "Does it parse better?" is meaningless without knowing
+5. **Comparability is a product requirement.** "Does it parse better?" is meaningless without knowing
    exactly what changed and what each report was measured against. That is precisely what change sets,
    effect digests, and provenance-stamped attachments provide — the safety apparatus doubles as the
    experiment record.
-5. **Reversibility is a product requirement.** Most experiments are discarded. Non-committing
+6. **Reversibility is a product requirement.** Most experiments are discarded. Non-committing
    assessment, atomic apply, and an honest applied-log are what make "try it and throw it away" safe.
 
 ### What this does not change
