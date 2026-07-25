@@ -24,6 +24,7 @@
     <ProjectReference Include="..\..\src\SIL.LCAtom.Contract\SIL.LCAtom.Contract.csproj" />
     <ProjectReference Include="..\..\src\SIL.LCAtom.Model\SIL.LCAtom.Model.csproj" />
     <ProjectReference Include="..\..\src\SIL.LCAtom.Runner\SIL.LCAtom.Runner.csproj" />
+    <ProjectReference Include="..\..\src\SIL.LCAtom.Cli\SIL.LCAtom.Cli.csproj" />
   </ItemGroup>
 
 </Project>

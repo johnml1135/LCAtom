@@ -10,6 +10,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SIL.LCAtom.Host\SIL.LCAtom.Host.csproj" />
+    <ProjectReference Include="..\SIL.LCAtom.Runner\SIL.LCAtom.Runner.csproj" />
+    <ProjectReference Include="..\SIL.LCAtom.Contract\SIL.LCAtom.Contract.csproj" />
+    <ProjectReference Include="..\SIL.LCAtom.Model\SIL.LCAtom.Model.csproj" />
   </ItemGroup>
 
 </Project>
