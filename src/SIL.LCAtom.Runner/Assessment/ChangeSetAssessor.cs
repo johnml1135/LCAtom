@@ -4,10 +4,7 @@ using System.Linq;
 using SIL.LCAtom.Contract.Ids;
 using SIL.LCAtom.Contract.Model;
 using SIL.LCAtom.Model.Effects;
-using SIL.LCAtom.Model.Snapshot;
 using SIL.LCAtom.Runner.Operations;
-using SIL.LCAtom.Runner.Resolution;
-using SIL.LCAtom.Runner.Snapshotting;
 using SIL.LCModel;
 using SIL.LCModel.Core.KernelInterfaces;
 using SIL.LCModel.Infrastructure;
@@ -26,8 +23,10 @@ namespace SIL.LCAtom.Runner.Assessment;
 /// <remarks>
 /// Scope is exactly one operation kind (<see cref="LexicalSenseOperationKinds.SetGloss"/>); the
 /// dispatch below is a single case deliberately, not a plugin registry, until a second kind exists
-/// to justify one. Apply, receipts, and the applied-change log are explicitly out of scope here
-/// (Stage D) — this type never commits a unit of work.
+/// to justify one. This type never commits a unit of work — it is the non-mutating counterpart to
+/// <see cref="SIL.LCAtom.Runner.Apply.ChangeSetApplier"/> (Stage D), which shares the same
+/// resolve/snapshot/lower/snapshot sequence via <see cref="SIL.LCAtom.Runner.Operations.SetGlossOperationHandler"/>
+/// but commits instead of rolling back, and writes the applied-change log.
 /// </remarks>
 public static class ChangeSetAssessor
 {
@@ -55,7 +54,7 @@ public static class ChangeSetAssessor
                 switch (operation.Kind)
                 {
                     case LexicalSenseOperationKinds.SetGloss:
-                        effects.Add(AssessSetGloss(cache, operation, touchedTargets));
+                        effects.Add(SetGlossOperationHandler.ApplyAndCaptureEffect(cache, operation, touchedTargets));
                         break;
 
                     default:
@@ -77,46 +76,4 @@ public static class ChangeSetAssessor
 
         return new AssessmentModel(intentDigest, baselineNote, effects, effectDigest);
     }
-
-    private static ExpectedEffect AssessSetGloss(
-        LcmCache cache, OperationEnvelope operation, List<CanonicalId> touchedTargets)
-    {
-        if (operation.Target is not { } targetId)
-        {
-            throw new InvalidOperationException(
-                $"Operation '{operation.OperationId.Value}' of kind '{LexicalSenseOperationKinds.SetGloss}' " +
-                "requires 'target'.");
-        }
-
-        if (operation.After is not { } after)
-        {
-            throw new InvalidOperationException(
-                $"Operation '{operation.OperationId.Value}' of kind '{LexicalSenseOperationKinds.SetGloss}' " +
-                "requires 'after'.");
-        }
-
-        var (writingSystemTag, text) = SetGlossPayload.Parse(after);
-
-        var target = CanonicalIdResolver.Resolve(cache, targetId);
-        if (target is not ILexSense sense)
-        {
-            throw new InvalidOperationException(
-                $"Target '{targetId.Value}' is not a LexSense (it is a {target.GetType().Name}).");
-        }
-
-        touchedTargets.Add(targetId);
-
-        var before = GlossAlternatives(LexSenseSnapshotter.Snapshot(cache, sense));
-
-        SetGlossLowering.Apply(cache, sense, writingSystemTag, text);
-
-        var after_ = GlossAlternatives(LexSenseSnapshotter.Snapshot(cache, sense));
-
-        return new ExpectedEffect(targetId, SnapshotFields.LexSenseGloss, before, after_);
-    }
-
-    private static IReadOnlyDictionary<string, string> GlossAlternatives(ObjectSnapshot snapshot) =>
-        snapshot.MultiUnicodeFields.TryGetValue(SnapshotFields.LexSenseGloss, out var alternatives)
-            ? alternatives
-            : new Dictionary<string, string>();
 }

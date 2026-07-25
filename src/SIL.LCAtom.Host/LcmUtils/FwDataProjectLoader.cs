@@ -83,4 +83,26 @@ public class FwDataProjectLoader
             new LcmSettings(),
             progress);
     }
+
+    /// <summary>
+    /// Persists every committed change in <paramref name="cache"/> to its backing <c>.fwdata</c>
+    /// file. The core does not save projects itself (docs/change-set-contract.md, "Application
+    /// Receipt"): <c>SIL.LCAtom.Runner.Apply.ChangeSetApplier.Apply</c> commits its unit of work but
+    /// never calls this — it is the host's job, called only after every unit of work has closed
+    /// (never while a task is open — docs/adr/0005, decision 3; docs/adr/0006, decision 4).
+    /// </summary>
+    /// <remarks>
+    /// Mirrors <c>FwDataMiniLcmBridge.Api.FwDataMiniLcmApi.Save()</c>
+    /// (languageforge-lexbox/backend/FwLite/FwDataMiniLcmBridge/Api/FwDataMiniLcmApi.cs), which
+    /// calls the same <see cref="IActionHandler.Commit"/> to flush the XML/.fwdata backend
+    /// provider's pending writes to disk: for this backend, <c>Commit()</c> is both "close out the
+    /// undo/redo bookkeeping since the last commit" and the save trigger — there is no separate
+    /// LibLCM "save" verb to call instead.
+    /// </remarks>
+    public virtual void Save(LcmCache cache)
+    {
+        if (cache is null) throw new ArgumentNullException(nameof(cache));
+
+        cache.ActionHandlerAccessor.Commit();
+    }
 }
