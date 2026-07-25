@@ -4,15 +4,28 @@ What LCAtom can actually let a user change, grounded in reads of HermitCrab (`..
 `HCLoader.cs` (`../FieldWorks`), and PanGloss (`../PanGloss`). Companion to the field-level
 [HC grammar map](hc-grammar-map.md); this document is the **construct-level coverage scope**.
 
-Coverage is not one number. It is three nested tiers, and **the innermost is what actually gets
-parsed today**:
+Coverage is not one number. It is three nested tiers:
 
 - **T1 — HC engine.** What HermitCrab can represent.
 - **T2 — HCLoader-reachable.** What a FieldWorks project can make HC build. `T2 ⊂ T1`.
-- **T3 — PanGloss Phase A.** What the primary consumer compiles today from `.fwdata`. `T3 ⊂ T2`.
+- **T3 — PanGloss Phase A.** What that consumer compiles today from `.fwdata`. `T3 ⊂ T2`.
 
-**The effective authoring ceiling is T3.** Authoring something in T2∖T3 produces a change the primary
-loop *warns about and skips*; authoring in T1∖T2 is impossible from a FieldWorks project at all.
+> **Full coverage is defined as T2 — "C# HCLoader complete."** Everything `HCLoader` can produce from a
+> FieldWorks project must be authorable in LCAtom, in a friendly way.
+
+**T3 is not a scope boundary.** PanGloss is catching up to full HC, so its Phase A/B split is a moving,
+temporary limitation of one consumer; designing the coverage target around it would bake in a boundary
+that dissolves. T3 serves two other purposes instead:
+
+1. **Sequencing.** T3 constructs reach a parse today, so building them first buys the fastest feedback
+   loop. That is a priority signal, not a gate.
+2. **A reporting obligation.** Because LCAtom knows the tiers, it must *say* when an authored construct
+   is outside the consumer's current compile set — "you authored a metathesis rule; this PanGloss build
+   compiles Phase A and will skip it." Same actionable-refusal discipline as declared group versions:
+   never let a change silently fail to reach the parse.
+
+**T1∖T2 is out of scope** — multi-stratum, realizational morphology, and multiple phoneme sets are
+structurally unreachable from a FieldWorks project, and LCAtom does not promise them.
 
 ## The matrix
 
@@ -59,8 +72,10 @@ Both are **structural FieldWorks limits**, not LCAtom choices. They bound the pr
    So the loop is *LCAtom applies to `.fwdata` → PanGloss reads `.fwdata`*. **PanGloss is the projection** —
    "show me the resulting grammar" is a PanGloss call, not an LCAtom feature. This deletes the plan's
    forward-projection-by-harvesting-`GenerateHCConfig` work. XML remains only for the C# oracle.
-2. **Prioritise by tier.** T3 constructs first (they're the only ones that reach a parse today); T2∖T3
-   next, coordinated with PanGloss's Phase B; T1∖T2 is documented as out of reach, not roadmapped.
+2. **Build to T2; sequence by T3.** All of T2 is in scope, including metathesis, reduplication,
+   circumfix cross-products, and clitic-as-affix — no waiting on PanGloss. T3 constructs go first for
+   the fastest feedback loop, and anything in T2∖T3 carries the consumer-capability warning above.
+   T1∖T2 is documented as out of reach, not roadmapped.
 3. **Author environments as strings**, against the `PhonEnvRecognizer` grammar — HCLoader never reads the
    structured `PhEnvironment` context graph.
 4. **The five parallel slot sequences are FieldWorks sugar with no HC counterpart.** Either preserve them
@@ -97,10 +112,15 @@ shorthand (`[NC]`, `([NC])`, `[NC]*`) is input-only sugar** with no inverse. Dea
 worth chasing: `SyntacticRules`, all subcategorization markup, `cyclicity`,
 `phonologicalRuleOrder`, `obligatoryHead/FootFeatures`, `PreviousWord`/`NextWord`.
 
-## Open decisions
+## Decisions (settled)
 
-1. **Is `.fwdata` the only output, or may LCAtom also author HC XML directly?** Direct XML would unlock
-   T1∖T2 (strata, realizational rules) but the result would no longer be expressible in FieldWorks —
-   a fork in what LCAtom *is*.
-2. **Coordinate with PanGloss on Phase B**, or treat T2∖T3 as simply unavailable for now?
-3. **Keep or drop the prefix/suffix/proclitic/enclitic partition** in the authoring surface.
+1. **`.fwdata` is the only output.** Defining full coverage as HCLoader-complete makes direct HC XML
+   authoring unnecessary — its only purpose would be to exceed T2, which is explicitly out of scope. XML
+   remains solely for the C# conformance oracle.
+2. **No gating on PanGloss.** Build all of T2; sequence T3 first; warn when an authored construct is
+   outside the consumer's compile set.
+3. **Keep the prefix/suffix/proclitic/enclitic partition.** It is part of the HCLoader-complete surface —
+   `HCLoader` reads all five sequences and collapses them as
+   `SuffixSlotsRS.Concat(PrefixSlotsRS.Reverse())`. Since HC has no such concept, the validation target
+   is **HCLoader's collapse behavior**, not HC semantics: authoring must produce the intended flat slot
+   order after that transform.

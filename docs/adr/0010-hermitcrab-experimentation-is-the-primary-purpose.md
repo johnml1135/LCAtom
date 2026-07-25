@@ -34,15 +34,23 @@ labor is already declared from the other side.
 
 ### Consequences for coverage
 
-1. **Everything HermitCrab supports must be authorable through LCAtom's API, in a friendly way.**
-   The HermitCrab language model — natural classes, features, phonological rules and their contexts,
-   affix processes, templates and slots, compound rules, allomorph environments, co-occurrence rules —
-   is the **primary completeness criterion**. LibLCM's model surface remains the storage target and must
-   still be 100% classified for safety, but *HC construct coverage* is what defines "grammar complete."
-   **One documented exception:** `RealizationalAffixProcessRule` exists in HermitCrab but `HCLoader`
-   never builds one (`// TODO: use realizational affix process rules`), so realizational morphology is
-   unreachable through the FieldWorks path whatever LCAtom writes. LCAtom must not promise it.
-   The complete, cited requirement is the [HC grammar map](../hc-grammar-map.md).
+1. **Full coverage is defined as "C# `HCLoader` complete."** Everything `HCLoader` can produce from a
+   FieldWorks project must be authorable through LCAtom, in a friendly way — natural classes, features,
+   phonological rewrite and metathesis rules with their contexts, affix processes, reduplication,
+   circumfixes, templates and slots, compound rules, allomorph environments, co-occurrence rules, MPR
+   features, stem names. LibLCM's model surface remains the storage target and must still be 100%
+   classified for safety, but *HCLoader-reachable HC construct coverage* is what defines "grammar
+   complete." The complete, cited requirement is the [HC grammar map](../hc-grammar-map.md); the
+   tier analysis is the [HC surface scope](../hc-surface-scope.md).
+
+   Two boundaries follow. **Above:** constructs HermitCrab supports but `HCLoader` cannot produce —
+   multi-stratum grammars, realizational morphology with `LexFamily` suppletion, multiple phoneme sets —
+   are **out of scope**, because they are structurally unreachable from a FieldWorks project. Since
+   coverage stops there, `.fwdata` is LCAtom's only output; direct HC XML authoring would exist only to
+   exceed this target. **Below:** a consumer may compile less than HCLoader produces (PanGloss's Phase A
+   today). That is a moving, temporary limitation and **not** a scope boundary — but LCAtom knows the
+   tiers and must therefore *report* when an authored construct falls outside the consumer's current
+   compile set, rather than letting a change silently fail to reach the parse.
 2. **100% lockstep with both engines, by reverse engineering — not design.** LCAtom's grammar API is
    *exactly* the set of LibLCM inputs `HCLoader` consumes: nothing less (the user could not control the
    grammar) and nothing pointless (controls wired to nothing). The authoritative artifact is the map
