@@ -5,6 +5,14 @@
 LCAtom is the canonical C# contract and reference runner for applying portable,
 reviewable, semantic CRUD+ change sets to an already-loaded LibLCM model.
 
+**Why it exists.** A person or an AI working on a language asks *"what if we change this — does the
+text parse better?"* LCAtom makes that question safe to ask, cheap to repeat, and honest to answer:
+author a change at a high level, review the exact state delta before anything is touched, project the
+would-be grammar to HermitCrab, let [PanGloss](https://github.com/sillsdev/machine) parse a text and
+report, compare against earlier runs, then keep it or throw it away. Everything HermitCrab supports
+must be authorable here, in a friendly way — that is the primary completeness criterion. See
+[ADR 0010](docs/adr/0010-hermitcrab-experimentation-is-the-primary-purpose.md).
+
 The project is deliberately storage- and workflow-agnostic. A change set can come from a file,
 Git repository, database, web service, AI agent, FieldWorks panel, or another application. The
 runner gives that change set one meaning, assesses it against a specific model, and can apply it

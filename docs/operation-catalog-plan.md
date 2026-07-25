@@ -14,6 +14,14 @@ thing properly; **LibLCM + its tests** are ground truth for engine semantics; **
 constructs matter and contributes scar tissue. LCAtom re-implements rather than ports
 (Python/LGPL — [ADR 0003](adr/0003-feasibility-findings.md)).
 
+**The primary completeness criterion is HermitCrab construct coverage**, not LibLCM field coverage
+([ADR 0010](adr/0010-hermitcrab-experimentation-is-the-primary-purpose.md)). "Grammar complete" means
+every construct HermitCrab can represent is authorable here in a friendly way, reachable through the
+channel HermitCrab actually reads. LibLCM's surface must still be 100% classified for write safety,
+but it is the storage target, not the yardstick. Two consequences: a member that is inert to HC earns
+no priority however prominent it looks in the model, and a channel HC honors must be reached even when
+the model represents it awkwardly (strata being the worked example).
+
 Contract groups: **`lexical`**, **`lists`**, **`system`**, **`grammar`**. Comparison classes (from
 [comparison footprint](change-set-contract.md#comparison-footprint)): **U** unordered, **P**
 positionally ordered, **F** feeding (semantically ordered). Authoring: **raw** object-ops vs reverse

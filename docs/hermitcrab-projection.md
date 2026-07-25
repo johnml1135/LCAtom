@@ -130,6 +130,24 @@ layer — and is unrelated to the semantic-snapshot `projectionVersion` in
 [versioning](architecture.md#projection-stability), which versions the canonical projection of the
 LibLCM model. The two are distinct concepts that happen to share the word.)
 
+## Strata — reach the channel HermitCrab reads
+
+HermitCrab supports strata as first-class objects (`Stratum`, with a name and a morphological-rule
+order, in an ordered `Language.Strata`). `HCLoader` always creates `Morphology`, `Clitics`, and
+`Surface`, and builds additional named strata **from the `MoMorphologicalData.ParserParameters` text**
+(`<HC><Strata>…</Strata></HC>`), assigning rules to them by **matching rule-name strings** and logging
+`InvalidStrata` when a name does not resolve.
+
+The model's own `MoStratum` objects and the five `StratumRA` reference fields are **read nowhere in
+FieldWorks except three presence checks** (`MorphTypeAtomicLauncher`, `LiftMerger`) — neither
+HermitCrab nor XAmple consults them. So writing `StratumRA` accomplishes nothing for the parse loop.
+
+Per [ADR 0010](adr/0010-hermitcrab-experimentation-is-the-primary-purpose.md), stratum support means
+reaching the channel that works: LCAtom exposes stratum authoring at the HC-construct level and the
+runner writes `ParserParameters` (and keeps rule names consistent with it), rather than populating the
+vestigial model members. Rule-name-based binding is fragile by construction, so renaming a rule must be
+treated as also editing the stratum configuration.
+
 ## Authoring input and round-trip
 
 The projection has two directions, both owned in `SIL.LCAtom.HermitCrab`:

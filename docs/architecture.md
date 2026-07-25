@@ -2,9 +2,18 @@
 
 ## Purpose
 
-LibLCM is a mature object model with factories, repositories, ownership rules, references,
-persistence, and battle-tested undo/redo. It does not provide a portable, reviewable language for
-describing a coherent model change. Existing tools can manipulate LibLCM, but their APIs,
+**Primary purpose — the grammar-experimentation loop.** A person or an AI working on a language asks
+*"what if we change this — does the text parse better?"* LCAtom makes that loop safe, repeatable, and
+comparable: author intent → assess the exact state delta → project the would-be grammar to HermitCrab
+XML → PanGloss parses a text and returns a report → compare with earlier runs → apply or discard.
+**Everything HermitCrab supports must be authorable through this API, in a friendly way**; HC construct
+coverage — not merely LibLCM model coverage — is what defines grammar completeness. Iteration speed,
+comparability, and reversibility are therefore product requirements, not optimizations. See
+[ADR 0010](adr/0010-hermitcrab-experimentation-is-the-primary-purpose.md).
+
+Underneath that: LibLCM is a mature object model with factories, repositories, ownership rules,
+references, persistence, and battle-tested undo/redo. It does not provide a portable, reviewable
+language for describing a coherent model change. Existing tools can manipulate LibLCM, but their APIs,
 transaction guarantees, and merge semantics differ.
 
 This repository supplies one canonical semantic change language and one C# implementation that
