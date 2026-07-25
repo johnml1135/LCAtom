@@ -24,6 +24,8 @@ This repository is initially a specification and implementation plan. Start with
 - [Stage-2 change management (vision)](docs/stage2-change-management.md)
 - [Conflict and rebase semantics](docs/conflicts-and-rebase.md)
 - [Implementation plan](docs/implementation-plan.md)
+- [Operation-catalog plan (lexical & grammar)](docs/operation-catalog-plan.md)
+- [Build stages](docs/build-stages.md)
 - [Implementation-session handoff](HANDOFF.md)
 
 ## Product boundary
