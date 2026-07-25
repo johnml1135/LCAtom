@@ -1,0 +1,84 @@
+# Stage-2 change management (vision)
+
+A local-first change-management layer over the LCAtom runner: author, review, and apply change
+packages, with a thin CLI now and an elaborate application later. This is the vision and the settled
+decisions; the elaborate application is **out of scope for the current core build** and will likely be
+a separate repo. Each decision below is tagged **[core]** (in this repo now) or **[stage-2]** (later,
+separate).
+
+## S1 — Store: files, not a database
+
+The store is **git-style files**: finalized change sets are immutable content-addressed objects;
+mutable working state (review status, label, comment, attachment pointers) is a small per-package
+manifest. **No database in v1.** SQLite may appear *only later, as a disposable, rebuildable local
+cache/index* (never the source of truth, never synced) once enumeration/search is measurably slow.
+Dolt/DoltHub is considered only for the eventual cloud layer, never the local critical path.
+**[core]** minimal store in the CLI; **[stage-2]** the elaborate store.
+
+## S2 — Two merges; only one is forbidden
+
+The `.fwdata` **merges** on every LexBox Send/Receive (Chorus 3-way, element/GUID-level) — that is
+where two operators' actual data reconciles, and it is desired. "Never merge" means only: **LCAtom
+never merges change-set stores/histories against each other and never three-way-merges proposed
+intent.** Chorus-induced baseline movement is ordinary [drift](conflicts-and-rebase.md), handled by
+effect-comparison. There is no "merge change sets" operation anywhere. **[core]** semantics.
+
+## S3 — Draft in memory; commit is the write
+
+A **draft is in-memory only** — a builder the calling code drives (`new → add → label → commit`), the
+Flexicon pattern, from Python or C#. `commit` serializes it to the immutable object; drafts never touch
+disk and so can never clash or sync. `changeSetId` is **uniquely minted at creation, content-independent,
+frozen** (ADR 0004); `intentDigest` tracks content. Amend keeps the id, moves the digest. **[core]**.
+
+## S4 — Review-gated local apply (not a server-branch PR)
+
+There is no shared target branch — the shared thing is the `.fwdata`. A committed change set carries a
+mutable manifest with `status` (proposed / approved / applied / rejected). **Review** is of the
+assessment's effect delta; **approval is per-effect-digest and drift-invalidated** (re-review on drift;
+host may override). **"Landing" = applying locally**, recorded in the applied-log. Reconciliation is
+Chorus-on-fwdata plus idempotent apply by `changeSetId` — two operators can apply the same shared change
+set independently and the log unions to one entry. Multi-user discussion is a later cloud surface.
+**[core]** apply + review semantics; **[stage-2]** the PR UI/workflow.
+
+## S5 — Attachments: derived, provenance-stamped, store-not-interpret
+
+The CLI **produces** HC grammar XML and **accepts** report blobs; the external tool (PanGloss) is run by
+a thin orchestration script, never by LCAtom. Attachments are **derived/regenerable views**, stored as
+content-addressed blobs with provenance `(changeSetId, the whole-grammar state digest they ran against,
+tool + version, timestamp)`, **staleness-flagged** when the state moves (never shown as current when
+stale), and **selectively synced**. LCAtom **stores and lists by provenance; it never interprets** tool
+output (it can diff blobs, but the meaning stays external). **[core]** produce/accept/store;
+**[stage-2]** orchestration + comparison UI.
+
+## S6 — HermitCrab round-trip
+
+See [HermitCrab projection](hermitcrab-projection.md#authoring-input-and-round-trip). Forward projection
+(harvest `HCLoader`, baseline or hypothetical post-apply) is the killer workflow's producer; reverse
+`Expand` (structured command, no compiler, inverse of `HCLoader`) is built after forward, which is its
+round-trip oracle. Both **[core]**, in `SIL.LCAtom.HermitCrab`.
+
+## S7 — Repo & package boundary
+
+**[core] this repo, all C#:** `Contract`, `Model`, `Runner`, `Host`, `Diff`, `HermitCrab` (optional
+package), `Cli` (thin CLI + minimal files store), `Tests`. `Contract`/`Model`/`Runner` stay HC-free and
+store-free; the store lives in the CLI/Host layer. One-way dependencies; nothing depends inward.
+Cross-language consumers (Python: Linguistic Assistant/FlexTools; Rust: PanGloss) go through the CLI's
+process/JSON protocol. **[stage-2] separate repo, later:** PR-workflow UI, orchestration, Avalonia,
+LexBox/cloud sync, Dolt/DoltHub.
+
+## S8 — Two-mode agent loop
+
+Agent-authored change sets are **untrusted input** (strict closed parsing, validation, resource/DoS
+bounds — numbers still to pin). The **deterministic artifacts (effect delta, reports, regression /
+golden-set checks) are the trust anchor in both modes**; the difference is only who reads them.
+
+- **AI alone (autonomous):** the AI authors and gates on the objective outputs, then applies.
+  **Autonomous apply requires a defined objective acceptance check** (regression / golden-set pass); with
+  no such check it falls back to human review — otherwise "AI alone" degrades into "trust the AI."
+- **AI supporting human (assisted):** iterative — human sets parameters → AI proposes → human reviews the
+  deterministic preview → "try again with these changes" → AI re-authors.
+
+Provenance splits **author** (the agent) from **applier** (human, or the agent for a deliberate
+unattended apply), so the applied-log records who *wrote* and who *sanctioned* — making autonomous
+changes fully auditable. **[core]** the untrusted-input + trust-anchor semantics; **[stage-2]** the loop
+UX and orchestration.

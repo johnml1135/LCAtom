@@ -243,19 +243,22 @@ several positions are plausible, the operation conflicts.
 
 ### Change Set identity vs content digest
 
-The `changeSetId` is a **stable identity**: it is seeded from the intent digest of the Change Set as
-first authored — a 128-bit truncation, encoded in the suffix convention above — and then **frozen**.
-It never changes when the Change Set is later edited or rebased, so `requires` links and
-[applied-change log](applied-log.md) entries that reference it never dangle. It is the linkage target.
+The `changeSetId` is a **stable, uniquely-minted identity**: a 128-bit id assigned when the Change Set
+is created — content-independent and unique by construction (a time-ordered value: millisecond
+timestamp plus random bits, in the suffix convention above) — and then **frozen**. It never changes
+when the Change Set is later edited or rebased, so `requires` links and
+[applied-change log](applied-log.md) entries that reference it never dangle. Uniqueness is by
+construction, not derivation: ten Change Sets that each start empty and diverge still get ten distinct
+ids. It is the linkage target.
 
-The **intent digest** is the live content hash — recomputed on every edit, full SHA-256. It carries
-the content-addressing properties: identical authored intent produces an identical digest
-(deduplication), and any content change moves it (tamper-evidence). An amendment or rebase therefore
-moves the intent digest while keeping `changeSetId` fixed.
+The **intent digest** is the live content hash — recomputed on every edit, full SHA-256. Identical
+authored intent produces an identical digest, so content equality and tamper-evidence are a query on
+the intent digest, not on the id. An amendment or rebase moves the intent digest while keeping
+`changeSetId` fixed.
 
-The applied-log records both: it matches on the frozen `changeSetId` (was this Change Set applied?)
-and stores the intent digest, so a later apply whose content differs from the recorded one is
-surfaced rather than silently treated as identical. See
+The applied-log records both: it matches on the stable `changeSetId` (*was this exact Change Set
+applied?*) and stores the intent digest, so *was this content already applied?* is a separate query on
+the digest, and a later apply whose content differs from the recorded one is surfaced. See
 [ADR 0004](adr/0004-prerequisite-graph-stable-ids-bound-apply.md).
 
 ## Canonical JSON and hashes
@@ -277,8 +280,8 @@ The intent digest includes executable desired content:
 
 It excludes:
 
-- Change Set ID, which is seeded from the initial intent digest and then frozen; excluding it keeps
-  the digest a pure function of content and non-circular (see
+- Change Set ID, which is uniquely minted at creation and never derived from content; excluding it
+  keeps the digest a pure function of content (see
   [identity](#change-set-identity-vs-content-digest));
 - pretty formatting;
 - rationale, confidence, and provenance, which are review metadata rather than executable meaning;

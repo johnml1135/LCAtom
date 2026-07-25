@@ -130,6 +130,25 @@ layer — and is unrelated to the semantic-snapshot `projectionVersion` in
 [versioning](architecture.md#projection-stability), which versions the canonical projection of the
 LibLCM model. The two are distinct concepts that happen to share the word.)
 
+## Authoring input and round-trip
+
+The projection has two directions, both owned in `SIL.LCAtom.HermitCrab`:
+
+- **Forward** — project a LibLCM state to HermitCrab grammar XML by wrapping FieldWorks' battle-tested
+  `HCLoader` (harvest, not rebuild). It runs against the baseline *or* a hypothetical post-apply state
+  (assess → project the would-be grammar) — the review-first thesis applied to grammar: produce the HC
+  grammar for a proposed change, run an external tool (PanGloss/HermitCrab) over it, review the report,
+  then apply. On-demand, whole-grammar, result cached as a provenance-stamped attachment.
+- **Reverse (`Expand`)** — lower a single high-level HC-intent command into the LibLCM object-ops that
+  would produce it. The input is a **structured command** an agent or UI emits directly, not textual
+  notation — there is no rule-language parser to build; LCAtom is not a compiler. The mapping is the
+  **inverse of `HCLoader`**: `HCLoader` says which LibLCM objects each HC construct corresponds to, and
+  `Expand` emits the create/update/delete ops for them under fill-never-frame.
+
+Forward projection is reverse `Expand`'s **round-trip oracle**: `Expand(intent)` → ops → apply →
+project the result back to HC → compare against the intent. The forward direction is built first, as
+the harness that validates the reverse.
+
 ## Worked decompositions
 
 Each HC one-liner expands to a coherent bundle of canonical operations against a baseline. Property

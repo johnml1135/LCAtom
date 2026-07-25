@@ -21,6 +21,7 @@ This repository is initially a specification and implementation plan. Start with
 - [HermitCrab projection](docs/hermitcrab-projection.md)
 - [Flexicon harvest](docs/flexicon-harvest.md)
 - [Stress-test findings](docs/stress-test-findings.md)
+- [Stage-2 change management (vision)](docs/stage2-change-management.md)
 - [Conflict and rebase semantics](docs/conflicts-and-rebase.md)
 - [Implementation plan](docs/implementation-plan.md)
 - [Implementation-session handoff](HANDOFF.md)

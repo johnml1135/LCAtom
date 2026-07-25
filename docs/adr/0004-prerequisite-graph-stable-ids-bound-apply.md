@@ -1,4 +1,4 @@
-# ADR 0004 — Prerequisite graph, stable content-seeded identity, and bound apply
+# ADR 0004 — Prerequisite graph, stable uniquely-minted identity, and bound apply
 
 Status: accepted (2026-07-24)
 
@@ -20,24 +20,26 @@ prerequisite graph must be acyclic (topological-sort cycle detection); a depende
 tested against the state with its full closure applied in topological order. The cost is identical to
 the tree — a set instead of a scalar, the same "apply prerequisites first" fixture technique.
 
-### 2. changeSetId is content-seeded then frozen; intent digest is the live content hash
+### 2. changeSetId is uniquely minted at creation then frozen; intent digest is the live content hash
 
-Pure content-addressing (id = hash of content, per Git/IPFS) was rejected because a Change Set is a
-mutable authoring artifact: if its id changed on every edit, `requires` links and applied-log entries
-would dangle. Instead:
+Both pure content-addressing (id = hash of content) and content-seeding were rejected: a Change Set is
+a mutable authoring artifact whose id must survive edits (or `requires` links and applied-log entries
+dangle), *and* content-derived ids collide for degenerate content — ten Change Sets that each start
+empty `{}` and diverge would share one id. Identity is therefore unique by construction, not content:
 
-- `changeSetId` is **seeded from the intent digest as first authored** — a 128-bit truncation encoded
-  in the standard suffix convention — and then **frozen**. It never changes on edit or rebase, and is
-  the sole linkage target.
-- The **intent digest** is the live content hash (full SHA-256), recomputed on every edit. It carries
-  the content-addressing properties LCAtom wanted: identical fresh intent deduplicates, and any
-  content change moves it.
-- The applied-log records both, matching on the frozen `changeSetId` and storing the intent digest so
-  a later apply whose content differs from the recorded one is surfaced (the Flyway/Liquibase
-  checksum pattern) rather than silently read as already-applied.
+- `changeSetId` is a **128-bit id minted when the Change Set is created** — content-independent, unique
+  by construction (a time-ordered value: millisecond timestamp plus random bits, in the standard
+  suffix convention) — and then **frozen**. It never changes on edit or rebase, and is the sole
+  linkage target.
+- The **intent digest** is the live content hash (full SHA-256), recomputed on every edit. Identical
+  authored intent yields an identical digest, so content equality and tamper-evidence are queries on
+  the digest, not the id.
+- The applied-log records both: it matches on the stable `changeSetId` (*was this exact Change Set
+  applied?*) and stores the intent digest (*was this content already applied?* — the Flyway/Liquibase
+  checksum pattern), surfacing a later apply whose content differs from the recorded one.
 
-The intent digest stays a pure function of content — it still excludes `changeSetId`, so seeding is
-non-circular — and rebase becomes coherent: an amendment moves the intent digest and keeps the id.
+The intent digest stays a pure function of content — it excludes `changeSetId` — and rebase is
+coherent: an amendment moves the intent digest and keeps the id.
 
 ### 3. Apply is bound to a prior Assessment
 
