@@ -1,0 +1,27 @@
+{
+  "contractVersions": { "lexical": "1.0", "sequence": "1.0" },
+  "changeSetId": "agent_EBESExQVFhcYGRobHB0eHw",
+  "requires": ["agent_gIGCg4SFhoeIiYqLjI2Ojw", "agent_cHFyc3R1dnd4eXp7fH1-fw"],
+  "operations": [
+    {
+      "operationId": "agent_QEFCQ0RFRkdISUpLTE1OTw",
+      "kind": "lexical/entry/create",
+      "entityId": "agent_ICEiIyQlJicoKSorLC0uLw",
+      "after": { "headword": "walk" },
+      "storageIdOverride": "agent_gIGCg4SFhoeIiYqLjI2Ojw"
+    },
+    {
+      "operationId": "agent_UFFSU1RVVldYWVpbXF1eXw",
+      "kind": "lexical/entry/create",
+      "entityId": "agent_MDEyMzQ1Njc4OTo7PD0-Pw",
+      "after": { "headword": "walked" }
+    },
+    {
+      "operationId": "agent_YGFiY2RlZmdoaWprbG1ubw",
+      "kind": "sequence/move",
+      "target": "agent_ICEiIyQlJicoKSorLC0uLw",
+      "placement": { "after": "agent_MDEyMzQ1Njc4OTo7PD0-Pw" },
+      "dependsOn": ["agent_UFFSU1RVVldYWVpbXF1eXw", "agent_QEFCQ0RFRkdISUpLTE1OTw"]
+    }
+  ]
+}

@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\SIL.LCAtom.Host\SIL.LCAtom.Host.csproj" />
+    <ProjectReference Include="..\..\src\SIL.LCAtom.Contract\SIL.LCAtom.Contract.csproj" />
   </ItemGroup>
 
 </Project>

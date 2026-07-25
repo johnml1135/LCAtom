@@ -2,6 +2,21 @@
 
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
+    <!--
+      This project must never take a dependency on LibLCM. It is consumed by non-.NET runners
+      (Python/Rust) as the normative description of Change Set shape, canonical-ID rules, and
+      RFC 8785 canonicalization/digest behavior. See docs/change-set-contract.md.
+    -->
   </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Reference JCS (RFC 8785) implementation: the C# port of the org.webpki reference
+      canonicalizer (Anders Rundgren / Samuel Erdtman, https://github.com/cyberphone/json-canonicalization).
+      We deliberately do not hand-roll RFC 8785 member-ordering/ES6-number-serialization rules.
+    -->
+    <PackageReference Include="jsoncanonicalizer" Version="1.0.0" />
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+  </ItemGroup>
 
 </Project>
