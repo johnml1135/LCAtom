@@ -1,0 +1,15 @@
+<Project>
+  <PropertyGroup>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <IsPackable>false</IsPackable>
+    <Authors>SIL Global</Authors>
+    <Company>SIL Global</Company>
+    <Product>LCAtom</Product>
+    <Copyright>Copyright (c) SIL Global</Copyright>
+    <RootNamespace>$(MSBuildProjectName)</RootNamespace>
+  </PropertyGroup>
+</Project>
