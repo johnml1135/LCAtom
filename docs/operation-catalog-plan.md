@@ -1,11 +1,18 @@
 # Operation-catalog plan — lexical & grammar completeness
 
 The roadmap from the one-operation skeleton (`lexical/sense/setGloss`) to lexical + grammar
-completeness. Grounded in a full inventory of **Flexicon**'s real write operations
-(`flexicon/flexicon/code/{Lexicon,Grammar,Lists,Reversal,System}`) against `MasterLCModel.xml`, plus
-the harvested gotchas ([Flexicon harvest](flexicon-harvest.md)) and the ADRs. Flexicon is the source
-of truth for *which* constructs matter and *how* to write them safely; LCAtom re-implements the logic
-(Python/LGPL → learn-from, not port — [ADR 0003](adr/0003-feasibility-findings.md)).
+completeness.
+
+**The API surface is designed, not transcribed.** The catalog is **~9 primitive verbs over a generated
+per-field kind namespace**, plus a layer of composers — see
+[ADR 0009](adr/0009-layered-api-primitives-and-composers.md). The Flexicon inventory below (~150
+methods) is an **inventory of construct coverage and gotchas, not a design target**: Flexicon is
+AI-generated and its per-field method surface is an implementation artifact.
+
+Source hierarchy: **FieldWorks** (shipping, 20 years, 1000+ languages) is the authority on how to do a
+thing properly; **LibLCM + its tests** are ground truth for engine semantics; **Flexicon** maps which
+constructs matter and contributes scar tissue. LCAtom re-implements rather than ports
+(Python/LGPL — [ADR 0003](adr/0003-feasibility-findings.md)).
 
 Contract groups: **`lexical`**, **`lists`**, **`system`**, **`grammar`**. Comparison classes (from
 [comparison footprint](change-set-contract.md#comparison-footprint)): **U** unordered, **P**
@@ -14,33 +21,31 @@ positionally ordered, **F** feeding (semantically ordered). Authoring: **raw** o
 
 ## The machinery the skeleton lacks
 
-`setGloss` needed only *footprint-only* effect capture on an existing object. Completeness needs, in
-rough order of first use:
+`setGloss` needed only *declared-footprint* effect capture on an existing object. Completeness needs,
+in rough order of first use:
 
-1. **Create + identity mapping.** A create proposes a new entity by canonical id; the runner mints a
+1. **The generated kind namespace + manifest as type system.** Per-field kinds generated from the
+   coverage manifest, which must carry field type, comparison class, and the reviewed
+   `class → construct` map ([ADR 0009](adr/0009-layered-api-primitives-and-composers.md) §3).
+2. **Create + identity mapping.** A create proposes a new entity by canonical id; the runner mints a
    storage GUID, records the `canonicalId → GUID` mapping in the Assessment/Receipt, and later ops in
-   the same change set resolve that entity through the mapping. (Skeleton only targeted existing
-   objects via `FromGuid`.) First used: `lexical/entry/create`.
-2. **Delete-cascade closure.** Assessment must enumerate the owned-delete cascade and inbound
-   reference cleanup via `ICmObject.AllOwnedObjects` + `ReferringObjects` ([ADR 0003](adr/0003-feasibility-findings.md)),
-   warming the incoming-ref index at load ([ADR 0006](adr/0006-engine-reality-apply-readback-preflight.md)).
-   ~15 delete ops need it.
-3. **De-reference compensating sweep.** Clearing/repointing an atomic reference to an *owned-collection
-   member* orphans it — LibLCM does not cascade. Confirmed twice: MSA-via-sense-ref
-   (`MSAOperations.removeOrphaned`) and phon-rule context leak (`cleanupSequenceContext`). Every such
-   op pairs with an explicit sweep; every removal guards with `IsValidObject` (LibLCM auto-cascade is
-   version-dependent, `LT-14740`).
-4. **Sequence ops + positional comparison.** insert/remove/move on `seq` fields; footprint reaches
-   neighbor *identity* only (class P).
-5. **Reparent (`MoveTo`).** Owned-subtree move to a *different* owner — confirmed across pictures,
+   the same change set resolve that entity through the mapping. `create` carries `owner`, `ownerField`
+   where ambiguous, an initial value map, and `placement`. First used: `lexical/entry/create`.
+3. **Discovered-footprint effect capture.** One mechanism, three triggers: `delete` with referrers,
+   `merge`, `convert`. Reach is found by evaluating the baseline (`AllOwnedObjects` +
+   `ReferringObjects`), so effects are read-back-derived and full re-assessment is forced; no static
+   footprint may be claimed ([ADR 0009](adr/0009-layered-api-primitives-and-composers.md) §5). Requires
+   the load-time incoming-ref warm-up ([ADR 0006](adr/0006-engine-reality-apply-readback-preflight.md))
+   and must distinguish "the engine will clean this reference" from "this will be left dangling."
+4. **Sequence ops + positional comparison.** `move` with identity-relative anchors (never an index);
+   footprint reaches neighbor *identity* only (class P).
+5. **Reparent.** Owned-subtree move to a *different* owner — confirmed across pictures,
    pronunciation/example media, possibility items ([ADR 0008](adr/0008-operation-model-reparent-and-compound-ops.md) §1).
-6. **Compound / graph ops (read-back footprint).** Reach known only by running: entry/sense
-   `MergeObject`, MSA subclass-convert-with-redirect, every `Duplicate`, phon-rule `wireRule`. No
-   static footprint — read-back-derived effects, forced full re-assessment ([ADR 0008](adr/0008-operation-model-reparent-and-compound-ops.md) §2).
+6. **Two field spaces.** Closed/generated for model fields; open/runtime-validated for custom fields
+   via the `(class, name)` locator ([ADR 0009](adr/0009-layered-api-primitives-and-composers.md) §4).
 7. **Custom-field non-undoable phase.** `AddCustomField` in its own non-undoable unit of work, first,
-   one-way ([ADR 0005](adr/0005-schema-operations-non-undoable-uow.md)) — Flexicon *refuses to run it
-   inside a UoW at all*, the strongest corroboration. Data writes to a custom flid are ordinary but
-   hard-sequenced after the schema phase.
+   one-way ([ADR 0005](adr/0005-schema-operations-non-undoable-uow.md)); `define` is digest-neutral by
+   additive-stability, and schema changes are their own effect category.
 8. **Writing-system family.** Two-step `Create(tag)` then `Set(ws)`, current-vs-full-list sync via
    `AddToCurrent*` — never raw string-list assignment.
 9. **Feeding-order comparison (class F).** `PhPhonData.PhonRules` only — every insert/reorder
@@ -48,8 +53,21 @@ rough order of first use:
 10. **Per-construct validation.** `LexReference` floor-of-2 + target homogeneity; typed-collection
     destinations (`TypesOC` vs `SubPossibilitiesOS`, `IFsFeatStrucTypeFactory` not `ICmPossibilityFactory`);
     the five parallel slot sequences over one unordered pool; heterogeneous `sig="CmObject"` collections.
-11. **HC round-trip.** Forward projection (harvest `HCLoader`) + reverse `Expand`
-    ([hermitcrab-projection](hermitcrab-projection.md#authoring-input-and-round-trip)).
+    Attaches to the `class → construct` map.
+11. **Delete policy.** Honor the engine's own `ICmObject.CanDelete` and `CmPossibility.IsProtected`
+    **explicitly** — they are advisory in LibLCM and LCAtom is exactly the programmatic path that would
+    bypass them. Disclose the full closure with a warning by default; hard-refuse the protected set with
+    an actionable message ("use FieldWorks directly"); writing-system delete is out of v1 scope.
+12. **The composer layer.** `Expand`, find-and-replace, batch update, duplicate, `setPartOfSpeech` —
+    each emitting Change Sets of primitives, with the composer riding as provenance. Compensating
+    sweeps are usually explicit composer-emitted `delete`s rather than hidden machinery
+    ([ADR 0009](adr/0009-layered-api-primitives-and-composers.md) §6).
+13. **HC round-trip.** Forward projection (harvest `HCLoader`) + reverse `Expand`
+    ([hermitcrab-projection](hermitcrab-projection.md#authoring-input-and-round-trip)) — the flagship
+    composer.
+14. **Apply hardening.** Bind `apply` to a prior Assessment's footprint digest (ADR 0004 §3 — the
+    shipped `ChangeSetApplier.Apply` takes no Assessment and is always bare) and provide the
+    exclusive-write guarantee ([ADR 0006](adr/0006-engine-reality-apply-readback-preflight.md) §4).
 
 ## Catalog by group (condensed — full `path:line` inventory is the Flexicon harvest reference)
 

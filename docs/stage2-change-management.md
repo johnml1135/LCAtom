@@ -15,6 +15,14 @@ cache/index* (never the source of truth, never synced) once enumeration/search i
 Dolt/DoltHub is considered only for the eventual cloud layer, never the local critical path.
 **[core]** minimal store in the CLI; **[stage-2]** the elaborate store.
 
+**Keying — content-addressed objects, id-keyed manifest pointer.** The object key is the
+**`intentDigest`** (`objects/<intentDigest>.json`, write-once, never revisited); the manifest key is
+the frozen **`changeSetId`** (`manifests/<changeSetId>.json`), holding a movable `currentIntentDigest`
+— exactly a git ref pointing at a commit hash. `commit` writes a new object and either creates the
+manifest or moves its pointer (amend). Prior versions are retained for audit. Keying objects by
+`changeSetId` — as the Stage E skeleton does — cannot express amend without mutating a supposedly
+immutable object; that is a **known defect to fix**.
+
 ## S2 — Two merges; only one is forbidden
 
 The `.fwdata` **merges** on every LexBox Send/Receive (Chorus 3-way, element/GUID-level) — that is
@@ -29,6 +37,15 @@ A **draft is in-memory only** — a builder the calling code drives (`new → ad
 Flexicon pattern, from Python or C#. `commit` serializes it to the immutable object; drafts never touch
 disk and so can never clash or sync. `changeSetId` is **uniquely minted at creation, content-independent,
 frozen** (ADR 0004); `intentDigest` tracks content. Amend keeps the id, moves the digest. **[core]**.
+
+**Reopen for editing** loads a committed envelope's content into a *new* in-memory draft carrying the
+same frozen `changeSetId` as data; re-committing produces a new `intentDigest` under that id and resets
+review status to proposed (approval is effect-digest-scoped, so any content change invalidates it).
+
+**The CLI's `drafts/<name>.json` file is a deliberate session shim, not "the draft."** Each CLI verb is
+a separate OS process with no shared memory, so the draft must be persisted between invocations. A
+library or daemon consumer keeps drafts purely in memory; nothing should copy the file as if it were
+part of the store's data model.
 
 ## S4 — Review-gated local apply (not a server-branch PR)
 
