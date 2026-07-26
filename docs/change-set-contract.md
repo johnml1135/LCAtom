@@ -88,38 +88,95 @@ chooses whether warnings may proceed. Structural guards deliberately authored as
 
 ## Operation vocabulary
 
-The exact v1 inventory must be produced from use cases and the LibLCM coverage manifest. It follows
-these semantic families:
+The catalog is a closed, versioned, hashed set of **ten primitive verbs** — Layer 0. Each is admitted
+only because it is irreducible or its expansion is a baseline-dependent structural closure, maps to a
+real LibLCM capability, targets a manifest-classified surface, and ships with schema, validation,
+lowering, effects, and conformance vectors
+([ADR 0009](adr/0009-layered-api-primitives-and-composers.md) §1). Everything else —
+`Expand`, find-and-replace, batch update, duplicate, `setPartOfSpeech` — is a Layer-1 **composer**: it
+authors Change Sets built entirely from these ten verbs and adds zero permanent contract surface
+(ADR 0009 §1). Families that look construct-shaped — writing-system lifecycle, reversal-index
+entries, publication flags, the custom-field data family — are constructs realized over these verbs
+via the generated per-field kind namespace, not additional verbs; see
+[Naming](api-surface-layer1.md#naming) and the catalog-by-group table in the
+[operation-catalog plan](operation-catalog-plan.md).
 
-- create an entity through an appropriate LibLCM factory and owner;
-- set or replace a scalar value;
-- set or clear a writing-system alternative;
-- set or clear a rich string without flattening runs;
-- attach or detach an atomic reference;
-- add or remove a collection reference;
-- insert, remove, or move a sequence member;
-- explicitly clear a value;
-- delete an entity through LibLCM ownership semantics;
-- define, update supported metadata for, or delete a custom field;
-- create or update a reversal index entry and its sense links;
-- set or clear publication and show-in-dictionary flags on entries and senses;
-- create, configure, set as default, or update a writing system, including seeding the analysis and
-  vernacular writing-system lists a bootstrapped project needs (creation is the two-step
-  `Create(tag)` then `Set(ws)` with current-vs-full-list sync; see
-  [Flexicon harvest](flexicon-harvest.md));
-- move an owned object to a different owner (reparent), as one operation, never delete-plus-create;
-- compound graph operations whose reach is known only by running them — merge two entities, convert an
-  entity's subclass with reference redirect, or change an entity's GUID (create the target-GUID entity,
-  then merge the original into it). These carry no static footprint and force full re-assessment; see
-  [ADR 0008](adr/0008-operation-model-reparent-and-compound-ops.md).
+- **`create`** — instantiate an entity through its LibLCM factory and owner. Carries `owner`,
+  `ownerField` where the owner has more than one plausible slot, an initial value map, and
+  identity-relative `placement` for sequence-owned targets. LibLCM has no free-floating-then-insert
+  state, so there is no separate `insert`. May target an *occupied* `owning/atomic` slot; see
+  [owning-atomic replacement](#owning-atomic-replacement).
+- **`ensure`** — tri-state idempotent creation for constructs whose durable identity is not a
+  canonical GUID: absent → create; present and structurally compatible → reuse; present and
+  incompatible → conflict. See [`ensure`](#ensure) below.
+- **`set`** — unconditional whole-value replacement. Covers every value shape: scalar,
+  per-writing-system alternative, rich text with runs (without flattening runs), `GenDate`, `Binary`,
+  and atomic references (value = a target canonical id) — one deterministic verb because the shape
+  variety is representational, not semantic. **`set` may never target an owning slot**: an occupied
+  `owning/atomic` field is reached through `create`-into-occupied, never through `set`.
+- **`clear`** — explicitly remove a value. JSON `null` is never overloaded to mean this or any other
+  mutation; omission always means "leave untouched."
+- **`addRef` / `removeRef`** — add or remove one member of a reference collection or sequence. Kept
+  distinct from `set` because a whole-collection `set` would violate minimal-diff.
+- **`move`** — reorder a sequence member using identity-relative anchors (`{after, before}`), never a
+  numeric index. Kept distinct from `addRef`/`removeRef` because placement is identity-relative, not
+  a value. Applies to both `owning/seq` and `rel/seq` targets. Discovered-footprint on
+  `MoAffixProcess.Input`, whose `Output` mappings resolve positionally; see
+  [declared vs discovered footprint](#declared-vs-discovered-footprint).
+- **`reparent`** — move an *existing* owned object to a different owner, as one operation, never
+  delete-plus-create (which would double-count in the effect model). `set` may never target an
+  owning slot, so cross-owner moves are always `reparent`, never a `set` of the owner reference.
+  **Confirmed only for `owning/seq` targets**: every evidenced case is a sequence, so reparenting an
+  `owning/atomic` or `owning/col` member is structurally plausible but unevidenced and must not be
+  promised without a conformance vector.
+- **`delete`** — remove an entity through LibLCM's native ownership cascade and reference cleanup. See
+  [ownership and delete](#ownership-and-delete). Declared-footprint only when no referrer exists; see
+  [declared vs discovered footprint](#declared-vs-discovered-footprint).
+- **`merge` / `replace`** — compound graph operations, always discovered-footprint. `merge` combines
+  two entities (`MergeObject`). `replace` is one mechanism taking two parameters — target class,
+  target GUID — dispatching to FieldWorks' native call per construct: it covers both subclass-convert
+  with reference redirect (`ConvertLexEntryType`) and changing an entity's GUID (create the
+  target-GUID entity, then merge the original into it). These are one operation family with two
+  parameters, not two operations. See [ADR 0008](adr/0008-operation-model-reparent-and-compound-ops.md)
+  and [declared vs discovered footprint](#declared-vs-discovered-footprint).
 
 Operations are model-aware. A lexical-entry create is not a generic “create object of class name.”
-Closed schemas expose only meaningful, supported properties.
+Closed schemas expose only meaningful, supported properties, generated per field from the coverage
+manifest as `{group}/{construct}/{verb}{Noun}` — one enumerated `kind` string per field, never a
+runtime field-name parameter (ADR 0009 §3).
 
 Custom-field definition is a metadata (schema) change, not a data change: it executes first, in a
 separate non-undoable unit of work, and is one-way — LibLCM cannot roll it back with the data, so a
 failed data phase leaves a defined-but-empty field. See
 [ADR 0005](adr/0005-schema-operations-non-undoable-uow.md).
+
+### `ensure`
+
+Custom fields have no durable LibLCM GUID: the inspected `AddCustomField` creation path does not
+accept a caller-supplied identity, and `FieldDescription.CustomId` is always `Guid.Empty`
+([custom fields — identity model](custom-fields.md#identity-model)). They are matched instead on the
+portable physical locator `(owner class, immutable internal field name)`.
+
+That is a genuinely different identity axis from `create`'s own idempotent-reuse path (below, under
+[GUID collision behavior](#guid-collision-behavior)), which is keyed by **canonical GUID** — "the
+already-realized creation whose identity and complete expected structure agree." `ensure` performs the
+same absent/present-compatible/present-incompatible resolution for constructs whose only durable
+identity is `(class, name)`:
+
+- **absent** — behaves as `create`;
+- **present and structurally compatible** — reuse; report a no-op or a metadata-only difference,
+  never silently redefine;
+- **present, same `(class, name)`, incompatible structure** — a genuine semantic conflict (see
+  [conflicts and rebase](conflicts-and-rebase.md#outcomes)); a similar label or content is never
+  inferred as a match.
+
+`ensure` is what makes custom-field definition crash-retry safe: the schema phase writes no
+applied-log entry of its own, so a retry after a crash between schema commit and data phase must
+resolve against the field that already exists rather than re-running a bare `create`, which throws on
+a duplicate name. See [ADR 0005](adr/0005-schema-operations-non-undoable-uow.md) and
+[stress-test findings](stress-test-findings.md). Custom fields are `ensure`'s only current instance,
+but the verb is general: any construct whose durable identity is a locator other than canonical GUID
+resolves through the same tri-state rule.
 
 ## IDs and GUID mapping
 
@@ -182,6 +239,10 @@ The runner preflights every proposed storage GUID before mutation.
 Preflight is mandatory because LibLCM identity-map registration can otherwise overwrite an
 existing mapping.
 
+This reuse path is keyed by **canonical GUID**. Constructs with no durable GUID (custom fields,
+matched on `(class, name)`) do not go through it; their equivalent tri-state resolution is the
+[`ensure`](#ensure) verb.
+
 LibLCM does not persist the canonical-to-overridden-storage mapping. A caller using an override
 must retain the Application Receipt and supply its identity mapping to later assessment, diff, and
 apply calls. With no supplied mapping, a snapshot can expose only the storage GUID-derived identity
@@ -216,6 +277,59 @@ the canonical Change Set. A changed cascade discovered on apply or re-assessment
 the general rule in [drift](#drift): emit the full delta and let the application or user decide.
 A missing, already-deleted object is deterministically ignorable only when prior baseline identity
 and intent prove it is the same deletion, not an unresolved target.
+
+### Owning-atomic replacement
+
+`create` may target an **occupied** `owning/atomic` slot — the everyday "change which allomorph is
+the lexeme form" edit, and the resolution for all 69 in-scope `owning/atomic` fields
+([API surface, layer 1](api-surface-layer1.md#totality-owningatomic-replacement-resolved)):
+
+- **Implicit detach, not cascade delete.** LibLCM's own overwrite of an owning/atomic slot is a
+  detach, so `create`-into-occupied mirrors the engine rather than destroying more than it does. No
+  other verb can express this: `set` is barred from owning slots; a whole-object `replace`-the-slot
+  verb is the Kubernetes `managedFields` anti-pattern this contract already rejects
+  ([ADR 0009](adr/0009-layered-api-primitives-and-composers.md) §1); `reparent` moves an *existing*
+  object cross-owner and there is nothing existing to move into a fresh create; and
+  `delete`-then-`create` would trigger a full ownership cascade on the incumbent where the engine's
+  own semantics only detach.
+- **The displaced occupant is a disclosed orphan effect** — surfaced in expected effects exactly as
+  any other de-referencing orphan (above), never silently deleted and never silently dropped.
+- **The runner refuses to apply** unless the same Change Set also disposes of the displaced object
+  (an explicit `delete`, per the compensating-sweep rule below) or the caller explicitly accepts the
+  orphan. Silent orphaning here is the `SetPartOfSpeech`/MSA bug class this contract exists to
+  prevent.
+
+A composer that can prove from the baseline that the displaced occupant loses its last referent emits
+an explicit `delete` rather than relying on a hidden runner sweep, making the cleanup a visible,
+reviewable operation; if the baseline shifts and the delete becomes wrong, the `delete`'s own
+disclosure surfaces it (ADR 0009 §6).
+
+### Pooled-but-private ownership
+
+Two ownership tests are already normative: **fill vs. frame** — owned under an authored root vs.
+owned by a shared pool and merely referenced
+([HermitCrab projection](hermitcrab-projection.md#fill-never-frame)) — and the delete-closure test
+above. Neither gives the right answer for a third case: objects created fresh into a project-wide
+owning pool — `PhPhonData.Contexts`, `PhPhonData.FeatConstraints` — that are, semantically, one
+rule's private interior. `PhPhonData` owns the pool, not the rule, so the ownership edge alone
+classifies these as shared/frame; but nothing else in the baseline references a given context or
+feature-constraint object once its owning rule stops using it, so it is exactly as private as an
+owned child, contrary to what its ownership edge says.
+
+This matters in two places:
+
+- **Fill scope.** `Expand` must be able to create pool members as part of authoring one rule (a
+  `PhSimpleContext` for that rule's left context) without those members being treated as frame-only
+  shared structure requiring a separate explicit create.
+- **Delete cascade.** Deleting the rule that is a pool member's only real user must not leave that
+  member behind as a silent orphan merely because its ownership edge points at `PhPhonData` rather
+  than the rule — the ownership test alone gives the wrong answer, and a delete closure computed
+  purely from ownership edges orphans pool members that were never the delete's target.
+
+The runner's delete-closure and fill-scope computations therefore attribute a pooled-but-private
+object to its sole in-practice referrer, discovered the same way any
+[discovered-footprint](#declared-vs-discovered-footprint) operation is resolved — read back over the
+pool, not read off the static ownership edge — rather than to its formal `CmObject` owner.
 
 ## Ordered data
 
@@ -346,11 +460,12 @@ The effect set is a collection of identity-keyed field transitions:
   "canonicalId": "agent_ICEiIyQlJicoKSorLC0uLw",
   "field": "lexical/sense/gloss",
   "before": { "en": "run quickly on foot" },
-  "after":  { "en": "move quickly on foot" }
+  "after":  { "en": "move quickly on foot" },
+  "cause": "authored"
 }
 ```
 
-Four rules make it load-bearing.
+Five rules make it load-bearing.
 
 1. **Read back, do not replay.** Effects are captured by comparing the footprint-scoped semantic
    snapshot taken before the unit of work with one taken after — not by replaying the operations'
@@ -378,6 +493,13 @@ Four rules make it load-bearing.
    non-semantic (`derived-read-only`, `internal`, `runner-bookkeeping`) and every value the engine
    assigns non-deterministically; a value the engine assigns deterministically is computed at
    assessment time and included.
+5. **Cause is a descriptive tag, never a filter.** Every effect carries `cause`:
+   `authored | engine-cascade | engine-computed-default` — whether the operation named this field
+   directly, the engine's own cascade touched it as a consequence (ownership cascade on delete,
+   inbound reference cleanup), or the engine assigned a deterministic default the operation did not
+   author. Nothing is excluded from the digest or the drift oracle on account of `cause` — every
+   effect at every cause level is hashed and compared identically. Grouping or aggregating by cause
+   is presentation only, over the same complete effect set; see [impact summary](#impact-summary).
 
 `before`, `after`, and the derived delta are three views a reviewing application may render; the
 digest is over the one canonical delta beneath them. The `before` states an effect records are the
@@ -425,6 +547,73 @@ obligation with fixtures.
 The reviewer sees one review regardless of cause. See
 [review equivalence](conflicts-and-rebase.md#review-equivalence).
 
+### Drift classes
+
+Binary effect-digest equality is too coarse for approval continuity: it collapses "a bulk edit grew
+by three more matching rows" and "a value silently changed" into the same undifferentiated
+"changed," which is exactly the distinction a reviewer needs to approve bulk work at all. Comparing
+the previously-reviewed effect set against the newly-computed one — mechanically, with no human
+judgement — yields exactly four classes:
+
+| Class | Definition | Approval policy |
+| --- | --- | --- |
+| **Identical** | The two effect sets are equal. | Auto-carries — the prior approval stands; this is the [pre-flight](#pre-flight-and-re-anchoring) fast-forward case. |
+| **Same-nature, wider scope** | Every previously-reviewed transition still occurs, unchanged, and the new set adds only further transitions of the same field/shape. | Never auto-carries, but surfaces as **one bulk-approvable group** rather than N individual re-reviews. |
+| **Changed values** | A previously-reviewed transition's `before` or `after` differs from what was reviewed. | Forces re-review of the changed transitions. |
+| **Changed meaning** | The transition set implies a different semantic action than what was reviewed — a different field, target, or verb consequence. | Forces re-review of the whole affected operation. |
+
+### Info
+
+A fifth outcome sits alongside the four drift classes and the diagnostic categories in
+[conflicts and rebase](conflicts-and-rebase.md#outcomes): **Info** — non-blocking and filterable, so
+"checked and confirmed harmless" is distinguishable from "nothing needed checking." Info is for
+conditions that are drift-adjacent but provably inert:
+
+- the baseline moved but the Change Set's effects are unchanged (the
+  [deterministic-resolution](conflicts-and-rebase.md#outcomes) case);
+- a newer runner produces an improved lowering with identical effects.
+
+Info must never be used for anything that changes what a reviewer would approve: an outlier within a
+bulk group (see [impact summary](#impact-summary)), anything warning-or-above, a dangling reference,
+or any changed-value/changed-meaning delta is never Info, however small the delta looks.
+
+### Severity: dangling vs. engine-nulled
+
+A **dangling** reference (LibLCM leaves a pointer to a deleted or displaced object, unresolved) and an
+**engine-nulled** reference (LibLCM's own cleanup detaches or clears the reference) are never the same
+severity bucket. A dangling reference is a latent crash for a downstream consumer — HCLoader's raw
+dictionary indexers on inflection-class, prod-restriction, and `ILexEntryInflType` references are the
+concrete case, throwing `KeyNotFoundException` and killing the whole grammar load — and must be
+surfaced at a severity no lower than warning, distinct from an engine-nulled reference, which is a
+disclosed, resolved consequence with no such hazard.
+
+### Impact summary
+
+The `impactSummary` field of Assessment (below) makes bulk changes reviewable without demanding a
+line-by-line read of thousands of transitions. It is a presentation layer over the complete effect
+set — nothing it groups is removed from that set or from the digest, and `cause` (see
+[expected effects](#expected-effects)) is one axis among several a rendering may group by.
+
+- **Group by `(field, transition-shape)`.** A transition's shape is its `(before-kind, after-kind)`
+  pair, not its values — so a find-and-replace touching `lexical/sense/gloss` across 5,000 senses is
+  one group, not 5,000 line items.
+- **A deduplicated distinct-value list** per group, so a reviewer sees the N distinct before/after
+  pairs in play, not N repetitions of the same pair.
+- **Outlier isolation.** Any transition in a group whose shape does not match the group's dominant
+  shape is pulled out and shown **individually**, never folded into the group's summary count. This
+  is the mechanism that catches the one false positive in a 5,000-row find-and-replace: a row where
+  the match landed somewhere the author did not intend, producing a differently-shaped transition
+  than its 4,999 siblings.
+- **Cascade summarised by referencing field/class**, not by enumerating every individual referrer —
+  "12 `LexReference` targets redirected" rather than 12 separate lines — except where an individual
+  referrer is itself an outlier or warning-or-above, in which case it is never folded in.
+
+**Never aggregated away**, regardless of group size: outliers; anything warning-or-above; dangling
+references (see [severity](#severity-dangling-vs-engine-nulled) above); every changed-value and
+changed-meaning delta (see [drift classes](#drift-classes) above); and the full effect list backing
+the digest, which remains available in full beneath any summary view. Impact summary is a lens on the
+effect set the drift oracle already computed, never a second source of truth.
+
 ### Comparison footprint
 
 Drift is judged over a Change Set's **comparison footprint** — the model facts its meaning depends
@@ -446,25 +635,63 @@ meaning depends on that object.** That happens in exactly three ways.
    the operation does.
 3. **Ordered neighbors**, to the depth the ordering's semantics require — see the classes below.
 
-This yields three **comparison classes** for a model property, each a declared attribute of the
+This yields four **comparison classes** for a model property, each a declared attribute of the
 coverage manifest and migratable as understanding improves:
 
 | Class | Footprint reach into neighbors | Examples |
 | --- | --- | --- |
 | Unordered (`col`) | none — the owned target only | lexicon entries, feature structures |
 | Positionally ordered (`seq`) | neighbor **identity** (the left/right links) | template slots, sense order |
-| Semantically ordered (`seq`, feeding) | neighbor **full state** | `PhPhonData.PhonRules` |
+| Semantically ordered (`seq`, feeding) | neighbor **full state** | `PhPhonData.PhonRules`, `LexEntry.AlternateForms` |
+| Index-as-identity (`seq`, per-rule) | **position is the semantic name** — the index itself, not the neighbor | alpha variables (α, β, γ) on `PhRegularRule.StrucDesc` and each `PhSegRuleRHS.{StrucChange,LeftContext,RightContext}` |
 
 The third class exists because phonological rule order is feeding/bleeding: a neighbor rule editing
 its own content changes the surface form this rule produces, so the neighbor's *state*, not merely
 its identity, is part of this Change Set's meaning. Positionally ordered data has no such coupling —
 a neighbor's internal edits do not change what the operation means; only a change to *which* object
-is adjacent does. Reclassifying a property between these buckets is a declared manifest change.
+is adjacent does.
+
+The fourth class is a different coupling again. Alpha-variable names are not stored; they are
+*derived* per-rule by scanning `StrucDescOS` and then each `RightHandSidesOS[i]`'s
+`StrucChange`/`LeftContext`/`RightContext` context slots in fixed order, collecting distinct feature
+constraints in first-appearance order (`IPhRegularRule.FeatureConstraints`), from which `HCLoader`
+assigns `VariableNames[i]`. Position *is* the identity for this data: a `move`, a mid-sequence
+`create`, or a content edit anywhere earlier in that traversal silently renames every later variable,
+while a `move` on the `PhPhonData.FeatConstraints` *pool* itself is inert — the pool is not what the
+traversal walks (correcting an earlier misattribution; see
+[API surface, layer 1](api-surface-layer1.md#comparison-class)). The **24-variable ceiling is
+per-rule, not per-project** — `VariableNames` is a fixed 24-entry array, and exceeding it throws and
+kills the whole grammar load (see the [HC grammar map](hc-grammar-map.md)'s hard crash points) — so a
+pre-apply check must simulate the exact traversal rather than counting distinct constraints anywhere
+in the rule.
+
+Reclassifying a property between these four buckets is a declared manifest change.
 
 The footprint defines what an effect set must span; effect comparison remains the oracle. A cheap
 identity-and-adjacency check over the footprint may pre-filter *possibly drifted, re-assess*, but may
 never conclude *clean* — only a fresh effect comparison grants that, because the feeding class proves
 identity alone can miss a real change.
+
+### Declared vs discovered footprint
+
+An operation's reach is either **declared** — statically knowable from authored intent alone (`set`,
+`clear`, `addRef`, `move`) — or **discovered** — knowable only by evaluating the baseline. This is one
+rule with four triggers, not four separate mechanisms
+([ADR 0009](adr/0009-layered-api-primitives-and-composers.md) §5,
+[ADR 0008](adr/0008-operation-model-reparent-and-compound-ops.md) §2):
+
+1. `delete` when referrers exist;
+2. `merge`;
+3. `replace` (subclass convert with reference redirect, or a GUID change via create-then-merge);
+4. `move` on `MoAffixProcess.Input` — its `Output` mappings (`MoCopyFromInput`, `MoModifyFromInput`)
+   hold a `rel/atomic` reference into `Input` that `HCLoader` resolves positionally
+   (`ContentRA.IndexInOwner + 1`), so reordering or mid-sequence-inserting into `Input` silently
+   renumbers every `Output` mapping
+   ([API surface, layer 1](api-surface-layer1.md#comparison-class)).
+
+A discovered-reach operation uses read-back-derived effects (the footprint-plus-cascade closure from
+[expected effects](#expected-effects)) and **forces full re-assessment**; it may not claim a static
+comparison footprint. Simple, declared-reach operations keep the static footprint above.
 
 ### Pre-flight and re-anchoring
 
