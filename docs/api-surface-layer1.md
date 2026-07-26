@@ -157,17 +157,35 @@ map may substitute a domain-meaningful synonym (`SubPossibilities` → `addSubca
 4. Per-field kinds are what make a `Guid`-sig field distinguishable from GUID-shaped text — the
    structural reason ADR 0009 rejects a runtime field-name parameter.
 
-## Generates no kind
+## Not authorable vs. authorable-but-HC-inert
 
-Engine-computed (`LexEntry.HomographNumber`, `MoMorphSynAnalysis.GlossString`,
-`LexEntry.MainEntriesOrSenses`, `FsFeatureSpecification.RefNumber`/`ValueState`, all
-`DateCreated`/`DateModified`) · import residue (`LiftResidue` ×8, `ImportResidue` ×2) ·
-`Scope=trace` (28 props) · HCLoader-inert per the [HC grammar map](hc-grammar-map.md): every grammar
-`Description`, `MoStratum.Phonemes`, `PhEnvironment.Left/RightContext`/`AMPLEStringSegment`, the
-`<XAmple>` half of `ParserParameters`, `MoMorphData.TestSets`/`AnalyzingAgents`.
+These are **two different things** and were previously conflated under one heading, which produced
+inconsistent classification. Full coverage is HCLoader-complete, but LCAtom is still a general LibLCM
+change-set runner: a field can be perfectly legitimate to author for a human dictionary while having no
+effect whatever on a parse.
 
-`MoStratum` keeps `create`/`delete`/`setName` — a **dangling** `StratumRA` causes silent parser failure,
-so referential integrity is real even though content is inert.
+**Generates no kind — not authorable at all:**
+
+- engine-computed: `LexEntry.HomographNumber`, `MoMorphSynAnalysis.GlossString`,
+  `LexEntry.MainEntriesOrSenses`, `FsFeatureSpecification.RefNumber`/`ValueState`, all
+  `DateCreated`/`DateModified`;
+- import residue: `LiftResidue` ×8, `ImportResidue` ×2;
+- `Scope=trace` — the derivation-trace family (28 props), analyzer output;
+- provably inert *and* meaningless to author: `PhEnvironment.AMPLEStringSegment`, the `<XAmple>` half of
+  `ParserParameters`, the six stratum **reference** fields
+  (`MoCompoundRule`/`MoDerivAffMsa`/`MoStemMsa`/`MoInflAffixTemplate.Stratum`,
+  `PhSegmentRule.InitialStratum`/`FinalStratum`) — the model comment promises per-rule stratum scoping
+  and it is silently ignored, so offering the control would be a lie.
+
+**Authorable, but `HcReachable=no` — real LibLCM surface that cannot affect a parse:** every grammar
+`Description`, `MoMorphData.TestSets`/`AnalyzingAgents`, and the whole lexicographic apparatus
+(`LexSense`'s descriptive fields, `LexEtymology`, publication flags). These keep their kinds and are
+marked `HcReachable=no`, so a grammar-experimentation workflow can filter them out while a dictionary
+workflow still reaches them.
+
+`MoStratum` itself keeps `create`/`delete`/`setName`: a **dangling** `StratumRA` causes silent parser
+failure, so the objects' existence and referential integrity are real even though both their content
+and every reference to them are inert.
 
 ## Gaps recorded, not papered over
 
