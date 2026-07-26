@@ -3,11 +3,16 @@ using System.Text.Json;
 using SIL.LCAtom.Contract.Ids;
 using SIL.LCAtom.Contract.Model;
 using SIL.LCAtom.Host.LcmUtils;
+using SIL.LCAtom.Model.Assessment;
 using SIL.LCAtom.Runner.Apply;
 using SIL.LCAtom.Runner.AppliedLog;
+using SIL.LCAtom.Runner.Assessment;
+using SIL.LCAtom.Runner.Caching;
 using SIL.LCAtom.Runner.Operations;
 using SIL.LCAtom.Tests.TestFixtures;
 using SIL.LCModel;
+using SIL.LCModel.Core.KernelInterfaces;
+using SIL.LCModel.Infrastructure;
 using Xunit;
 
 namespace SIL.LCAtom.Tests.Apply;
@@ -64,8 +69,9 @@ public sealed class ChangeSetApplierTests : IDisposable
         const string applierIdentity = "lcatom-tests";
         const string description = "Stage D test: revise sense gloss";
 
-        // --- 1. First apply: a real commit, not a rollback. ---
-        var receipt = ChangeSetApplier.Apply(_cache, changeSet, applierIdentity, description);
+        // --- 1. First apply: a real commit, not a rollback. Bound to a prior Assess (ADR 0004 §3). ---
+        var assessment = ChangeSetAssessor.Assess(_cache, changeSet);
+        var receipt = ChangeSetApplier.Apply(_cache, changeSet, assessment.Anchor, applierIdentity, description);
 
         Assert.False(receipt.AlreadyApplied);
         Assert.Equal(changeSet.ChangeSetId, receipt.ChangeSetId);
@@ -115,8 +121,11 @@ public sealed class ChangeSetApplierTests : IDisposable
             foreignEntriesBefore.Count + 1,
             _cache.LangProject.LexDbOA.ResourcesOC.Count);
 
-        // --- 3. Idempotence: re-apply the SAME change set against the reopened cache. ---
-        var reapplyReceipt = ChangeSetApplier.Apply(_cache, changeSet, applierIdentity, description);
+        // --- 3. Idempotence: re-apply the SAME change set against the reopened cache. Passing the
+        // ORIGINAL (now stale) anchor here deliberately proves idempotence short-circuits before the
+        // drift check ever runs: the applied-log lookup wins first (ADR 0004 §3 binds apply to an
+        // Assessment, but never re-applies/re-mutates once idempotence already says "done"). ---
+        var reapplyReceipt = ChangeSetApplier.Apply(_cache, changeSet, assessment.Anchor, applierIdentity, description);
 
         Assert.True(reapplyReceipt.AlreadyApplied);
         Assert.Empty(reapplyReceipt.ActualEffects);
@@ -131,7 +140,10 @@ public sealed class ChangeSetApplierTests : IDisposable
         var secondChangeSet = BuildSetGlossChangeSet(canonicalId, wsTag, secondGloss);
         const string secondDescription = "Stage D test: second, distinct change set";
 
-        var secondReceipt = ChangeSetApplier.Apply(_cache, secondChangeSet, applierIdentity, secondDescription);
+        // A genuinely new mutation needs a fresh Assess against the live (post-first-apply) baseline.
+        var secondAssessment = ChangeSetAssessor.Assess(_cache, secondChangeSet);
+        var secondReceipt = ChangeSetApplier.Apply(
+            _cache, secondChangeSet, secondAssessment.Anchor, applierIdentity, secondDescription);
 
         Assert.False(secondReceipt.AlreadyApplied);
         Assert.Equal(secondGloss, senseRepoAfterReopen.GetObject(senseGuid).Gloss.get_String(wsHandleAfterReopen).Text);
@@ -156,11 +168,149 @@ public sealed class ChangeSetApplierTests : IDisposable
         var bogusTarget = CanonicalId.FromGuid(Guid.NewGuid());
         var changeSet = BuildSetGlossChangeSet(bogusTarget, "en", "does not matter");
 
-        Assert.ThrowsAny<Exception>(() => ChangeSetApplier.Apply(_cache, changeSet, "lcatom-tests"));
+        // Resolution of the bogus target fails inside Apply's footprint pre-flight, before the
+        // anchor's digest is ever compared — so a placeholder anchor is fine here.
+        Assert.ThrowsAny<Exception>(() => ChangeSetApplier.Apply(_cache, changeSet, DummyAnchor(), "lcatom-tests"));
 
         // The failed apply must leave no applied-log entry at all (docs/applied-log.md, "Atomicity").
         Assert.Empty(ProjectAppliedLog.ReadAll(_cache));
     }
+
+    // --- Defect 2 (ADR 0004 §3): apply is bound to a prior Assessment. ---
+
+    [Fact]
+    public void Apply_WithNullAnchor_IsAHardError()
+    {
+        var (senseGuid, wsTag, originalGloss) = FindSenseWithKnownGloss(_cache);
+        var changeSet = BuildSetGlossChangeSet(CanonicalId.FromGuid(senseGuid), wsTag, originalGloss + " x");
+
+        var ex = Assert.Throws<ApplyPreconditionException>(
+            () => ChangeSetApplier.Apply(_cache, changeSet, null!, "lcatom-tests"));
+
+        Assert.Contains("bound Assessment", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(ProjectAppliedLog.ReadAll(_cache));
+    }
+
+    [Fact]
+    public void Apply_AfterAssess_Succeeds()
+    {
+        var (senseGuid, wsTag, originalGloss) = FindSenseWithKnownGloss(_cache);
+        var target = CanonicalId.FromGuid(senseGuid);
+        var changeSet = BuildSetGlossChangeSet(target, wsTag, originalGloss + " (bound apply)");
+
+        var assessment = ChangeSetAssessor.Assess(_cache, changeSet);
+        var receipt = ChangeSetApplier.Apply(_cache, changeSet, assessment.Anchor, "lcatom-tests");
+
+        Assert.False(receipt.AlreadyApplied);
+        Assert.Single(ProjectAppliedLog.ReadAll(_cache));
+    }
+
+    [Fact]
+    public void Apply_AfterFootprintMovedSinceAssess_IsADriftHardStop()
+    {
+        var (senseGuid, wsTag, originalGloss) = FindSenseWithKnownGloss(_cache);
+        var target = CanonicalId.FromGuid(senseGuid);
+        var changeSet = BuildSetGlossChangeSet(target, wsTag, originalGloss + " (intended apply)");
+
+        // Assess against the ORIGINAL baseline.
+        var assessment = ChangeSetAssessor.Assess(_cache, changeSet);
+
+        // The baseline moves out from underneath: someone else commits a real, different gloss
+        // change to the very same target/field before apply runs.
+        var senseRepo = _cache.ServiceLocator.GetInstance<ILexSenseRepository>();
+        var sense = senseRepo.GetObject(senseGuid);
+        var actionHandler = _cache.ServiceLocator.GetInstance<IActionHandler>();
+        UndoableUnitOfWorkHelper.Do(
+            "drift", "drift", actionHandler,
+            () => SetGlossLowering.Apply(_cache, sense, wsTag, originalGloss + " (drifted from underneath)"));
+
+        var ex = Assert.Throws<ApplyPreconditionException>(
+            () => ChangeSetApplier.Apply(_cache, changeSet, assessment.Anchor, "lcatom-tests"));
+
+        Assert.Contains("drift", ex.Message, StringComparison.OrdinalIgnoreCase);
+        // Hard stop: no applied-log entry, and the drifted value (not the intended one) stands.
+        Assert.Empty(ProjectAppliedLog.ReadAll(_cache));
+        var wsHandle = _cache.WritingSystemFactory.GetWsFromStr(wsTag);
+        Assert.Equal(
+            originalGloss + " (drifted from underneath)",
+            senseRepo.GetObject(senseGuid).Gloss.get_String(wsHandle).Text);
+    }
+
+    // --- Defect 3 (RollbackCacheInvalidator): a mid-Change-Set failure rolls back and marks the
+    // cache instance non-reusable, never commits a homograph renumber. ---
+
+    [Fact]
+    public void Apply_MidChangeSetFailure_RollsBack_AndMarksCacheNonReusable()
+    {
+        var (senseGuid, wsTag, originalGloss) = FindSenseWithKnownGloss(_cache);
+        var target = CanonicalId.FromGuid(senseGuid);
+
+        // op1: a normal, valid setGloss (will succeed and mutate). op2: the SAME (valid, resolvable)
+        // target but a malformed 'after' payload (no 'text') — SetGlossPayload.Parse throws only
+        // once the real, committing apply loop actually reads the payload (the footprint pre-flight
+        // never looks at 'after' at all, only at the target), which is exactly the "failed partway
+        // through, must roll back" scenario, and deliberately NOT an unresolvable-target failure
+        // (that fails earlier, during Apply's footprint pre-flight, before any unit of work opens at
+        // all — see the companion Apply_UnknownTarget_... test).
+        var op1 = BuildSetGlossOperation(target, wsTag, originalGloss + " (op1, will be rolled back)");
+        using var malformedAfter = JsonDocument.Parse(JsonSerializer.Serialize(new { ws = "en" })); // no 'text'
+        var op2 = new OperationEnvelope(
+            operationId: CanonicalId.Mint(),
+            kind: LexicalSenseOperationKinds.SetGloss,
+            target: target,
+            after: malformedAfter.RootElement.Clone());
+
+        var changeSet = new ChangeSetEnvelope(
+            contractVersions: new Dictionary<string, string> { ["lexical"] = "1.0" },
+            changeSetId: CanonicalId.Mint(),
+            requires: null,
+            operations: new[] { op1, op2 });
+
+        // Both operations' targets resolve fine, so the footprint pre-flight (and thus a
+        // from-scratch anchor built from it) succeeds even though the real apply below will not.
+        var footprintDigest = FootprintProbe.ComputeCurrentFootprintDigest(_cache, changeSet);
+        var anchor = DummyAnchor() with { FootprintDigest = footprintDigest };
+
+        Assert.False(CacheReusability.IsPoisoned(_cache, out _));
+
+        Assert.ThrowsAny<Exception>(() => ChangeSetApplier.Apply(_cache, changeSet, anchor, "lcatom-tests"));
+
+        // Rollback proof: op1's mutation was undone too (the whole Change Set is one unit of work).
+        var wsHandle = _cache.WritingSystemFactory.GetWsFromStr(wsTag);
+        var senseRepo = _cache.ServiceLocator.GetInstance<ILexSenseRepository>();
+        Assert.Equal(originalGloss, senseRepo.GetObject(senseGuid).Gloss.get_String(wsHandle).Text);
+
+        // No applied-log entry (docs/applied-log.md, "Atomicity").
+        Assert.Empty(ProjectAppliedLog.ReadAll(_cache));
+
+        // The cache instance is now flagged non-reusable, per the fixed RollbackCacheInvalidator
+        // (it must NOT have committed a project-wide homograph renumber to get there — see that
+        // type's remarks for the liblcm citations proving why a real commit was the old bug).
+        Assert.True(CacheReusability.IsPoisoned(_cache, out var reason));
+        Assert.False(string.IsNullOrWhiteSpace(reason));
+
+        // And a poisoned cache now refuses a further Assess/Apply outright.
+        Assert.Throws<CachePoisonedException>(() => ChangeSetAssessor.Assess(_cache, changeSet));
+    }
+
+    private static OperationEnvelope BuildSetGlossOperation(CanonicalId target, string wsTag, string text)
+    {
+        var afterJson = JsonSerializer.Serialize(new { ws = wsTag, text });
+        using var afterDocument = JsonDocument.Parse(afterJson);
+        return new OperationEnvelope(
+            operationId: CanonicalId.Mint(),
+            kind: LexicalSenseOperationKinds.SetGloss,
+            target: target,
+            after: afterDocument.RootElement.Clone());
+    }
+
+    private static BoundAssessmentAnchor DummyAnchor() => new(
+        FootprintDigest: "sha256:" + new string('0', 64),
+        EffectDigest: "sha256:" + new string('0', 64),
+        RunnerVersion: "test",
+        LibLcmVersion: "test",
+        ProjectionVersion: "1",
+        AssessedAtUtc: "20260101T000000Z");
 
     /// <summary>
     /// Enumerates senses via the real <see cref="ILexSenseRepository"/> and picks the first one

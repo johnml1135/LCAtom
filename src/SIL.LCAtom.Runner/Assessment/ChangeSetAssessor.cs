@@ -3,7 +3,11 @@ using System.Collections.Generic;
 using System.Linq;
 using SIL.LCAtom.Contract.Ids;
 using SIL.LCAtom.Contract.Model;
+using SIL.LCAtom.Model.AppliedLog;
+using SIL.LCAtom.Model.Assessment;
 using SIL.LCAtom.Model.Effects;
+using SIL.LCAtom.Model.Snapshot;
+using SIL.LCAtom.Runner.Caching;
 using SIL.LCAtom.Runner.Operations;
 using SIL.LCModel;
 using SIL.LCModel.Core.KernelInterfaces;
@@ -35,9 +39,33 @@ public static class ChangeSetAssessor
         if (cache is null) throw new ArgumentNullException(nameof(cache));
         if (changeSet is null) throw new ArgumentNullException(nameof(changeSet));
 
+        // Refuse outright rather than silently return a possibly-different digest against a cache
+        // already known to carry stale derived caches (docs/adr/0006, decision 3). See
+        // SIL.LCAtom.Runner.Caching.CacheReusability.
+        CacheReusability.EnsureReusable(cache);
+
         var intentDigest = ContractIntentDigest.Compute(changeSet);
         var effects = new List<ExpectedEffect>();
         var touchedTargets = new List<CanonicalId>();
+
+        // Defect-4 guard: mark the cache poisoned BEFORE running the mutate-then-rollback sequence
+        // below when any operation's kind is flagged as possibly touching a forward-only derived
+        // cache — it is the rollback itself (not the mutation) that leaves such a cache stale (see
+        // DerivedCachePoisoningOperationKinds and docs/adr/0006, decision 3). Dormant today: no
+        // operation kind Assess actually dispatches (only setGloss) is flagged.
+        foreach (var operation in changeSet.Operations)
+        {
+            if (DerivedCachePoisoningOperationKinds.MayPoisonDerivedCache(operation.Kind))
+            {
+                CacheReusability.MarkPoisoned(
+                    cache,
+                    $"Assess ran a mutate-then-rollback pass over a '{operation.Kind}' operation, " +
+                    "flagged as possibly touching a LexEntry headword/homograph or " +
+                    "MoStemAllomorph monomorphemic derived cache; UndoStack.Rollback does not " +
+                    "refresh those caches (docs/adr/0006, decision 3).");
+                break;
+            }
+        }
 
         var actionHandler = cache.ServiceLocator.GetInstance<IActionHandler>();
 
@@ -74,6 +102,15 @@ public static class ChangeSetAssessor
               $"({touchedTargets.Count} target object(s): " +
               string.Join(", ", touchedTargets.Select(t => t.Value)) + ").";
 
-        return new AssessmentModel(intentDigest, baselineNote, effects, effectDigest);
+        // Binds a subsequent Apply to exactly this evaluated baseline (docs/adr/0004, decision 3).
+        var anchor = new BoundAssessmentAnchor(
+            FootprintDigest: FootprintDigest.Compute(effects),
+            EffectDigest: effectDigest,
+            RunnerVersion: typeof(ChangeSetAssessor).Assembly.GetName().Version?.ToString() ?? "0.0.0.0",
+            LibLcmVersion: typeof(LcmCache).Assembly.GetName().Version?.ToString() ?? "unknown",
+            ProjectionVersion: SnapshotFields.ProjectionVersion,
+            AssessedAtUtc: AppliedLogFormat.FormatTimestamp(DateTime.UtcNow));
+
+        return new AssessmentModel(intentDigest, baselineNote, effects, effectDigest, anchor);
     }
 }

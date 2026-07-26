@@ -4,16 +4,28 @@ using System.IO;
 namespace SIL.LCAtom.Cli.Store;
 
 /// <summary>
-/// Path layout for LCAtom's minimal git-style files store: immutable committed objects, mutable
-/// review manifests, and mutable local-only drafts. No database — see
+/// Path layout for LCAtom's minimal git-style files store: immutable content-addressed committed
+/// objects, mutable id-keyed review manifests, and mutable local-only drafts. No database — see
 /// docs/stage2-change-management.md, S1, and docs/build-stages.md, Stage E.
 /// </summary>
 /// <remarks>
+/// <para>
 /// <c>drafts/&lt;draftName&gt;.json</c> is a mutable local draft the CLI builds incrementally across
 /// invocations; it never leaves this machine and is deleted once <c>finalize</c> commits it.
-/// <c>objects/&lt;changeSetId&gt;.json</c> is the immutable committed Change Set document (envelope:
-/// contractVersions, changeSetId, requires, operations). <c>manifests/&lt;changeSetId&gt;.json</c> is
-/// the mutable review state (status/label/comment/intentDigest) for that Change Set.
+/// </para>
+/// <para>
+/// <b>Keying is content-addressed objects, id-keyed manifest pointer — exactly git's object/ref
+/// split.</b> <c>objects/&lt;intentDigest&gt;.json</c> is the immutable committed Change Set document
+/// (envelope: contractVersions, changeSetId, requires, operations), keyed by its content hash:
+/// write-once, never revisited or overwritten, so amending a Change Set can never mutate a
+/// supposedly-immutable object — the previous content's object simply stays on disk under its own
+/// digest. <c>manifests/&lt;changeSetId&gt;.json</c> is the mutable review state
+/// (status/label/comment/<c>currentIntentDigest</c>) for that Change Set: a movable pointer at the
+/// object currently "current" for this id, exactly a git ref pointing at a commit hash. <c>commit</c>
+/// (via <c>Commands.Finalize</c>) writes a new object and either creates the manifest (first commit)
+/// or moves its pointer (amend, via <c>Commands.Reopen</c> + re-<c>finalize</c>) — see
+/// docs/stage2-change-management.md, S1.
+/// </para>
 /// </remarks>
 public sealed class ChangeSetStore
 {
@@ -44,9 +56,25 @@ public sealed class ChangeSetStore
 
     public string DraftPath(string draftName) => Path.Combine(DraftsDirectory, SafeFileName(draftName) + ".json");
 
-    public string ObjectPath(string changeSetId) => Path.Combine(ObjectsDirectory, changeSetId + ".json");
+    /// <summary>
+    /// The immutable committed object's path, keyed by its <c>intentDigest</c> (e.g.
+    /// <c>sha256:&lt;64 hex&gt;</c>) — write-once, never revisited. The <c>sha256:</c>-style prefix
+    /// before the first <c>:</c> is stripped for the filename (colons are not portable in file
+    /// names); the remaining digest text is already filesystem-safe (lowercase hex).
+    /// </summary>
+    public string ObjectPath(string intentDigest) =>
+        Path.Combine(ObjectsDirectory, DigestFileName(intentDigest) + ".json");
 
     public string ManifestPath(string changeSetId) => Path.Combine(ManifestsDirectory, changeSetId + ".json");
+
+    private static string DigestFileName(string intentDigest)
+    {
+        if (string.IsNullOrWhiteSpace(intentDigest))
+            throw new ArgumentException("An intent digest must not be empty.", nameof(intentDigest));
+
+        var colonIndex = intentDigest.IndexOf(':');
+        return colonIndex >= 0 ? intentDigest[(colonIndex + 1)..] : intentDigest;
+    }
 
     /// <summary>
     /// Draft names are user-chosen local labels, not canonical ids; reject path-traversal

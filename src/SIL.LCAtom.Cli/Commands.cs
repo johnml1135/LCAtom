@@ -14,6 +14,7 @@ using SIL.LCAtom.Model.Effects;
 using SIL.LCAtom.Runner.Apply;
 using SIL.LCAtom.Runner.AppliedLog;
 using SIL.LCAtom.Runner.Assessment;
+using SIL.LCAtom.Runner.Caching;
 using SIL.LCAtom.Runner.Operations;
 using SIL.LCModel;
 
@@ -56,6 +57,11 @@ public static class Commands
     {
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        // ManifestDocument.Anchor is a nested BoundAssessmentAnchor record: System.Text.Json matches
+        // JSON properties to that record's positional-constructor parameters, and case-insensitive
+        // matching makes that robust regardless of exactly how constructor-parameter-name matching
+        // interacts with PropertyNamingPolicy across runtimes.
+        PropertyNameCaseInsensitive = true,
     };
 
     private static readonly JsonSerializerOptions ChangeSetJsonOptions = new()
@@ -228,26 +234,60 @@ public static class Commands
             var intentDigest = IntentDigest.Compute(envelope);
 
             store.EnsureDirectoriesExist();
-            var objectPath = store.ObjectPath(draft.ChangeSetId);
+            var objectPath = store.ObjectPath(intentDigest);
             var manifestPath = store.ManifestPath(draft.ChangeSetId);
 
-            // Immutable once written: finalize is the only writer of objects/<id>.json.
-            File.WriteAllText(objectPath, changeSetJson);
+            // Write-once: never overwrite an existing object (this exact content may already be
+            // committed, e.g. a no-op re-finalize), and never revisit/mutate one afterward — the
+            // content-addressed key makes that impossible by construction anyway, since any edit
+            // changes the digest and therefore the path.
+            if (!File.Exists(objectPath))
+                File.WriteAllText(objectPath, changeSetJson);
 
-            var manifest = new ManifestDocument
+            // A manifest already present under this frozen changeSetId means this draft came from
+            // `reopen`: re-finalizing it is an amend (docs/stage2-change-management.md, S1/S3) —
+            // same id, a new object, the manifest's pointer moved, not created. Prior object
+            // versions are retained (never deleted or revisited).
+            var isAmend = File.Exists(manifestPath);
+            ManifestDocument manifest;
+            if (isAmend)
             {
-                ChangeSetId = draft.ChangeSetId,
-                Status = ManifestStatus.Proposed,
-                Label = draft.Label,
-                Comment = draft.Comment,
-                IntentDigest = intentDigest,
-            };
+                manifest = ReadManifest(manifestPath);
+                manifest.CurrentIntentDigest = intentDigest;
+                // Approval is effect-digest-scoped: any content change invalidates it, so amend
+                // always resets to proposed regardless of the pre-amend status.
+                manifest.Status = ManifestStatus.Proposed;
+                manifest.Label = draft.Label ?? manifest.Label;
+                manifest.Comment = draft.Comment ?? manifest.Comment;
+                // The prior Anchor was bound to the PREVIOUS content's footprint/effect digest; an
+                // amend invalidates it just as it invalidates approval (ADR 0004, decision 3).
+                manifest.Anchor = null;
+            }
+            else
+            {
+                manifest = new ManifestDocument
+                {
+                    ChangeSetId = draft.ChangeSetId,
+                    Status = ManifestStatus.Proposed,
+                    Label = draft.Label,
+                    Comment = draft.Comment,
+                    CurrentIntentDigest = intentDigest,
+                };
+            }
             WriteManifest(manifestPath, manifest);
 
             File.Delete(draftPath);
 
             var sb = new StringBuilder();
-            sb.AppendLine($"Finalized draft '{draftName}' -> Change Set {draft.ChangeSetId} (status: proposed).");
+            if (isAmend)
+            {
+                sb.AppendLine($"Amended draft '{draftName}' -> Change Set {draft.ChangeSetId} (status: proposed).");
+                sb.AppendLine("  (id unchanged; intentDigest moved to a new object; prior object version retained)");
+            }
+            else
+            {
+                sb.AppendLine($"Finalized draft '{draftName}' -> Change Set {draft.ChangeSetId} (status: proposed).");
+            }
             sb.AppendLine($"  operations:   {envelope.Operations.Count}");
             sb.AppendLine($"  intentDigest: {intentDigest}");
             sb.AppendLine($"  object:       {objectPath}");
@@ -258,6 +298,88 @@ public static class Commands
         {
             return Fail(ex.Message);
         }
+    }
+
+    public static CommandResult Reopen(string storeDir, string draftName, string changeSetId)
+    {
+        try
+        {
+            var store = new ChangeSetStore(storeDir);
+            var draftPath = store.DraftPath(draftName);
+            if (File.Exists(draftPath))
+            {
+                return Fail(
+                    $"Draft '{draftName}' already exists at '{draftPath}'. Finalize or delete it " +
+                    "before reopening a Change Set with this draft name.");
+            }
+
+            var id = NormalizeId(changeSetId);
+            var manifestPath = store.ManifestPath(id);
+            if (!File.Exists(manifestPath))
+                return Fail(ChangeSetNotFoundMessage(store, id));
+
+            var manifest = ReadManifest(manifestPath);
+            var objectPath = store.ObjectPath(manifest.CurrentIntentDigest);
+            if (!File.Exists(objectPath))
+                return Fail(StoreInconsistencyMessage(id, manifest.CurrentIntentDigest, objectPath));
+
+            var envelope = ChangeSetJsonParser.Parse(File.ReadAllText(objectPath));
+
+            // Loads the committed envelope's current content into a NEW draft carrying the SAME
+            // frozen changeSetId (docs/stage2-change-management.md, S3, "Reopen for editing").
+            // Re-committing (finalize) produces a new intentDigest under that id — an amend.
+            var draft = new DraftDocument
+            {
+                ChangeSetId = id,
+                ContractVersions = new Dictionary<string, string>(envelope.ContractVersions),
+                Requires = envelope.Requires.Select(r => r.Value).ToList(),
+                Label = manifest.Label,
+                Comment = manifest.Comment,
+                Operations = envelope.Operations.Select(ToDraftOperation).ToList(),
+            };
+
+            store.EnsureDirectoriesExist();
+            WriteDraft(draftPath, draft);
+
+            var sb = new StringBuilder();
+            sb.AppendLine($"Reopened Change Set {id} for editing as draft '{draftName}'.");
+            sb.AppendLine($"  currentIntentDigest: {manifest.CurrentIntentDigest}");
+            sb.AppendLine($"  operations:          {draft.Operations.Count}");
+            sb.AppendLine(
+                "Finalizing this draft will amend the Change Set: same id, new intentDigest, " +
+                "status reset to proposed.");
+            return Ok(sb);
+        }
+        catch (Exception ex)
+        {
+            return Fail(ex.Message);
+        }
+    }
+
+    private static DraftOperation ToDraftOperation(SIL.LCAtom.Contract.Model.OperationEnvelope operation)
+    {
+        if (operation.Target is not { } target)
+        {
+            throw new NotSupportedException(
+                $"Reopen does not yet support an operation with no 'target' (kind '{operation.Kind}').");
+        }
+
+        if (operation.After is not { } after)
+        {
+            throw new NotSupportedException(
+                $"Reopen does not yet support an operation with no 'after' payload (kind '{operation.Kind}').");
+        }
+
+        var afterDict = JsonSerializer.Deserialize<Dictionary<string, string>>(after.GetRawText())
+            ?? new Dictionary<string, string>();
+
+        return new DraftOperation
+        {
+            OperationId = operation.OperationId.Value,
+            Kind = operation.Kind,
+            Target = target.Value,
+            After = afterDict,
+        };
     }
 
     public static CommandResult List(string storeDir)
@@ -302,21 +424,23 @@ public static class Commands
         {
             var store = new ChangeSetStore(storeDir);
             var id = NormalizeId(changeSetId);
-            var objectPath = store.ObjectPath(id);
             var manifestPath = store.ManifestPath(id);
-
-            if (!File.Exists(objectPath) || !File.Exists(manifestPath))
+            if (!File.Exists(manifestPath))
                 return Fail(ChangeSetNotFoundMessage(store, id));
 
             var manifest = ReadManifest(manifestPath);
+            var objectPath = store.ObjectPath(manifest.CurrentIntentDigest);
+            if (!File.Exists(objectPath))
+                return Fail(StoreInconsistencyMessage(id, manifest.CurrentIntentDigest, objectPath));
+
             var objectJson = File.ReadAllText(objectPath);
 
             var sb = new StringBuilder();
             sb.AppendLine($"Change Set {id}");
-            sb.AppendLine($"  status:       {manifest.Status}");
-            sb.AppendLine($"  label:        {manifest.Label}");
-            sb.AppendLine($"  comment:      {manifest.Comment}");
-            sb.AppendLine($"  intentDigest: {manifest.IntentDigest}");
+            sb.AppendLine($"  status:              {manifest.Status}");
+            sb.AppendLine($"  label:               {manifest.Label}");
+            sb.AppendLine($"  comment:             {manifest.Comment}");
+            sb.AppendLine($"  currentIntentDigest: {manifest.CurrentIntentDigest}");
             sb.AppendLine();
             sb.AppendLine(objectJson.TrimEnd());
             return Ok(sb);
@@ -329,13 +453,19 @@ public static class Commands
 
     public static CommandResult Assess(string storeDir, string changeSetId, string fwDataPath)
     {
+        LcmCache? cache = null;
         try
         {
             var store = new ChangeSetStore(storeDir);
             var id = NormalizeId(changeSetId);
-            var objectPath = store.ObjectPath(id);
-            if (!File.Exists(objectPath))
+            var manifestPath = store.ManifestPath(id);
+            if (!File.Exists(manifestPath))
                 return Fail(ChangeSetNotFoundMessage(store, id));
+
+            var manifest = ReadManifest(manifestPath);
+            var objectPath = store.ObjectPath(manifest.CurrentIntentDigest);
+            if (!File.Exists(objectPath))
+                return Fail(StoreInconsistencyMessage(id, manifest.CurrentIntentDigest, objectPath));
 
             var envelope = ChangeSetJsonParser.Parse(File.ReadAllText(objectPath));
 
@@ -343,9 +473,14 @@ public static class Commands
             var loader = new FwDataProjectLoader();
             // Read-only usage: Assess itself never commits (Stage C rolls back internally), and
             // this call performs no Save, so the project on disk is left untouched.
-            using var cache = loader.LoadCache(fullFwDataPath);
+            cache = loader.LoadCache(fullFwDataPath);
 
             var assessment = ChangeSetAssessor.Assess(cache, envelope);
+
+            // Persist the bound-Assessment anchor (docs/adr/0004, decision 3): `apply` requires
+            // this to be present and unmoved before it will touch the project.
+            manifest.Anchor = assessment.Anchor;
+            WriteManifest(manifestPath, manifest);
 
             var sb = new StringBuilder();
             sb.AppendLine($"Assessment of Change Set {id}");
@@ -355,35 +490,55 @@ public static class Commands
             foreach (var effect in assessment.ExpectedEffects)
                 AppendEffect(sb, effect);
             sb.AppendLine($"  effectDigest: {assessment.EffectDigest}");
+            sb.AppendLine($"  footprintDigest: {assessment.Anchor.FootprintDigest}");
+            sb.AppendLine("  (bound-Assessment anchor recorded on the manifest; 'apply' will require it)");
             return Ok(sb);
         }
         catch (Exception ex)
         {
             return Fail(ex.Message);
         }
+        finally
+        {
+            if (cache is { IsDisposed: false }) cache.Dispose();
+        }
     }
 
     public static CommandResult Apply(string storeDir, string changeSetId, string fwDataPath, string user)
     {
+        LcmCache? cache = null;
         try
         {
             var store = new ChangeSetStore(storeDir);
             var id = NormalizeId(changeSetId);
-            var objectPath = store.ObjectPath(id);
             var manifestPath = store.ManifestPath(id);
-            if (!File.Exists(objectPath) || !File.Exists(manifestPath))
+            if (!File.Exists(manifestPath))
                 return Fail(ChangeSetNotFoundMessage(store, id));
 
-            var envelope = ChangeSetJsonParser.Parse(File.ReadAllText(objectPath));
             var manifest = ReadManifest(manifestPath);
+            var objectPath = store.ObjectPath(manifest.CurrentIntentDigest);
+            if (!File.Exists(objectPath))
+                return Fail(StoreInconsistencyMessage(id, manifest.CurrentIntentDigest, objectPath));
+
+            // ADR 0004, decision 3: a bare apply with no bound Assessment is a hard error. Enforced
+            // here (the CLI's own precondition, checked before even loading the project) as well as
+            // inside ChangeSetApplier.Apply itself (which requires a non-null anchor argument).
+            if (manifest.Anchor is null)
+            {
+                return Fail(
+                    $"Change Set {id} has no bound Assessment recorded. Run " +
+                    $"'assess {id} --project <fwdata>' first, then 'apply'.");
+            }
+
+            var envelope = ChangeSetJsonParser.Parse(File.ReadAllText(objectPath));
 
             var fullFwDataPath = ResolveProjectPath(fwDataPath);
             var loader = new FwDataProjectLoader();
-            var cache = loader.LoadCache(fullFwDataPath);
+            cache = loader.LoadCache(fullFwDataPath);
             try
             {
                 var description = manifest.Label ?? "";
-                var receipt = ChangeSetApplier.Apply(cache, envelope, user, description);
+                var receipt = ChangeSetApplier.Apply(cache, envelope, manifest.Anchor, user, description);
 
                 var sb = new StringBuilder();
                 if (receipt.AlreadyApplied)
@@ -416,12 +571,20 @@ public static class Commands
             }
             finally
             {
-                if (!cache.IsDisposed) cache.Dispose();
+                if (cache is { IsDisposed: false }) cache.Dispose();
             }
         }
         catch (Exception ex)
         {
-            return Fail(ex.Message);
+            // Surface cache-instance poisoning (docs/adr/0006, decision 3; see
+            // SIL.LCAtom.Runner.Caching.CacheReusability) in the failure result rather than only in
+            // whatever the exception message already happened to say, so a caller reusing this same
+            // LcmCache instance across multiple CLI-library calls (not this short-lived process,
+            // which discards it either way) knows not to trust it afterward.
+            var message = ex.Message;
+            if (cache is not null && CacheReusability.IsPoisoned(cache, out var poisonReason))
+                message += $" [LcmCache instance no longer safe to reuse: {poisonReason}]";
+            return Fail(message);
         }
     }
 
@@ -521,6 +684,10 @@ public static class Commands
 
     private static string ChangeSetNotFoundMessage(ChangeSetStore store, string id) =>
         $"Change Set '{id}' not found in store '{store.RootDirectory}'. Run 'list' to see committed change sets.";
+
+    private static string StoreInconsistencyMessage(string id, string currentIntentDigest, string objectPath) =>
+        $"Change Set '{id}' manifest points at intentDigest '{currentIntentDigest}', but no object " +
+        $"exists at '{objectPath}' (store inconsistency).";
 
     private static DraftDocument ReadDraft(string path) =>
         JsonSerializer.Deserialize<DraftDocument>(File.ReadAllText(path), DraftJsonOptions)

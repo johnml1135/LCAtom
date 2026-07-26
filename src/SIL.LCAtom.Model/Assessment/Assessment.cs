@@ -26,8 +26,14 @@ namespace SIL.LCAtom.Model.Assessment;
 /// <param name="EffectDigest">
 /// <see cref="ExpectedEffectSetDigest.Compute"/> over <see cref="ExpectedEffects"/>.
 /// </param>
+/// <param name="Anchor">
+/// The <see cref="BoundAssessmentAnchor"/> this Assessment produced, binding a subsequent Apply to
+/// this exact evaluated baseline (docs/adr/0004-prerequisite-graph-stable-ids-bound-apply.md,
+/// decision 3). Persisted by the CLI's <c>assess</c> command and required by <c>apply</c>.
+/// </param>
 public sealed record Assessment(
     string IntentDigest,
     string BaselineNote,
     IReadOnlyList<ExpectedEffect> ExpectedEffects,
-    string EffectDigest);
+    string EffectDigest,
+    BoundAssessmentAnchor Anchor);

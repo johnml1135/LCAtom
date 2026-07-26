@@ -3,9 +3,11 @@ using System.Collections.Generic;
 using SIL.LCAtom.Contract.Ids;
 using SIL.LCAtom.Contract.Model;
 using SIL.LCAtom.Model.AppliedLog;
+using SIL.LCAtom.Model.Assessment;
 using SIL.LCAtom.Model.Effects;
 using SIL.LCAtom.Model.Receipts;
 using SIL.LCAtom.Runner.AppliedLog;
+using SIL.LCAtom.Runner.Caching;
 using SIL.LCAtom.Runner.Operations;
 using SIL.LCModel;
 using SIL.LCModel.Core.KernelInterfaces;
@@ -31,6 +33,13 @@ public static class ChangeSetApplier
 {
     /// <param name="cache">The already-loaded, already-exclusively-writable project (docs/adr/0006, decision 4).</param>
     /// <param name="changeSet">The Change Set to apply.</param>
+    /// <param name="anchor">
+    /// The <see cref="BoundAssessmentAnchor"/> a prior <see cref="SIL.LCAtom.Runner.Assessment.ChangeSetAssessor.Assess"/>
+    /// call produced against this same baseline (docs/adr/0004-prerequisite-graph-stable-ids-bound-apply.md,
+    /// decision 3). Required: a bare apply with no bound Assessment is a hard error
+    /// (<see cref="ApplyPreconditionException"/>). Apply re-reads the current footprint and hard-stops
+    /// with a drift diagnostic if it no longer matches <see cref="BoundAssessmentAnchor.FootprintDigest"/>.
+    /// </param>
     /// <param name="applierIdentity">
     /// Opaque, host-supplied applier identity (docs/applied-log.md, "Applier identity"). Empty is
     /// permitted; the runner never infers identity. Must not contain <c>|</c> or a control
@@ -42,12 +51,28 @@ public static class ChangeSetApplier
     /// <see cref="AppliedLogFormat.MaxDescriptionLength"/> characters. Defaults to empty.
     /// </param>
     public static Receipt Apply(
-        LcmCache cache, ChangeSetEnvelope changeSet, string applierIdentity, string description = "")
+        LcmCache cache,
+        ChangeSetEnvelope changeSet,
+        BoundAssessmentAnchor anchor,
+        string applierIdentity,
+        string description = "")
     {
         if (cache is null) throw new ArgumentNullException(nameof(cache));
         if (changeSet is null) throw new ArgumentNullException(nameof(changeSet));
         if (applierIdentity is null) throw new ArgumentNullException(nameof(applierIdentity));
         if (description is null) throw new ArgumentNullException(nameof(description));
+
+        if (anchor is null)
+        {
+            throw new ApplyPreconditionException(
+                "Apply requires a prior bound Assessment (docs/adr/0004, decision 3): call " +
+                "ChangeSetAssessor.Assess first and pass its BoundAssessmentAnchor here. A bare " +
+                "apply with no bound Assessment is a hard error.");
+        }
+
+        // Refuse outright rather than silently proceed against a cache already known to carry
+        // stale derived caches (docs/adr/0006, decision 3). See SIL.LCAtom.Runner.Caching.CacheReusability.
+        CacheReusability.EnsureReusable(cache);
 
         var changeSetGuid = changeSet.ChangeSetId.ToGuid();
         var fullIntentDigest = ContractIntentDigest.Compute(changeSet);
@@ -60,6 +85,19 @@ public static class ChangeSetApplier
         if (ProjectAppliedLog.TryFindByChangeSetId(cache, changeSetGuid, out var existingEntry))
         {
             return BuildAlreadyAppliedReceipt(changeSet, fullIntentDigest, intentDigestHex, existingEntry!);
+        }
+
+        // Drift check (docs/adr/0004, decision 3): re-read the CURRENT footprint — a pure read,
+        // legal at any transaction state (docs/adr/0006, decision 1) — and hard-stop rather than
+        // proceed if it no longer matches the anchor's baseline. This is the TOCTOU race Terraform's
+        // "apply is bound to a saved plan" default-safe workflow closes.
+        var currentFootprintDigest = FootprintProbe.ComputeCurrentFootprintDigest(cache, changeSet);
+        if (!string.Equals(currentFootprintDigest, anchor.FootprintDigest, StringComparison.Ordinal))
+        {
+            throw new ApplyPreconditionException(
+                "Footprint drift detected: the live project no longer matches the bound Assessment's " +
+                $"baseline (anchor footprintDigest={anchor.FootprintDigest}, current footprintDigest=" +
+                $"{currentFootprintDigest}). Re-run assess and review the new effects before applying.");
         }
 
         // Build (and validate) the entry to write now, before opening any unit of work, so a bad
@@ -115,10 +153,12 @@ public static class ChangeSetApplier
             {
                 // undoHelper.RollBack stays true, so Dispose() (below, on the way out) rolls back.
                 // Per docs/adr/0006, decision 3, that rollback is not Undo and leaves derived
-                // caches (monomorphemic morph data, headword, homograph) stale; invalidate what is
-                // reachable through LibLCM's public surface. The in-scope setGloss operation
-                // touches none of those caches, so this is a wired-in safety net, not a fix this
-                // failure needs today.
+                // caches (monomorphemic morph data, headword, homograph) stale, and no non-committing
+                // invalidation of them is reachable through LibLCM's public surface (see
+                // RollbackCacheInvalidator's remarks for the liblcm citations) — so mark this cache
+                // instance not safely reusable instead of attempting one. The in-scope setGloss
+                // operation touches none of those caches, so this is a wired-in safety net, not a
+                // fix this failure needs today.
                 RollbackCacheInvalidator.InvalidateReachableCaches(cache);
                 throw;
             }

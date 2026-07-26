@@ -62,6 +62,39 @@ public static class SetGlossOperationHandler
         return new ExpectedEffect(targetId, SnapshotFields.LexSenseGloss, before, after_);
     }
 
+    /// <summary>
+    /// Reads the CURRENT, pre-mutation footprint of one <see cref="LexicalSenseOperationKinds.SetGloss"/>
+    /// operation's target — the live gloss alternatives, exactly as they stand right now — without
+    /// applying the lowering or opening any unit of work. A plain getter chain, legal at any
+    /// transaction state (docs/adr/0006-engine-reality-apply-readback-preflight.md, decision 1).
+    /// </summary>
+    /// <remarks>
+    /// Used by <see cref="SIL.LCAtom.Runner.Apply.FootprintProbe"/> for Apply's pre-flight drift
+    /// check (docs/adr/0004, decision 3): the returned <see cref="ExpectedEffect"/> carries the same
+    /// value in <see cref="ExpectedEffect.Before"/> and <see cref="ExpectedEffect.After"/> because
+    /// nothing is mutated here — only <c>Before</c> participates in
+    /// <see cref="SIL.LCAtom.Model.Effects.FootprintDigest"/>.
+    /// </remarks>
+    public static ExpectedEffect ReadCurrentFootprint(LcmCache cache, OperationEnvelope operation)
+    {
+        if (operation.Target is not { } targetId)
+        {
+            throw new InvalidOperationException(
+                $"Operation '{operation.OperationId.Value}' of kind '{LexicalSenseOperationKinds.SetGloss}' " +
+                "requires 'target'.");
+        }
+
+        var target = CanonicalIdResolver.Resolve(cache, targetId);
+        if (target is not ILexSense sense)
+        {
+            throw new InvalidOperationException(
+                $"Target '{targetId.Value}' is not a LexSense (it is a {target.GetType().Name}).");
+        }
+
+        var current = GlossAlternatives(LexSenseSnapshotter.Snapshot(cache, sense));
+        return new ExpectedEffect(targetId, SnapshotFields.LexSenseGloss, current, current);
+    }
+
     private static IReadOnlyDictionary<string, string> GlossAlternatives(ObjectSnapshot snapshot) =>
         snapshot.MultiUnicodeFields.TryGetValue(SnapshotFields.LexSenseGloss, out var alternatives)
             ? alternatives

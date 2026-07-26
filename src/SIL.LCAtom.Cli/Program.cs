@@ -70,6 +70,12 @@ try
             result = Commands.Finalize(storeDir, finalizeDraftName);
             break;
 
+        case "reopen":
+            if (!flags.TryGetValue("draft", out var reopenDraftName) || positionals.Count != 1)
+                return Usage("Usage: lcatom reopen --draft <name> <changeSetId>");
+            result = Commands.Reopen(storeDir, reopenDraftName, positionals[0]);
+            break;
+
         case "list":
             result = Commands.List(storeDir);
             break;
@@ -135,6 +141,7 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine("  label --draft <name> <text>");
     writer.WriteLine("  comment --draft <name> <text>");
     writer.WriteLine("  finalize --draft <name>");
+    writer.WriteLine("  reopen --draft <name> <changeSetId>");
     writer.WriteLine("  list");
     writer.WriteLine("  show <changeSetId>");
     writer.WriteLine("  assess <changeSetId> --project <fwdata>");

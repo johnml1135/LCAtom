@@ -4,6 +4,7 @@ using SIL.LCAtom.Contract.Model;
 using SIL.LCAtom.Host.LcmUtils;
 using SIL.LCAtom.Model.Snapshot;
 using SIL.LCAtom.Runner.Assessment;
+using SIL.LCAtom.Runner.Caching;
 using SIL.LCAtom.Runner.Operations;
 using SIL.LCAtom.Tests.TestFixtures;
 using SIL.LCModel;
@@ -83,6 +84,52 @@ public sealed class ChangeSetAssessorTests : IDisposable
         var changeSet = BuildSetGlossChangeSet(bogusTarget, "en", "does not matter");
 
         Assert.ThrowsAny<Exception>(() => ChangeSetAssessor.Assess(_cache, changeSet));
+    }
+
+    // --- Defect 4: the "may poison a derived cache" guard. ---
+
+    [Fact]
+    public void Assess_SetGloss_UnflaggedKind_DoesNotMarkCachePoisoned()
+    {
+        var (sense, _, wsTag, originalGloss) = FindSenseWithKnownGloss();
+        var changeSet = BuildSetGlossChangeSet(CanonicalId.FromGuid(sense.Guid), wsTag, originalGloss + " x");
+
+        Assert.False(CacheReusability.IsPoisoned(_cache, out _));
+        ChangeSetAssessor.Assess(_cache, changeSet);
+        Assert.False(CacheReusability.IsPoisoned(_cache, out _));
+    }
+
+    [Fact]
+    public void Assess_FlaggedKind_MarksCachePoisoned()
+    {
+        // No operation handler exists yet for a flagged kind (Stage C/D implement only setGloss) —
+        // the guard must still mark the cache before Assess's dispatch loop rejects it as
+        // unsupported, per DerivedCachePoisoningOperationKinds' remarks ("wired in ahead of the
+        // operation kinds that will need it").
+        var flaggedKind = "lexical/entry/setLexemeForm";
+        Assert.True(DerivedCachePoisoningOperationKinds.MayPoisonDerivedCache(flaggedKind));
+
+        var afterJson = JsonSerializer.Serialize(new { ws = "en", text = "does not matter" });
+        using var afterDocument = JsonDocument.Parse(afterJson);
+        var operation = new OperationEnvelope(
+            operationId: CanonicalId.Mint(),
+            kind: flaggedKind,
+            target: CanonicalId.FromGuid(Guid.NewGuid()),
+            after: afterDocument.RootElement.Clone());
+        var changeSet = new ChangeSetEnvelope(
+            contractVersions: new Dictionary<string, string> { ["lexical"] = "1.0" },
+            changeSetId: CanonicalId.Mint(),
+            requires: null,
+            operations: new[] { operation });
+
+        Assert.False(CacheReusability.IsPoisoned(_cache, out _));
+
+        // Not (yet) dispatchable — Assess still correctly refuses an unsupported kind — but the
+        // poisoning guard must have already run before that refusal.
+        Assert.ThrowsAny<Exception>(() => ChangeSetAssessor.Assess(_cache, changeSet));
+
+        Assert.True(CacheReusability.IsPoisoned(_cache, out var reason));
+        Assert.False(string.IsNullOrWhiteSpace(reason));
     }
 
     /// <summary>

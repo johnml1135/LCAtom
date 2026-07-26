@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using SIL.LCAtom.Cli;
+using SIL.LCAtom.Cli.Store;
 using SIL.LCAtom.Host.LcmUtils;
 using SIL.LCAtom.Runner.AppliedLog;
 using SIL.LCAtom.Tests.TestFixtures;
@@ -72,11 +73,15 @@ public sealed class EndToEndCliTests : IDisposable
         Assert.False(File.Exists(draftPath)); // draft deleted on finalize
 
         var changeSetId = ExtractChangeSetId(finalizeResult.Output);
-        var objectPath = Path.Combine(_storeDir, "objects", changeSetId + ".json");
+        var intentDigest = ExtractIntentDigest(finalizeResult.Output);
+        // Defect 1: objects are keyed by intentDigest (content-addressed, write-once), not by the
+        // frozen changeSetId — see ChangeSetStore's remarks and docs/stage2-change-management.md, S1.
+        var objectPath = new ChangeSetStore(_storeDir).ObjectPath(intentDigest);
         var manifestPath = Path.Combine(_storeDir, "manifests", changeSetId + ".json");
         Assert.True(File.Exists(objectPath));
         Assert.True(File.Exists(manifestPath));
         Assert.Contains("\"status\": \"proposed\"", File.ReadAllText(manifestPath));
+        Assert.Contains(intentDigest, File.ReadAllText(manifestPath));
 
         // --- list ---
         var listResult = Commands.List(_storeDir);
@@ -200,5 +205,17 @@ public sealed class EndToEndCliTests : IDisposable
         var end = finalizeOutput.IndexOf(' ', start);
         Assert.True(end > start, $"Could not parse changeSetId from finalize output: {finalizeOutput}");
         return finalizeOutput.Substring(start, end - start);
+    }
+
+    private static string ExtractIntentDigest(string commandOutput)
+    {
+        // "  intentDigest: sha256:<hex>"
+        const string marker = "intentDigest: ";
+        var start = commandOutput.IndexOf(marker, StringComparison.Ordinal);
+        Assert.True(start >= 0, $"Could not find '{marker}' in output: {commandOutput}");
+        start += marker.Length;
+        var end = commandOutput.IndexOfAny(new[] { '\r', '\n' }, start);
+        Assert.True(end > start, $"Could not parse intentDigest from output: {commandOutput}");
+        return commandOutput.Substring(start, end - start).Trim();
     }
 }
