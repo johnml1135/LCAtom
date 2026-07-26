@@ -22,15 +22,15 @@ Status: `open` · `in-progress` · `fixed` · `wontfix (recorded)` · `upstream`
 
 | # | Issue | Status |
 | --- | --- | --- |
-| B1 | **Contract lags the ADRs.** The ten-verb vocabulary, generated kinds, two field spaces, declared-vs-discovered footprint, drift taxonomy and more live only in ADRs. The contract is what implementation follows. | in-progress |
-| B2 | **`ensure` is a required verb with no home.** Custom fields need tri-state semantics and crash-retry safety depends on it, but `create`'s idempotent-reuse path is keyed by **canonical GUID** while custom fields have **no durable GUID** and match on `(class, name)` — a different identity axis, previously unreconciled. | in-progress |
-| B3 | **Owning-atomic replacement undefined** across 69 in-scope fields — the everyday "change which allomorph is the lexeme form" edit. Without a rule, a raw `create` silently reintroduces the MSA-orphan bug class. | in-progress |
-| B4 | **Binary effect-digest equality is too coarse for approval continuity.** Needs the four computable drift classes plus a bulk-approvable path for same-nature-wider-scope. | in-progress |
-| B5 | **No `Info` outcome category.** "Checked and confirmed harmless" is currently conflated with "nothing needed checking." | in-progress |
-| B6 | **Dangling and engine-nulled references share one severity bucket.** A dangling reference is materially worse and must be distinguished. | in-progress |
+| B1 | **Contract lags the ADRs.** The ten-verb vocabulary, generated kinds, two field spaces, declared-vs-discovered footprint, drift taxonomy and more live only in ADRs. The contract is what implementation follows. | fixed |
+| B2 | **`ensure` is a required verb with no home.** Custom fields need tri-state semantics and crash-retry safety depends on it, but `create`'s idempotent-reuse path is keyed by **canonical GUID** while custom fields have **no durable GUID** and match on `(class, name)` — a different identity axis, previously unreconciled. | fixed |
+| B3 | **Owning-atomic replacement undefined** across 69 in-scope fields — the everyday "change which allomorph is the lexeme form" edit. Without a rule, a raw `create` silently reintroduces the MSA-orphan bug class. | fixed |
+| B4 | **Binary effect-digest equality is too coarse for approval continuity.** Needs the four computable drift classes plus a bulk-approvable path for same-nature-wider-scope. | fixed |
+| B5 | **No `Info` outcome category.** "Checked and confirmed harmless" is currently conflated with "nothing needed checking." | fixed |
+| B6 | **Dangling and engine-nulled references share one severity bucket.** A dangling reference is materially worse and must be distinguished. | fixed |
 | B7 | **No Integer enum table.** The `(Kind, Card, Sig)` triple cannot distinguish a closed enumeration (`PhSegmentRule.Direction`, `MoAdhocProhib.Adjacency`) from a magnitude (`CmPicture.ScaleFactor`). 30 in-scope `Integer` fields would invite magic-number authoring. Needs a manifest column. | open |
-| B8 | **Third comparison class missing.** Index-as-identity (alpha variables) is neither unordered, positional, nor feeding, and its reach is not neighbour-limited. | in-progress |
-| B9 | **Third ownership mode missing.** Pooled-but-private objects (`PhPhonData.Contexts`, `.FeatConstraints`) are a rule's private interior but live in a shared pool, so the fill/frame ownership test gives the wrong answer. Deleting the owner also orphans pool members that were never the delete's target. | in-progress |
+| B8 | **Third comparison class missing.** Index-as-identity (alpha variables) is neither unordered, positional, nor feeding, and its reach is not neighbour-limited. | fixed |
+| B9 | **Third ownership mode missing.** Pooled-but-private objects (`PhPhonData.Contexts`, `.FeatConstraints`) are a rule's private interior but live in a shared pool, so the fill/frame ownership test gives the wrong answer. Deleting the owner also orphans pool members that were never the delete's target. | fixed |
 | B10 | **`reparent` confirmed only for `owning/seq`.** All three evidenced examples are sequences; atomic and collection reparent are plausible but unevidenced. Needs a conformance vector before being promised. | open |
 | B11 | **Batch-scoped composers are unaddressed.** Bulk POS/inflection-feature assignment must see the whole selected batch grouped by owning entry to get MSA reuse right — not N independent composer calls. | open |
 | B12 | **Writing systems and custom fields have no inventory row.** `LangProject.*Wss` are space-joined ID strings; both families are real but not derivable from the manifest. This is the open field space. | open |
