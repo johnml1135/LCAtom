@@ -32,7 +32,11 @@ Writing these — and only these — gives full control of the projected grammar
   `LeftContextOA`/`RightContextOA` graph** — unlike phonological-rule LHS/RHS, which *is* read
   structurally. Environment authoring must therefore target the **string grammar**
   (`/left_right`, `#`, `[NC]`, `(optional)`, literal graphemes) that `PhonEnvRecognizer` implements.
-- **Slot order** is `SuffixSlotsRS.Concat(PrefixSlotsRS.Reverse())` — closest-to-stem first in both.
+- **Slot order** is `SuffixSlotsRS.Concat(PrefixSlotsRS.Reverse())` — closest-to-stem first in both. And
+  **only two of the five slot sequences are read at all**: an exhaustive grep of `HCLoader.cs` finds zero
+  references to `Slots`, `ProcliticSlots`, or `EncliticSlots`. Those three are FieldWorks UI/legacy
+  surface, invisible to the parser — so "the five parallel sequences" describes the *model*, not the
+  grammar-relevant write-surface, which is `PrefixSlots` + `SuffixSlots` only.
 - **Rule order** is `PhonRulesOS` sequence position via the *virtual* `OrderNumber` (= `IndexInOwner + 1`).
 - **Alpha variables** come from the *virtual* `IPhRegularRule.FeatureConstraints`, ordered by
   first-appearance scan of `InputOS` then `OutputOS` — so reordering without changing meaning renames α/β.

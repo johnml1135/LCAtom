@@ -115,13 +115,28 @@ Override list — `seq` alone does **not** imply positional:
 | --- | --- | --- |
 | `PhPhonData.PhonRules` | **Feeding** | a neighbour rule's *content* edit changes what this rule produces |
 | `LexEntry.AlternateForms` | **Feeding** | allomorph order encodes disjunctive elsewhere-blocking |
-| `PhPhonData.FeatConstraints` | **a third mode** | index *is* identity (α/β/γ). Reordering renames variables without changing membership, and reach is not neighbour-limited — an insertion anywhere renames every later member |
+| `PhRegularRule.StrucDesc`, `PhSegRuleRHS.{StrucChange,LeftContext,RightContext}` | **a third mode** | index *is* identity for alpha variables (α/β/γ) — see below |
+| `MoAffixProcess.Input` | **discovered footprint** | `Output` mappings resolve by position, not identity — see below |
 
-That third mode does not fit the contract's three-bucket taxonomy. It is a **real gap in the
-comparison-class model**, recorded rather than force-fitted.
+**Correction to an earlier claim.** The index-as-identity mode does **not** live on
+`PhPhonData.FeatConstraints`. Alpha-variable names come from `IPhRegularRule.FeatureConstraints`, a
+*per-rule virtual* that scans `StrucDescOS` and then each `RightHandSidesOS[i]`'s
+`StrucChange`/`LeftContext`/`RightContext` in fixed order and collects distinct constraints in
+**first-appearance order**; `HCLoader` then assigns `VariableNames[i]`. So a `move` on the
+`FeatConstraints` *pool* is semantically **inert**, while a `move`, mid-sequence `create`, or content
+edit on `StrucDesc`/`StrucChange`/the context slots is what silently renames every later variable. Two
+consequences: the third mode belongs to those rule-internal sequences, and the **24-variable ceiling is
+per-rule**, so a pre-apply check must simulate that exact traversal rather than counting distinct
+constraints anywhere in the rule.
 
-Checked and left positional: the five `MoInflAffixTemplate` slot sequences (neighbour *identity*
-matters; a neighbour's internal edits don't), `PhSegmentRule.StrucDesc`, `PhSegRuleRHS.StrucChange`.
+**A second discovered-footprint case.** `MoAffixProcess.Output` mappings (`MoCopyFromInput`,
+`MoModifyFromInput`) hold a `rel/atomic` reference into `Input`, but `HCLoader` resolves it as
+`ContentRA.IndexInOwner + 1` — a *positional* read of an identity reference. Reordering or
+mid-sequence-inserting into `Input` therefore silently renumbers every `Output` mapping. `move` on
+`Input` cannot claim a static footprint; it belongs with `delete`-with-referrers under ADR 0009 §5.
+
+Checked and left positional: `MoInflAffixTemplate.PrefixSlots`/`SuffixSlots` (neighbour *identity*
+matters; a neighbour's internal edits don't).
 
 ### Naming
 

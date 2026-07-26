@@ -119,8 +119,10 @@ worth chasing: `SyntacticRules`, all subcategorization markup, `cyclicity`,
    remains solely for the C# conformance oracle.
 2. **No gating on PanGloss.** Build all of T2; sequence T3 first; warn when an authored construct is
    outside the consumer's compile set.
-3. **Keep the prefix/suffix/proclitic/enclitic partition.** It is part of the HCLoader-complete surface —
-   `HCLoader` reads all five sequences and collapses them as
-   `SuffixSlotsRS.Concat(PrefixSlotsRS.Reverse())`. Since HC has no such concept, the validation target
-   is **HCLoader's collapse behavior**, not HC semantics: authoring must produce the intended flat slot
-   order after that transform.
+3. **Keep the prefix/suffix partition — but only those two.** `HCLoader` reads exactly
+   `SuffixSlotsRS` and `PrefixSlotsRS`, collapsing them as
+   `SuffixSlotsRS.Concat(PrefixSlotsRS.Reverse())` (closest-to-stem first in both). An exhaustive grep
+   finds **zero** references to `Slots`, `ProcliticSlots`, or `EncliticSlots` — those three are
+   FieldWorks UI/legacy surface, invisible to the parser, and the API should not promise them. Since HC
+   has no partition concept at all, the validation target is **HCLoader's collapse behavior**, not HC
+   semantics: authoring must produce the intended flat slot order after that transform.
