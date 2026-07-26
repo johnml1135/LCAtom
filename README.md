@@ -31,6 +31,7 @@ This repository is initially a specification and implementation plan. Start with
 - [HC grammar map — the normative grammar write-surface](docs/hc-grammar-map.md)
 - [HC surface scope — three coverage tiers](docs/hc-surface-scope.md)
 - [API surface layer 1 — the LibLCM primitive surface](docs/api-surface-layer1.md)
+- [API surface — the HC grammar-facing surface](docs/api-surface-hc.md)
 - [Stress-test findings](docs/stress-test-findings.md)
 - [Stage-2 change management (vision)](docs/stage2-change-management.md)
 - [Conflict and rebase semantics](docs/conflicts-and-rebase.md)
