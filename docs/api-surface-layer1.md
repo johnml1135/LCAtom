@@ -130,11 +130,21 @@ consequences: the third mode belongs to those rule-internal sequences, and the *
 per-rule**, so a pre-apply check must simulate that exact traversal rather than counting distinct
 constraints anywhere in the rule.
 
-**A second discovered-footprint case.** `MoAffixProcess.Output` mappings (`MoCopyFromInput`,
-`MoModifyFromInput`) hold a `rel/atomic` reference into `Input`, but `HCLoader` resolves it as
-`ContentRA.IndexInOwner + 1` — a *positional* read of an identity reference. Reordering or
-mid-sequence-inserting into `Input` therefore silently renumbers every `Output` mapping. `move` on
-`Input` cannot claim a static footprint; it belongs with `delete`-with-referrers under ADR 0009 §5.
+**~~A second discovered-footprint case.~~ Withdrawn 2026-07-27 — this hazard is not real.**
+`MoAffixProcess.Output` mappings (`MoCopyFromInput`, `MoModifyFromInput`) hold a `rel/atomic`
+reference into `Input`, and `HCLoader` renders it as `ContentRA.IndexInOwner + 1`
+(`HCLoader.cs:1383`, `:1416`). The original claim — that reordering `Input` "silently renumbers every
+`Output` mapping" — mistook a *rendering* for a *binding*. `ContentRA` is an object reference; the
+index is computed at export time solely to produce HermitCrab's `partName` string. Reorder `Input`
+and the reference still resolves to the same part, so the exported name changes **correctly**,
+tracking its referent. There is no silent breakage and no discovered footprint here. `move` on `Input`
+keeps a static footprint.
+
+This matters beyond this paragraph: it removes one of the three mechanisms cited as evidence that
+ordered grammar cannot ride on a scalar-order CRDT (see
+[ADR 0013](adr/0013-harmony-is-the-change-mechanism.md)). Two survive — feeding/bleeding rule order
+and index-as-identity alpha variables — and they reduce to a single requirement, a sequence that
+converges correctly.
 
 Checked and left positional: `MoInflAffixTemplate.PrefixSlots`/`SuffixSlots` (neighbour *identity*
 matters; a neighbour's internal edits don't).
