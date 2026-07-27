@@ -30,19 +30,28 @@ by stage.
   `lexical/sense/setGloss`. There are no create, delete, sequence, or grammar operations yet — see the
   [operation-catalog plan](docs/operation-catalog-plan.md) for the roadmap to lexical and grammar
   completeness, and [implementation plan](docs/implementation-plan.md) for per-phase status.
-- **HermitCrab projection has no code yet.** [HermitCrab projection](docs/hermitcrab-projection.md)
-  and the [HC grammar map](docs/hc-grammar-map.md) are normative design; not one file of projection
-  code exists in the repo.
+- **Forward HermitCrab projection is deleted, not pending.** PanGloss reads `.fwdata` directly, so
+  there is nothing to project — see
+  [ADR 0011](docs/adr/0011-experiment-loop-boundary-lcatom-is-the-record.md). Reverse `Expand`
+  (authoring grammar in HC-friendly terms) remains the primary grammar surface and is unbuilt.
 - **The LibLCM coverage manifest is fully classified** (`manifest/liblcm-inventory.tsv`, 898 rows,
   zero unclassified in-scope rows) but nothing yet generates operation kinds from it — see
-  [issues register](docs/issues.md).
+  [issues register](docs/issues.md). Building that generator is now the next piece of work
+  ([ADR 0012](docs/adr/0012-build-order-hc-spine-first-kinds-generated.md)): **332 kinds for the
+  HermitCrab-reachable surface, 915 for all of it, against ~12 hand-written type handlers.**
+- **Next up:** the HC-reachable lexical spine (L0, ~37 fields), then grammar (G0–G2), then export +
+  attachments to close the loop. The rest of the lexical catalog is backfilled after, driven by the
+  non-HermitCrab consumers. See [build stages](docs/build-stages.md).
 
 Everything else in this repository is normative design written ahead of the code — deliberately, and
 still binding. The full document set:
 
 - [Architecture and decisions](docs/architecture.md)
 - [Rationale](docs/rationale.md)
-- [Decision records](docs/adr/)
+- [Decision records](docs/adr/) — start with
+  [ADR 0010](docs/adr/0010-hermitcrab-experimentation-is-the-primary-purpose.md) (why this exists),
+  then [ADR 0011](docs/adr/0011-experiment-loop-boundary-lcatom-is-the-record.md) (where it stops) and
+  [ADR 0012](docs/adr/0012-build-order-hc-spine-first-kinds-generated.md) (what gets built first)
 - [Normative change-set contract](docs/change-set-contract.md)
 - [Custom fields](docs/custom-fields.md)
 - [Applied-change log](docs/applied-log.md)

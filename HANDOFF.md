@@ -33,19 +33,36 @@ status and `AGENTS.md`'s Compatibility targets). Phases 2–4 are each partial i
 ways — read `docs/implementation-plan.md`'s per-phase status markers before assuming what's left,
 rather than guessing from the numbered requirements alone.
 
-**Four sequencing decisions are still genuinely open** and are not yours to resolve by default —
-identify them, but pick up only what the repository owner has actually approved:
+**Five decisions were settled on 2026-07-27** and are recorded in
+[ADR 0011](docs/adr/0011-experiment-loop-boundary-lcatom-is-the-record.md) and
+[ADR 0012](docs/adr/0012-build-order-hc-spine-first-kinds-generated.md). Read both before planning
+anything; they amend ADR 0010 and supersede parts of `hc-surface-scope.md`, `stage2-change-management.md`,
+and `operation-catalog-plan.md`:
 
-- HermitCrab-projection scope and timing — when projection work starts relative to finishing more of
-  the lexical catalog (see `docs/hc-surface-scope.md` and `docs/operation-catalog-plan.md`'s "machinery
-  the skeleton lacks" item 13).
-- Lexical-track vs. grammar-track build order — `docs/operation-catalog-plan.md`'s "Staged roadmap"
-  lists L1–L5 then G0–G3, but does not mandate that L must finish before G starts.
-- The cross-process protocol for non-.NET consumers (framing, error/exit-code contract,
-  one-shot-vs-daemon) — recorded open as issue B13 in `docs/issues.md`.
-- Manifest classification confidence — roughly 300 of 473 in-scope rows were classified by heuristic
-  rather than an explicit citation; whether/how to verify them is open (issues B17, B18 in
-  `docs/issues.md`).
+1. **LCAtom is the record, not the orchestrator.** It exports `.fwdata` and receives labelled reports
+   and typed metrics back. It never runs the parser and never renders a verdict.
+2. **Forward HermitCrab projection is deleted** — PanGloss reads `.fwdata` directly. Reverse `Expand`
+   survives as the primary grammar authoring surface.
+3. **Export is hypothetical**, applying N change sets to a scratch copy; the real project is untouched.
+4. **Build order is L0 → G0–G2 → backfill L1–L5**, where L0 is the ~37 non-grammar fields `HCLoader`
+   actually reads.
+5. **Kinds are generated from the manifest from day one** — 332 for the HC surface, 915 in total,
+   against ~12 hand-written type handlers.
+
+**Two decisions remain genuinely open** and are not yours to resolve by default:
+
+- **The cross-process protocol** for non-.NET consumers (framing, error/exit-code contract,
+  one-shot-vs-daemon) — issue B13. Two constraints are now fixed: generated kinds force a generic
+  change-set-JSON path, and scratch-copy export weakens the daemon's exclusive-write case while
+  strengthening its cache-reuse case (measured: 3.6s warm cache load on a 61-entry project, against
+  0.05s to copy the project).
+- **Manifest classification confidence** — roughly 300 of 473 in-scope rows were classified by
+  heuristic rather than citation; verify-lazily vs dedicated-audit is undecided (issues B17, B18).
+  This matters more than it did, because generation now reads those classifications directly.
+
+Four new issues fall out of the settled decisions and block the generator or L0: **B19** (construct
+naming is not mechanical), **B20** (17 multi-construct rows), **B21** (L0's object-creation closure is
+uncomputed), **B23** (attachment/metric config surface unspecified).
 
 Work test-first and make small, reviewable commits. Before changing files, inspect the current
 branch/status and the pinned/current LibLCM package surface. Use an isolated branch/worktree for

@@ -1,5 +1,13 @@
 # HermitCrab projection
 
+> **Scope note (2026-07-27).** Despite the title, this document is now about the **reverse** direction
+> only — `Expand`, which lowers HC-shaped intent into LibLCM operations. Forward projection (LibLCM →
+> HC XML) is deleted by
+> [ADR 0011](adr/0011-experiment-loop-boundary-lcatom-is-the-record.md): PanGloss reads `.fwdata`
+> directly, so it *is* the projection. Everything below about the two-layer split, baseline-dependent
+> expansion, fill-never-frame, and the worked decompositions stands; only "Authoring input and
+> round-trip" changed.
+
 Grammar-editing consumers (Linguistic Assistant, PanGloss handoffs) reason in **HermitCrab (HC)
 constructs** — phonological rewrite rules, natural classes, affix templates, inflectional affixes.
 LCAtom does not. Its canonical contract is expressed against **LibLCM objects** (`Ph*`, `Mo*`,
@@ -161,22 +169,31 @@ its name-string binding makes a rule rename also a stratum edit.
 
 ## Authoring input and round-trip
 
-The projection has two directions, both owned in `SIL.LCAtom.HermitCrab`:
+> **Amended 2026-07-27 by [ADR 0011](adr/0011-experiment-loop-boundary-lcatom-is-the-record.md):
+> forward projection is deleted.** This section originally described two directions, forward built
+> first as the oracle for the reverse. PanGloss reads `.fwdata` directly and calls the XML path
+> *"legacy … being sunset"* — **PanGloss is the projection** — so there is nothing to harvest and no
+> forward component to build. Only the reverse direction below survives, and it is now the *primary*
+> grammar authoring surface rather than the second half of a round trip.
 
-- **Forward** — project a LibLCM state to HermitCrab grammar XML by wrapping FieldWorks' battle-tested
-  `HCLoader` (harvest, not rebuild). It runs against the baseline *or* a hypothetical post-apply state
-  (assess → project the would-be grammar) — the review-first thesis applied to grammar: produce the HC
-  grammar for a proposed change, run an external tool (PanGloss/HermitCrab) over it, review the report,
-  then apply. On-demand, whole-grammar, result cached as a provenance-stamped attachment.
-- **Reverse (`Expand`)** — lower a single high-level HC-intent command into the LibLCM object-ops that
-  would produce it. The input is a **structured command** an agent or UI emits directly, not textual
-  notation — there is no rule-language parser to build; LCAtom is not a compiler. The mapping is the
-  **inverse of `HCLoader`**: `HCLoader` says which LibLCM objects each HC construct corresponds to, and
-  `Expand` emits the create/update/delete ops for them under fill-never-frame.
+**Reverse (`Expand`)**, owned in `SIL.LCAtom.HermitCrab` — lower a single high-level HC-intent command
+into the LibLCM object-ops that would produce it. The input is a **structured command** an agent or UI
+emits directly, not textual notation — there is no rule-language parser to build; LCAtom is not a
+compiler. The mapping is the **inverse of `HCLoader`**: `HCLoader` says which LibLCM objects each HC
+construct corresponds to, and `Expand` emits the create/update/delete ops for them under
+fill-never-frame.
 
-Forward projection is reverse `Expand`'s **round-trip oracle**: `Expand(intent)` → ops → apply →
-project the result back to HC → compare against the intent. The forward direction is built first, as
-the harness that validates the reverse.
+**The oracle problem this creates.** `Expand` was to be validated by projecting its result back to HC
+and comparing against the intent. Without a forward direction that round trip is unavailable, so
+`Expand` must instead be validated against **HermitCrab's own conformance suite** — `grammar.xml` +
+`words.yaml` fixtures whose ground truth is mechanically re-derived from the grammar rather than
+hand-authored (see [HC surface scope](hc-surface-scope.md), "The oracle"). That harness does not exist
+yet; it is [issue B22](issues.md).
+
+The review-first thesis is unchanged, only its mechanism: instead of projecting a would-be grammar to
+XML, LCAtom **exports the would-be `.fwdata`** (N change sets applied to a scratch copy), external
+infrastructure parses a corpus with it, and the resulting report returns as a labelled, provenance-
+stamped attachment on the change set.
 
 ## Worked decompositions
 

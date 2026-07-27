@@ -60,20 +60,43 @@ set independently and the log unions to one entry. Multi-user discussion is a la
 
 ## S5 — Attachments: derived, provenance-stamped, store-not-interpret
 
-The CLI **produces** HC grammar XML and **accepts** report blobs; the external tool (PanGloss) is run by
-a thin orchestration script, never by LCAtom. Attachments are **derived/regenerable views**, stored as
-content-addressed blobs with provenance `(changeSetId, the whole-grammar state digest they ran against,
-tool + version, timestamp)`, **staleness-flagged** when the state moves (never shown as current when
-stale), and **selectively synced**. LCAtom **stores and lists by provenance; it never interprets** tool
-output (it can diff blobs, but the meaning stays external). **[core]** produce/accept/store;
-**[stage-2]** orchestration + comparison UI.
+The CLI **exports `.fwdata`** (N change sets applied to a scratch copy) and **accepts** report blobs; the
+external tool (PanGloss) is run by a thin orchestration script, never by LCAtom. Attachments are
+**derived/regenerable views**, stored as content-addressed blobs with provenance `(changeSetId,
+intentDigest, the whole-grammar state digest they ran against, tool + version, timestamp)`,
+**staleness-flagged** when the state moves (never shown as current when stale), and **selectively
+synced**. LCAtom **stores and lists by provenance; it never interprets** tool output (it can diff blobs,
+but the meaning stays external). **[core]** export/accept/store; **[stage-2]** orchestration +
+comparison UI.
+
+Two amendments from [ADR 0011](adr/0011-experiment-loop-boundary-lcatom-is-the-record.md):
+
+- **Export is `.fwdata`, not HC grammar XML.** This section originally said the CLI "produces HC grammar
+  XML". PanGloss reads `.fwdata` directly and calls the XML path legacy, so XML survives only as the C#
+  conformance oracle. Export applies change sets to a **scratch copy** and leaves the real project
+  untouched — the only structurally safe way to experiment, given [C15](issues.md)'s unrepairable
+  cache poisoning.
+- **Labels and typed metrics.** Attachments carry a configuration-declared **label** (`"PanGloss
+  Report"`, `"Changed Word Analysis from Corpus A"`), and a label may be declared Markdown for CLI
+  pretty-printing. Configuration also declares typed **metrics** (`corpus-a-coverage: percent`,
+  `regression-status: enum[pass,fail]`) which LCAtom stores, lists, and diffs across change sets.
+  Both bind to the **`intentDigest`**, not `changeSetId` alone, so amending a change set marks prior
+  reports stale rather than silently re-attributing them. LCAtom evaluates no metric and gates no
+  apply in v1.
 
 ## S6 — HermitCrab round-trip
 
-See [HermitCrab projection](hermitcrab-projection.md#authoring-input-and-round-trip). Forward projection
-(harvest `HCLoader`, baseline or hypothetical post-apply) is the killer workflow's producer; reverse
-`Expand` (structured command, no compiler, inverse of `HCLoader`) is built after forward, which is its
-round-trip oracle. Both **[core]**, in `SIL.LCAtom.HermitCrab`.
+**Amended by [ADR 0011](adr/0011-experiment-loop-boundary-lcatom-is-the-record.md): forward projection is
+deleted.** This section originally made forward projection (harvest `HCLoader`) the killer workflow's
+producer, with reverse `Expand` built after it and validated against it. PanGloss reads `.fwdata`
+directly — **PanGloss is the projection** — so there is no forward component to build.
+
+Reverse **`Expand`** survives and is now the *primary* grammar authoring surface: structured HC-friendly
+commands, no compiler, the inverse of `HCLoader`. Still **[core]**, still in `SIL.LCAtom.HermitCrab`.
+Losing forward projection costs `Expand` its intended round-trip oracle, so it must instead be validated
+against HC's own conformance suite — see [HC surface scope](hc-surface-scope.md), "The oracle" — whose
+fixtures mechanically re-derive ground truth from `grammar.xml` rather than trusting hand-authored
+metadata. See also [HermitCrab projection](hermitcrab-projection.md#authoring-input-and-round-trip).
 
 ## S7 — Repo & package boundary
 

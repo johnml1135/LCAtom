@@ -83,14 +83,22 @@ Both are **structural FieldWorks limits**, not LCAtom choices. They bound the pr
    against HC semantics because HC has no such distinction.
 5. **Allomorph order joins the semantically-ordered comparison class** — it encodes elsewhere-blocking, so
    reordering changes meaning. Second counterexample to the plan's "feeding = `PhonRules` only."
-6. **LCAtom owns comparison and the verdict.** PanGloss states repeatedly that consuming applications own
+6. **LCAtom owns the record, not the verdict.** PanGloss states repeatedly that consuming applications own
    history, baselines, publication policy, and UI; that it *"never asserts a root cause,"* renders
    *"never a publish/deny decision,"* and will *"not claim that one grammar edit caused a semantic
    change."* Its `diagnostics.rs` confirms **no report-to-report comparison exists yet**. The comparable
    that *does* exist: `AssessmentReport` (schema-versioned JSON) with per-word `gloss_signature`,
    `candidates_generated`, `confirmed`, and a `{complete, incomplete}` summary, plus `BuildReport` counts
-   and `load_warnings`. **"Did it parse better" = diffing gloss signatures and confirmed counts across
-   runs** — LCAtom's job, on a real schema.
+   and `load_warnings` — a real schema LCAtom can carry as a labelled attachment and whose declared
+   values it can surface as typed metrics.
+
+   **Correction (2026-07-27).** This section previously read *"'Did it parse better' = diffing gloss
+   signatures and confirmed counts across runs — LCAtom's job."* That was wrong and contradicted
+   [stage-2 S5](stage2-change-management.md#s5--attachments-derived-provenance-stamped-store-not-interpret)'s
+   `[core]` "stores and lists by provenance; **it never interprets**". S5 holds. LCAtom stores the
+   reports, shows how a *declared* metric moved between two change sets, and renders them — it does
+   not parse tool output, does not compute a verdict, and does not decide whether a grammar got
+   better. See [ADR 0011](adr/0011-experiment-loop-boundary-lcatom-is-the-record.md).
 
 ## The oracle
 

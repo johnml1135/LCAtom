@@ -33,12 +33,17 @@ positionally ordered, **F** feeding (semantically ordered). Authoring: **raw** o
 `setGloss` needed only *declared-footprint* effect capture on an existing object. Completeness needs,
 in rough order of first use:
 
-1. **The generated kind namespace + manifest as type system — half-shipped.** The coverage manifest
-   itself is done: every in-scope row (`manifest/liblcm-inventory.tsv`, 473 rows) is classified and
-   carries field type, comparison class, and the reviewed `class → construct` map
+1. **The generated kind namespace + manifest as type system — half-shipped, and now built first.** The
+   coverage manifest itself is done: every in-scope row (`manifest/liblcm-inventory.tsv`, 473 rows) is
+   classified and carries field type, comparison class, and the reviewed `class → construct` map
    ([ADR 0009](adr/0009-layered-api-primitives-and-composers.md) §3). What's still missing is the
    generation step — nothing yet reads the manifest and emits per-field kinds from it; the one kind
    that exists (`lexical/sense/setGloss`) was written by hand.
+   [ADR 0012](adr/0012-build-order-hc-spine-first-kinds-generated.md) makes the generator the **first**
+   thing built, ahead of any new operation: **332 kinds for the HC-reachable surface, 915 for all of
+   it, against ~12 hand-written `(Kind, Card, Sig)` handlers.** Two prerequisites — construct-to-kind
+   segment naming (`lexSense` → `sense`), and a resolution rule for the 17 authorable rows carrying a
+   multi-construct string.
 2. **Create + identity mapping.** A create proposes a new entity by canonical id; the runner mints a
    storage GUID, records the `canonicalId → GUID` mapping in the Assessment/Receipt, and later ops in
    the same change set resolve that entity through the mapping. `create` carries `owner`, `ownerField`
@@ -74,9 +79,14 @@ in rough order of first use:
     each emitting Change Sets of primitives, with the composer riding as provenance. Compensating
     sweeps are usually explicit composer-emitted `delete`s rather than hidden machinery
     ([ADR 0009](adr/0009-layered-api-primitives-and-composers.md) §6).
-13. **HC round-trip.** Forward projection (harvest `HCLoader`) + reverse `Expand`
-    ([hermitcrab-projection](hermitcrab-projection.md#authoring-input-and-round-trip)) — the flagship
-    composer.
+13. **Reverse `Expand`** — the flagship composer, and the primary grammar authoring surface.
+    Structured HC-friendly commands, no compiler, the inverse of `HCLoader`
+    ([hermitcrab-projection](hermitcrab-projection.md#authoring-input-and-round-trip)).
+    **Forward projection is deleted** per
+    [ADR 0011](adr/0011-experiment-loop-boundary-lcatom-is-the-record.md) — PanGloss reads `.fwdata`
+    directly, so there is nothing to harvest. `Expand` therefore loses its intended round-trip oracle
+    and must be validated against HC's own conformance suite instead
+    ([HC surface scope](hc-surface-scope.md), "The oracle").
 14. **Apply hardening — the assess→apply binding is done; the exclusive-write guarantee is not.**
     `ChangeSetApplier.Apply` now requires a prior `BoundAssessmentAnchor` and hard-stops on footprint
     drift (ADR 0004 §3; closed issue A2). What remains is the exclusive-write guarantee itself
@@ -152,7 +162,26 @@ Compound/graph ops are always assessed last with a fresh read-back.
 **Status: none of L1–L5 or G0–G3 has started.** The only operation shipped anywhere in this catalog is
 `lexical/sense/setGloss`, which predates and sits outside this staged roadmap (it shipped as the
 walking-skeleton slice — see [build-stages.md](build-stages.md) — before this catalog was written).
-L1 is the next stage in sequence.
+
+**Reordered by [ADR 0012](adr/0012-build-order-hc-spine-first-kinds-generated.md).** The sequence below
+is no longer L1→L5 then G0→G3. It is:
+
+> **L0 → G0 → G1 → G2**, then L1–L5 backfilled on demand.
+
+**L0** is a new stage this catalog did not have: the **37 non-grammar fields `HCLoader` actually reads**
+(defined by manifest query — `HcReachable = yes`, `Group != grammar`), plus their object-creation
+closure, which is not yet computed and is the first piece of work. Concretely: entry skeleton,
+allomorph, morph type, MSA link, sense gloss. It introduces create + identity mapping and
+delete-cascade as L1 would, and pulls **sequence operations and `reparent` forward from L2** because
+`allomorph` alone is 10 of the 37 fields.
+
+The evidence for reordering: of 150 HC-reachable in-scope fields, **113 are grammar and only 32
+lexical**; `HCLoader` reads **5 of `LexEntry`'s 23** fields; L4 would deliver 3 reversal fields and
+**zero** publication fields to the parser. ADR 0010's "lexical completeness is a prerequisite" is
+amended to "a thin lexical spine is a prerequisite." L1–L5 stay fully in scope and are sequenced by the
+non-HC consumers (Flexicon, FlexToolsMCP, GramTrans, Linguistic Assistant) rather than by the parser.
+
+L1–L5 below therefore describe *what those stages contain*, not *when they happen*.
 
 Each stage adds operations **and** the machinery they first require; each is sonnet-built, opus-reviewed,
 verified against a real project, committed. Interleave the cross-cutting hardening (apply↔Assessment
@@ -160,6 +189,11 @@ binding per ADR 0004/0006 — the binding half is done, see item 14 above; exclu
 still open; the 100%-coverage manifest — done, see item 1 above; per-op conformance vectors) as the
 operations that need them arrive.
 
+- **L0 — HC-reachable lexical spine (built first).** The 37 non-grammar fields `HCLoader` reads, plus
+  their object-creation closure: entry skeleton, allomorph, morph type, MSA link, sense gloss.
+  *Introduces:* **create + identity mapping**, **delete-cascade closure**, and — pulled forward from
+  L2 — **sequence ops (class P)** and **reparent**. Covers 10 of the 12 `(Kind, Card, Sig)` handler
+  shapes, so building L0 is building the handler set. → the lexical data HermitCrab actually consumes.
 - **L1 — Simple lexical core.** entry create/delete, sense create + setters, WS-alt/rich-string/scalar
   setters, collection-ref add/remove. *Introduces:* **create + identity mapping**, **delete-cascade
   closure**, operation-dispatch generalization. → *minimum-lexical-complete* headword+meaning+publish.
@@ -180,9 +214,13 @@ operations that need them arrive.
 - **G2 — Phonology & feeding.** phonological rules (`create`/`wireRule`/positional-insert-fresh/contexts),
   feature constraints, context-leak sweep. *Introduces:* **feeding comparison class F**, the `wireRule`
   Fill mechanism.
-- **G3 — HC round-trip.** forward projection (harvest `HCLoader`) + reverse `Expand` first cut:
-  natural-class + phon-rule + affix-in-slot + `makeFeatStruc` (ADR 0001's worked examples). Forward is
-  the round-trip oracle.
+- **G3 — Reverse `Expand` first cut.** natural-class + phon-rule + affix-in-slot + `makeFeatStruc`
+  (ADR 0001's worked examples). **Forward projection is deleted** — see item 13 above and
+  [ADR 0011](adr/0011-experiment-loop-boundary-lcatom-is-the-record.md); PanGloss reads `.fwdata`
+  directly. `Expand` is validated against HC's conformance suite, not against a projection.
+- **X — Export + attachments** (parallel, not dependent on G3). Hypothetical `.fwdata` export (N change
+  sets applied to a scratch copy) plus the labelled attachment / typed metric record. This is what
+  actually closes the loop, and it needs no `Expand` — only a grammar operation worth exporting.
 
 ## Where Flexicon gives no precedent (LCAtom designs from the model alone)
 
@@ -193,11 +231,17 @@ reduplication fresh-create. These get extra scrutiny and their own conformance f
 
 ## Milestones
 
-**Status: not reached — none started.** All four remain ahead of the one shipped operation
-(`lexical/sense/setGloss`); none of the staged work they depend on (L1–L5, G0–G3) has begun.
+**Status: none started.** All remain ahead of the one shipped operation (`lexical/sense/setGloss`).
 
+**Reordered by [ADR 0012](adr/0012-build-order-hc-spine-first-kinds-generated.md): the first milestone
+is no longer minimum-lexical-complete — it is the loop closing.**
+
+- **Loop closed** (L0 + G0–G2 + export/attachments): author a grammar change in HC-friendly terms,
+  export the would-be `.fwdata`, have external infrastructure parse a corpus, and read the report back
+  attached to the change set. This is ADR 0010's primary purpose, and it is the target.
 - **Minimum lexical-complete** (end of L1, partial L2/L3): author/round-trip a basic dictionary entry —
-  headword, meaning, grammatical category, one example, publish/hide.
+  headword, meaning, grammatical category, one example, publish/hide. Now a *backfill* milestone,
+  driven by the non-HC consumers.
 - **Lexical-complete** (through L5).
 - **Grammar first-cut** (G0–G2 + G3 reverse-`Expand` worked examples): the killer workflow — author a
   natural class / phonological rule / affix via one structured command, project to HC, review via

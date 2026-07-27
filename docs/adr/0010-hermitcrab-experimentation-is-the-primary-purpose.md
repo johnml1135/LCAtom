@@ -1,6 +1,11 @@
 # ADR 0010 — The HermitCrab experimentation loop is LCAtom's primary purpose
 
-Status: accepted (2026-07-25)
+Status: accepted (2026-07-25) — amended 2026-07-27 by
+[ADR 0011](0011-experiment-loop-boundary-lcatom-is-the-record.md) (the loop boundary: LCAtom is the
+record, not the orchestrator; forward projection deleted) and
+[ADR 0012](0012-build-order-hc-spine-first-kinds-generated.md) (build order: the HC-reachable lexical
+spine, not lexical completeness, is the prerequisite). The decision below — that this loop is the
+primary purpose — stands unchanged.
 
 ## Context
 
@@ -78,8 +83,16 @@ labor is already declared from the other side.
 
 ### What this does not change
 
-The lexical surface stays in scope and first in the build order — HermitCrab consumes lexical data
-(entries, allomorphs, MSAs, morph types), so lexical completeness is a prerequisite for grammar
-experimentation, not a parallel track. Non-HC consumers (Flexicon, FlexTools, Linguistic Assistant,
+The lexical surface stays in scope. Non-HC consumers (Flexicon, FlexTools, Linguistic Assistant,
 GramTrans, FieldWorks) remain supported; they are simply no longer co-equal with HC in setting
 priorities.
+
+> **Amended 2026-07-27 by [ADR 0012](0012-build-order-hc-spine-first-kinds-generated.md).** This
+> paragraph originally read *"the lexical surface stays in scope **and first in the build order** …
+> so **lexical completeness** is a prerequisite for grammar experimentation, not a parallel track."*
+> The coverage manifest, classified after this ADR was written, does not support that. Of 150
+> HC-reachable in-scope fields, **113 are grammar and 32 lexical**; `HCLoader` reads **5 of
+> `LexEntry`'s 23** fields; the entire non-grammar surface it touches is **37 fields**, concentrated
+> in `allomorph` and `lexSense`. The prerequisite is a **thin lexical spine (L0)**, not lexical
+> completeness. The rest of the lexical catalog is resequenced, not descoped, and is driven by the
+> non-HC consumers above.

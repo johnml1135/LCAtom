@@ -9,11 +9,18 @@ committed before the next begins.
 The LibLCM change-set runner (`Contract`, `Model`, `Runner`, `Host`) and a **thin CLI** that is both
 the integration-test harness and the seed of a local, git-style, files-based change-package store.
 
+Also in scope, per [ADR 0011](adr/0011-experiment-loop-boundary-lcatom-is-the-record.md): **hypothetical
+`.fwdata` export** (N change sets applied to a scratch copy, real project untouched) and the
+**attachment/metric record** — labelled report blobs and configuration-declared typed metrics bound to
+a change set's `intentDigest`, stored, listed, diffed, and rendered. LCAtom receives the loop's outputs;
+it never produces them and never interprets them.
+
 ## Explicitly out of scope (future, likely a separate repo)
 
 The full change-management application: PR-style review workflow, HermitCrab-grammar build and PanGloss
-orchestration, text reports as attachments, an Avalonia / FieldWorks-embedded UI, LexBox sync of change
-sets, and any cloud collaboration substrate (e.g. Dolt/DoltHub). The local store is git-style files
+orchestration (building the FST, invoking the parser, scheduling corpus runs), an Avalonia /
+FieldWorks-embedded UI, LexBox sync of change sets, and any cloud collaboration substrate
+(e.g. Dolt/DoltHub). The local store is git-style files
 (immutable content-addressed objects + mutable manifests); **no database in v1** — SQLite only ever as
 a later, disposable, rebuildable cache, never the source of truth and never synced.
 
@@ -50,8 +57,30 @@ copied FieldWorks project — not mocks — which is why the suite takes minutes
 
 The walking skeleton genuinely walks end to end (open → new draft → author → assess → apply → read
 back → log), but it walks with exactly **one** operation on it: `lexical/sense/setGloss`. There are
-zero create operations, zero delete operations, zero sequence operations, zero grammar operations, and
-no HermitCrab projection code at all. "Done" above means *this thin slice* is done, not that the
-catalog is complete — see [operation-catalog-plan.md](operation-catalog-plan.md) for what thickening
-the skeleton requires next, and [implementation-plan.md](implementation-plan.md) for per-phase status
-against the fuller plan.
+zero create operations, zero delete operations, zero sequence operations, and zero grammar operations.
+"Done" above means *this thin slice* is done, not that the catalog is complete — see
+[operation-catalog-plan.md](operation-catalog-plan.md) for what thickening the skeleton requires next,
+and [implementation-plan.md](implementation-plan.md) for per-phase status against the fuller plan.
+
+There is no HermitCrab projection code, and per
+[ADR 0011](adr/0011-experiment-loop-boundary-lcatom-is-the-record.md) **there never will be** — PanGloss
+reads `.fwdata` directly, so forward projection is deleted, not pending. Reverse `Expand` (authoring in
+HC-friendly grammar terms) remains, and is unbuilt.
+
+## Next stages
+
+Per [ADR 0012](adr/0012-build-order-hc-spine-first-kinds-generated.md):
+
+- **F — Kind generator.** Generate the `group/construct/verb` kind namespace from the coverage manifest
+  (332 kinds for the HC-reachable surface, 915 for all of it) dispatching to ~12 hand-written
+  `(Kind, Card, Sig)` handlers. Prerequisites: construct-to-kind-segment naming, and a resolution rule
+  for the 17 multi-construct rows.
+- **G — L0, the HC-reachable lexical spine.** The 37 non-grammar fields `HCLoader` actually reads, plus
+  their object-creation closure (not yet computed). Introduces create + identity mapping,
+  delete-cascade, and — pulled forward from L2 — sequence operations and `reparent`.
+- **H — G0–G2, grammar.** 113 fields: POS, features, strata, phonemes, natural classes, environments;
+  then MSAs, templates, slots, compound rules; then phonological rules and feeding order.
+- **I — Export + attachments.** Hypothetical `.fwdata` export and the attachment/metric record, closing
+  the loop end to end.
+
+L1–L5 are backfilled after, driven by the non-HC consumers rather than by the parser.

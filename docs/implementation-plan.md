@@ -215,14 +215,25 @@ Work through the coverage manifest by coherent domain families. Each pull reques
 visible portion of the manifest and include full operation-family completion criteria from
 `AGENTS.md`.
 
-Prioritize:
+Prioritize — **reordered 2026-07-27 by
+[ADR 0012](adr/0012-build-order-hc-spine-first-kinds-generated.md)**, which found that of 150
+HermitCrab-reachable in-scope fields, 113 are grammar and only 32 lexical:
 
-1. lexical entries, senses, examples, forms, writing-system alternatives;
-2. POS, MSAs, inflection classes, features, and references;
-3. possibility lists and list items;
-4. phonological/morphological model objects used by Hermit Crab/FieldWorks;
-5. remaining supported semantic surface;
-6. explicit unsupported and derived/internal classifications.
+1. the manifest-driven **kind generator** and its ~12 type handlers — prerequisite for everything
+   below, and now built before any new operation;
+2. **L0** — the ~37 non-grammar fields `HCLoader` actually reads: entry skeleton, allomorph, morph
+   type, MSA link, sense gloss, plus their object-creation closure (uncomputed — issue B21);
+3. phonological/morphological model objects used by Hermit Crab/FieldWorks — POS, features, strata,
+   phonemes, natural classes, environments; then templates, slots, compound rules; then phonological
+   rules and feeding order;
+4. remaining lexical surface — senses, examples, forms, writing-system alternatives, references —
+   sequenced by the non-HermitCrab consumers rather than by the parser;
+5. possibility lists and list items;
+6. remaining supported semantic surface;
+7. explicit unsupported and derived/internal classifications.
+
+The original order put every lexical family ahead of every grammar family. That is superseded: the
+lexical catalog is resequenced, not descoped.
 
 Exit: 100% model-surface classification and every `semantic-operation` member covered.
 
