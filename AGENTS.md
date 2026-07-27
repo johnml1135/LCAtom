@@ -34,12 +34,18 @@ Read `README.md` and all documents in `docs/` before implementation.
 
 ## Compatibility targets
 
-- Contract library: `netstandard2.0`.
-- LibLCM-dependent libraries: initially `netstandard2.0;net462;net8.0`.
-- CLI/worker: initially `net8.0`.
-- FieldWorks adapter/conformance host: compatible with current `net48` FieldWorks.
+**Actual current targets (measured from the `.csproj` files) — nothing multi-targets:**
 
-Verify the actual supported target matrix against the pinned LibLCM release during implementation.
+- `SIL.LCAtom.Contract`, `SIL.LCAtom.Model`: `netstandard2.0`, LibLCM-free.
+- `SIL.LCAtom.Runner`, `SIL.LCAtom.Host`, `SIL.LCAtom.Cli`, `SIL.LCAtom.Tests`: `net8.0`, referencing
+  `SIL.LCModel 11.0.0-beta0150`.
+
+**Deferred to Phase 9 ([implementation-plan.md](docs/implementation-plan.md)), not present reality:**
+the wider target matrix originally envisioned here — `netstandard2.0;net462;net8.0` for
+LibLCM-dependent libraries and a `net48` FieldWorks-compatible adapter/conformance host. No such
+adapter project exists yet, and the multi-target compatibility proof (Phase 0 item 3) has not been
+run. Verify the actual supported target matrix against the pinned LibLCM release before committing to
+it.
 
 ## Definition of done for each operation family
 

@@ -28,15 +28,30 @@ a later, disposable, rebuildable cache, never the source of truth and never sync
 
 - **A — Scaffold + headless load.** Solution and package shape; reference `SIL.LCModel`; adapt the
   headless project-load plumbing from `FwDataMiniLcmBridge` (MIT); `lcatom open` prints project name +
-  entry count; a test opens a real project. (Phase 0.)
+  entry count; a test opens a real project. (Phase 0.) **Done.**
 - **B — Contract kernel.** Immutable change-set DTOs, strict closed JSON parsing, RFC 8785 canonical
-  JSON, intent digest, canonical/GUID IDs — no LibLCM dependency. (Phase 1; ADR 0004, 0007.)
+  JSON, intent digest, canonical/GUID IDs — no LibLCM dependency. (Phase 1; ADR 0004, 0007.) **Done.**
 - **C — Snapshot + effect capture.** Footprint-scoped before/after semantic-snapshot diff via the
   public `AllOwnedObjects`/`ReferringObjects`; assessment with expected effects. (Phases 2–3; ADR 0003,
-  0006.)
+  0006.) **Done** for the one shipped operation — snapshotting exists only for `LexSense`
+  (`Snapshotting/LexSenseSnapshotter.cs`); the rest of Phase 2/3's per-type breadth is not yet built.
 - **D — Apply slice.** One operation (`set` a sense gloss): one outer unit of work, read-back, receipt,
-  and the applied-change log entry. (Phase 4; ADR 0005, 0006.)
-- **E — Thin CLI.** `new / add / label / comment / finalize / list / show / assess / apply / log` over
-  the files store, driving the real core end to end.
+  and the applied-change log entry. (Phase 4; ADR 0005, 0006.) **Done**, and hardened since: `apply` now
+  requires a bound `Assessment` and hard-stops on footprint drift (closes issue A2).
+- **E — Thin CLI.** `open / new / add-set-gloss / label / comment / finalize / reopen / list / show /
+  assess / apply / log` — 12 verbs, dispatched in `src/SIL.LCAtom.Cli/Program.cs` — over the files
+  store, driving the real core end to end. **Done.**
 
-Status: **A in progress.**
+## Status
+
+**Stages A–E are all complete and verified.** "Verified" means `dotnet test` passes 82/82
+(`Passed! - Failed: 0, Passed: 82, Skipped: 0, Total: 82`) against a real `LcmCache` opened on a real
+copied FieldWorks project — not mocks — which is why the suite takes minutes rather than seconds.
+
+The walking skeleton genuinely walks end to end (open → new draft → author → assess → apply → read
+back → log), but it walks with exactly **one** operation on it: `lexical/sense/setGloss`. There are
+zero create operations, zero delete operations, zero sequence operations, zero grammar operations, and
+no HermitCrab projection code at all. "Done" above means *this thin slice* is done, not that the
+catalog is complete — see [operation-catalog-plan.md](operation-catalog-plan.md) for what thickening
+the skeleton requires next, and [implementation-plan.md](implementation-plan.md) for per-phase status
+against the fuller plan.

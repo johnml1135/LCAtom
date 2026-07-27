@@ -11,11 +11,11 @@ parity — so metathesis, reduplication, circumfixes, and clitic-as-affix are al
 
 `manifest/hcloader-surface.tsv` — extracted from all 2,837 lines of `HCLoader.cs`: **235 `(loader
 method, LibLCM field)` reads across 105 distinct fields**, each row carrying its source line.
-`manifest/liblcm-inventory.tsv` now carries the join: **of 478 in-scope properties, 152 are
-name-referenced by `HCLoader` and 326 are never referenced at all.**
+`manifest/liblcm-inventory.tsv` now carries the join: **of 473 in-scope properties, 152 are
+name-referenced by `HCLoader` and 321 are never referenced at all.**
 
 The negative direction is precise — a field whose name never appears anywhere in the loader cannot be
-read, so **those 326 are a machine-checked set of changes that provably cannot affect a parse.** The
+read, so **those 321 are a machine-checked set of changes that provably cannot affect a parse.** The
 positive 152 is a deliberate over-approximation: the extractor matches field *names* and cannot resolve
 which class an accessor was invoked on. Per-class precision comes from the curated map. Two known
 extractor blind spots, both patched by hand: `PhMetathesisRule.LeftSwitchIndex`/`RightSwitchIndex` are
@@ -111,7 +111,7 @@ collapsed as `SuffixSlotsRS.Concat(PrefixSlotsRS.Reverse())`. The other three ar
 surface, invisible to the parser, and the API must not promise them.
 [HC surface scope](hc-surface-scope.md) and the [grammar map](hc-grammar-map.md) are corrected.
 
-## What an author cannot reach — the 326, by cause
+## What an author cannot reach — the 321, by cause
 
 - **Lexicographic apparatus HC ignores** (largest cluster): essentially all of `LexSense`'s descriptive
   fields (30), `LexEtymology` (7), most of `LexEntry` (18), `LexPronunciation` metadata. This is a

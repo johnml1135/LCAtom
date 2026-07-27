@@ -211,7 +211,12 @@ Every class and field is classified as one of:
 - `derived-read-only`;
 - `internal`;
 - `runner-bookkeeping`;
-- `unsupported`.
+- `unsupported`;
+- `observable-not-authorable` — engine-maintained reverse indices (`LexDb.AllomorphIndex`,
+  `.LexicalFormIndex`): read for lookup, never directly added to or removed from by an author.
+
+`custom-field` has no manifest row today — custom fields are not LibLCM inventory members at all
+([issue B12](issues.md)) — but the value is reserved for when they gain one.
 
 `runner-bookkeeping` marks model surface this runner writes but deliberately omits from the semantic
 projection and from expected effects — currently only the

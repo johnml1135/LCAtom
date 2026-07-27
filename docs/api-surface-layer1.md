@@ -11,9 +11,10 @@ Scope is **owning-edge reachability** from the domain roots (`LexDb`, `MoMorphDa
 `FsFeatureSystem`, `PartOfSpeech`, `LexEntry` — the last because `LexDb` only *references* entries),
 plus the declared `CmPossibility` subclasses in-scope lists use, minus the derivation-trace family.
 
-**478 in-scope properties across 96 classes.** Basic: MultiUnicode 52, MultiString 51, Unicode 35,
-Integer 30, Boolean 25, String 10, Time 5, Guid 2, TextPropBinary 1. Relations: owning/atomic 69,
-rel/atomic 60, owning/col 39, rel/col 38, owning/seq 33, rel/seq 28.
+**473 in-scope properties across 95 classes.** Basic: MultiUnicode 52, MultiString 51, Unicode 35,
+Integer 28, Boolean 25, String 10, Time 5, Guid 2, TextPropBinary 1. Relations: owning/atomic 69,
+rel/atomic 57, owning/col 39, rel/col 38, owning/seq 33, rel/seq 28. (An earlier count of 478/96
+included 5 `TextTag` rows later demoted as a scope over-inclusion — [issue D5](issues.md).)
 
 A naming heuristic got this wrong in **both** directions, which is why it is computed:
 
@@ -189,14 +190,18 @@ and every reference to them are inert.
 
 ## Gaps recorded, not papered over
 
-1. **No Integer enum table exists.** The `(Kind, Card, Sig)` triple cannot distinguish a closed
-   enumeration (`PhSegmentRule.Direction`, `MoAdhocProhib.Adjacency`) from a magnitude
-   (`CmPicture.ScaleFactor`). Typing all 30 in-scope `Integer` fields as bare integers invites
-   magic-number authoring. Needs a manifest column.
+1. **Fixed — Integer enum table now exists.** The `(Kind, Card, Sig)` triple alone could not
+   distinguish a closed enumeration (`PhSegmentRule.Direction`, `MoAdhocProhib.Adjacency`) from a
+   magnitude (`CmPicture.ScaleFactor`); typing all 28 in-scope `Integer` fields as bare integers
+   would have invited magic-number authoring. `classify.ps1` added the manifest's `EnumValues`
+   column (issue B7): a confirmed `value=Name` mapping for 11 fields, `unknown` for 2 more pending
+   a citation, and blank (magnitude, deliberately not an enum) for the remaining 15.
 2. **`reparent` is confirmed only for `owning/seq`.** All three ADR 0008 examples are sequences;
    atomic and collection reparent are structurally plausible but unevidenced — treat as unconfirmed
    pending a conformance vector.
-3. **The third ordering mode** (index-as-identity) needs a home in the comparison-class taxonomy.
+3. **Fixed — the third ordering mode has a home.** `classify.ps1` added the manifest's
+   `ComparisonClass` column (issue B8) with `index-as-identity` as one of its four values, alongside
+   `unordered`, `positional`, and `feeding`.
 4. **Writing systems and custom fields have no inventory row at all** — `LangProject.*Wss` are
    space-joined ID strings. Both families are real but not derivable from this manifest; they are the
    open field space (ADR 0009 §4).

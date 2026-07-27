@@ -63,8 +63,10 @@ Wire `kind` stays `group/construct/verb` and fully per-field (`lexical/sense/set
 from the manifest; implementation is 9 verbs × ~8 type handlers. This unifies at the implementation
 layer and splits at the API layer — EMF's reuse and GraphQL's discoverability at once, not a
 compromise between them. It yields one validation gate (unknown *kind*, already shipped), exact closed
-schemas with no `if/then` conditionals over 445 fields, per-field version granularity, and an
-enumerated surface an AI agent selects from rather than constructs.
+schemas with no `if/then` conditionals over the in-scope manifest surface (473 fields — see
+[issue E7](../issues.md), correcting this ADR's original 445-field basic-only undercount),
+per-field version granularity, and an enumerated surface an AI agent selects from rather than
+constructs.
 
 `group/construct/verb` is confirmed by Kubernetes' `(apiGroup, resource, verb)` triple and is required
 here: `contractVersions` is keyed per group, and per-construct validation needs a stable namespace.

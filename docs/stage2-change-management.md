@@ -20,8 +20,9 @@ Dolt/DoltHub is considered only for the eventual cloud layer, never the local cr
 the frozen **`changeSetId`** (`manifests/<changeSetId>.json`), holding a movable `currentIntentDigest`
 — exactly a git ref pointing at a commit hash. `commit` writes a new object and either creates the
 manifest or moves its pointer (amend). Prior versions are retained for audit. Keying objects by
-`changeSetId` — as the Stage E skeleton does — cannot express amend without mutating a supposedly
-immutable object; that is a **known defect to fix**.
+`changeSetId` — as the Stage E skeleton originally did — cannot express amend without mutating a
+supposedly immutable object; that was **issue A1**, now fixed (see [issues.md](issues.md)) — the store
+already implements the `intentDigest`/`changeSetId` split described above.
 
 ## S2 — Two merges; only one is forbidden
 
@@ -82,6 +83,10 @@ store-free; the store lives in the CLI/Host layer. One-way dependencies; nothing
 Cross-language consumers (Python: Linguistic Assistant/FlexTools; Rust: PanGloss) go through the CLI's
 process/JSON protocol. **[stage-2] separate repo, later:** PR-workflow UI, orchestration, Avalonia,
 LexBox/cloud sync, Dolt/DoltHub.
+
+As shipped today, only `SIL.LCAtom.Contract`, `.Model`, `.Runner`, `.Host`, `.Cli`, and `.Tests` exist
+as projects; `Diff` and `HermitCrab` are boundary decisions for work not yet started — there is no
+HermitCrab projection code of any kind in the tree.
 
 ## S8 — Two-mode agent loop
 

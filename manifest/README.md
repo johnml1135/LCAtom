@@ -8,7 +8,9 @@ Every property of every LibLCM class, generated mechanically from
 exactly the LibLCM assembly LCAtom references, with no dependency on a sibling
 repository checkout.
 
-898 rows. Columns:
+898 rows, 19 columns. The first nine are the raw inventory, generated mechanically; the other ten
+are added by [`classify.ps1`](classify.ps1) (see "The manifest is now the type system" below) and are
+blank/`n/a` for every row where `Scope != in`.
 
 | Column | Meaning |
 | --- | --- |
@@ -21,6 +23,16 @@ repository checkout.
 | `Kind` | `basic` (value) / `owning` / `rel` (reference) |
 | `Sig` | value type, or destination class for relations |
 | `Card` | `atomic` / `col` / `seq` |
+| `HcReferenced` | raw name-only join against [`hcloader-surface.tsv`](hcloader-surface.tsv): `name-referenced` or `no`. Precursor to `HcReachable`, which corrects the false positives a bare-name join produces (see issue D1 in [issues.md](../docs/issues.md)). |
+| `Construct` | the layer-1 construct this field belongs to (`lexEntry`, `msa`, `phoneme`, `rewriteRule`, …; the possibility family fans out to a multi-construct string) — see [ADR 0009](../docs/adr/0009-layered-api-primitives-and-composers.md) and [API surface layer 1](../docs/api-surface-layer1.md). 54 distinct constructs across the in-scope rows. |
+| `Group` | `grammar` / `lexical` / `system` / `lists` — coarse grouping of `Construct`. |
+| `Classification` | what kind of field this is for kind-generation purposes: `semantic-operation` (core authorable content), `supporting-detail` (secondary/administrative), `unsupported` (explicitly not offered as a control), `internal` (import residue, singleton roots), `derived-read-only` (engine-computed), `runner-bookkeeping` (the applied-log's reuse of `CmResource`), `observable-not-authorable` (engine-maintained reverse index). |
+| `ComparisonClass` | how instances of this field compare for drift/effect purposes: `unordered`, `positional`, `index-as-identity` (alpha-variable pools — [issue B8](../docs/issues.md)), `feeding` (order encodes rule interaction — [issue B8](../docs/issues.md)). |
+| `Verbs` | the CRUD verb subset this field's `(Kind, Card)` shape generates (`set|clear`, `create|delete`, `create|delete|move|reparent`, `addRef|removeRef`, `addRef|removeRef|move`), or `n/a` when `Classification` marks the field non-authorable. |
+| `HcReachable` | does `HCLoader` actually read this field — `yes` / `no` / `unconfirmed`, corrected from `HcReferenced` against the curated surface map (see [the HC grammar map](../docs/hc-grammar-map.md)). |
+| `AssessPoisonsCache` | `yes` for the 4 fields whose mutation poisons a derived LibLCM cache that `Rollback` cannot repair ([issue A4](../docs/issues.md), [issue C15](../docs/issues.md)); `no` otherwise. |
+| `EnumValues` | for the 28 in-scope `Integer` fields only: a confirmed `value=Name;...` mapping, `unknown` (named-enum-shaped but no confirming code found), or blank (a magnitude, not an enumeration) — [issue B7](../docs/issues.md). |
+| `Rationale` | required prose for every in-scope row, citing the classification decision and folding in any `ComparisonClass`/`HcReachable`/`EnumValues`/`AssessPoisonsCache` notes. Distinguishes a cited source from a generic field-name-heuristic default — see [issue B18](../docs/issues.md). |
 
 ### `Scope` is computed, not guessed
 
@@ -40,20 +52,44 @@ A naming heuristic was wrong in **both** directions, which is why this is comput
   `CmTranslation`, `CmResource` (the applied-log), `StText`/`StPara` — no domain prefix, but they back
   in-scope fields.
 
-**In scope: 478 properties across 96 classes.** Basic — MultiUnicode 52, MultiString 51, Unicode 35,
-Integer 30, Boolean 25, String 10, Time 5, Guid 2, TextPropBinary 1. Relations — owning/atomic 69,
-rel/atomic 60, owning/col 39, rel/col 38, owning/seq 33, rel/seq 28. Excluded as `trace`: 28 props
-across 9 classes.
+**In scope: 473 properties across 95 classes** (473 = 209 `basic` + 141 `owning` + 123 `rel`). Basic —
+MultiUnicode 52, MultiString 51, Unicode 35, Integer 28, Boolean 25, String 10, Time 5, Guid 2,
+TextPropBinary 1. Relations — owning/atomic 69, rel/atomic 57, owning/col 39, rel/col 38, owning/seq 33,
+rel/seq 28. Excluded as `trace`: 28 props across 9 classes.
+
+An earlier count of 478 properties across 96 classes included 5 `TextTag` rows later demoted as a
+scope over-inclusion — see [issue D5](../docs/issues.md). The numbers above are post-D5 and were
+recomputed directly from the TSV, not adjusted by hand from the old figures.
 
 **This file is the drift-detection artifact.** Regenerating it after a LibLCM package bump must produce
 no diff; any diff is a model change requiring review and (re)classification.
 
-## What is still to come
+## The manifest is now the type system
 
-Classification (per [ADR 0009](../docs/adr/0009-layered-api-primitives-and-composers.md), grouped per
-[API surface layer 1](../docs/api-surface-layer1.md)): each in-scope field gains a `construct`,
-`classification`, `comparisonClass`, `hcReachable` (does `HCLoader` read it — see
-[the HC grammar map](../docs/hc-grammar-map.md)), `assessPoisonsCache`, an `enumValues` column for the
-30 in-scope `Integer` fields that are closed enumerations, and a required `rationale`. Classification is
-enforced per-operation — CI fails if an operation touches an unclassified field — with 100%
-classification as the v1.0 release gate.
+Classification has shipped (commit `66fe792`). Every in-scope row carries all ten classification
+columns — **zero in-scope rows are unclassified** — turning `liblcm-inventory.tsv` from a raw
+inventory into the type system the (not-yet-written) kind generator is meant to read: per
+[ADR 0009](../docs/adr/0009-layered-api-primitives-and-composers.md) and
+[API surface layer 1](../docs/api-surface-layer1.md), each field's `Construct`, `Classification`,
+`ComparisonClass`, `Verbs`, `HcReachable` (does `HCLoader` read it — see
+[the HC grammar map](../docs/hc-grammar-map.md)), `AssessPoisonsCache`, `EnumValues` (for the 28
+in-scope `Integer` fields), and `Rationale` are all populated. See the column table above for what
+each one means and the value set it takes.
+
+[`classify.ps1`](classify.ps1) is the mechanized, checked-in, re-runnable producer of these columns —
+rerun it after any inventory regeneration rather than hand-editing the TSV.
+
+### What genuinely still remains
+
+- **No kind generator yet.** The manifest is the type system a generator would read, but nothing in
+  `src/` reads `Construct`/`Classification`/`Verbs` to emit operation kinds. Today's runner still
+  implements exactly one hand-written operation, `lexical/sense/setGloss`.
+- **`manifest/generate-inventory.ps1` does not exist.** The raw first-nine-column inventory was
+  produced by ad-hoc commands rather than a committed script, so the drift gate this file's opening
+  section promises ("regenerating it after a LibLCM package bump must produce no diff") cannot
+  actually be re-run yet. Tracked as [issue D6](../docs/issues.md).
+- **Confidence caveats.** `HcReachable` is `unconfirmed` for 7 in-scope rows pending an HCLoader-read
+  citation ([issue B17](../docs/issues.md) calls out `MoMorphSynAnalysis.Components`/`GlossBundle`
+  specifically). About 300 of the 473 in-scope rows were classified by a field-name heuristic rather
+  than an explicit citation — defensible but individually unverified; `Rationale` distinguishes cited
+  rows from generic ones so the confidence gap is machine-visible ([issue B18](../docs/issues.md)).

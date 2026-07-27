@@ -67,7 +67,7 @@ Not ours to fix; the obligation is to detect, disclose, or refuse.
 
 | # | Issue | Status |
 | --- | --- | --- |
-| D1 | **The HCLoader extractor matches field *names*, not `class.field`.** The never-referenced set (326) is therefore precise, but the referenced set (152) is a conservative over-approximation. Per-class precision needs the curated map. | wontfix (recorded) |
+| D1 | **The HCLoader extractor matches field *names*, not `class.field`.** The never-referenced set (321, post-D5) is therefore precise, but the referenced set (152) is a conservative over-approximation. Per-class precision needs the curated map. | wontfix (recorded) |
 | D2 | **Method-mediated reads are invisible to the extractor.** `PhMetathesisRule.LeftSwitchIndex`/`RightSwitchIndex` are read via `GetStrucChangeIndices()`; patched by hand. Others may exist. | open |
 | D5 | **Scope over-inclusion: `TextTag`.** It entered the in-scope set only because `StText`/`StPara` were pulled in as rich-text containers, and `TextTag.BeginSegment`/`EndSegment` target the out-of-scope `Segment` (interlinear) class with no authoring path — structurally the same failure as the derivation-trace false positive. 5 rows demoted; in-scope is now **473 props / 95 classes**. The generation rule needs `StText`/`StPara` treated as **terminal** containers (walk *to* them, never *through* them). | fixed |
 | D6 | **Inventory generation is not yet a committed script.** `classify.ps1` is reproducible but the inventory itself was produced by ad-hoc commands, so the D5 fix was applied surgically rather than by regeneration. Needs a `manifest/generate-inventory.ps1` before the next LibLCM bump, or the drift gate cannot actually be re-run. | open |

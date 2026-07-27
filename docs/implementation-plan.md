@@ -3,7 +3,20 @@
 The plan is deliberately test- and contract-first. Do not begin with a generic reflection CRUD
 engine.
 
-## Phase 0 — repository and compatibility spike
+## Phase 0 — repository and compatibility spike — **status: partial**
+
+Landed: solution/package shape, pinned `SIL.LCModel 11.0.0-beta0150` with documented local-package
+override, an already-loaded `LcmCache` passed into the runner (never opened by it), whole-change-set
+commit/rollback via `UndoableUnitOfWorkHelper.Do` (covered by `Apply/ChangeSetApplierTests`), the
+adapted FwData/LibLCM host plumbing (`SIL.LCAtom.Host`), and the applied-change log over
+`LexDb.Resources` (`AppliedLog/ProjectAppliedLog.cs`). Not done: **item 3, the multi-target proof, did
+not happen** — every project targets exactly one TFM (`netstandard2.0` for `Contract`/`Model`,
+`net8.0` for `Runner`/`Host`/`Cli`/`Tests`; see `AGENTS.md`'s Compatibility targets); there is no
+`net462` build and no `net48` FieldWorks-compatible consumer. Item 6's discovered-footprint capture via
+`AllOwnedObjects`/`ReferringObjects` is not yet exercised by any shipped operation — the one shipped
+operation (`setGloss`) uses only a declared footprint. Item 10's custom-field non-undoable-UOW pattern
+is unbuilt (no custom-field code exists). CI itself (item 1) does not exist — there are no
+`.github/workflows` in this repo, so nothing here is actually gated by CI yet.
 
 1. Create solution, central build properties, analyzers, formatting, test projects, and CI.
 2. Pin a current LibLCM NuGet version and document local-package override.
@@ -42,7 +55,12 @@ engine.
 
 Exit: target matrix and transaction boundary are demonstrated by executable tests.
 
-## Phase 1 — contract kernel
+## Phase 1 — contract kernel — **status: done**
+
+`SIL.LCAtom.Contract` (LibLCM-free, `netstandard2.0`) implements all ten items and is covered by the
+`Contract/` test suite (CanonicalId, CanonicalJson, ChangeSetJsonParser, ConformanceVector,
+IntentDigest). Exit criterion — identical parsing and hashes on every target — currently means the one
+target the contract builds on; see Phase 0's status on the multi-target proof.
 
 1. Define immutable Change Set, operation envelope, placement, dependency, rationale, confidence,
    provenance, and extension types.
@@ -61,7 +79,16 @@ Exit: target matrix and transaction boundary are demonstrated by executable test
 
 Exit: a LibLCM-free package gives identical parsing and hashes on every target.
 
-## Phase 2 — model inventory and semantic snapshot
+## Phase 2 — model inventory and semantic snapshot — **status: partial**
+
+Items 1–2 are done and then some: `manifest/liblcm-inventory.tsv` holds 898 rows (473 in-scope, 397
+out, 28 trace) across 95 in-scope classes, and classification is **100% complete for every in-scope
+row** (commit 66fe792) — ahead of where this phase originally expected to be. Item 3 (fail CI on
+unclassified/changed members) is not done — there is no CI in this repo to fail. Items 4–8, the
+canonical-representation and snapshot machinery, are built generically (`SIL.LCAtom.Model.Snapshot`,
+`Effects`) but **snapshotting is wired up for exactly one type, `LexSense`**
+(`Runner/Snapshotting/LexSenseSnapshotter.cs`) — the other 94 in-scope classes have no snapshotter yet.
+The exact `.fwdata` byte digest (item 7) has not been verified as a separate host utility.
 
 1. Generate a raw inventory from LibLCM metadata.
 2. Establish the reviewed coverage-manifest format and initial classifications.
@@ -83,7 +110,15 @@ Exit: save/reopen and canonically equivalent models have stable semantic digests
 newly shipped LibLCM member leaves the digest of a model that does not populate it unchanged;
 meaningful rich text differences remain visible.
 
-## Phase 3 — assessment and mutation-plan spine
+## Phase 3 — assessment and mutation-plan spine — **status: partial**
+
+`ChangeSetAssessor.Assess(changeSet, cache)` (item 6) is shipped, deterministic, and read-only, with
+before-state/expected-effects capture in `Assessment` (item 4) — but scoped to exactly one operation
+kind (`SetGloss`), matching Phase 4's actual breadth, not the full spine. Not done: there is no
+`MutationPlan` type anywhere in the codebase (item 3); GUID-collision preflight (item 2) is unexercised
+because no `create` operation exists yet to collide; resource/depth/count limits for untrusted input
+(item 7) are not implemented; and reassessment-vs-rebase (item 8) has no rebase code path at all — see
+Phase 7/8 below, both not started.
 
 1. Define resolver interfaces for canonical IDs, existing GUIDs, owners, references, fields,
    writing systems, and sequence anchors.
@@ -107,7 +142,16 @@ digests are computed over read-back snapshot deltas in canonical identity, are s
 lowering that changes the plan but not the resulting state, and move when a `before` or `after` on
 a touched field moves.
 
-## Phase 4 — minimal vertical operation slice
+## Phase 4 — minimal vertical operation slice — **status: partial — one of nine families**
+
+Only `lexical/sense/setGloss` exists, exercising item 2/3's territory (a multilingual alternative set —
+there is no explicit clear yet) plus items 8 and 9 fully: whole-change-set atomic apply/rollback is
+real (`Apply/ChangeSetApplierTests`) and read-back + `Receipt` are shipped. Items 1 (create with
+canonical ID), 4 (reference attach/detach), 5 (collection add/remove), 6 (sequence insert/move/remove),
+and 7 (delete with cascade) do not exist in any form — zero create, delete, reference, collection, or
+sequence operations are implemented. The applied-change log entry (below) is written inside the same
+unit of work as designed. This is the gap [operation-catalog-plan.md](operation-catalog-plan.md)'s L1
+stage targets next.
 
 Implement a coherent end-to-end subset rather than all creates first:
 
@@ -141,7 +185,10 @@ GUID-matched "already applied?" query over it.
 Exit: a mixed multi-operation Change Set applies atomically and rollback restores the exact semantic
 baseline after failures injected at every operation boundary, leaving no log entry.
 
-## Phase 5 — custom fields
+## Phase 5 — custom fields — **status: not started**
+
+No custom-field code exists anywhere in `src/` (no `AddCustomField`, no custom-field resolver, no
+`(ownerClass, internalName)` lookup).
 
 1. Inventory `FieldDescription`, metadata-cache, custom-property, serialization, and undo behavior.
 2. Implement enumeration and resolution by `(ownerClass, internalName)` plus expected structural
@@ -159,7 +206,10 @@ baseline after failures injected at every operation boundary, leaving no log ent
 Exit: custom-field definitions and values round-trip mechanically without serializing `flid` as
 identity.
 
-## Phase 6 — complete semantic coverage
+## Phase 6 — complete semantic coverage — **status: not started**
+
+The coverage manifest is 100% classified (see Phase 2), which is this phase's prerequisite, not its
+substance — no domain family beyond the single `setGloss` operation is implemented.
 
 Work through the coverage manifest by coherent domain families. Each pull request must close a
 visible portion of the manifest and include full operation-family completion criteria from
@@ -176,7 +226,9 @@ Prioritize:
 
 Exit: 100% model-surface classification and every `semantic-operation` member covered.
 
-## Phase 7 — mechanical diff
+## Phase 7 — mechanical diff — **status: not started**
+
+No `Diff(A, B)` implementation exists in the codebase.
 
 1. Implement scalar, map, set, reference, ownership, and entity create/delete comparison.
 2. Implement deterministic minimum ordered-sequence edit synthesis using LIS.
@@ -189,7 +241,9 @@ Exit: 100% model-surface classification and every `semantic-operation` member co
 
 Exit: round-trip invariant passes for all supported generated and curated fixtures.
 
-## Phase 8 — rebase and conflict conformance
+## Phase 8 — rebase and conflict conformance — **status: not started**
+
+No rebase code path exists; `docs/conflicts-and-rebase.md` remains design only.
 
 1. Implement re-assessment against a new baseline.
 2. Refresh only allowed baseline evidence and unique anchors.
@@ -200,7 +254,9 @@ Exit: round-trip invariant passes for all supported generated and curated fixtur
 
 Exit: conflict behavior is fully documented by executable fixtures.
 
-## Phase 9 — adapters and release
+## Phase 9 — adapters and release — **status: not started**
+
+No process/JSON host, no `net48` adapter, and no published package exist yet.
 
 1. Implement a minimal `net8.0` process/JSON host for isolated and Python-driven use.
 2. Keep host project opening/saving outside core interfaces.

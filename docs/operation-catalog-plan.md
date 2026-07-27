@@ -33,9 +33,12 @@ positionally ordered, **F** feeding (semantically ordered). Authoring: **raw** o
 `setGloss` needed only *declared-footprint* effect capture on an existing object. Completeness needs,
 in rough order of first use:
 
-1. **The generated kind namespace + manifest as type system.** Per-field kinds generated from the
-   coverage manifest, which must carry field type, comparison class, and the reviewed
-   `class → construct` map ([ADR 0009](adr/0009-layered-api-primitives-and-composers.md) §3).
+1. **The generated kind namespace + manifest as type system — half-shipped.** The coverage manifest
+   itself is done: every in-scope row (`manifest/liblcm-inventory.tsv`, 473 rows) is classified and
+   carries field type, comparison class, and the reviewed `class → construct` map
+   ([ADR 0009](adr/0009-layered-api-primitives-and-composers.md) §3). What's still missing is the
+   generation step — nothing yet reads the manifest and emits per-field kinds from it; the one kind
+   that exists (`lexical/sense/setGloss`) was written by hand.
 2. **Create + identity mapping.** A create proposes a new entity by canonical id; the runner mints a
    storage GUID, records the `canonicalId → GUID` mapping in the Assessment/Receipt, and later ops in
    the same change set resolve that entity through the mapping. `create` carries `owner`, `ownerField`
@@ -74,9 +77,12 @@ in rough order of first use:
 13. **HC round-trip.** Forward projection (harvest `HCLoader`) + reverse `Expand`
     ([hermitcrab-projection](hermitcrab-projection.md#authoring-input-and-round-trip)) — the flagship
     composer.
-14. **Apply hardening.** Bind `apply` to a prior Assessment's footprint digest (ADR 0004 §3 — the
-    shipped `ChangeSetApplier.Apply` takes no Assessment and is always bare) and provide the
-    exclusive-write guarantee ([ADR 0006](adr/0006-engine-reality-apply-readback-preflight.md) §4).
+14. **Apply hardening — the assess→apply binding is done; the exclusive-write guarantee is not.**
+    `ChangeSetApplier.Apply` now requires a prior `BoundAssessmentAnchor` and hard-stops on footprint
+    drift (ADR 0004 §3; closed issue A2). What remains is the exclusive-write guarantee itself
+    ([ADR 0006](adr/0006-engine-reality-apply-readback-preflight.md) §4, issue C2) — the host-side
+    coordination that keeps a colliding external writer from racing an open apply; issue B13
+    (cross-process protocol) records a per-project daemon as the recommended place to put it.
 
 ## Catalog by group (condensed — full `path:line` inventory is the Flexicon harvest reference)
 
@@ -143,10 +149,16 @@ Compound/graph ops are always assessed last with a fresh read-back.
 
 ## Staged roadmap
 
+**Status: none of L1–L5 or G0–G3 has started.** The only operation shipped anywhere in this catalog is
+`lexical/sense/setGloss`, which predates and sits outside this staged roadmap (it shipped as the
+walking-skeleton slice — see [build-stages.md](build-stages.md) — before this catalog was written).
+L1 is the next stage in sequence.
+
 Each stage adds operations **and** the machinery they first require; each is sonnet-built, opus-reviewed,
 verified against a real project, committed. Interleave the cross-cutting hardening (apply↔Assessment
-binding per ADR 0004/0006; exclusive-write coordination; the 100%-coverage manifest; per-op conformance
-vectors) as the operations that need them arrive.
+binding per ADR 0004/0006 — the binding half is done, see item 14 above; exclusive-write coordination —
+still open; the 100%-coverage manifest — done, see item 1 above; per-op conformance vectors) as the
+operations that need them arrive.
 
 - **L1 — Simple lexical core.** entry create/delete, sense create + setters, WS-alt/rich-string/scalar
   setters, collection-ref add/remove. *Introduces:* **create + identity mapping**, **delete-cascade
@@ -180,6 +192,9 @@ prohibitions end-to-end (Flexicon's dispatch is buggy — do not mirror); `PhIte
 reduplication fresh-create. These get extra scrutiny and their own conformance fixtures.
 
 ## Milestones
+
+**Status: not reached — none started.** All four remain ahead of the one shipped operation
+(`lexical/sense/setGloss`); none of the staged work they depend on (L1–L5, G0–G3) has begun.
 
 - **Minimum lexical-complete** (end of L1, partial L2/L3): author/round-trip a basic dictionary entry —
   headword, meaning, grammatical category, one example, publish/hide.

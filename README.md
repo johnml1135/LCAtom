@@ -18,7 +18,27 @@ Git repository, database, web service, AI agent, FieldWorks panel, or another ap
 runner gives that change set one meaning, assesses it against a specific model, and can apply it
 atomically through LibLCM's unit-of-work machinery.
 
-This repository is initially a specification and implementation plan. Start with:
+## Status
+
+There is a working, tested, end-to-end implementation, not just a plan. `lcatom open` loads a real
+FieldWorks project; a draft can be authored, assessed, applied atomically, read back, and logged —
+all through the real `Contract`/`Model`/`Runner`/`Host`/`Cli` projects, exercised by 82/82 passing
+tests against a real `LcmCache`. See [build stages](docs/build-stages.md) for what "done" means stage
+by stage.
+
+- **The catalog is one operation deep.** The only operation implemented end to end is
+  `lexical/sense/setGloss`. There are no create, delete, sequence, or grammar operations yet — see the
+  [operation-catalog plan](docs/operation-catalog-plan.md) for the roadmap to lexical and grammar
+  completeness, and [implementation plan](docs/implementation-plan.md) for per-phase status.
+- **HermitCrab projection has no code yet.** [HermitCrab projection](docs/hermitcrab-projection.md)
+  and the [HC grammar map](docs/hc-grammar-map.md) are normative design; not one file of projection
+  code exists in the repo.
+- **The LibLCM coverage manifest is fully classified** (`manifest/liblcm-inventory.tsv`, 898 rows,
+  zero unclassified in-scope rows) but nothing yet generates operation kinds from it — see
+  [issues register](docs/issues.md).
+
+Everything else in this repository is normative design written ahead of the code — deliberately, and
+still binding. The full document set:
 
 - [Architecture and decisions](docs/architecture.md)
 - [Rationale](docs/rationale.md)
