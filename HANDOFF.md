@@ -1,6 +1,18 @@
 # Handoff for the implementation session
 
-Copy the block below into a fresh session.
+> **STOP — this handoff is obsolete as of 2026-07-27.**
+>
+> Read [ADR 0013](docs/adr/0013-harmony-is-the-change-mechanism.md) first. The plan below describes
+> building out a change-set contract and operation catalog. **That work is cancelled.** Harmony's
+> `Commit`/`IChange` already provides the mechanism, and LibLCM's unit of work is the second; a third
+> is not justified.
+>
+> Do **not** implement the phases, stages, or catalog below. They are retained as a record of what
+> was planned before `SIL.Harmony` was read.
+>
+> The live questions are now: what additions Harmony needs to carry grammar (starting with ordering
+> semantics — see ADR 0013's "what survives"), whether a CLI is wanted and whether it belongs in
+> Harmony, and who maintains what. Those are open, not answered here.
 
 ---
 

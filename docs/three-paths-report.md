@@ -1,5 +1,13 @@
 # Three paths to one cross-platform API — synthesis
 
+> **SUPERSEDED (2026-07-27) by [ADR 0013](adr/0013-harmony-is-the-change-mechanism.md).** This
+> document was written without `SIL.Harmony` having been read — it was not checked out, and the
+> analysis reasoned around the gap instead of closing it. Harmony already provides semantic change
+> objects, hash-chained commits, per-object snapshots, before/after state at any commit, validation,
+> and `OpaqueChange` for changes a client cannot yet interpret. **The architectural recommendations
+> below do not stand.** The platform findings do.
+
+
 *2026-07-27. Synthesis of [path 1](path-1-minilcm-extended.md), [path 2](path-2-lcatom-one-surface.md),
 and [path 3](path-3-liblcm-crossplatform.md), each researched independently. Claims below were
 re-verified against source before inclusion; where an underlying report was wrong, it is marked.*

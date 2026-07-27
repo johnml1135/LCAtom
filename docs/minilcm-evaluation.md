@@ -1,5 +1,13 @@
 # MiniLcm vs. LCAtom — decision report
 
+> **SUPERSEDED (2026-07-27) by [ADR 0013](adr/0013-harmony-is-the-change-mechanism.md).** This
+> document was written without `SIL.Harmony` having been read — it was not checked out, and the
+> analysis reasoned around the gap instead of closing it. Harmony already provides semantic change
+> objects, hash-chained commits, per-object snapshots, before/after state at any commit, validation,
+> and `OpaqueChange` for changes a client cannot yet interpret. **The architectural recommendations
+> below do not stand.** The platform findings do.
+
+
 *Prepared 2026-07-27. Scope: can MiniLcm be the single API over LibLCM for everyone, should LCAtom be,
 or are both needed. Written against source in both repositories plus `liblcm` (LibLCM itself, checked
 out as a sibling repo and read directly for the referential-integrity claim).*

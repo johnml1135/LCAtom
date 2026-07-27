@@ -1,6 +1,11 @@
 # ADR 0011 — The experiment loop boundary: LCAtom is the record, not the orchestrator
 
-Status: accepted (2026-07-27)
+Status: **superseded (2026-07-27)**
+> **SUPERSEDED (2026-07-27) by [ADR 0013](0013-harmony-is-the-change-mechanism.md).** This ADR
+> describes how to grow a change-management mechanism that ADR 0013 declines to build, on the
+> grounds that Harmony's `Commit`/`IChange` already provides it. Retained as a record of the
+> reasoning, not as a live decision.
+
 
 Amends [ADR 0010](0010-hermitcrab-experimentation-is-the-primary-purpose.md). Settles a three-way
 disagreement between [HC surface scope](../hc-surface-scope.md) §6,

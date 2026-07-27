@@ -18,7 +18,28 @@ Git repository, database, web service, AI agent, FieldWorks panel, or another ap
 runner gives that change set one meaning, assesses it against a specific model, and can apply it
 atomically through LibLCM's unit-of-work machinery.
 
-## Status
+## Status — direction reversed, 2026-07-27
+
+> **Read [ADR 0013](docs/adr/0013-harmony-is-the-change-mechanism.md) before anything else.**
+>
+> This repository set out to build a change-set contract and runner. That premise is **withdrawn**.
+> `SIL.Harmony` — the CRDT/commit-log engine under FieldWorks Lite — already provides semantic change
+> objects, hash-chained commits, per-object snapshots, before/after state at any commit, validation,
+> and `OpaqueChange` for changes a client cannot yet interpret. Together with LibLCM's unit of work,
+> that is **two** supported change-management mechanisms already in the ecosystem. A third needs to
+> show both are inadequate. It cannot.
+>
+> Every prior document here was written without Harmony having been read. That is the error.
+>
+> **What survives is analysis, not machinery:** the 100%-classified coverage manifest, the
+> HCLoader-derived grammar map, and the finding that ordered grammar (feeding/bleeding rule order,
+> index-as-identity alpha variables, positional `MoAffixProcess.Output`) cannot ride on a
+> last-writer-wins scalar order. That last one is a **defect report against Harmony's
+> `SetOrderChange`**, not an argument for this repository.
+>
+> The shipped code below is real and passes its tests. It is no longer on a path to being the API.
+
+## Status of the implementation
 
 There is a working, tested, end-to-end implementation, not just a plan. `lcatom open` loads a real
 FieldWorks project; a draft can be authored, assessed, applied atomically, read back, and logged —
