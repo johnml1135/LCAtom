@@ -23,10 +23,28 @@ The split is not philosophical, it is load-bearing and enforced in the build:
 ```
 — `FwLiteMaui/FwLiteMaui.csproj:26-27`, gating the `ProjectReference` at `:98-99`.
 
-**So: on Android and iOS there is no LibLCM at all.** That is the answer to "why not." LibLCM needs
-the ICU4C native runtime, `structuremap`, and the desktop `.fwdata` file model. FieldWorks Lite is a
-mobile product. The CRDT backend exists because LibLCM cannot go where the product needed to go — not
-because someone preferred CRDTs in the abstract.
+**So: on Android and iOS there is no LibLCM at all.** That is the answer to "why not." FieldWorks Lite
+is a mobile product, and the CRDT backend exists because LibLCM could not go where the product needed
+to go — not because someone preferred CRDTs in the abstract.
+
+> **Correction (2026-07-27).** An earlier draft of this section implied the constraint was "LibLCM is
+> Windows-only." **It is not, and the distinction is decisive for the platform question.** The gate
+> above lives in `FwLiteMaui.csproj`, whose target platforms are android / ios / maccatalyst / windows
+> — there is no MAUI "linux" target, so `== 'windows'` there excludes **mobile**, not Linux.
+> Meanwhile:
+>
+> - **LibLCM's own CI runs the full test suite on `ubuntu-22.04`**, with the same `dotnet test`
+>   invocation as the Windows leg (`liblcm/.github/workflows/ci-cd.yml:72-79`), and the official NuGet
+>   packages are **published from the Linux leg** (`:92-94`, `if: … matrix.os == 'ubuntu-22.04'`).
+> - **Lexbox's own server already runs the LibLCM-backed backend on Linux.** `FwHeadless` references
+>   `FwDataMiniLcmBridge` unconditionally (`backend/FwHeadless/FwHeadless.csproj`) and ships in a Linux
+>   container (`backend/FwHeadless/Dockerfile` — `mcr.microsoft.com/dotnet/aspnet:10.0`).
+>
+> So Linux is not the problem; it is already solved and in production. **The real boundary is mobile**
+> — AOT/trimming, storage sandboxing, and the fact that LibLCM's Linux support leans on a bespoke
+> SIL-packaged ICU (`icu-fw` from `linux.lsdev.sil.org`, installed in CI at `:42-46`) rather than
+> stock platform ICU. Wherever this document says "cross-platform," read **"mobile"**: the Linux half
+> of the requirement is already met by LibLCM itself.
 
 **LCAtom has the same shape, with one backend instead of two.** `Contract` and `Model` are
 `netstandard2.0` and LibLCM-free by design; `Runner` and `Host` take `SIL.LCModel` 11.0.0-beta0150.
