@@ -5,6 +5,11 @@ Status: ordered questions for a one-question-at-a-time owner grill.
 Use this with `docs/fwLite-pangloss-verification-synthesis.md`. Ask exactly one question, record the
 answer and rationale, then move to the next unblocked question. Facts should be resolved from source
 or experiments rather than asked of the owner.
+Research update: also read `docs/fwLite-pangloss-sota-research.md`. Several questions below are not
+yet owner questions. Before each live question, ask: can source answer it; can a bounded experiment
+answer it; or can primary research narrow the options? Only then ask for the residual product,
+authority, policy, or ownership decision. Do not ask the owner to guess analysis identity,
+import-loss behavior, grammar causality, ordering semantics, unknown-client behavior, or recovery.
 
 ## Dependency order
 
@@ -189,11 +194,16 @@ Dependency: Q14.
 
 Should the first implementation create a grammar construct or edit an existing one?
 
-Recommended answer: first compare two existing `.fwdata` fixtures in PanGloss. Treat an existing
-affix-template slot's `Optional` value, with referring irregular inflection types, as the leading
-candidate because `HCLoader` uses it to decide whether to add null-affix rules. Select it only if a
-manual `.fwdata` baseline/candidate experiment proves PanGloss imports it and emits the intended
-nonempty delta. Then implement that value path before create/delete closure and generator breadth.
+Recommended answer: first compare two existing `.fwdata` fixtures in PanGloss. Then run three
+controlled FieldWorks experiments before selecting the first FWLite value path:
+
+1. `NoDefaultCompounding` as a clean scalar control;
+2. an affix-template slot's `Optional` value with ordinary and irregular controls; and
+3. phonological `Disabled`/`OrderNumber` with a two-rule feeding/bleeding fixture.
+
+`Optional` affects both ordinary slot skipping and irregular null-affix injection, so one fixture is
+insufficient. Select the first FWLite path only after PanGloss imports it and emits the intended
+nonempty delta.
 
 Dependency: Q10–Q15.
 
@@ -275,7 +285,7 @@ Which maintained repository/team owns:
 - review UI/workflow; and
 - AI-provider integration?
 
-Recommended answer: MiniLcm/FWLite owns grammar and review; Harmony owns only generic CRDT
+Recommended allocation, pending this decision: MiniLcm/FWLite owns grammar and review; Harmony owns only generic CRDT
 primitives; PanGloss owns analysis identity and comparison; FwLiteProjectSync owns `.fwdata`
 materialization; AI integration belongs at the review/orchestration boundary. Record named
 maintainers before broad generation.
@@ -293,13 +303,32 @@ Recommended answer:
 3. changed-word review with context;
 4. explicit accept/reject/revise;
 5. stale evaluation handling;
-6. atomic accepted Harmony/proposal-state update; separately recorded and retriable `.fwdata` materialization;
+6. atomically record acceptance and the accepted grammar transition within the chosen state boundary; represent `.fwdata` materialization as a separately durable, visible, idempotently retriable recovery state;
 7. restart and second-device sync;
 8. an offline human-only path; and
 9. one regression fixture proving the system can say “worse.”
 
 Dependency: all preceding decisions.
 
+## Research gates missing from the original queue
+
+These are evidence gates, not owner questions yet:
+
+- **R1 — Analysis identity:** fixture structural equivalence, duplicates, ordering, runtime IDs,
+  traces, ambiguity, and occurrence identity.
+- **R2 — Import loss:** measure asymmetric warnings and unsupported constructs; propose invalidation
+  classes.
+- **R3 — Incomplete results:** fixture errors, caps, timeouts, and exhaustion so none appears as an
+  improvement.
+- **R4 — Correctness oracle:** include a known improvement, deliberate regression, forbidden
+  analysis, valid ambiguity, and accepted alternative.
+- **R5 — Unknown clients:** test preserved-but-skipped changes and dependent later changes.
+- **R6 — Cross-store recovery:** fail after Harmony acceptance but before `.fwdata` success; prove
+  visible degraded state and idempotent repair.
+- **R7 — Accepted-state round trip:** restart, two clients, `.fwdata`, read-back, FieldWorks edit,
+  reverse sync, and PanGloss equivalence.
+- **R8 — Review accessibility:** prove speakers can judge contextual contrasts without parser IDs
+  while linguists can expand segmentation, features, and traces.
 ## Suggested first live question
 
 Start with Q1:
@@ -310,5 +339,3 @@ Start with Q1:
 
 Recommended answer: accept/reject/revise the grammar proposal as a whole; word judgments are
 evidence, and any corrective edits become a new proposal revision.
-
-
