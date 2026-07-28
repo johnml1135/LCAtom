@@ -104,8 +104,10 @@ metadata. See also [HermitCrab projection](hermitcrab-projection.md#authoring-in
 package), `Cli` (thin CLI + minimal files store), `Tests`. `Contract`/`Model`/`Runner` stay HC-free and
 store-free; the store lives in the CLI/Host layer. One-way dependencies; nothing depends inward.
 Cross-language consumers (Python: Linguistic Assistant/FlexTools; Rust: PanGloss) go through the CLI's
-process/JSON protocol. **[stage-2] separate repo, later:** PR-workflow UI, orchestration, Avalonia,
-LexBox/cloud sync, Dolt/DoltHub.
+process/JSON protocol. **[stage-2]:** PR/review and grammar/corpus UI is implemented as native
+FieldWorks-owned Avalonia modules on the active net48-to-net10 migration spine—not as web/React
+components. Orchestration, LexBox/cloud sync, and any Dolt/DoltHub substrate may remain in a separate
+modern companion/service repository.
 
 As shipped today, only `SIL.LCAtom.Contract`, `.Model`, `.Runner`, `.Host`, `.Cli`, and `.Tests` exist
 as projects; `Diff` and `HermitCrab` are boundary decisions for work not yet started — there is no

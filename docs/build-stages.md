@@ -18,9 +18,11 @@ it never produces them and never interprets them.
 ## Explicitly out of scope (future, likely a separate repo)
 
 The full change-management application: PR-style review workflow, HermitCrab-grammar build and PanGloss
-orchestration (building the FST, invoking the parser, scheduling corpus runs), an Avalonia /
-FieldWorks-embedded UI, LexBox sync of change sets, and any cloud collaboration substrate
-(e.g. Dolt/DoltHub). The local store is git-style files
+orchestration (building the FST, invoking the parser, scheduling corpus runs), FieldWorks-owned
+Avalonia UI modules built along its active net48-to-net10 migration path, LexBox sync of change sets,
+and any cloud collaboration substrate (e.g. Dolt/DoltHub). The Avalonia UI belongs in FieldWorks
+rather than a web/React application; orchestration and synchronization may remain in a separate
+companion service. The local store is git-style files
 (immutable content-addressed objects + mutable manifests); **no database in v1** — SQLite only ever as
 a later, disposable, rebuildable cache, never the source of truth and never synced.
 

@@ -2,12 +2,18 @@
 
 Status: research synthesis and decision framing, not an approved implementation design.
 
+Update, 2026-07-28: FieldWorks is actively migrating from WinForms to Avalonia on dedicated
+migration branches/worktrees, with an eventual move from `net48` to `net10.0`; the default release
+checkout remains WinForms/net48 today. The grammar, corpus, comparison, and adjudication UI described
+here will be native Avalonia components. Web/React/WebView UI is not the planned FieldWorks surface.
+
 ## Decision in one sentence
 
 Do not choose between “CRDT in FWLite” and “rewrite FieldWorks.” Add a narrow, versioned semantic
 command boundary to FieldWorks, initially for explicit approved inbound changes, and keep the modern
 Harmony store/synchronizer in an out-of-process companion. Expand bidirectional authority only one
-domain at a time after conformance proves that domain safe.
+domain at a time after conformance proves that domain safe. Build the new review and editing surfaces
+as FieldWorks-owned Avalonia modules on the existing migration seams.
 
 ## The option that was missing
 
@@ -40,14 +46,74 @@ The second precedent means the fourth option is not merely hypothetical. What re
 the pattern safely to an **already open, interactively edited FieldWorks cache**, then extending the
 semantic surface beyond MiniLcm into grammar, text, and analysis.
 
+## UI and runtime migration boundary
+
+The temporary `net48` runtime does not require a temporary web UI. FieldWorks' active Avalonia
+migration already establishes a native coexistence architecture:
+
+- `FwAvalonia` targets `net48` for in-process hosting beside WinForms.
+- Avalonia 11.x is intentionally pinned because that line still supplies assemblies loadable by the
+  current runtime.
+- a typed, deterministic view-definition IR separates the new UI from legacy XML layout execution;
+- the typed IR/region-model Avalonia path bypasses the frozen legacy `DataTree`, while
+  `RecordEditView` selects the active host;
+- explicit surface selection chooses Avalonia, explicit legacy fallback, or blocked behavior;
+- FieldWorks-owned virtualized controls replace dense legacy surfaces;
+- plugin registration covers special interlinear and grammar-rule editors;
+- the preview host supplies fast, LCModel-free UI development and snapshot/parity testing;
+- projectors and LibLCM write-back stay outside the presentation assembly, at the FieldWorks/xWorks
+  integration seam;
+- new components preserve the established FieldWorks edit-session, UOW/undo-redo, command/focus,
+  UI-scheduler, lifetime, localization, accessibility, automation, and parity-manifest contracts.
+
+The grammar-change and word-evidence UI should follow those same rules. It should not create a
+parallel React, Blazor, WebView, or browser component model as the FieldWorks UI surface. Existing
+FwLite web/MAUI and Platform.Bible products remain independent and are not deprecated by this choice.
+
+The runtime boundary is:
+
+```text
+FieldWorks net48 during coexistence
+  ├─ native Avalonia review/edit modules
+  │    ├─ LCModel-free view models and projections
+  │    ├─ proposal, evidence, history, and adjudication views
+  │    └─ explicit legacy fallback only where required
+  ├─ xWorks/FieldWorks integration
+  │    ├─ loaded LcmCache and UOW
+  │    ├─ semantic lowering and read-back
+  │    └─ parser/UI invalidation and save
+  └─ versioned local protocol
+       ↕
+.NET 10 companion
+  ├─ Harmony store and synchronization
+  ├─ PanGloss orchestration
+  ├─ durable inbox/outbox
+  └─ query projections
+```
+
+After FieldWorks moves to `net10.0`, the Avalonia components remain the product UI. The companion
+boundary may remain out of process for fault isolation and synchronization lifecycle, or selected
+services may move in process. That later deployment choice must not change the semantic command,
+receipt, projection, or view-model contracts.
+
+This divides interim work cleanly:
+
+1. Build framework-neutral semantic and projection contracts now.
+2. Build the Harmony/PanGloss companion on `net10.0`.
+3. Build the actual FieldWorks UI now in `net48` `FwAvalonia` modules using Avalonia 11.x.
+4. Keep UI projects LCModel-free; put projectors and mutations in the established FieldWorks
+   integration layer.
+5. Retarget and update Avalonia only as part of the FieldWorks runtime migration, without rewriting
+   the feature UI or wire contract.
+
 ## What “FieldWorks speaks CRDT” can mean
 
 The phrase spans several materially different products.
 
 | Level | FieldWorks capability | Authority | Rough effort |
 |---|---|---|---:|
-| 0 | Preview a proposed semantic change and its evidence | `.fwdata` | 2–4 weeks |
-| 1 | Explicitly apply/reject an approved change now | `.fwdata` | 6–10 weeks for a production lexical vertical slice |
+| 0 | Preview a proposed semantic change and its evidence in Avalonia | `.fwdata` | 3–6 weeks |
+| 1 | Explicitly apply/reject an approved change from Avalonia | `.fwdata` | 6–10 weeks for a production lexical vertical slice |
 | 2 | Synchronize selected, instrumented domains both ways | Per-domain, explicitly assigned | 3–6 months for an initial lexical subset |
 | 3 | Collaborate on grammar, texts, and analyses | Per aggregate/change contract | 12–24+ engineer-months before broad production use |
 | 4 | Treat Harmony as authority for nearly all FieldWorks state | Harmony; `.fwdata` becomes a projection | 20–50 engineer-years, with high program risk |
@@ -137,7 +203,7 @@ This distinction is the main cost driver for bidirectional FieldWorks synchroniz
 ```text
 FieldWorks UI and commands
   │
-  ├─ thin net48 semantic adapter
+  ├─ native Avalonia module plus thin net48 semantic adapter
   │    ├─ owns active LcmCache access
   │    ├─ applies one LibLCM UOW
   │    ├─ emits structural audit evidence
@@ -273,12 +339,14 @@ many LibLCM mutations.
 
 ### A. Inbound apply only
 
-FieldWorks previews, applies, and records approved external changes. Ordinary FieldWorks edits remain
+An Avalonia module in FieldWorks previews, applies, and records approved external changes. Ordinary
+FieldWorks edits remain
 ordinary `.fwdata` edits and do not automatically enter Harmony as semantic changes.
 
 Advantages:
 
 - fastest path to a useful PanGloss → human review → FieldWorks loop;
+- builds the eventual product UI on the existing Avalonia migration architecture immediately;
 - minimal authority ambiguity;
 - validates semantic lowering, undo, save, and UI seams;
 - compatible with keeping FWLite lexeme-focused.
@@ -328,10 +396,23 @@ not the current program.
 
 ## Proof gates before approving implementation
 
+### Gate 0: Avalonia coexistence surface
+
+Before coupling the feature UI to synchronization, prove one native analysis-review or
+grammar-assessment region in the net48 FieldWorks Avalonia host:
+
+- it uses LCModel-free view models and the established typed-IR/region seams;
+- `RecordEditView` selects it explicitly, with no silent legacy fallback;
+- it obeys edit-session, UOW/undo-redo, UI-scheduler, focus/command, and lifetime rules;
+- localization, accessibility/automation IDs, and visual/behavioral parity evidence pass;
+- it can consume a fake companion projection in the preview host without opening an LCM project;
+- the same view-model contract is viable after the eventual net10 retarget.
+
 ### Gate 1: FieldWorks apply seam
 
 Prove one lexical command, with no claimed parser effect:
 
+- is previewed and invoked through a FieldWorks-owned Avalonia component;
 - executes on the UI thread against the caller-owned cache;
 - is one undoable UOW;
 - rejects stale/missing/wrong-type targets;
@@ -435,8 +516,12 @@ High-confidence local evidence:
   requirements;
 - FieldWorks `FwApp`, main-window, mediator, refresh, parser-listener, and error-reporting seams;
 - FieldWorks parser abstraction/change-listener behavior;
-- LexBox FwHeadless synchronization choreography, project snapshots, rollback blocking, and
-  CrdtFwdataProjectSyncService for the bounded MiniLcm surface;
+- FieldWorks `phase1-base` Avalonia migration spine: the net48 `FwAvalonia` project, typed
+  view-definition IR, region composer, explicit surface selection, plugin registry, and preview host;
+- FieldWorks interlinear-analysis and grammar-rule Avalonia follow-up branches (active migration
+  evidence, not claims of merged/released functionality);
+- LexBox `FwHeadless` synchronization choreography, project snapshots, rollback blocking, and
+  `CrdtFwdataProjectSyncService` for the bounded MiniLcm surface;
 - the measured LCAtom LibLCM inventory and grammar maps;
 - earlier curated word-evidence research in this repository.
 
@@ -456,7 +541,3 @@ Explicit evidence gaps:
 Four of eight delegated Luna investigations failed because their local sandbox helper could not
 start. Their unsupported generalities were excluded. Findings above incorporate only source-based
 reports that completed successfully and locally inspected repository evidence.
-
-
-
-
