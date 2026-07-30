@@ -78,9 +78,17 @@ record and evidence.
   on `(Class, Field)`; a key in one and not the other **fails the build**.
 - LibLCM already generates ~154,000 of its own lines this way — more than it hand-writes. LcmCrdt
   generates none: 38 change files, 2 generic, 36 one-offs, and every registration typed by hand.
-- **Acceptance gate:** regenerate the five `IPossibility` entities (`ComplexFormType`,
-  `SemanticDomain`, `PartOfSpeech`, `MorphType`, `Publication`) and diff against the shipped, tested
-  implementations. The generator earns the 30 unwritten constructs by reproducing the ones that work.
+- **A third artifact is needed and does not exist:** the MiniLcm ↔ LibLCM name/shape map. The manifest
+  is keyed on LibLCM class names, the generation target on MiniLcm type names, and they do not
+  correspond (`MorphType`→`MoMorphType`, `ComplexFormType`→`LexEntryType`,
+  `SemanticDomain`→`CmSemanticDomain`). Hand-maintained, not derivable, prerequisite.
+- **Acceptance gate:** regenerate the `IPossibility` entities the join can actually reach —
+  `PartOfSpeech` (13 in-scope rows), `MorphType`/`MoMorphType` (3), `ComplexFormType`/`LexEntryType`
+  (2) — and diff against the shipped, tested implementations. `SemanticDomain` and `Publication` are
+  **out of manifest scope entirely** (all 5 and all 16 rows respectively) and are excluded.
+- **What the gate does not prove:** its 37 rows are 34 `unordered` + 3 `positional`, with zero
+  `feeding` and zero `index-as-identity`. It licenses the mechanical majority, not the ordered-grammar
+  residue that ADR 0013 flagged as the real problem.
 
 This supersedes D3's framing. D3 said the manifest *is* a code generator for the mechanical layer;
 D4 fixes what it generates *from* and *into*, and adds a falsifiable acceptance test.
@@ -93,7 +101,7 @@ a guard inside an `IChange`.
 
 - A precondition inside a merging change makes the outcome depend on evaluation position; two
   replicas that resolve it differently diverge permanently.
-- This is why `OperationEnvelope` has no `Before` (`Contract/Model/OperationEnvelope.cs:62-99`), and
+- This is why `OperationEnvelope` has no `Before` (`src/SIL.LCAtom.Contract/Model/OperationEnvelope.cs:62-99`), and
   why that absence is what lets 412 of 473 fields fold into `IChange` natively.
 - The PR system is the machine that resolves preconditions before merge — same as a stale base branch
   in git. What crosses into history is unconditional.

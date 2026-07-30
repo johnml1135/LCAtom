@@ -22,7 +22,7 @@ The "ordered grammar breaks CRDTs" objection — the one thing that survived ADR
 
 ## Why the fold works at all: no preconditions
 
-`Contract/Model/OperationEnvelope.cs:62-99` carries `Kind`, `EntityId`, `Target`, **`After`**,
+`src/SIL.LCAtom.Contract/Model/OperationEnvelope.cs:62-99` carries `Kind`, `EntityId`, `Target`, **`After`**,
 `Placement`, `DependsOn`, and provenance fields. There is **no `Before`**. LCAtom operations never say
 *"if the current value is X, change it to Y."* They say *"make it Y."*
 

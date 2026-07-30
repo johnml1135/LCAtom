@@ -48,8 +48,11 @@ atomically through LibLCM's unit-of-work machinery.
 > failing the build. Generated output targets `LcmCrdt` in lexbox; **Harmony core gains CRDT
 > primitives only, never domain vocabulary.**
 >
-> The acceptance gate is falsifiable: regenerate the five `IPossibility` entities that already ship,
-> and diff against their tested implementations.
+> The acceptance gate is falsifiable: regenerate the three `IPossibility` entities the join can reach
+> (`PartOfSpeech`, `MorphType`, `ComplexFormType`) and diff against their tested implementations. It
+> licenses the mechanical majority only — it contains no `feeding` or `index-as-identity` fields, so
+> the ordered-grammar residue still needs its own proof. Note also that a hand-maintained
+> **MiniLcm ↔ LibLCM name map** is a prerequisite the model file does not supply.
 >
 > Supporting inventories, all evidence-based with `path:line` citations:
 > [liblcm-codegen](docs/inventory-liblcm-codegen.md) ·

@@ -70,20 +70,53 @@ hand-written change classes registered the same way. The generation layer is mis
    (class, field, kind, cardinality, signature) is read from the model file so it tracks LibLCM
    upgrades. Policy (`Scope`, `Construct`, `ComparisonClass`, `Verbs`) comes from the manifest, which
    is human judgement and exists nowhere else. They are joined on `(Class, Field)`, and **a key
-   present in one and absent from the other fails the build.**
-3. **Generated output targets `LcmCrdt`, never `SIL.Harmony` core.** Harmony is domain-free and stays
+   present in one and absent from the other fails the build.** Verified: diffing the actual
+   `(Class, Field)` key sets between the two files yields **zero keys present in one and absent from
+   the other, and no duplicates in either.** A matching count of 898 alone would not have shown this;
+   the key sets were compared.
+3. **A third artifact is required and does not yet exist: the MiniLcm ↔ LibLCM name and shape map.**
+   The manifest is keyed on *LibLCM* class names; the generation target uses *MiniLcm* type names,
+   and they do not correspond by name. `MorphType` is `MoMorphType`; `ComplexFormType` is
+   `LexEntryType`; `SemanticDomain` is `CmSemanticDomain`. A MiniLcm type is also not always one
+   LibLCM class. This map is hand-maintained, is not derivable from either source, and is a
+   prerequisite for decisions 1 and 2 — the model file does **not** connect directly to the
+   generation target.
+4. **Generated output targets `LcmCrdt`, never `SIL.Harmony` core.** Harmony is domain-free and stays
    that way. It knows about commits, snapshots, and changes — not about `IFsFeatStruc`.
-4. **Harmony core gains primitives only**, never domain vocabulary: the converging sequence type,
+5. **Harmony core gains primitives only**, never domain vocabulary: the converging sequence type,
    an explicit reference-set policy, the cross-owner move rule, and the deferred-diagnostic channel
-   (item 9 in [harmony-additions-needed.md](../harmony-additions-needed.md)).
-5. **Acceptance gate: regenerate what already ships, and diff.** `IPossibility`
-   (`MiniLcm/Models/IPossibility.cs:3`) marks **five** entities — `ComplexFormType`, `SemanticDomain`,
-   `PartOfSpeech`, `MorphType`, `Publication` — whose Sync/CRUD/validator code is near-identical
-   duplication that nothing currently exploits. The generator must reproduce their shipped, tested
-   implementations before it is trusted with a construct that has never been written.
+   (item 7 in [harmony-additions-needed.md](../harmony-additions-needed.md)).
+6. **Acceptance gate: regenerate what already ships, and diff.** `IPossibility`
+   (`MiniLcm/Models/IPossibility.cs:3`) marks five entities. **Only three are reachable by the
+   join in decision 2**, and the gate is scoped to those:
+
+   | MiniLcm entity | LibLCM class | Manifest rows | In scope |
+   | --- | --- | ---: | ---: |
+   | `PartOfSpeech` | `PartOfSpeech` | 13 | 13 |
+   | `MorphType` | `MoMorphType` | 3 | 3 |
+   | `ComplexFormType` | `LexEntryType` | 2 | 2 |
+   | ~~`SemanticDomain`~~ | `CmSemanticDomain` | 5 | **0 — all out of scope** |
+   | ~~`Publication`~~ | `Publication` | 16 | **0 — all out of scope** |
+
+   The generator must reproduce these entities' shipped, tested implementations before it is trusted
+   with a construct that has never been written. Whether `CmSemanticDomain` and `Publication` should
+   be in scope at all is a manifest question, not a generator question, and is open.
 
 Correctness here is not established by the design being elegant. It is established by regenerating
 code that already passes its tests.
+
+### What the gate does not prove
+
+Scoped honestly, so it is not oversold. Across the three reachable classes plus `CmPossibility`,
+the gate covers **37 in-scope rows: 34 `unordered`, 3 `positional`, and zero `feeding`, zero
+`index-as-identity`, zero `AssessPoisonsCache=yes`.** It does exercise `set|clear` (20),
+`create|delete` (8), `addRef|removeRef` (4), and `create|delete|move|reparent` (3).
+
+So it proves the generator reproduces possibility-list CRUD. It says nothing about the two `feeding`
+fields, the three `index-as-identity` fields, or any HC-reachable grammar construct — which is
+precisely the residue ADR 0013 flagged as the real problem. **Passing this gate licenses generating
+the mechanical majority; it does not license the ordered-grammar minority**, which needs its own
+proof once the Harmony sequence primitive exists.
 
 ## What stays hand-written
 

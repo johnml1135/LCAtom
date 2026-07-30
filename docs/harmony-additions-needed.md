@@ -87,10 +87,9 @@ an explicit, uniform, documented policy before it is replicated 38 times.
 cycle hazard: two concurrent reparents can produce a cycle or an orphan. Needs a general rule
 (reject-cycle-on-apply, or last-writer-wins-on-parent) before grammar's owning hierarchies land.
 
-### 9. A deferred diagnostic channel — so a bad change fails itself, not the batch
+### 7. A deferred diagnostic channel — so a bad change fails itself, not the batch
 
-*(Numbered 9 because it was found after items 1–8 were written. It is a **core** item, not an
-application-layer one. Evidence:
+*(Added after items 1–6; the two application-layer items renumbered to 8 and 9. Evidence:
 [inventory-harmony-conflict-reporting.md](inventory-harmony-conflict-reporting.md), key claims
 re-verified directly.)*
 
@@ -139,11 +138,20 @@ The insertion points already compute every boolean required: the four-arm branch
 supports creation resurrects a tombstoned entity (`:87-91`). Defensible as add-wins, currently
 implicit, and worth deciding deliberately.
 
+**Unresolved, and recorded here rather than buried:** a diagnostic needs a consumer. The stated
+requirement was that Harmony *crash* — loudly, with enough information to say "this doesn't exist
+anymore." This item substitutes a recorded diagnostic for the crash, on the grounds that the current
+crash is not git-like (git refuses locally and leaves the repo usable; Harmony's throw poisons a sync
+batch on every regeneration). But if the only consumer of that diagnostic is the review UI in item 9,
+which is not designed, the practical result is *neither* a crash *nor* a report. Either item 9 gains
+a minimal surface for these, or this item must also define a loud-by-default channel — a log, a
+non-zero exit, something — that does not depend on unbuilt UI.
+
 ---
 
 ## Needs adding — application layer, not Harmony
 
-### 7. CRDT → full `.fwdata` materialization
+### 8. CRDT → full `.fwdata` materialization
 
 **This is the biggest concrete build item, and it is not in Harmony.**
 
@@ -159,7 +167,7 @@ Your workflow — *"make these changes and then give me the full fwdata"* — ne
 **Note the useful precedent:** `DryRunMiniLcmApi` already exists and records what *would* have been
 written. That is the right shape to reuse.
 
-### 8. Everything else you named
+### 9. Everything else you named
 
 Proposal storage, review queue, approval state, conversation, permissions — all application layer,
 all outside Harmony. Comment threads already ship (`LcmCrdt/Changes/Comments/`), and Lexbox already
@@ -177,13 +185,14 @@ has orgs, projects, users, and a permission service.
 | 4 | Keyed-map modelling for alpha variables | Modelling decision | None | No |
 | 5 | Reference-set policy (add/remove-wins) | Harmony + docs | Small | Before 38 classes replicate it |
 | 6 | Cross-owner move rule | Harmony | Medium | Before owning hierarchies land |
-| **9** | **Deferred diagnostic channel + apply-policy table** | **Harmony** | **Small — the branch already computes the booleans** | **Yes — today one bad change poisons every replay** |
-| 7 | CRDT → full `.fwdata` | `FwLiteProjectSync` | **Large** | Yes, for your export workflow |
-| 8 | Proposal / review / approval | Lexbox + FwLite | Large but conventional | No |
+| **7** | **Deferred diagnostic channel + apply-policy table** | **Harmony** | **Small — the branch already computes the booleans** | **Yes — today one bad change poisons every replay** |
+| 8 | CRDT → full `.fwdata` | `FwLiteProjectSync` | **Large** | Yes, for your export workflow |
+| 9 | Proposal / review / approval | Lexbox + FwLite | Large but conventional | No |
 
-**Four of the seven core items are small. One (7) is large and lives outside Harmony. Items 1 and 4
-may require no code at all.** Item 9 is the one with a live failure mode attached: it is not a missing
-feature so much as an existing crash pointed in the wrong direction.
+**Four of the seven core items are small. One (8) is large and lives outside Harmony. Items 1 and 4
+may require no code at all.** Item 7 is the one with a live failure mode attached: it is not a missing
+feature so much as an existing crash pointed in the wrong direction — and per the note above, it is
+not finished until its diagnostic has a consumer that does not depend on item 9.
 
 ## The thing you got right that changes the plan
 
