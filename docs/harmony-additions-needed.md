@@ -87,6 +87,58 @@ an explicit, uniform, documented policy before it is replicated 38 times.
 cycle hazard: two concurrent reparents can produce a cycle or an orphan. Needs a general rule
 (reject-cycle-on-apply, or last-writer-wins-on-parent) before grammar's owning hierarchies land.
 
+### 9. A deferred diagnostic channel — so a bad change fails itself, not the batch
+
+*(Numbered 9 because it was found after items 1–8 were written. It is a **core** item, not an
+application-layer one. Evidence:
+[inventory-harmony-conflict-reporting.md](inventory-harmony-conflict-reporting.md), key claims
+re-verified directly.)*
+
+**What is actually there.** The entire apply policy is one branch, `SnapshotWorker.cs:76-110`, with
+four arms:
+
+| Situation | Behavior | Loud? |
+| --- | --- | --- |
+| No prior snapshot, change is `OpaqueChange` | skipped, retained in history (`:78-81`) | silent |
+| No prior snapshot, change cannot create | **throws** `NotSupportedException` (`:85`, `EditChange.cs:10-11`) | loud |
+| Prior snapshot deleted, change supports create | **resurrects the entity** (`:87-91`) | silent |
+| Exists, change cannot apply to existing | does nothing (`:104-109`) | silent |
+
+Plus `MarkDeleted` (`:124-148`), which recursively strips references to a deleted entity and can
+cascade into further deletions. `SnapshotWorker` has no logger, so that is entirely silent.
+
+**Two corrections to earlier reasoning in this repository.**
+
+1. *"A CRDT has no canonical moment at which to refuse a change, because replicas see arrivals in
+   different orders."* True of CRDTs generally; **false for Harmony.** `DataModel.UpdateSnapshots`
+   (`DataModel.cs:190-194`) takes a `SortedSet<Commit>`, takes `commitsToApply.First()` as the oldest
+   affected commit, calls `DeleteStaleSnapshots` on it, and replays forward. `CommitBase.CompareKey`
+   is `(HybridDateTime.DateTime, Counter, Id)` (`CommitBase.cs:25`, `CompareTo` at `:49-53`). A
+   late-arriving commit triggers rewind-and-replay in canonical logical order, so every replica
+   evaluates the same commits in the same sequence. A decision taken during apply *is* deterministic.
+2. *"Harmony needs loud failure added."* It already has it. `SnapshotWorker.cs:84` comments
+   *"this will (and should) throw if the change doesn't support NewEntity"*, and the exception names
+   the change type, `CommitId`, and `EntityId`.
+
+**The actual defect.** The throw happens inside a transaction (`DataModel.cs:75-79`, `:151-155`)
+during a replay that may have been triggered by an unrelated late-arriving commit — and
+`AddRangeFromSync` catches only `DbUpdateException` (`:157`), so it propagates uncaught. One bad
+change therefore does not fail *itself*; it fails **every commit in the batch, on every snapshot
+regeneration, permanently**. `RegenerateSnapshots` (`:234-243`) re-hits it on every rebuild.
+
+**What is needed** is not more crashing but converting the existing crash from *abort-the-replay*
+into *apply what you can and record a structured diagnostic*, which the review layer then surfaces as
+"needs review". Nothing can hold such a record today: `ObjectSnapshot`, `Commit`, and `CommitMetadata`
+have no validity or diagnostic field, and `ExtraMetadata` is written at authoring time only, never by
+the merge machinery. `ValidateCommits` checks hash-chain integrity only — nothing semantic.
+
+The insertion points already compute every boolean required: the four-arm branch itself, and
+`MarkDeleted`, which already knows which entity lost which reference.
+
+**Note a live semantic while you are here:** delete is not final. A later-timestamped change that
+supports creation resurrects a tombstoned entity (`:87-91`). Defensible as add-wins, currently
+implicit, and worth deciding deliberately.
+
 ---
 
 ## Needs adding — application layer, not Harmony
@@ -125,11 +177,13 @@ has orgs, projects, users, and a permission service.
 | 4 | Keyed-map modelling for alpha variables | Modelling decision | None | No |
 | 5 | Reference-set policy (add/remove-wins) | Harmony + docs | Small | Before 38 classes replicate it |
 | 6 | Cross-owner move rule | Harmony | Medium | Before owning hierarchies land |
+| **9** | **Deferred diagnostic channel + apply-policy table** | **Harmony** | **Small — the branch already computes the booleans** | **Yes — today one bad change poisons every replay** |
 | 7 | CRDT → full `.fwdata` | `FwLiteProjectSync` | **Large** | Yes, for your export workflow |
 | 8 | Proposal / review / approval | Lexbox + FwLite | Large but conventional | No |
 
-**Three of the six core items are small. One (7) is large and lives outside Harmony. Items 1 and 4
-may require no code at all.**
+**Four of the seven core items are small. One (7) is large and lives outside Harmony. Items 1 and 4
+may require no code at all.** Item 9 is the one with a live failure mode attached: it is not a missing
+feature so much as an existing crash pointed in the wrong direction.
 
 ## The thing you got right that changes the plan
 

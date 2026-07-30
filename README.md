@@ -39,6 +39,24 @@ atomically through LibLCM's unit-of-work machinery.
 >
 > The shipped code below is real and passes its tests. It is no longer on a path to being the API.
 
+## Where the plan stands, 2026-07-30
+
+> [ADR 0014](docs/adr/0014-generate-the-crdt-layer-from-masterlcmodel.md) settles **how** the
+> LibLCM-shaped CRDT layer gets built: it is **generated** from `MasterLCModel.xml`, whose 898 field
+> declarations are exactly the 898 rows of `manifest/liblcm-inventory.tsv`. Structure comes from
+> LibLCM's model file, policy from the manifest, joined on `(Class, Field)`, with unmatched keys
+> failing the build. Generated output targets `LcmCrdt` in lexbox; **Harmony core gains CRDT
+> primitives only, never domain vocabulary.**
+>
+> The acceptance gate is falsifiable: regenerate the five `IPossibility` entities that already ship,
+> and diff against their tested implementations.
+>
+> Supporting inventories, all evidence-based with `path:line` citations:
+> [liblcm-codegen](docs/inventory-liblcm-codegen.md) ·
+> [harmony-generation-surface](docs/inventory-harmony-generation-surface.md) ·
+> [harmony-conflict-reporting](docs/inventory-harmony-conflict-reporting.md).
+> Live decisions: [grill-decisions.md](docs/grill-decisions.md) (D1–D6).
+
 ## Status of the implementation
 
 There is a working, tested, end-to-end implementation, not just a plan. `lcatom open` loads a real
