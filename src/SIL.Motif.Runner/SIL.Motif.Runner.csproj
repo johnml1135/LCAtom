@@ -1,7 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <!--
+      Multi-targeted deliberately. `net10.0` is the product runtime; `netstandard2.0` exists so the
+      Runner loads in-process in FieldWorks while FieldWorks is still `net48`. There is no separate
+      companion process, so the Runner must be loadable by both hosts. See AGENTS.md's
+      Compatibility targets.
+    -->
+    <TargetFrameworks>netstandard2.0;net10.0</TargetFrameworks>
   </PropertyGroup>
 
   <ItemGroup>

@@ -40,18 +40,36 @@ records, not counter-examples.
 
 ## Compatibility targets
 
-**Actual current targets (measured from the `.csproj` files) — nothing multi-targets:**
+**Two runtimes only: `net10.0` and `net48`. `net8.0` is not a target anywhere in this repository.**
+Where one assembly must load in both, it targets `netstandard2.0`, which `net48` can consume.
 
-- `SIL.Motif.Contract`, `SIL.Motif.Model`: `netstandard2.0`, LibLCM-free.
-- `SIL.Motif.Runner`, `SIL.Motif.Host`, `SIL.Motif.Cli`, `SIL.Motif.Tests`: `net8.0`, referencing
-  `SIL.LCModel 11.0.0-beta0150`.
+**Actual current targets (measured from the `.csproj` files):**
 
-**Deferred to Phase 9 ([implementation-plan.md](docs/implementation-plan.md)), not present reality:**
-the wider target matrix originally envisioned here — `netstandard2.0;net462;net8.0` for
-LibLCM-dependent libraries and a `net48` FieldWorks-compatible adapter/conformance host. No such
-adapter project exists yet, and the multi-target compatibility proof (Phase 0 item 3) has not been
-run. Verify the actual supported target matrix against the pinned LibLCM release before committing to
-it.
+| Project | Target | Why |
+| --- | --- | --- |
+| `SIL.Motif.Contract` | `netstandard2.0` | LibLCM-free wire contract; also consumed by non-.NET runners |
+| `SIL.Motif.Model` | `netstandard2.0` | LibLCM-free |
+| `SIL.Motif.Runner` | `netstandard2.0;net10.0` | **Must load in-process in `net48` FieldWorks** — see below |
+| `SIL.Motif.Host` | `net10.0` | Opens/saves projects; FieldWorks is its own host and never loads this |
+| `SIL.Motif.Cli` | `net10.0` | |
+| `SIL.Motif.Tests` | `net10.0` | |
+
+All LibLCM-dependent projects pin `SIL.LCModel 11.0.0-beta0150`.
+
+**Why the Runner multi-targets.** There is no separate companion process. Assessment and apply both
+need read-back from a live `LcmCache` ([ADR 0006](docs/adr/0006-engine-reality-apply-readback-preflight.md)),
+so the Runner runs in-process in whatever host owns the cache: FieldWorks during the `net48`
+coexistence window, and the `net10.0` host afterwards. `netstandard2.0` is the only target both can
+load. `SIL.Motif.Runner/Compatibility/ModuleInitializerAttribute.cs` polyfills the one framework type
+`netstandard2.0` lacks; the multi-target build and the full test suite pass.
+
+**Package versions are not target frameworks.** `SIL.Motif.Contract` references
+`System.Text.Json 8.0.5` because that is the current `netstandard2.0`-compatible release line, not
+because anything targets `net8.0`. Do not "fix" it to match a TFM.
+
+**Not yet built:** the `net48` FieldWorks-side adapter that hosts the Runner (UI-thread marshalling,
+one undoable UOW, save and invalidation). The Runner is now *loadable* by it; the adapter itself is
+Phase 9 ([implementation-plan.md](docs/implementation-plan.md)).
 
 ## Definition of done for each operation family
 

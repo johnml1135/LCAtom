@@ -171,10 +171,16 @@ The repository currently contains `SIL.Motif.Contract`, `SIL.Motif.Model`, `SIL.
 This code predates the final Harmony/LcmCrdt architecture and is a tested control/proving surface,
 not evidence that the planned product is complete.
 
-Current project targets:
+Current project targets — two runtimes only, `net10.0` and `net48`, with `netstandard2.0` where an
+assembly must load in both:
 
 - `SIL.Motif.Contract` and `SIL.Motif.Model`: `netstandard2.0`, LibLCM-free;
-- runner, host, CLI, and tests: `net8.0`, pinned to `SIL.LCModel 11.0.0-beta0150`.
+- `SIL.Motif.Runner`: `netstandard2.0;net10.0`, because it runs in-process in whichever host owns the
+  live `LcmCache` — FieldWorks while FieldWorks is `net48`, the `net10.0` host afterwards;
+- host, CLI, and tests: `net10.0`.
+
+All LibLCM-dependent projects pin `SIL.LCModel 11.0.0-beta0150`. See
+[AGENTS.md](AGENTS.md#compatibility-targets) for the full table and rationale.
 
 Run the tests with:
 

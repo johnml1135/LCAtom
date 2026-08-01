@@ -22,10 +22,11 @@ Landed: solution/package shape, pinned `SIL.LCModel 11.0.0-beta0150` with docume
 override, an already-loaded `LcmCache` passed into the runner (never opened by it), whole-change-set
 commit/rollback via `UndoableUnitOfWorkHelper.Do` (covered by `Apply/ChangeSetApplierTests`), the
 adapted FwData/LibLCM host plumbing (`SIL.Motif.Host`), and the applied-change log over
-`LexDb.Resources` (`AppliedLog/ProjectAppliedLog.cs`). Not done: **item 3, the multi-target proof, did
-not happen** — every project targets exactly one TFM (`netstandard2.0` for `Contract`/`Model`,
-`net8.0` for `Runner`/`Host`/`Cli`/`Tests`; see `AGENTS.md`'s Compatibility targets); there is no
-`net462` build and no `net48` FieldWorks-compatible consumer. Item 6's discovered-footprint capture via
+`LexDb.Resources` (`AppliedLog/ProjectAppliedLog.cs`). Item 3's multi-target proof is now **partly
+done**: `SIL.Motif.Runner` targets `netstandard2.0;net10.0` and both legs build with the full test
+suite passing, so the Runner is loadable by a `net48` FieldWorks host. Still missing is the `net48`
+consumer itself — no FieldWorks-side adapter project exists. See `AGENTS.md`'s Compatibility targets.
+Item 6's discovered-footprint capture via
 `AllOwnedObjects`/`ReferringObjects` is not yet exercised by any shipped operation — the one shipped
 operation (`setGloss`) uses only a declared footprint. Item 10's custom-field non-undoable-UOW pattern
 is unbuilt (no custom-field code exists). CI itself (item 1) does not exist — there are no
@@ -34,10 +35,10 @@ is unbuilt (no custom-field code exists). CI itself (item 1) does not exist — 
 1. Create solution, central build properties, analyzers, formatting, test projects, and CI.
 2. Pin a current LibLCM NuGet version and document local-package override.
 3. Prove builds for:
-   - contract on `netstandard2.0`;
-   - LibLCM libraries on `netstandard2.0`, `net462`, and `net8.0`;
+   - contract and model on `netstandard2.0`;
+   - the Runner on `netstandard2.0;net10.0`, so a `net48` FieldWorks host can load it in-process;
    - a small `net48` FieldWorks-compatible consumer;
-   - a `net8.0` CLI/test host.
+   - a `net10.0` CLI/test host.
 4. Prove an already-loaded `LcmCache` can be passed into the runner without lifecycle ownership.
 5. Prove whole-change-set commit and rollback with `UndoableUnitOfWorkHelper.Do`, including
    footprint-scoped snapshot read-back before commit.
@@ -282,7 +283,7 @@ Exit: conflict behavior is fully documented by executable fixtures.
 
 No process/JSON host, no `net48` adapter, and no published package exist yet.
 
-1. Implement a minimal `net8.0` process/JSON host for isolated and Python-driven use.
+1. Implement a minimal `net10.0` process/JSON host for isolated and Python-driven use.
 2. Keep host project opening/saving outside core interfaces.
 3. Build a `net48` compatibility/conformance adapter suitable for FieldWorks integration.
 4. Document pythonnet as possible but prefer process isolation initially.

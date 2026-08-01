@@ -21,8 +21,10 @@ The full change-management application: PR-style review workflow, HermitCrab-gra
 orchestration (building the FST, invoking the parser, scheduling corpus runs), FieldWorks-owned
 Avalonia UI modules built along its active net48-to-net10 migration path, LexBox sync of change sets,
 and any cloud collaboration substrate (e.g. Dolt/DoltHub). The Avalonia UI belongs in FieldWorks
-rather than a web/React application; orchestration and synchronization may remain in a separate
-companion service. The local store is git-style files
+rather than a web/React application. Orchestration and synchronization are **server-side in LexBox,
+not a local companion service** — there is no second process on the user's machine; the
+`netstandard2.0` Runner loads directly into FieldWorks (see
+[AGENTS.md](../AGENTS.md#compatibility-targets)). The local store is git-style files
 (immutable content-addressed objects + mutable manifests); **no database in v1** — SQLite only ever as
 a later, disposable, rebuildable cache, never the source of truth and never synced.
 

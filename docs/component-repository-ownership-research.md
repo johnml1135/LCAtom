@@ -21,9 +21,23 @@ coverage, and integration design.
 
 Decision, 2026-07-28: the independent AI reviewer/operator CLI will target `net10.0`, not `net8.0`.
 “Independent” means a separately installable process and automation surface; it does not require an
-older target framework. Matching the companion and Harmony removes an unnecessary compatibility
-boundary and permits direct reuse of application-domain and Harmony integration packages. Only the
-contract consumed by current net48 FieldWorks must retain a netstandard2.0/schema-compatible surface.
+older target framework. Matching Harmony removes an unnecessary compatibility boundary and permits
+direct reuse of application-domain and Harmony integration packages.
+
+**Update, 2026-08-01 — two runtimes, and “companion” now means a repository, never a process.**
+`net8.0` is not a target anywhere; the only runtimes are `net10.0` and `net48`, with
+`netstandard2.0` for assemblies that must load in both
+([AGENTS.md](../AGENTS.md#compatibility-targets)). `SIL.Motif.Runner` multi-targets
+`netstandard2.0;net10.0`, so FieldWorks hosts assessment and apply **in-process** on `net48` today —
+there is no local companion service and nothing extra for a user to install. Harmony remains
+`net10.0`-only (EF Core 10) and therefore stays server-side until FieldWorks completes its `net10.0`
+migration, after which it loads in-process too.
+
+Everywhere below, read “companion” as **a separately released repository and deployable server-side
+product**, which is a code-ownership and release-train argument and stands unchanged. It is no longer
+an argument about a second process on the linguist's desktop; that premise is withdrawn. The AI
+reviewer/operator CLI stays a separate `net10.0` executable for automation, secrets, and budget
+isolation — reasons that survive the runtime collapse.
 ## Evidence checked
 
 | Repository | Revision checked | Direct evidence | Boundary implied by source |
@@ -91,11 +105,13 @@ Its minimum commands should be application verbs, not raw mutation verbs:
 | `jobs` | resumable batches, budgets, model/provider selection, deterministic retry and audit | local operational state; durable server/companion receipt IDs |
 | `apply` | deliberately absent from the first AI CLI, or restricted to submitting an approved command to FieldWorks' adapter | FieldWorks retains the live-cache apply authority |
 
-The CLI should target **`net10.0`**, matching the companion, Harmony, and current LexBox backend.
-It remains independently installable and out of process from net48 FieldWorks, but it can directly
-reuse the companion's application-domain, Harmony, persistence, and client packages instead of
-maintaining an artificial net8 compatibility layer. The FieldWorks-facing DTO/wire package must still
-remain netstandard2.0-compatible (or schema-generated) until FieldWorks itself retargets.
+The CLI should target **`net10.0`**, matching Harmony and the current LexBox backend. It remains
+independently installable and out of process from FieldWorks — for secrets, budgets, and automation
+isolation, not for runtime-compatibility reasons — and it can directly reuse the application-domain,
+Harmony, persistence, and client packages instead of maintaining an artificial compatibility layer.
+The FieldWorks-facing DTO/wire package must still remain `netstandard2.0`-compatible (or
+schema-generated) until FieldWorks itself retargets; that is also what lets `SIL.Motif.Runner` load
+into `net48` FieldWorks in-process rather than behind a process boundary.
 
 PanGloss already has a valuable CLI, but it is intentionally deterministic: `pangloss import`,
 `parse`, `batch`, `diagnose`, `fst-health`, and `make-report` establish parser inputs/outputs and

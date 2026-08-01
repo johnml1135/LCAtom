@@ -106,8 +106,10 @@ store-free; the store lives in the CLI/Host layer. One-way dependencies; nothing
 Cross-language consumers (Python: Linguistic Assistant/FlexTools; Rust: PanGloss) go through the CLI's
 process/JSON protocol. **[stage-2]:** PR/review and grammar/corpus UI is implemented as native
 FieldWorks-owned Avalonia modules on the active net48-to-net10 migration spine—not as web/React
-components. Orchestration, LexBox/cloud sync, and any Dolt/DoltHub substrate may remain in a separate
-modern companion/service repository.
+components, hosting the `netstandard2.0` Runner in-process — there is no local companion process on
+either `net48` or `net10.0`. Orchestration, LexBox/cloud sync, and any Dolt/DoltHub substrate are
+server-side, and may live in a separate repository; that is a repository boundary, not a second
+process on the user's machine. See [AGENTS.md](../AGENTS.md#compatibility-targets).
 
 As shipped today, only `SIL.Motif.Contract`, `.Model`, `.Runner`, `.Host`, `.Cli`, and `.Tests` exist
 as projects; `Diff` and `HermitCrab` are boundary decisions for work not yet started — there is no

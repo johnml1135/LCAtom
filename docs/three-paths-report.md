@@ -201,6 +201,6 @@ multiple independent sources, and the ICU fallback path was read directly. **Med
 figures for path 1 (measured from real commits, but extrapolated from the two easiest constructs).
 **Medium** on path 3's total cost, which depends on upstream ownership and appetite that no amount of
 source reading can settle. **Lowest** on the Android verdict itself: no one has tried, so "unproven,
-not blocked" is the honest ceiling. A one-week spike — build `SIL.LCModel` for `net8.0-android`, try
+not blocked" is the honest ceiling. A one-week spike — build `SIL.LCModel` for `net10.0-android`, try
 to open a `.fwdata` — would convert the largest remaining unknown in this entire analysis into a fact,
 and should precede any commitment.

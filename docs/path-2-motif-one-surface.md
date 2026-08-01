@@ -10,6 +10,16 @@ against MiniLcm — those comparisons are cited, not re-derived.*
 `[INFERRED]` — a reasonable conclusion from verified facts, not itself read from a running system or an
 authoritative external record. Every load-bearing claim carries one of these tags.
 
+> **Stale TFM claims, corrected 2026-08-01.** Where this report cites Motif's own projects as
+> targeting `net8.0`, that was true when it was written and is no longer. `net8.0` is not a target
+> anywhere in this repository: `SIL.Motif.Runner` is `netstandard2.0;net10.0`, `Host`/`Cli`/`Tests`
+> are `net10.0`, `Contract`/`Model` remain `netstandard2.0`
+> ([AGENTS.md](../AGENTS.md#compatibility-targets)). The `[VERIFIED]` claims below are left as the
+> record of what was read at the time rather than silently rewritten. **This correction does not
+> change the report's conclusion** — the Android blocker is LibLCM's native ICU dependency, which is
+> unaffected by which modern TFM Motif targets, and `netstandard2.0;net462;net8.0` cited for LibLCM
+> itself is an observation of that repository, not a Motif target.
+
 ## Bottom line, stated first
 
 Motif, as built and as designed, **cannot reach Android on its own.** Its Runner and Host are, and are

@@ -558,8 +558,8 @@ The project succeeds when:
 This proposal asks stakeholders to agree that:
 
 1. ~~this repository becomes **motif**~~ — **settled and done**, D7;
-2. ~~the CLI is named **`motif`**~~ — **settled and done**; that it targets .NET 10 is still open (the
-   shipped CLI is `net8.0`);
+2. ~~the CLI is named **`motif`**~~ and ~~targets .NET 10~~ — **both settled and done**; the shipped
+   CLI is `net10.0`, and `net8.0` is no longer a target anywhere (AGENTS.md, Compatibility targets);
 3. FieldWorks Avalonia is the primary human interface;
 4. PanGloss is the deterministic assessment engine;
 5. Harmony is the change/history/synchronization mechanism;

@@ -7,13 +7,38 @@ migration branches/worktrees, with an eventual move from `net48` to `net10.0`; t
 checkout remains WinForms/net48 today. The grammar, corpus, comparison, and adjudication UI described
 here will be native Avalonia components. Web/React/WebView UI is not the planned FieldWorks surface.
 
+**Update, 2026-08-01 — the out-of-process companion is withdrawn.** This document was written when
+the only way to reach a modern runtime from `net48` FieldWorks was a second process. That premise no
+longer holds, and the FieldWorks `net10.0` migration is expected within a year. Two rules now govern
+every runtime claim below; where the original text conflicts, these win.
+
+1. **Two runtimes only: `net10.0` and `net48`.** `net8.0` is not a target anywhere. An assembly that
+   must load in both targets `netstandard2.0`.
+2. **No companion process.** `SIL.Motif.Contract`, `SIL.Motif.Model`, and `SIL.Motif.Runner` are
+   `netstandard2.0`-loadable, so FieldWorks hosts assessment and apply **in-process today**, on
+   `net48`, with no IPC, no local server, and nothing extra to install.
+
+What this does *not* dissolve: **Harmony is `net10.0`-only** and cannot be made `netstandard2.0`,
+because its core dependency is EF Core 10. So the phasing is:
+
+| Phase | Runs inside FieldWorks | Harmony participation |
+| --- | --- | --- |
+| `net48` coexistence | Contract, Model, Runner (`netstandard2.0`) — proposals, assessment, apply, receipts | **None in-process.** Harmony reconciles where it already does — LexBox/FwHeadless, at quiesce points, when FieldWorks does not hold the project lock |
+| after FieldWorks `net10.0` | all of the above **plus Harmony** | in-process |
+
+The consequence is that during coexistence FieldWorks is a full *Motif* participant and not yet a
+*Harmony* peer. That is a smaller claim than the original "modern Harmony companion", and it needs no
+second process to be true. References to "the companion" that survive below should be read as "the
+Motif services hosted in whatever process owns the live `LcmCache`", not as a separate application.
+
 ## Decision in one sentence
 
 Do not choose between “CRDT in FWLite” and “rewrite FieldWorks.” Add a narrow, versioned semantic
-command boundary to FieldWorks, initially for explicit approved inbound changes, and keep the modern
-Harmony store/synchronizer in an out-of-process companion. Expand bidirectional authority only one
-domain at a time after conformance proves that domain safe. Build the new review and editing surfaces
-as FieldWorks-owned Avalonia modules on the existing migration seams.
+command boundary to FieldWorks and host the `netstandard2.0` Motif Runner in-process behind it,
+initially for explicit approved inbound changes; defer Harmony participation until FieldWorks reaches
+`net10.0`, rather than standing up a second process to reach it sooner. Expand bidirectional authority
+only one domain at a time after conformance proves that domain safe. Build the new review and editing
+surfaces as FieldWorks-owned Avalonia modules on the existing migration seams.
 
 ## The option that was missing
 
@@ -25,14 +50,16 @@ The initial three options were:
 
 There is a useful fourth architecture:
 
-4. **FieldWorks plus a CRDT companion.** FieldWorks remains the only owner and writer of the live
-   `LcmCache`/`.fwdata`. A modern process owns Harmony history, synchronization, projections, and
-   review queues. A thin FieldWorks adapter accepts versioned semantic commands and applies them
-   through normal LibLCM units of work.
+4. **FieldWorks hosts Motif in-process; Harmony joins at `net10.0`.** FieldWorks remains the only
+   owner and writer of the live `LcmCache`/`.fwdata`. A thin FieldWorks adapter accepts versioned
+   semantic commands and applies them through normal LibLCM units of work, calling the
+   `netstandard2.0` Runner directly. Harmony history, synchronization, and review queues stay in
+   LexBox until FieldWorks is `net10.0`, at which point they load in-process too.
 
-This is still a form of option 3, but avoids loading the modern synchronization stack and its
-dependencies into the predominantly `net48` FieldWorks process. It also avoids opening the same
-project independently in two processes.
+This is still a form of option 3. It avoids loading the modern synchronization stack into the
+`net48` FieldWorks process — Harmony is `net10.0`-only and cannot be loaded there — without paying
+for a second process to hold it. It also avoids opening the same project independently in two
+processes, which remains the hard constraint regardless of runtime.
 
 The current repositories contain two relevant precedents:
 
@@ -73,7 +100,7 @@ FwLite web/MAUI and Platform.Bible products remain independent and are not depre
 The runtime boundary is:
 
 ```text
-FieldWorks net48 during coexistence
+FieldWorks net48 during coexistence          ← one process
   ├─ native Avalonia review/edit modules
   │    ├─ LCModel-free view models and projections
   │    ├─ proposal, evidence, history, and adjudication views
@@ -82,29 +109,36 @@ FieldWorks net48 during coexistence
   │    ├─ loaded LcmCache and UOW
   │    ├─ semantic lowering and read-back
   │    └─ parser/UI invalidation and save
-  └─ versioned local protocol
-       ↕
-.NET 10 companion
-  ├─ Harmony store and synchronization
-  ├─ PanGloss orchestration
-  ├─ durable inbox/outbox
-  └─ query projections
+  └─ SIL.Motif.{Contract,Model,Runner}  (netstandard2.0, in-process)
+       ├─ assessment against the live cache
+       ├─ apply + read-back receipt
+       └─ durable proposal/receipt store on disk
+
+  ⇢ at quiesce only (save / close / explicit sync):
+      LexBox — Harmony store, synchronization, review queue, PanGloss orchestration
+      Never opens the .fwdata while FieldWorks holds it.
+
+FieldWorks net10.0 after migration           ← still one process
+  └─ everything above, plus Harmony loaded in-process
 ```
 
-After FieldWorks moves to `net10.0`, the Avalonia components remain the product UI. The companion
-boundary may remain out of process for fault isolation and synchronization lifecycle, or selected
-services may move in process. That later deployment choice must not change the semantic command,
-receipt, projection, or view-model contracts.
+There is **no companion application** in either phase. During `net48` coexistence the modern stack is
+absent from the desktop rather than isolated behind IPC: Harmony is `net10.0`-only, so FieldWorks
+simply is not a Harmony peer yet, and reconciliation happens in LexBox at quiesce points. After the
+`net10.0` migration Harmony loads in-process. The semantic command, receipt, projection, and
+view-model contracts are identical in both phases — that is what makes the phasing safe.
 
 This divides interim work cleanly:
 
-1. Build framework-neutral semantic and projection contracts now.
-2. Build the Harmony/PanGloss companion on `net10.0`.
+1. Build framework-neutral semantic and projection contracts now (`netstandard2.0`, done).
+2. Keep `SIL.Motif.Runner` multi-targeted `netstandard2.0;net10.0` so it never needs a host process
+   of its own.
 3. Build the actual FieldWorks UI now in `net48` `FwAvalonia` modules using Avalonia 11.x.
 4. Keep UI projects LCModel-free; put projectors and mutations in the established FieldWorks
    integration layer.
 5. Retarget and update Avalonia only as part of the FieldWorks runtime migration, without rewriting
    the feature UI or wire contract.
+6. Defer in-process Harmony to the `net10.0` migration. Do not add a process to get it earlier.
 
 ## What “FieldWorks speaks CRDT” can mean
 
@@ -209,15 +243,18 @@ FieldWorks UI and commands
   │    ├─ emits structural audit evidence
   │    └─ refreshes/saves through FieldWorks
   │
-  └─ authenticated local IPC
+  └─ direct in-process call (no IPC)
        │
        ▼
-modern Harmony companion
-  ├─ durable command IDs and commit history
-  ├─ synchronization
-  ├─ approval/review queue
-  ├─ PanGloss assessment artifacts
-  └─ query/read-model projections
+  SIL.Motif.Runner  (netstandard2.0)
+       ├─ durable command IDs
+       ├─ assessment / apply / read-back receipt
+       └─ query/read-model projections
+       │
+       └─ quiesce-point handoff to LexBox
+              ├─ Harmony commit history and synchronization
+              ├─ approval/review queue
+              └─ PanGloss assessment artifacts
 ```
 
 Recommended first-deployment ownership rule:
@@ -229,8 +266,8 @@ This is a deployment choice, not a universal LibLCM limitation. Existing FwHeadl
 saves `.fwdata`, and LibLCM has a `SharedXMLBackendProvider` intended for simultaneous processes. The
 first live integration should route writes through FieldWorks or run headless projection only while
 FieldWorks is closed. A later shared-backend mode is admissible only after proving lock, UOW, UI,
-undo, save, and crash behavior. If FieldWorks is closed, the companion may queue commands or invoke
-the existing headless protocol according to an explicit project-mode lease.
+undo, save, and crash behavior. If FieldWorks is closed, LexBox/FwHeadless may run the existing
+headless protocol according to an explicit project-mode lease.
 
 A write protocol needs at least:
 
@@ -251,8 +288,10 @@ transaction. Correctness therefore requires a durable inbox/outbox, idempotent c
 or receipt hash, and reconciliation that can safely finish or supersede an interrupted transition.
 
 A parser worker can safely retry pure parsing or reload derived grammar state. A write-capable
-companion cannot reuse that retry model unless command IDs and state transitions are durable. Its
-local IPC must be restricted to the current user and authenticate the session/caller.
+applier cannot reuse that retry model unless command IDs and state transitions are durable. In-process
+hosting removes the IPC authentication problem entirely — the Runner inherits the FieldWorks process's
+identity — but removes none of the durability requirement: `applied-in-cache`, `saved`, and
+`recorded-in-Harmony` still diverge across a crash or an undo, and still need the inbox/outbox above.
 
 ## Coexistence with Chorus/Send-Receive
 
@@ -270,7 +309,7 @@ During migration, choose one mode per domain:
 
 Do not use an uncoordinated “dual peer” mode for the same property set. Every projected change needs
 origin, baseline, and loop-suppression evidence. Send/Receive is a lifecycle boundary:
-synchronization must quiesce, reconcile, or invalidate the companion projection before and after
+synchronization must quiesce, reconcile, or invalidate the LexBox-side projection before and after
 Chorus operations.
 
 There is already a source-backed choreography in LexBox `FwHeadless/Services/SyncHostedService.cs`:
@@ -356,7 +395,7 @@ Limit:
 - collaboration is asymmetric;
 - FieldWorks-authored corrections require an explicit “publish as semantic change” action.
 
-### B. Companion plus instrumented bidirectional subsets
+### B. In-process Motif plus instrumented bidirectional subsets
 
 After A works, instrument selected shared FieldWorks services with semantic scopes. Harmony becomes
 authoritative only for named domains that pass round-trip and concurrency conformance.
@@ -405,7 +444,7 @@ grammar-assessment region in the net48 FieldWorks Avalonia host:
 - `RecordEditView` selects it explicitly, with no silent legacy fallback;
 - it obeys edit-session, UOW/undo-redo, UI-scheduler, focus/command, and lifetime rules;
 - localization, accessibility/automation IDs, and visual/behavioral parity evidence pass;
-- it can consume a fake companion projection in the preview host without opening an LCM project;
+- it can consume a fake projection in the preview host without opening an LCM project;
 - the same view-model contract is viable after the eventual net10 retarget.
 
 ### Gate 1: FieldWorks apply seam
@@ -492,7 +531,8 @@ Research can answer:
 
 - where the cache/UOW/UI/process boundaries are;
 - whether structural mutation capture is possible;
-- whether an out-of-process modern companion is feasible;
+- whether the modern stack can be reached without a second process (answered 2026-08-01: yes for
+  Motif via `netstandard2.0`; no for Harmony until FieldWorks is `net10.0`);
 - which domains are unsafe under generic CRDT primitives;
 - the rough relative cost of inbound, subset-bidirectional, and full-authority paths.
 
