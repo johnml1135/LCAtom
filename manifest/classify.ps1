@@ -289,7 +289,7 @@ Set-Override 'MoStratum' 'Phonemes' 'unsupported' 'Explicitly listed in api-surf
 # over-inclusion in the report rather than silently re-scoped here.
 foreach ($r in $rows) {
     if ($r.Scope -eq 'in' -and $r.Class -eq 'TextTag') {
-        Set-Override $r.Class $r.Field 'unsupported' 'Interlinear text-markup surface (BeginSegment/EndSegment target the out-of-scope Segment class); reached only via StText.Tags, a false-negative container pulled in for CmPossibility.Discussion-style rich text. No realistic LCAtom authoring path -- flagged as a probable scope over-inclusion, see report.'
+        Set-Override $r.Class $r.Field 'unsupported' 'Interlinear text-markup surface (BeginSegment/EndSegment target the out-of-scope Segment class); reached only via StText.Tags, a false-negative container pulled in for CmPossibility.Discussion-style rich text. No realistic Motif authoring path -- flagged as a probable scope over-inclusion, see report.'
     }
 }
 

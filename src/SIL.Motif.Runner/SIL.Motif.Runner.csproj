@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SIL.Motif.Contract\SIL.Motif.Contract.csproj" />
+    <ProjectReference Include="..\SIL.Motif.Model\SIL.Motif.Model.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      The Runner operates on an already-loaded LcmCache (it does not load or save projects; the
+      Host does that — see src/SIL.Motif.Host/LcmUtils/FwDataProjectLoader.cs). It therefore may
+      reference SIL.LCModel directly for the ICmObject/repository/unit-of-work surface, unlike
+      SIL.Motif.Contract and SIL.Motif.Model, which stay LibLCM-free.
+    -->
+    <PackageReference Include="SIL.LCModel" Version="11.0.0-beta0150" />
+  </ItemGroup>
+
+</Project>

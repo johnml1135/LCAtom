@@ -25,7 +25,7 @@ implement at all while FieldWorks showed the correct pattern ([ADR 0005](0005-sc
   its expansion is a baseline-dependent structural closure, (b) it maps to a real LibLCM capability
   rather than a convenience, (c) its target surface is manifest-classified, and (d) it ships with
   schema, validation, lowering, effects, and conformance vectors. **Anything failing (a) is a composer.**
-- **Layer 1 — composers.** LCAtom-owned, first-class, and the product surface: `Expand`,
+- **Layer 1 — composers.** Motif-owned, first-class, and the product surface: `Expand`,
   find-and-replace, batch update, duplicate, `setPartOfSpeech`. **A composer's output is always an
   ordinary Change Set of Layer-0 primitives**, so every composer inherits review, effect capture,
   digests, drift, and idempotence for free and adds **zero** permanent contract surface. Composers may

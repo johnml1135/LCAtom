@@ -17,7 +17,7 @@ only public notification, `IVwNotifyChange.PropChanged`, carries no values — f
 count. Reflection into the internal records would be brittle, unversioned surface contrary to the
 stable-API philosophy.
 
-Therefore effect capture is LCAtom's own **before/after semantic-snapshot diff**, scoped to the
+Therefore effect capture is Motif's own **before/after semantic-snapshot diff**, scoped to the
 comparison footprint plus the delete/reference closure. Two public `ICmObject` primitives make the
 scoping tractable without a whole-project scan: `AllOwnedObjects` (the owned subtree, i.e. the delete
 cascade) and `ReferringObjects` (inbound references, i.e. reference cleanup). This confirms the "read
@@ -45,7 +45,7 @@ lifecycle with dispose-before-unlock (`FwDataFactory`), the "wrap in a new UOW o
 inside one" idiom (`ActionHandlerHelpers`), headless `ILcmUI`/progress shims, MultiString/writing-
 system helpers, and the ~650-line rich-text property mapping (`RichTextMapping`). It is taken by
 copy-and-adapt into the host layer, not as a shared package — a NuGet dependency would couple
-LCAtom's release train to FwLite's, which the architecture forbids. MiniLcm's lexicon-only model, its
+Motif's release train to FwLite's, which the architecture forbids. MiniLcm's lexicon-only model, its
 CRDT/Harmony sync, update-proxies, and media/search/sorting are explicitly not reused.
 
 ## Consequences

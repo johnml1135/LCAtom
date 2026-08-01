@@ -5,7 +5,7 @@
 Every property of every LibLCM class, generated mechanically from
 `MasterLCModel.xml` as shipped inside the pinned `SIL.LCModel` NuGet package
 (`contentFiles/MasterLCModel.xml`) — so the inventory is version-locked to
-exactly the LibLCM assembly LCAtom references, with no dependency on a sibling
+exactly the LibLCM assembly Motif references, with no dependency on a sibling
 repository checkout.
 
 898 rows, 19 columns. The first nine are the raw inventory, generated mechanically; the other ten

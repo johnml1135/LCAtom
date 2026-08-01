@@ -1,4 +1,4 @@
-# The HC grammar map — LCAtom's normative grammar write-surface
+# The HC grammar map — Motif's normative grammar write-surface
 
 Reverse-engineered from `FieldWorks/Src/LexText/ParserCore/HCLoader.cs` (2837 lines, read in full),
 `HCParser.cs`, `IHCLoadErrorLogger.cs`, `GenerateHCConfig/`, cross-checked against
@@ -6,7 +6,7 @@ Reverse-engineered from `FieldWorks/Src/LexText/ParserCore/HCLoader.cs` (2837 li
 independent Rust port.
 
 **This map is the requirement.** Per [ADR 0010](adr/0010-hermitcrab-experimentation-is-the-primary-purpose.md),
-LCAtom's grammar API is exactly the set of LibLCM inputs `HCLoader` consumes — nothing less, nothing
+Motif's grammar API is exactly the set of LibLCM inputs `HCLoader` consumes — nothing less, nothing
 pointless. It is a **versioned dependency**: when HCLoader or HC changes, this map is re-derived and the
 API re-checked.
 
@@ -56,7 +56,7 @@ infixes. All writing systems other than vernacular-default (forms/graphemes) and
 
 ## Silent-loss surface — what "the grammar quietly lost your change" looks like
 
-LCAtom must be able to **predict and report** these, because HCLoader mostly will not:
+Motif must be able to **predict and report** these, because HCLoader mostly will not:
 
 - An **invalid environment string becomes "applies everywhere"** rather than being dropped — invalid
   data silently becomes *more* permissive.
@@ -88,8 +88,8 @@ LCAtom must be able to **predict and report** these, because HCLoader mostly wil
 `RealizationalAffixProcessRule` exists in HermitCrab, but `HCLoader` never builds one —
 `LoadInflAffixProcessRule` carries `// TODO: use realizational affix process rules` and always emits a
 plain `AffixProcessRule`. **Realizational morphology is therefore not achievable through the FieldWorks
-path, whatever LCAtom writes to LibLCM.** ADR 0010's "everything HC supports must be authorable" has this
-one documented exception, and LCAtom must not promise it.
+path, whatever Motif writes to LibLCM.** ADR 0010's "everything HC supports must be authorable" has this
+one documented exception, and Motif must not promise it.
 
 ## Two ingestion paths — and which semantics are authoritative
 
@@ -103,12 +103,12 @@ one documented exception, and LCAtom must not promise it.
    parity required fixing five real importer defects against HCLoader's *actual* behavior.
 
 **Consequence:** the authoritative semantics are **HCLoader.cs's behavior**, not the HC XML DTD's
-generosity. A change LCAtom makes is judged against this map — and, when PanGloss is on the direct path,
-against `compile_project`'s parity with it. It also means the killer workflow may not need LCAtom to
-emit HC XML at all: LCAtom applies to `.fwdata`, PanGloss reads `.fwdata`. HC XML remains needed for the
+generosity. A change Motif makes is judged against this map — and, when PanGloss is on the direct path,
+against `compile_project`'s parity with it. It also means the killer workflow may not need Motif to
+emit HC XML at all: Motif applies to `.fwdata`, PanGloss reads `.fwdata`. HC XML remains needed for the
 C# HermitCrab oracle path.
 
-## Validation obligations this creates for LCAtom
+## Validation obligations this creates for Motif
 
 1. Pre-validate the 24-alpha-variable ceiling per rule.
 2. Pre-validate MPR referential integrity (inflection classes, prod-restrictions, `ILexEntryInflType`)

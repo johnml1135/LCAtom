@@ -1,5 +1,19 @@
 # Operation-catalog plan — lexical & grammar completeness
 
+> **Superseded as a plan, retained as analysis.**
+> [ADR 0013](adr/0013-harmony-is-the-change-mechanism.md) withdrew the change-set runner this roadmap
+> builds toward, and [ADR 0014](adr/0014-generate-the-crdt-layer-from-masterlcmodel.md) replaced
+> hand-authoring with generation into `LcmCrdt`. **The live plans are
+> [plan-cross-repo.md](plan-cross-repo.md) and the three it aligns** —
+> [motif](plan-motif.md), [harmony](plan-harmony.md), [LcmCrdt](plan-lcmcrdt.md).
+>
+> What survives here and is still used: the construct coverage, the verb/kind counts, the Flexicon
+> gotcha inventory, and the L0/G0–G2 sequencing that `MOT-7` inherits.
+
+> **Vocabulary:** written before [ADR 0015](adr/0015-proposal-assessment-dry-run-vocabulary.md).
+> Read *change set* as **Proposal**, and *Assessment* as **Dry Run** — `Assessment` now means a PanGloss
+> run only. Glossary: [CONTEXT.md](../CONTEXT.md).
+
 The roadmap from the one-operation skeleton (`lexical/sense/setGloss`) to lexical + grammar
 completeness.
 
@@ -11,7 +25,7 @@ AI-generated and its per-field method surface is an implementation artifact.
 
 Source hierarchy: **FieldWorks** (shipping, 20 years, 1000+ languages) is the authority on how to do a
 thing properly; **LibLCM + its tests** are ground truth for engine semantics; **Flexicon** maps which
-constructs matter and contributes scar tissue. LCAtom re-implements rather than ports
+constructs matter and contributes scar tissue. Motif re-implements rather than ports
 (Python/LGPL — [ADR 0003](adr/0003-feasibility-findings.md)).
 
 **Full coverage is "C# `HCLoader` complete"** — every construct `HCLoader` can produce from a FieldWorks
@@ -72,7 +86,7 @@ in rough order of first use:
     the five parallel slot sequences over one unordered pool; heterogeneous `sig="CmObject"` collections.
     Attaches to the `class → construct` map.
 11. **Delete policy.** Honor the engine's own `ICmObject.CanDelete` and `CmPossibility.IsProtected`
-    **explicitly** — they are advisory in LibLCM and LCAtom is exactly the programmatic path that would
+    **explicitly** — they are advisory in LibLCM and Motif is exactly the programmatic path that would
     bypass them. Disclose the full closure with a warning by default; hard-refuse the protected set with
     an actionable message ("use FieldWorks directly"); writing-system delete is out of v1 scope.
 12. **The composer layer.** `Expand`, find-and-replace, batch update, duplicate, `setPartOfSpeech` —
@@ -83,7 +97,7 @@ in rough order of first use:
     Structured HC-friendly commands, no compiler, the inverse of `HCLoader`
     ([hermitcrab-projection](hermitcrab-projection.md#authoring-input-and-round-trip)).
     **Forward projection is deleted** per
-    [ADR 0011](adr/0011-experiment-loop-boundary-lcatom-is-the-record.md) — PanGloss reads `.fwdata`
+    [ADR 0011](adr/0011-experiment-loop-boundary-motif-is-the-record.md) — PanGloss reads `.fwdata`
     directly, so there is nothing to harvest. `Expand` therefore loses its intended round-trip oracle
     and must be validated against HC's own conformance suite instead
     ([HC surface scope](hc-surface-scope.md), "The oracle").
@@ -216,13 +230,13 @@ operations that need them arrive.
   Fill mechanism.
 - **G3 — Reverse `Expand` first cut.** natural-class + phon-rule + affix-in-slot + `makeFeatStruc`
   (ADR 0001's worked examples). **Forward projection is deleted** — see item 13 above and
-  [ADR 0011](adr/0011-experiment-loop-boundary-lcatom-is-the-record.md); PanGloss reads `.fwdata`
+  [ADR 0011](adr/0011-experiment-loop-boundary-motif-is-the-record.md); PanGloss reads `.fwdata`
   directly. `Expand` is validated against HC's conformance suite, not against a projection.
 - **X — Export + attachments** (parallel, not dependent on G3). Hypothetical `.fwdata` export (N change
   sets applied to a scratch copy) plus the labelled attachment / typed metric record. This is what
   actually closes the loop, and it needs no `Expand` — only a grammar operation worth exporting.
 
-## Where Flexicon gives no precedent (LCAtom designs from the model alone)
+## Where Flexicon gives no precedent (Motif designs from the model alone)
 
 Slot & affix-template write ops (the five-parallel-sequence pool); phoneme-set lifecycle; adhoc
 prohibitions end-to-end (Flexicon's dispatch is buggy — do not mirror); `PhIterationContext`

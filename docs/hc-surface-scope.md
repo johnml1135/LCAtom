@@ -1,6 +1,6 @@
 # The HC surface scope — three tiers and the real ceiling
 
-What LCAtom can actually let a user change, grounded in reads of HermitCrab (`../machine`),
+What Motif can actually let a user change, grounded in reads of HermitCrab (`../machine`),
 `HCLoader.cs` (`../FieldWorks`), and PanGloss (`../PanGloss`). Companion to the field-level
 [HC grammar map](hc-grammar-map.md); this document is the **construct-level coverage scope**.
 
@@ -11,7 +11,7 @@ Coverage is not one number. It is three nested tiers:
 - **T3 — PanGloss Phase A.** What that consumer compiles today from `.fwdata`. `T3 ⊂ T2`.
 
 > **Full coverage is defined as T2 — "C# HCLoader complete."** Everything `HCLoader` can produce from a
-> FieldWorks project must be authorable in LCAtom, in a friendly way.
+> FieldWorks project must be authorable in Motif, in a friendly way.
 
 **T3 is not a scope boundary.** PanGloss is catching up to full HC, so its Phase A/B split is a moving,
 temporary limitation of one consumer; designing the coverage target around it would bake in a boundary
@@ -19,13 +19,13 @@ that dissolves. T3 serves two other purposes instead:
 
 1. **Sequencing.** T3 constructs reach a parse today, so building them first buys the fastest feedback
    loop. That is a priority signal, not a gate.
-2. **A reporting obligation.** Because LCAtom knows the tiers, it must *say* when an authored construct
+2. **A reporting obligation.** Because Motif knows the tiers, it must *say* when an authored construct
    is outside the consumer's current compile set — "you authored a metathesis rule; this PanGloss build
    compiles Phase A and will skip it." Same actionable-refusal discipline as declared group versions:
    never let a change silently fail to reach the parse.
 
 **T1∖T2 is out of scope** — multi-stratum, realizational morphology, and multiple phoneme sets are
-structurally unreachable from a FieldWorks project, and LCAtom does not promise them.
+structurally unreachable from a FieldWorks project, and Motif does not promise them.
 
 ## The matrix
 
@@ -63,14 +63,14 @@ structurally unreachable from a FieldWorks project, and LCAtom does not promise 
   *feet*). Without it you cannot express "plural is realized either by *-s* or, for this lexeme, by the
   suppletive stem" — every realization must be hard-wired to a specific affix pattern.
 
-Both are **structural FieldWorks limits**, not LCAtom choices. They bound the product honestly.
+Both are **structural FieldWorks limits**, not Motif choices. They bound the product honestly.
 
 ## Scope consequences
 
 1. **Do not build HC XML export as the primary path.** PanGloss labels `.xml` *"legacy … being sunset"*;
    the forward path is direct `.fwdata` (`pg-fwdata` → `compile_project`, itself a port of `HCLoader.cs`).
-   So the loop is *LCAtom applies to `.fwdata` → PanGloss reads `.fwdata`*. **PanGloss is the projection** —
-   "show me the resulting grammar" is a PanGloss call, not an LCAtom feature. This deletes the plan's
+   So the loop is *Motif applies to `.fwdata` → PanGloss reads `.fwdata`*. **PanGloss is the projection** —
+   "show me the resulting grammar" is a PanGloss call, not an Motif feature. This deletes the plan's
    forward-projection-by-harvesting-`GenerateHCConfig` work. XML remains only for the C# oracle.
 2. **Build to T2; sequence by T3.** All of T2 is in scope, including metathesis, reduplication,
    circumfix cross-products, and clitic-as-affix — no waiting on PanGloss. T3 constructs go first for
@@ -83,22 +83,22 @@ Both are **structural FieldWorks limits**, not LCAtom choices. They bound the pr
    against HC semantics because HC has no such distinction.
 5. **Allomorph order joins the semantically-ordered comparison class** — it encodes elsewhere-blocking, so
    reordering changes meaning. Second counterexample to the plan's "feeding = `PhonRules` only."
-6. **LCAtom owns the record, not the verdict.** PanGloss states repeatedly that consuming applications own
+6. **Motif owns the record, not the verdict.** PanGloss states repeatedly that consuming applications own
    history, baselines, publication policy, and UI; that it *"never asserts a root cause,"* renders
    *"never a publish/deny decision,"* and will *"not claim that one grammar edit caused a semantic
    change."* Its `diagnostics.rs` confirms **no report-to-report comparison exists yet**. The comparable
    that *does* exist: `AssessmentReport` (schema-versioned JSON) with per-word `gloss_signature`,
    `candidates_generated`, `confirmed`, and a `{complete, incomplete}` summary, plus `BuildReport` counts
-   and `load_warnings` — a real schema LCAtom can carry as a labelled attachment and whose declared
+   and `load_warnings` — a real schema Motif can carry as a labelled attachment and whose declared
    values it can surface as typed metrics.
 
    **Correction (2026-07-27).** This section previously read *"'Did it parse better' = diffing gloss
-   signatures and confirmed counts across runs — LCAtom's job."* That was wrong and contradicted
+   signatures and confirmed counts across runs — Motif's job."* That was wrong and contradicted
    [stage-2 S5](stage2-change-management.md#s5--attachments-derived-provenance-stamped-store-not-interpret)'s
-   `[core]` "stores and lists by provenance; **it never interprets**". S5 holds. LCAtom stores the
+   `[core]` "stores and lists by provenance; **it never interprets**". S5 holds. Motif stores the
    reports, shows how a *declared* metric moved between two change sets, and renders them — it does
    not parse tool output, does not compute a verdict, and does not decide whether a grammar got
-   better. See [ADR 0011](adr/0011-experiment-loop-boundary-lcatom-is-the-record.md).
+   better. See [ADR 0011](adr/0011-experiment-loop-boundary-motif-is-the-record.md).
 
 ## The oracle
 

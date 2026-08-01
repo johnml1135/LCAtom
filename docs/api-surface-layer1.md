@@ -171,7 +171,7 @@ map may substitute a domain-meaningful synonym (`SubPossibilities` → `addSubca
 ## Not authorable vs. authorable-but-HC-inert
 
 These are **two different things** and were previously conflated under one heading, which produced
-inconsistent classification. Full coverage is HCLoader-complete, but LCAtom is still a general LibLCM
+inconsistent classification. Full coverage is HCLoader-complete, but Motif is still a general LibLCM
 change-set runner: a field can be perfectly legitimate to author for a human dictionary while having no
 effect whatever on a parse.
 

@@ -16,7 +16,7 @@ The central product object is therefore a **curated word-evidence corpus**.
 ## Research method
 
 Eight Luna tracks were requested across FieldWorks, LibLCM, PanGloss, Machine, FWLite/LexBox,
-Harmony, LCAtom, and primary external systems. Seven returned usable research. The repository-
+Harmony, Motif, and primary external systems. Seven returned usable research. The repository-
 ownership task was blocked by the missing Windows sandbox helper and contributed no evidence.
 Agent claims were checked against local source where possible.
 
@@ -308,7 +308,7 @@ Recommended ownership allocation, subject to design approval:
 - PanGloss: analysis identity profile, portable gold/run schemas, execution, comparison, traces.
 - FWLite/application: semantic command orchestration, case anchoring/reanchoring, review, history UI.
 - Harmony: accepted synchronized application/domain records, not raw run blobs.
-- LCAtom: cross-repository contract research and ADRs, not a revived runner.
+- Motif: cross-repository contract research and ADRs, not a revived runner.
 
 ### Option C — standalone corpus repository/files
 

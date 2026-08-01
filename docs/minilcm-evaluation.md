@@ -1,4 +1,4 @@
-# MiniLcm vs. LCAtom — decision report
+# MiniLcm vs. Motif — decision report
 
 > **SUPERSEDED (2026-07-27) by [ADR 0013](adr/0013-harmony-is-the-change-mechanism.md).** This
 > document was written without `SIL.Harmony` having been read — it was not checked out, and the
@@ -8,13 +8,13 @@
 > below do not stand.** The platform findings do.
 
 
-*Prepared 2026-07-27. Scope: can MiniLcm be the single API over LibLCM for everyone, should LCAtom be,
+*Prepared 2026-07-27. Scope: can MiniLcm be the single API over LibLCM for everyone, should Motif be,
 or are both needed. Written against source in both repositories plus `liblcm` (LibLCM itself, checked
 out as a sibling repo and read directly for the referential-integrity claim).*
 
 ## Verdict
 
-**Move to LCAtom's contract as the one change-authoring/assessment/approval API over LibLCM.
+**Move to Motif's contract as the one change-authoring/assessment/approval API over LibLCM.
 MiniLcm does not get extended to grammar and does not become a second change-authoring vocabulary.
 It continues, unabsorbed for now, as the interactive lexical CRUD + multi-device sync surface it
 already is — a client of the record, not a competing record.** This is verdict 2 as posed, not a
@@ -28,11 +28,11 @@ keeps its live-query and live-edit job, which is a different job.
    or MPR/inflection classes exist anywhere in `MiniLcm`, `LcmCrdt`, or `FwDataMiniLcmBridge` (verified
    by exhaustive grep, zero hits). `PartOfSpeech` — the one grammar-adjacent class MiniLcm has — is a
    bare `{Id, Name}` record whose own source says `// TODO: Probably need Abbreviation in order to
-   match LCM data model` (`MiniLcm/Models/PartOfSpeech.cs:7`). LCAtom's own ADR already recorded this
+   match LCM data model` (`MiniLcm/Models/PartOfSpeech.cs:7`). Motif's own ADR already recorded this
    after reading the same code: *"MiniLcm's lexicon-only model, its CRDT/Harmony sync, update-proxies,
    and media/search/sorting are explicitly not reused"* (`docs/adr/0003-feasibility-findings.md:49`).
    Grammar is not a small gap: it is **230 of 473 in-scope LibLCM fields and 30 of 54 constructs**
-   (computed from `manifest/liblcm-inventory.tsv`), and it is the entire reason LCAtom exists
+   (computed from `manifest/liblcm-inventory.tsv`), and it is the entire reason Motif exists
    (ADR 0010).
 2. **MiniLcm's CRDT ordering primitive is verified unsound for exactly the case that matters most —
    semantically-ordered grammar.** `LcmCrdt`'s `OrderPicker` assigns each ordered item an independent
@@ -64,12 +64,12 @@ keeps its live-query and live-edit job, which is a different job.
    **Decision consequence:** referential integrity is an argument for writing through LibLCM, which
    both candidates do. It does not discriminate between them.
 4. **MiniLcm's CRDT sync is not a replacement for Chorus/Mercurial merging — it is a second store that
-   still needs a bespoke 3-way reconciliation against `.fwdata`, exactly as LCAtom's own design already
+   still needs a bespoke 3-way reconciliation against `.fwdata`, exactly as Motif's own design already
    assumes.** `FwLiteProjectSync/CrdtFwdataProjectSyncService.cs` diffs a saved snapshot against both the
    CRDT store and the live `.fwdata`, then applies each side's delta to the other
    (`CrdtFwdataProjectSyncService.cs:115-146`). Harmony's commit-log CRDT only replaces Chorus for
    CRDT-to-CRDT sync (device-to-device, or device-to-cloud); it does not touch `.fwdata`, which is still
-   Chorus/Mercurial's job. That is LCAtom's S2 position — *"two merges; only one is forbidden"*
+   Chorus/Mercurial's job. That is Motif's S2 position — *"two merges; only one is forbidden"*
    (`docs/stage2-change-management.md:27-33`) — independently confirmed from the Lexbox source rather
    than assumed.
 
@@ -82,7 +82,7 @@ Two claims in the draft of this report were checked against source and did not s
   get no cleanup on delete. That skipped the other half of the mechanism: collections and sequences
   are separate `IReferenceSource` implementations registered in the same incoming-reference bag, and
   they *do* remove the deleted item (`Vectors.cs:782-785`, `:1836`). It also mapped the finding onto
-  LCAtom's issues C4 and C6, which are about different things: **C4** is the *opposite* direction
+  Motif's issues C4 and C6, which are about different things: **C4** is the *opposite* direction
   (clearing a reference orphans an owned target, `docs/issues.md:59`), and **C6** is HCLoader crashing
   at *grammar-load* time on a dangling reference (`docs/issues.md:61`), not a LibLCM write-path gap.
   C4 and C6 remain open and real; they are simply not evidence about MiniLcm.
@@ -115,7 +115,7 @@ Everything in the "verified" column below was read directly:
   shared cross-backend conformance tests (`MiniLcm.Tests/*.cs`, inherited by both
   `LcmCrdt.Tests` and `FwDataMiniLcmBridge.Tests`).
 - The FwData↔CRDT sync tool (`FwLiteProjectSync/CrdtFwdataProjectSyncService.cs`, `EntrySync.cs`).
-- LCAtom's own docs, ADRs, and coverage manifest, already-verified per the task brief.
+- Motif's own docs, ADRs, and coverage manifest, already-verified per the task brief.
 
 What I could **not** verify from source, because the code is not checked out locally, and is marked as
 inference below: the internals of `SIL.Harmony` itself (the generic CRDT/commit-log engine MiniLcm's
@@ -131,17 +131,17 @@ LcmCrdt's own code, it is flagged.
 The product is: a list of **changes** proposed by people or AI, each carrying a **PanGloss report** and
 **word-list analysis** answering "is it better?", plus a **conversation** and an **approval**.
 
-| Product ingredient | MiniLcm today | LCAtom today |
+| Product ingredient | MiniLcm today | Motif today |
 | --- | --- | --- |
 | A **change** as a first-class, reviewable object | No such concept. Writes are direct method calls (`CreateEntry`, `UpdatePartOfSpeech`, …) or CRDT `Change` objects that are committed immediately — there is no "draft, then review, then apply" object. | Yes — the entire point. Canonical Change Set / Assessment / Receipt are three separate artifacts by design (`docs/architecture.md:100-131`). |
 | **Approval / review gate** before a change lands | Not present. `CommentThread`/`UserComment` exist (see next row) but there is no `status: proposed/approved/rejected` on anything resembling a change. | Yes — per-package `status` (proposed/approved/applied/rejected), effect-digest-scoped approval, drift-invalidated (`docs/stage2-change-management.md:51-59`, S4). Designed, not yet built as an app — but it is the shape of the contract already, not a bolt-on. |
-| **Conversation** attached to a change/object | Yes, and it's real and shipping: `CommentThread`/`UserComment`, CRDT-native, soft-delete cascade on subject deletion, fork-warning UX for concurrent replies (`CONTEXT.md`, `LcmCrdt/Changes/Comments/*.cs`). This is ahead of LCAtom. | Not built. Attachments/metrics are designed to carry provenance and be listed/diffed (S5), but no comment-thread concept exists. |
+| **Conversation** attached to a change/object | Yes, and it's real and shipping: `CommentThread`/`UserComment`, CRDT-native, soft-delete cascade on subject deletion, fork-warning UX for concurrent replies (`CONTEXT.md`, `LcmCrdt/Changes/Comments/*.cs`). This is ahead of Motif. | Not built. Attachments/metrics are designed to carry provenance and be listed/diffed (S5), but no comment-thread concept exists. |
 | **PanGloss report** and **word-list analysis** as attached, provenance-stamped evidence | Not modeled at all — MiniLcm has no concept of an external tool's report attached to a change, because it has no concept of grammar or of a change-as-object. | Designed in detail: labelled, typed-metric, intent-digest-bound attachments (`docs/stage2-change-management.md:61-86`, ADR 0011 §4). Not yet implemented (`export` doesn't exist in the shipped CLI). |
 | **Grammar** as an editable, versioned surface | None. | The primary purpose (ADR 0010); 230/473 in-scope fields mapped in detail, zero yet implemented. |
 | **Lexical** CRUD, multi-device live sync, offline editing | Ships today, in production, on Windows/Android/iOS/macOS + web (`FwLiteMaui.csproj`, `FwLiteWeb`), with 431 `[Fact]`/`[Theory]` tests and real CI (`fw-lite.yaml`, `develop-fw-headless.yaml`). | Out of scope by design (`docs/architecture.md:329-337`; "It does not own: … hosting, Git history, or database storage"). One operation implemented end to end, 82/82 tests, no CI. |
 
 Read plainly: **the "change with report, conversation, approval" product does not exist in either
-system today.** MiniLcm has the conversation half; LCAtom has the change/assessment/approval half.
+system today.** MiniLcm has the conversation half; Motif has the change/assessment/approval half.
 Building the product means building the missing half onto whichever base is structurally capable of
 carrying grammar — which the next sections show is not MiniLcm.
 
@@ -149,17 +149,17 @@ carrying grammar — which the next sections show is not MiniLcm.
 
 ## Point-by-point comparison
 
-| Dimension | MiniLcm (+ LcmCrdt + FwDataMiniLcmBridge) | LCAtom |
+| Dimension | MiniLcm (+ LcmCrdt + FwDataMiniLcmBridge) | Motif |
 | --- | --- | --- |
 | **Maturity** | Ships in production. `languageforge-lexbox` has 3,911+ commits, active CI (`fw-lite.yaml`, `develop-fw-headless.yaml`), a MAUI app on 4 platforms plus a web server, 431 test methods. | 40 commits, one operation (`lexical/sense/setGloss`) implemented end to end, 82/82 tests green, **no CI workflow exists** (`ls .github/workflows` → not found). Design docs are extensive and precede the code. |
 | **Domain coverage** | Lexical only: `Entry`, `Sense`, `ExampleSentence`, `Picture`, `Publication`, `SemanticDomain`, `ComplexFormType`/`Component`, `MorphType`, a name-only `PartOfSpeech`, `WritingSystem`. Zero phonology/morphology/feature-system classes. | Model surface is 100% classified (898 raw rows → 473 in-scope, 100% classified — `manifest/README.md`). Grammar (`Group=grammar`) is 230 fields / 30 constructs; lexical is 157 fields / 23 constructs. Only 1 field is actually wired to an operation today. |
-| **Referential integrity — mechanism** | Two different mechanisms in two backends. FwData backend: delegates to LibLCM's own `CmObject.Delete()`, no MiniLcm-level guard code found (grep for "ReferringObjects/dangling/orphan/referential" across `MiniLcm`, `LcmCrdt`, `FwDataMiniLcmBridge`: zero hits). CRDT backend: an explicit, systematic per-type contract — every `IObjectWithId` declares `GetReferences()`/`RemoveReference(id, time)` (`MiniLcm/Models/IObjectWithId.cs:19-29`), invoked (per `CONTEXT.md` and code inspection of `Sense.RemoveReference`) when a referenced object is deleted, covering **both** atomic references and collection membership (e.g. `Sense.RemoveReference` strips a deleted item out of `SemanticDomains`, a collection — `MiniLcm/Models/Sense.cs:36-46`). | Referential integrity is LibLCM's own engine plus LCAtom's *disclosure* obligation, not an independent guarantee: composers emit an explicit `delete` when they can prove an orphan (ADR 0009 §6), `delete`-with-referrers is discovered-footprint and forces full re-assessment (ADR 0009 §5), and the issues register documents the exact upstream gaps (C4, C6) that must be defended against by validation before write, not fixed. |
+| **Referential integrity — mechanism** | Two different mechanisms in two backends. FwData backend: delegates to LibLCM's own `CmObject.Delete()`, no MiniLcm-level guard code found (grep for "ReferringObjects/dangling/orphan/referential" across `MiniLcm`, `LcmCrdt`, `FwDataMiniLcmBridge`: zero hits). CRDT backend: an explicit, systematic per-type contract — every `IObjectWithId` declares `GetReferences()`/`RemoveReference(id, time)` (`MiniLcm/Models/IObjectWithId.cs:19-29`), invoked (per `CONTEXT.md` and code inspection of `Sense.RemoveReference`) when a referenced object is deleted, covering **both** atomic references and collection membership (e.g. `Sense.RemoveReference` strips a deleted item out of `SemanticDomains`, a collection — `MiniLcm/Models/Sense.cs:36-46`). | Referential integrity is LibLCM's own engine plus Motif's *disclosure* obligation, not an independent guarantee: composers emit an explicit `delete` when they can prove an orphan (ADR 0009 §6), `delete`-with-referrers is discovered-footprint and forces full re-assessment (ADR 0009 §5), and the issues register documents the exact upstream gaps (C4, C6) that must be defended against by validation before write, not fixed. |
 | **Referential integrity — actual coverage, verified against LibLCM source** *(corrected on review)* | LibLCM's `CmObject.Delete()` calls `ClearIncomingReferences()` (`liblcm/src/SIL.LCModel/DomainImpl/CmObject.cs:1728-1733`), which walks the incoming-reference bag and calls `RemoveAReference` on every referrer. Referrers come in three kinds and **all three are covered**: the referring object itself, for atomic properties, via the generated `RemoveAReferenceCore` (`LcmGenerate/RemoveAReferenceCore.vm.cs:11-25`); `LcmReferenceCollection<T>`, which implements `IReferenceSource.RemoveAReference` as `Remove((T)target)` (`Vectors.cs:664,782-785`); and `LcmReferenceSequence<T>`, likewise (`Vectors.cs:1653,1836`). So `rel/col` and `rel/seq` references **are** cleaned up on delete. MiniLcm's FwData backend inherits this by delegating to `.Delete()` (`FwDataMiniLcmApi.cs:348,416,494,1388,1646`) and adds no guard code of its own (grep for "ReferringObjects/dangling/orphan/referential" across `MiniLcm`, `LcmCrdt`, `FwDataMiniLcmBridge`: zero hits — it does not need any). The CRDT backend's `GetReferences`/`RemoveReference` contract re-implements the same semantics, collections included (`Models/Sense.cs:35-45`), because that backend has no LibLCM underneath. **This dimension does not discriminate between the candidates.** What remains genuinely unguarded is different and narrower: C4's *orphaned owned target* case, and C6's HCLoader load-time crash on a stale reference — neither addressed by either system. | Designed to treat both gaps as hazards to detect and disclose, not silently trust: pre-apply MPR referential-integrity validation and 24-alpha-variable-ceiling validation are both named obligations (`docs/hc-grammar-map.md:111-121`), not yet implemented. |
 | **Grammar/lexical structural fit** | Lexical: senses/examples/pictures are unordered-content, positionally-ordered lists — exactly what fractional order (`LcmCrdt/OrderPicker.cs`) is good at. Grammar: never modeled, so this has not been tested against feeding-ordered rules, index-as-identity alpha variables, or the 5-parallel-slot-sequences-over-one-pool shape at all. | Explicitly designed around the distinction: `ComparisonClass` in the manifest is `unordered`/`positional`/`feeding`/`index-as-identity`, with feeding and index-as-identity called out as needing neighbour-content-aware (not just neighbour-identity-aware) diffing (`docs/api-surface-layer1.md:106-140`, `docs/conflicts-and-rebase.md:159-160`). |
-| **Sync / "modern merge" story** | Two separate mechanisms, not one: (a) Harmony commit-log CRDT sync between CRDT replicas (device↔device, device↔cloud) — real, shipping, HTTP-based (`LcmCrdt/RemoteSync/CrdtHttpSyncService.cs`); (b) a bespoke, hand-written 3-way reconciliation between the CRDT store and `.fwdata` (`FwLiteProjectSync/CrdtFwdataProjectSyncService.cs:115-146`, `EntrySync.cs`), which diffs a saved snapshot against both live states and applies each side's delta to the other — this is not CRDT machinery, it is ordinary diff/patch code, and it still runs **beside** Chorus/Mercurial's own `.fwdata` Send/Receive, not instead of it. | No merge implementation exists yet (0 commits). Design position (S2) is explicit: `.fwdata` keeps merging via Chorus 3-way on every Send/Receive — that is correct and desired; LCAtom never merges change-set histories or three-way-merges proposed intent (`docs/stage2-change-management.md:27-33`). |
+| **Sync / "modern merge" story** | Two separate mechanisms, not one: (a) Harmony commit-log CRDT sync between CRDT replicas (device↔device, device↔cloud) — real, shipping, HTTP-based (`LcmCrdt/RemoteSync/CrdtHttpSyncService.cs`); (b) a bespoke, hand-written 3-way reconciliation between the CRDT store and `.fwdata` (`FwLiteProjectSync/CrdtFwdataProjectSyncService.cs:115-146`, `EntrySync.cs`), which diffs a saved snapshot against both live states and applies each side's delta to the other — this is not CRDT machinery, it is ordinary diff/patch code, and it still runs **beside** Chorus/Mercurial's own `.fwdata` Send/Receive, not instead of it. | No merge implementation exists yet (0 commits). Design position (S2) is explicit: `.fwdata` keeps merging via Chorus 3-way on every Send/Receive — that is correct and desired; Motif never merges change-set histories or three-way-merges proposed intent (`docs/stage2-change-management.md:27-33`). |
 | **Approval / change-review model** | None. Comments exist (see product-mapping table); "propose, review effect, approve, apply" does not. | The contract's central shape: Change Set / Assessment / Receipt are separate, hashed artifacts; approval is per-effect-digest and drift-invalidated (S4). Designed in detail, unimplemented as an app. |
 | **Cross-language / cross-process access** | Refit-based HTTP API (`FwLiteWeb`) plus in-process C# calls; no documented framing for a Python/Rust consumer analogous to Flexicon/PanGloss's needs, though the HTTP surface could serve that role for lexical data. | Explicitly designed for Python (Flexicon, Linguistic Assistant) and Rust (PanGloss) consumers via a CLI/JSON protocol — still open (issue B13) but a first-class design goal, not an afterthought. |
-| **Test discipline** | 431 `[Fact]`/`[Theory]` methods across `MiniLcm.Tests`/`LcmCrdt.Tests`/`FwDataMiniLcmBridge.Tests`, many run as shared base classes against **both** backends (e.g. `PartOfSpeechTestsBase`, `BasicApiTestsBase`) — a genuine conformance-suite pattern LCAtom does not yet have. | 82/82 green, but against one operation and one backend; no shared multi-implementation conformance harness exists (there is only one implementation). |
+| **Test discipline** | 431 `[Fact]`/`[Theory]` methods across `MiniLcm.Tests`/`LcmCrdt.Tests`/`FwDataMiniLcmBridge.Tests`, many run as shared base classes against **both** backends (e.g. `PartOfSpeechTestsBase`, `BasicApiTestsBase`) — a genuine conformance-suite pattern Motif does not yet have. | 82/82 green, but against one operation and one backend; no shared multi-implementation conformance harness exists (there is only one implementation). |
 | **Extensibility posture** | Adding a field means: model class change, validator change, both backends' Create/Update/Sync helpers, EF Core migration, CRDT `Change` class, JSON schema — evidently workable (it has happened repeatedly: morph types, custom views, comments were all added this way) but each is hand-written, not generated. | Kinds are meant to be generated from the coverage manifest (ADR 0009 §3, ADR 0012) — 332 kinds / 12 handlers for the HC-reachable surface — but the generator does not exist yet (issue: "nothing yet generates operation kinds from it"). |
 
 ---
@@ -169,7 +169,7 @@ carrying grammar — which the next sections show is not MiniLcm.
 Concrete, sized, drawn from the coverage manifest rather than vibes:
 
 1. **A grammar domain model, from zero.** MiniLcm's `Models/` directory has no phonology or morphology
-   classes at all. Building HC-reachable grammar coverage (LCAtom's own completeness bar, ADR 0010) means
+   classes at all. Building HC-reachable grammar coverage (Motif's own completeness bar, ADR 0010) means
    new model types, validators, sync-helpers, and CRDT `Change` classes for roughly **30 new constructs**
    covering **230 fields** (`manifest/liblcm-inventory.tsv`, `Group=grammar`, `Scope=in`): natural classes
    (`PhNCSegments`/`PhNCFeatures`), phonological rules with structural RHS plus the separate metathesis
@@ -180,7 +180,7 @@ Concrete, sized, drawn from the coverage manifest rather than vibes:
    *existing* lexical model is 23 constructs / 157 fields — this is a bigger build than everything MiniLcm
    has shipped to date, in a domain its team has not worked in.
 2. **A new write path in (at least) the FwData backend**, since that is the one that touches real LibLCM.
-   Each of the ~12 `(Kind, Card, Sig)` shapes LCAtom identifies (`docs/api-surface-layer1.md:69-93`) needs
+   Each of the ~12 `(Kind, Card, Sig)` shapes Motif identifies (`docs/api-surface-layer1.md:69-93`) needs
    a correct LibLCM lowering — factories, owning-slot semantics, the "create-into-occupied implies detach"
    rule for `owning/atomic` replacement, `reparent` for sequences. None of this exists in
    `FwDataMiniLcmBridge` today for grammar classes; it would be new code, not adapted code.
@@ -192,20 +192,20 @@ Concrete, sized, drawn from the coverage manifest rather than vibes:
    pair, plus a CRDT `Change` class and an EF Core migration. The scaling is linear and manual by
    construction. That is not a criticism of the design — it is entirely reasonable for a 23-construct
    lexical model — but it is the specific curve that a 30-construct grammar addition would have to ride,
-   and it is the curve LCAtom's generated-kinds bet (332 kinds / ~12 handlers, ADR 0012) exists to avoid.
-   **Caveat in fairness: MiniLcm's linear approach demonstrably works and has shipped; LCAtom's generator
+   and it is the curve Motif's generated-kinds bet (332 kinds / ~12 handlers, ADR 0012) exists to avoid.
+   **Caveat in fairness: MiniLcm's linear approach demonstrably works and has shipped; Motif's generator
    does not exist yet and its leverage is projected, not measured.**
 
 3. **Semantically-aware ordering and identity, not fractional order.** Three specific hazards the fractional
    `OrderPicker` scheme cannot represent correctly, all independently documented and verified against
-   HCLoader by LCAtom: phonological rule order is feeding/bleeding (a neighbour's *content*, not just its
+   HCLoader by Motif: phonological rule order is feeding/bleeding (a neighbour's *content*, not just its
    presence, changes the meaning of your edit — `docs/api-surface-layer1.md:116-119`); alpha-variable names
    are assigned by first-appearance scan with a **hard 24-per-rule ceiling**, so index *is* identity and a
    `move` silently renames every later variable (`docs/hc-grammar-map.md:40-42,74-79`); `MoAffixProcess.Output`
    resolves against `Input` by **position**, so reordering `Input` silently renumbers every `Output` mapping
    (`docs/api-surface-layer1.md:133-137`). A CRDT ordering scheme whose own author's comment admits a "50/50
    chance" of correct resolution on concurrent edits (`LcmCrdt/OrderPicker.cs:26-27`) is not a safe substrate
-   for any of these without new, non-CRDT-native conflict logic — which is most of the engineering LCAtom's
+   for any of these without new, non-CRDT-native conflict logic — which is most of the engineering Motif's
    `Diff`/`Runner` packages already exist to do.
 4. **MPR/collection referential-integrity validation that does not exist anywhere in this codebase today.**
    As shown above, LibLCM's own generated cascade only covers atomic references; MiniLcm adds nothing for
@@ -214,16 +214,16 @@ Concrete, sized, drawn from the coverage manifest rather than vibes:
    project). This has to be built new, in either system.
 5. **A change/review/approval layer**, since none exists in MiniLcm — Change Set, Assessment, Receipt,
    effect-digest-scoped approval, drift handling, labelled provenance-stamped attachments for PanGloss
-   reports and word-list metrics. This is not a small addition; it is most of what LCAtom's `Contract`,
+   reports and word-list metrics. This is not a small addition; it is most of what Motif's `Contract`,
    `Runner`, and (unbuilt) `Diff` packages are for.
 6. **A cross-process protocol for PanGloss (Rust) and Linguistic Assistant (Python)** comparable to what
-   LCAtom is already designing (issue B13) — MiniLcm's access story today is C#-in-process or HTTP-for-the-
+   Motif is already designing (issue B13) — MiniLcm's access story today is C#-in-process or HTTP-for-the-
    MAUI-frontend, neither aimed at this.
 
 **Net size estimate, from the manifest:** roughly **230 fields / 30 constructs** of net-new grammar surface,
 on top of a change/review/approval layer that does not exist, on top of an ordering primitive that would need
 to stop being CRDT-native for the ordered-grammar cases. This is not "extend MiniLcm a bit" — it is building
-LCAtom's grammar half and its contract half, inside MiniLcm's codebase, while discarding MiniLcm's one
+Motif's grammar half and its contract half, inside MiniLcm's codebase, while discarding MiniLcm's one
 genuine advantage for this workload (CRDT sync) for the cases that matter most.
 
 ---
@@ -243,11 +243,11 @@ Distinguishing **irrevocable** (permanently gone) from **merely deferred** (post
   change/approval layer is bolted onto MiniLcm's direct-mutation model, undoing that coupling later (to
   adopt a purpose-built one) means a second migration for every consumer that adopted the bolted-on version.
 
-**Irrevocable if LCAtom is adopted as the sole API and MiniLcm is fully absorbed/discontinued (the harder
+**Irrevocable if Motif is adopted as the sole API and MiniLcm is fully absorbed/discontinued (the harder
 version of verdict 2, which this report does *not* recommend doing on the current timeline):**
 
 - **FieldWorks Lite's shipping multi-device product**, including comments/conversation, offline
-  editing, and the MAUI apps on four platforms — none of that exists in LCAtom, and LCAtom explicitly
+  editing, and the MAUI apps on four platforms — none of that exists in Motif, and Motif explicitly
   does not want to own it ("It does not own: … hosting … UI", `README.md:88-93`). Rebuilding it would cost
   more than everything sized in Question 1.
 - **431 tests' worth of accumulated conformance knowledge** about how CRUD-shaped lexical edits actually
@@ -256,13 +256,13 @@ version of verdict 2, which this report does *not* recommend doing on the curren
 
 **Deferred, not irrevocable, either way:**
 
-- Grammar-experimentation and reviewable-change tooling (LCAtom's job) not existing yet — recoverable by
+- Grammar-experimentation and reviewable-change tooling (Motif's job) not existing yet — recoverable by
   building it, on either substrate, later.
 - The cross-process protocol for Python/Rust consumers (issue B13) — open in both systems, not a sunk loss.
-- PanGloss/report-attachment tooling — designed but unbuilt in LCAtom; entirely absent in MiniLcm; buildable
+- PanGloss/report-attachment tooling — designed but unbuilt in Motif; entirely absent in MiniLcm; buildable
   in either.
 
-The recommended verdict (LCAtom is the change-authorship API, MiniLcm keeps its current job) loses
+The recommended verdict (Motif is the change-authorship API, MiniLcm keeps its current job) loses
 **nothing irrevocably** — it is the option that keeps both investments intact and adds the missing piece
 (a reviewable grammar-change layer) to the system that can structurally hold it.
 
@@ -273,34 +273,34 @@ The recommended verdict (LCAtom is the change-authorship API, MiniLcm keeps its 
 **More complicated, honestly, under the recommended verdict:**
 
 - **Two systems to run, deploy, and reason about**, for as long as both exist. A developer touching lexical
-  data asks "which API," and the honest answer is "MiniLcm for live editing, LCAtom if the edit needs
+  data asks "which API," and the honest answer is "MiniLcm for live editing, Motif if the edit needs
   review/approval/a PanGloss report attached" — a real cognitive cost, and precisely the shape the prompt
   flags as undesirable if landed on carelessly.
 - **Any workflow that spans both** (e.g., a reviewed lexical change that should also show up live in
   FieldWorks Lite) needs an explicit reconciliation step, on top of the one that already exists between
   `.fwdata` and the CRDT store. That is a second seam, not a first one — but see "easier" below: the seam
-  between LCAtom and `.fwdata` is the *same* seam FwLiteProjectSync already has to cross, not a new kind
+  between Motif and `.fwdata` is the *same* seam FwLiteProjectSync already has to cross, not a new kind
   of seam.
-- **LCAtom's own grammar build is not simplified by any of this** — none of MiniLcm's code is reusable for
+- **Motif's own grammar build is not simplified by any of this** — none of MiniLcm's code is reusable for
   it (confirmed, ADR 0003), so the 230-field/30-construct build sized above still has to happen entirely
-  inside LCAtom, on its own timeline, with its current resourcing (one operation, no CI).
+  inside Motif, on its own timeline, with its current resourcing (one operation, no CI).
 
 **Easier, honestly:**
 
-- **LCAtom does not have to build a multi-device sync story, comment threads, or mobile/web clients** —
+- **Motif does not have to build a multi-device sync story, comment threads, or mobile/web clients** —
   those keep being MiniLcm's job, and MiniLcm is good at it (production-shipping, tested, real CI).
 - **MiniLcm does not have to solve semantically-ordered grammar merge** — a problem its own ordering
   primitive is verified not to solve today, and one Linguistic Assistant already independently concluded
   needs a non-CRDT approach.
-- **The referential-integrity validation LCAtom already scoped (C4/C6 defenses, 24-alpha-variable
+- **The referential-integrity validation Motif already scoped (C4/C6 defenses, 24-alpha-variable
   pre-check) does not have to be re-derived** — it was already worked out by reading HCLoader directly, and
   it is validation logic, not a data model, so it ports independent of which system ships it.
-- **Reuse continues to flow one direction cleanly**: LCAtom already copy-adapted ~1,000-1,200 lines of
+- **Reuse continues to flow one direction cleanly**: Motif already copy-adapted ~1,000-1,200 lines of
   MiniLcm's project-load plumbing under MIT (`FwDataProjectLoader.cs:1-2`, `HeadlessLcmUi.cs:1`) — a real,
-  working precedent for "MiniLcm's engineering investment keeps paying off inside LCAtom" without a runtime
+  working precedent for "MiniLcm's engineering investment keeps paying off inside Motif" without a runtime
   coupling between the two projects' release trains.
 - **The manager's Chorus-migration goal is served honestly rather than by a false promise.** Harmony's CRDT
-  sync is real modernization for the CRDT-to-CRDT case; LCAtom's effect-comparison design is real
+  sync is real modernization for the CRDT-to-CRDT case; Motif's effect-comparison design is real
   modernization for "did my reviewed change still mean what I approved" (replacing hand-verified diffs);
   neither claims to replace Chorus/Mercurial's `.fwdata` merge outright, and the evidence (S2, and
   `CrdtFwdataProjectSyncService`) shows nobody who has actually built a working system claims otherwise
@@ -318,11 +318,11 @@ kinds of API in play:
    with live multi-device sync. MiniLcm does this well and there is no reason to replace it.
 2. **A change-authorship/reasoning/review API** — "here is a proposed change, here is its exact effect,
    here is external evidence about whether it's good, review and approve it, then apply it atomically."
-   Nothing in MiniLcm does this; it is what LCAtom's contract is built for.
+   Nothing in MiniLcm does this; it is what Motif's contract is built for.
 
 Requiring one artifact to be both is not obviously the right frame, and the report's recommended verdict
 is really: *pick one API for each of those two jobs, and make sure the change-authorship one — which
-must cover grammar — is LCAtom's contract, not a new one grown inside MiniLcm.* This is not proposed as a
+must cover grammar — is Motif's contract, not a new one grown inside MiniLcm.* This is not proposed as a
 silent fourth verdict; it is offered as the reasoning underneath why verdict 2 is correct rather than
 verdict 3, and it does not change the recommendation.
 
@@ -345,9 +345,9 @@ verdict 3, and it does not change the recommendation.
   turns out to be a niche workflow for a handful of linguists rather than a broad need), the cost of
   running two systems might outweigh the benefit of a purpose-built grammar layer, and "just MiniLcm,
   skip grammar entirely" becomes a live option this report did not fully cost out.
-- **If LCAtom's build stalls indefinitely** (it is currently one operation, no CI, 40 commits), the
+- **If Motif's build stalls indefinitely** (it is currently one operation, no CI, 40 commits), the
   practical recommendation degrades to "MiniLcm is what actually exists," regardless of which is
-  structurally cleaner. A decision to adopt LCAtom's contract should come with a commitment to actually
+  structurally cleaner. A decision to adopt Motif's contract should come with a commitment to actually
   resourcing it past the walking skeleton it is today.
 
 ## What I could not determine from source
@@ -366,7 +366,7 @@ verdict 3, and it does not change the recommendation.
   — inferred "in production" from CI, multi-platform build targets, and commit volume, not from a usage
   dashboard.
 - **Whether the grammar surface would, in practice, need CRDT sync at all** — it is plausible that grammar
-  editing in practice happens single-writer, single-session (matching LCAtom's own single-writer
+  editing in practice happens single-writer, single-session (matching Motif's own single-writer
   assumption, C2), in which case the CRDT-unsuitability argument matters less operationally than it does
-  structurally. LCAtom's own docs assume single-writer for its current apply model; whether that is a
+  structurally. Motif's own docs assume single-writer for its current apply model; whether that is a
   permanent design choice or a v1 simplification was not settled in what I read.

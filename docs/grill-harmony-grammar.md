@@ -6,9 +6,9 @@ this document does not re-argue ADR 0013; it scopes the grammar work on top of i
 Repos read (commit pinned at time of writing):
 - `harmony` — HEAD `c858cb4` (`c858cb429231298aef564354b8ec2d5c87507287`, 2026-07-23)
 - `languageforge-lexbox` — HEAD `da284fa8e628a7acfa76a080dabfc324272ce64e` (2026-07-23)
-- `LCAtom` — working tree at time of writing (docs/manifest as committed through `8337060`)
+- `Motif` — working tree at time of writing (docs/manifest as committed through `8337060`)
 - `FieldWorks` — `Src/LexText/ParserCore/HCLoader.cs`, read in full (2,837 lines)
-- `liblcm` — not re-read; relied on LCAtom's existing manifest/maps, cross-checked against HCLoader directly
+- `liblcm` — not re-read; relied on Motif's existing manifest/maps, cross-checked against HCLoader directly
 
 Every claim below is marked **VERIFIED** (read the code/history myself, cited `path:line` or a commit
 SHA) or **INFERRED** (reasoned from verified facts but not directly observed). Where I found evidence
@@ -241,12 +241,12 @@ is **not** adequate for the 3 "index-as-identity" fields (`PhRegularRule.StrucDe
 reordering silently renames every later alpha variable, nor for `MoAffixProcess.Input` (a "feeding"
 field per the same doc) where `Output` mappings resolve by position and a `move` "cannot claim a
 static footprint." ADR 0013 already names this as "a defect report against Harmony," not against
-LCAtom; this report confirms the defect by reading `SetOrderChange.cs` directly and confirms it is
+Motif; this report confirms the defect by reading `SetOrderChange.cs` directly and confirms it is
 unmitigated as of `harmony@c858cb4`.
 
 ---
 
-## 3. Can the LCAtom manifest generate Harmony change classes?
+## 3. Can the Motif manifest generate Harmony change classes?
 
 I tested this against real generated code rather than assuming.
 
@@ -264,7 +264,7 @@ which silently nulls out the reference rather than throwing, a policy decision, 
 | `ComparisonClass` | Whether order carries meaning, and which of 4 modes | **Partially** — tells you *that* `SetOrderChange<T>`'s LWW-scalar semantics are wrong for `index-as-identity`/`feeding` fields, but not *what to do instead* (the fix is a new Harmony-level ordering type, not something the manifest can generate) |
 | `Construct` | Grouping of manifest rows into an authoring-level object | **Not the same granularity as a `Change<T>` class.** One `Class` maps to *many* `Construct`s (e.g. `PartOfSpeech` class rows are split across `partOfSpeech`, `affixTemplate`, `featureStructure`, `inflectionClass`, `referralRule`, `stemName` — **VERIFIED**, `grep -n "PartOfSpeech" manifest/liblcm-inventory.tsv` shows exactly this split) — a naive "one `Change<T>` per LibLCM class" generator would produce a nonsensical object graph; the manifest's `(Class, Field)→Construct` join is necessary but the *runtime CRDT model classes* (what `MiniLcm/Models/*.cs` actually persists) do not exist in the manifest at all — they must still be hand-designed to match Constructs, not Classes |
 | `Verbs` | Method names on `IMiniLcmWriteApi` | **Yes**, string-concatenatable, and this really is close to codegen-ready — see §3.2 |
-| — (nothing in the manifest) | `ApplyChange`'s handling of dangling/deleted references (silent-null vs. throw vs. reject) | **No.** This is exactly the class of decision `hc-grammar-map.md`'s own "Silent-loss surface" section (lines 57-70) documents as *HCLoader's* behavior, which LCAtom must **predict**, not just mirror. A generator cannot infer "MPR referential integrity is unforgiving... raw dictionary indexers... throw `KeyNotFoundException`" (`hc-grammar-map.md:76-78`) from `(Kind, Card, Sig)` alone; that's domain knowledge about HCLoader's specific implementation, sourced from reading `HCLoader.cs`, not from LibLCM's model shape. |
+| — (nothing in the manifest) | `ApplyChange`'s handling of dangling/deleted references (silent-null vs. throw vs. reject) | **No.** This is exactly the class of decision `hc-grammar-map.md`'s own "Silent-loss surface" section (lines 57-70) documents as *HCLoader's* behavior, which Motif must **predict**, not just mirror. A generator cannot infer "MPR referential integrity is unforgiving... raw dictionary indexers... throw `KeyNotFoundException`" (`hc-grammar-map.md:76-78`) from `(Kind, Card, Sig)` alone; that's domain knowledge about HCLoader's specific implementation, sourced from reading `HCLoader.cs`, not from LibLCM's model shape. |
 | — (nothing in the manifest) | EF `EntityTypeBuilder` configuration (FKs, cascade behavior, jsonb conversions) — required by every registered CRDT type (§2.1) | **No.** `Sense`'s own registration (`LcmCrdtKernel.cs:220-241`) needed 3 hand-written relationship declarations the manifest's columns don't distinguish (e.g. `OnDelete(DeleteBehavior.SetNull)` vs `.Cascade` is a policy call about what "referential integrity" means for *that* edge, and the manifest doesn't carry it — `AssessPoisonsCache` and `Rationale` are the closest columns and they're prose, not structured deletion policy) |
 
 ### 3.2 What generation could plausibly do
@@ -273,7 +273,7 @@ which silently nulls out the reference rather than throwing, a policy decision, 
 skeleton* — constructor signatures, the `basic set/clear` and `rel/atomic set/clear` handler bodies (8
 of the 25 handlers, per `api-surface-layer1.md`'s own count, "the basic-type half is exactly 8
 handlers"), and the `IMiniLcmWriteApi` method stubs with correct parameter types. That is a real
-payoff and is the strongest form in which "LCAtom's surviving work pays off" (per ADR 0013 §"What
+payoff and is the strongest form in which "Motif's surviving work pays off" (per ADR 0013 §"What
 survives"). It is **not** sufficient to generate: (1) `ApplyChange` bodies for anything beyond
 trivial scalar set/clear (owning/seq `create`-into-occupied-with-implicit-detach,
 `api-surface-layer1.md:94-104`, is described as needing composer-level reasoning, not a
@@ -332,7 +332,7 @@ The **removal policy** (cascade-delete vs. null-out vs. filter-from-list vs. —
 *reject the whole change* because HCLoader would crash on the dangling ref) is not mechanical, and for
 grammar specifically the manifest doesn't currently carry the crash-vs-tolerate-vs-widen-silently
 distinction `hc-grammar-map.md` documents (24-alpha-variable ceiling, invalid-environment-widens,
-dangling-MPR-throws) — that lives in prose in a *different* LCAtom doc, not in the TSV's columns.
+dangling-MPR-throws) — that lives in prose in a *different* Motif doc, not in the TSV's columns.
 
 **Sizing the work, concretely**: 38 grammar classes need referential-integrity authorship (≈3× the
 13 done so far), several with 2-3× the reference count of `Sense` (today's densest case). If `Sense`'s
@@ -431,8 +431,8 @@ which PartOfSpeech's existing stub lets this project avoid.
    editability) after the CRDT-side and HC-XML-side halves already work.
 2. **Who owns fixing `SetOrderChange`'s LWW-scalar semantics (§2.5) before grammar's 3
    index-as-identity and 1 feeding-class fields are authored?** This is a Harmony-level change (or a
-   documented, tested workaround built on top of it), not a LCAtom-manifest or MiniLcm-model problem,
-   and per ADR 0013 it's explicitly out of LCAtom's remit to build a competing mechanism — so it needs
+   documented, tested workaround built on top of it), not a Motif-manifest or MiniLcm-model problem,
+   and per ADR 0013 it's explicitly out of Motif's remit to build a competing mechanism — so it needs
    a Harmony-team-facing decision, not a unilateral one.
 3. **Is "generate the mechanical skeleton, hand-write the referential-integrity and HCLoader-specific
    validation logic" (§3.2's actual finding) an acceptable division of labor, or does the org expect
@@ -465,5 +465,5 @@ that revises the prompt's framing).
   and the four priced examples were built by people already fluent in this codebase.
 - Whether PanGloss's `pg-fwdata`/`compile_project` path (cited from `hc-grammar-map.md`, not
   independently re-read here) is mature enough today to be the primary target for option (d) in §2.4,
-  or is itself experimental — I relied on LCAtom's existing doc for this claim rather than reading
+  or is itself experimental — I relied on Motif's existing doc for this claim rather than reading
   PanGloss source, which wasn't in the repo list provided.

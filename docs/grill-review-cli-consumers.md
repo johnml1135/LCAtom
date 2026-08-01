@@ -3,7 +3,7 @@
 Status: research report, prepared for a design discussion. Not a decision record.
 
 This report takes [ADR 0013](adr/0013-harmony-is-the-change-mechanism.md) as settled: **Harmony's
-`Commit`/`IChange` is the change mechanism; LCAtom does not ship a competing contract, format, or
+`Commit`/`IChange` is the change mechanism; Motif does not ship a competing contract, format, or
 runner.** That is not re-argued here. What follows is primary-source research into the three
 questions ADR 0013 left open: what a review/approval layer needs, whether a CLI is still wanted and
 where it belongs, and what non-.NET producers (PanGloss, Flexicon, linguistic-assistant) would need to
@@ -48,8 +48,8 @@ for one change in the activity feed). This is a real, already-built "what did th
 but it only works for changes that are **already committed**. It is not a preview mechanism for a
 change that has not yet been committed. **VERIFIED.**
 
-For previewing a *hypothetical, uncommitted* change (which is what LCAtom's own `assess` verb does
-today against LibLCM, `src/SIL.LCAtom.Cli/Commands.cs:454-505`, via `ChangeSetAssessor.Assess` which
+For previewing a *hypothetical, uncommitted* change (which is what Motif's own `assess` verb does
+today against LibLCM, `src/SIL.Motif.Cli/Commands.cs:454-505`, via `ChangeSetAssessor.Assess` which
 never saves), Harmony gives no equivalent primitive. `IChange.ApplyChange`/`NewEntity` need an
 `IChangeContext` (`harmony/src/SIL.Harmony/Changes/Change.cs:12-33`), and Harmony's own
 `ChangeContext` implementation is backed by a live `SnapshotWorker` reading the database
@@ -69,8 +69,8 @@ the application layer — because Harmony gives you no "hold this commit, don't 
 Two concrete shapes fall out of the primitives above:
 
 - **Hold-then-commit.** Keep the drafted `IChange` list in application storage (Postgres row, local
-  file, whatever) exactly the way LCAtom's own CLI already holds a draft today
-  (`src/SIL.LCAtom.Cli/Store/DraftDocument.cs`, `Commands.cs:92-131`) — the object never touches
+  file, whatever) exactly the way Motif's own CLI already holds a draft today
+  (`src/SIL.Motif.Cli/Store/DraftDocument.cs`, `Commands.cs:92-131`) — the object never touches
   Harmony's `DataModel` until an approval flips it to "commit for real" via `AddChange`. Preview
   ("what would this do") requires the application to call `IChange.NewEntity`/`ApplyChange` itself
   against a freshly-fetched current entity, without going through `DataModel.AddChange` — a thin,
@@ -214,7 +214,7 @@ storage layer. **This fit assessment is my own synthesis, INFERRED from the veri
 I did not find any document proposing PanGloss/word-list attachments use `ResourceService` specifically.**
 
 **Compared to building attachment storage in Lexbox from scratch** (object storage + Postgres row +
-GraphQL mutation, the LCAtom-native path S5/ADR 0011 originally sketched): that would duplicate
+GraphQL mutation, the Motif-native path S5/ADR 0011 originally sketched): that would duplicate
 `RemoteResource`/`LocalResource`/`ResourceService` almost feature-for-feature, and would live in a
 different store than the proposal and comment thread it's attached to, losing the free
 CRDT-sync-to-offline-clients property the Harmony-native path gets automatically. Given the existing,
@@ -230,9 +230,9 @@ could not verify."
 
 **Inventory of what already exists:**
 
-- **LCAtom's own CLI** (`src/SIL.LCAtom.Cli/Program.cs`, `Commands.cs`) — a real, working, in-process
+- **Motif's own CLI** (`src/SIL.Motif.Cli/Program.cs`, `Commands.cs`) — a real, working, in-process
   argument dispatcher (`open`, `new`, `add-set-gloss`, `label`, `comment`, `finalize`, `reopen`,
-  `list`, `show`, `assess`, `apply`, `log`) driving LCAtom's own draft/store/Contract/Runner/Host stack
+  `list`, `show`, `assess`, `apply`, `log`) driving Motif's own draft/store/Contract/Runner/Host stack
   against `.fwdata` directly (`Program.cs:1-152`, `Commands.cs`). Per ADR 0013 this entire
   Contract/Runner/store stack is the thing being retired as *the change mechanism* — but the CLI
   *shape* (a thin verb dispatcher over testable command handlers, `Commands.cs:26-32`) is a reusable
@@ -273,7 +273,7 @@ exactly "a CLI that operates on Harmony/CRDT data," already living under `backen
 `LcmCrdt`, not inside Harmony. A proposal-submission or PanGloss/Flexicon-integration CLI is the same
 shape of tool — it needs `LcmCrdt`'s domain model (`Entry`/`Sense`/`CommentThread`/`RemoteResource`) and
 Harmony's `DataModel`, so it belongs alongside `FwLiteProjectSync`, not inside Harmony, and not inside
-LCAtom (which per ADR 0013 no longer owns the change mechanism this CLI would be driving).
+Motif (which per ADR 0013 no longer owns the change mechanism this CLI would be driving).
 
 **What job is left undone that only a CLI could do**, given that a Lexbox server and a FwLite web UI
 already exist? Concretely, three jobs neither the GraphQL API nor the browser UI serve well:
@@ -413,8 +413,8 @@ is greenfield for all three, verified by reading each:**
   LIFT + Hermit Crab edit operations" (proposal.md:16-17) and, per the design doc, "lists of `lexical/*`
   + `morphophonology/*` ops" (`design.md:38`). This is a **third, separate change-set vocabulary**
   (LIFT/HC ops, namespaced `lexical/*`/`morphophonology/*`) — coincidentally closer in naming style to
-  LCAtom's own retired operation-kind convention (`lexical/sense/setGloss`,
-  `src/SIL.LCAtom.Cli/Commands.cs:154`) than to Harmony's `IChange` — built for a golden-eval/scoring
+  Motif's own retired operation-kind convention (`lexical/sense/setGloss`,
+  `src/SIL.Motif.Cli/Commands.cs:154`) than to Harmony's `IChange` — built for a golden-eval/scoring
   pipeline, not for submitting to Harmony/Lexbox. **VERIFIED, and worth surfacing explicitly at the
   design discussion**: if linguistic-assistant's proposal format is meant to eventually become "the
   thing a human reviews and approves" in the product this ADR is designing for, there are now three
@@ -430,7 +430,7 @@ is greenfield for all three, verified by reading each:**
 
 Extracting the genuine product requirements (not mechanisms) from
 [`stage2-change-management.md`](stage2-change-management.md) and
-[ADR 0011](adr/0011-experiment-loop-boundary-lcatom-is-the-record.md):
+[ADR 0011](adr/0011-experiment-loop-boundary-motif-is-the-record.md):
 
 ### Effect-scoped approval
 *(S4: "approval is per-effect-digest and drift-invalidated," `stage2-change-management.md:56`)*
@@ -454,7 +454,7 @@ every `ObjectSnapshot` carries a `CommitId`
 (`DataModel.cs:245-250`) tells you the current snapshot for an entity — so "has this entity moved since
 I evaluated my proposal" is a cheap comparison (store the snapshot/commit id the proposal was computed
 against; at approval time, compare it to the current one). But Harmony does **not** do this check for
-you the way LCAtom's own `apply` does (`Commands.cs:507-589`, which hard-fails without a bound
+you the way Motif's own `apply` does (`Commands.cs:507-589`, which hard-fails without a bound
 `Assessment` whose footprint digest matches, per ADR 0004 decision 3) — there is no equivalent
 optimistic-concurrency gate anywhere in `DataModel.AddChange`. **VERIFIED absence** — `AddChange`
 (`DataModel.cs:53-91`) takes no "expected prior state" parameter and performs no such comparison. This
@@ -489,10 +489,10 @@ Harmony gap, and is a smaller version of the same "no automatic drift check" gap
 would likely share one small comparison utility if built together.
 
 ### "Never merge" / two-merges distinction
-*(S2: LCAtom "never merges change-set stores/histories," `stage2-change-management.md:28-33`)*
+*(S2: Motif "never merges change-set stores/histories," `stage2-change-management.md:28-33`)*
 
-**(i) Already satisfied, differently than S2 imagined.** S2 was written assuming LCAtom's own
-change-set store existed to *not* merge. Under ADR 0013 there is no LCAtom change-set store; Harmony's
+**(i) Already satisfied, differently than S2 imagined.** S2 was written assuming Motif's own
+change-set store existed to *not* merge. Under ADR 0013 there is no Motif change-set store; Harmony's
 CRDT commit log *is* the merge mechanism now (commutative per-field changes reconciled by hybrid-clock
 order, `CommitBase.CompareKey`, `harmony/src/SIL.Harmony.Core/CommitBase.cs:25`), and it is designed
 to merge — that is the entire point of a CRDT. This requirement, read literally, does not survive

@@ -7,7 +7,7 @@ Local source revisions used in this pass:
 
 | Repository | Revision |
 | --- | --- |
-| `LCAtom` | `3f0dfadc5acc179adeb946e46c7a62be02b749c4` plus this uncommitted research update |
+| `Motif` | `3f0dfadc5acc179adeb946e46c7a62be02b749c4` plus this uncommitted research update |
 | `PanGloss` | `82ca3c0fbd4ad62a88139ca075d71d7d21319c94` |
 | `FieldWorks` | `b8a2dd123aa6a5d0b95774ae74daa50e852932f8` |
 | `machine` | `4c79ed0e055bb553e68359bcb81a8ad711134944` |
@@ -25,15 +25,15 @@ checkpoint, and separates current capability, proposed work, owner decisions, an
 ## Method and evidence discipline
 
 Eight independent Luna tracks examined PanGloss comparison seams; the FieldWorks-to-HermitCrab
-pipeline; John Maxwell's visualization work; current LCAtom/Harmony/FWLite change formats; layered
+pipeline; John Maxwell's visualization work; current Motif/Harmony/FWLite change formats; layered
 contracts; SOTA grammar regression; human/AI review; and every grill question's researchability.
 They were asked to prefer local source, specifications, official documentation, and primary papers.
 Their reports were treated as leads, not authority, and local claims were spot-checked.
 
 Two recurring agent conclusions were rejected:
 
-- ADR 0013 remains authoritative. The cancelled LCAtom runner is not the implementation path.
-  LCAtom's earlier assessment/effect designs are evidence, not permission to build a third mechanism.
+- ADR 0013 remains authoritative. The cancelled Motif runner is not the implementation path.
+  Motif's earlier assessment/effect designs are evidence, not permission to build a third mechanism.
 - `OpaqueChange` retention is not forward-compatible application. Unknown changes are inert, and
   dependent later-change behavior remains unproved.
 

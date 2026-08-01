@@ -1,6 +1,6 @@
 # Stage-2 change management (vision)
 
-A local-first change-management layer over the LCAtom runner: author, review, and apply change
+A local-first change-management layer over the Motif runner: author, review, and apply change
 packages, with a thin CLI now and an elaborate application later. This is the vision and the settled
 decisions; the elaborate application is **out of scope for the current core build** and will likely be
 a separate repo. Each decision below is tagged **[core]** (in this repo now) or **[stage-2]** (later,
@@ -27,7 +27,7 @@ already implements the `intentDigest`/`changeSetId` split described above.
 ## S2 — Two merges; only one is forbidden
 
 The `.fwdata` **merges** on every LexBox Send/Receive (Chorus 3-way, element/GUID-level) — that is
-where two operators' actual data reconciles, and it is desired. "Never merge" means only: **LCAtom
+where two operators' actual data reconciles, and it is desired. "Never merge" means only: **Motif
 never merges change-set stores/histories against each other and never three-way-merges proposed
 intent.** Chorus-induced baseline movement is ordinary [drift](conflicts-and-rebase.md), handled by
 effect-comparison. There is no "merge change sets" operation anywhere. **[core]** semantics.
@@ -61,15 +61,15 @@ set independently and the log unions to one entry. Multi-user discussion is a la
 ## S5 — Attachments: derived, provenance-stamped, store-not-interpret
 
 The CLI **exports `.fwdata`** (N change sets applied to a scratch copy) and **accepts** report blobs; the
-external tool (PanGloss) is run by a thin orchestration script, never by LCAtom. Attachments are
+external tool (PanGloss) is run by a thin orchestration script, never by Motif. Attachments are
 **derived/regenerable views**, stored as content-addressed blobs with provenance `(changeSetId,
 intentDigest, the whole-grammar state digest they ran against, tool + version, timestamp)`,
 **staleness-flagged** when the state moves (never shown as current when stale), and **selectively
-synced**. LCAtom **stores and lists by provenance; it never interprets** tool output (it can diff blobs,
+synced**. Motif **stores and lists by provenance; it never interprets** tool output (it can diff blobs,
 but the meaning stays external). **[core]** export/accept/store; **[stage-2]** orchestration +
 comparison UI.
 
-Two amendments from [ADR 0011](adr/0011-experiment-loop-boundary-lcatom-is-the-record.md):
+Two amendments from [ADR 0011](adr/0011-experiment-loop-boundary-motif-is-the-record.md):
 
 - **Export is `.fwdata`, not HC grammar XML.** This section originally said the CLI "produces HC grammar
   XML". PanGloss reads `.fwdata` directly and calls the XML path legacy, so XML survives only as the C#
@@ -79,20 +79,20 @@ Two amendments from [ADR 0011](adr/0011-experiment-loop-boundary-lcatom-is-the-r
 - **Labels and typed metrics.** Attachments carry a configuration-declared **label** (`"PanGloss
   Report"`, `"Changed Word Analysis from Corpus A"`), and a label may be declared Markdown for CLI
   pretty-printing. Configuration also declares typed **metrics** (`corpus-a-coverage: percent`,
-  `regression-status: enum[pass,fail]`) which LCAtom stores, lists, and diffs across change sets.
+  `regression-status: enum[pass,fail]`) which Motif stores, lists, and diffs across change sets.
   Both bind to the **`intentDigest`**, not `changeSetId` alone, so amending a change set marks prior
-  reports stale rather than silently re-attributing them. LCAtom evaluates no metric and gates no
+  reports stale rather than silently re-attributing them. Motif evaluates no metric and gates no
   apply in v1.
 
 ## S6 — HermitCrab round-trip
 
-**Amended by [ADR 0011](adr/0011-experiment-loop-boundary-lcatom-is-the-record.md): forward projection is
+**Amended by [ADR 0011](adr/0011-experiment-loop-boundary-motif-is-the-record.md): forward projection is
 deleted.** This section originally made forward projection (harvest `HCLoader`) the killer workflow's
 producer, with reverse `Expand` built after it and validated against it. PanGloss reads `.fwdata`
 directly — **PanGloss is the projection** — so there is no forward component to build.
 
 Reverse **`Expand`** survives and is now the *primary* grammar authoring surface: structured HC-friendly
-commands, no compiler, the inverse of `HCLoader`. Still **[core]**, still in `SIL.LCAtom.HermitCrab`.
+commands, no compiler, the inverse of `HCLoader`. Still **[core]**, still in `SIL.Motif.HermitCrab`.
 Losing forward projection costs `Expand` its intended round-trip oracle, so it must instead be validated
 against HC's own conformance suite — see [HC surface scope](hc-surface-scope.md), "The oracle" — whose
 fixtures mechanically re-derive ground truth from `grammar.xml` rather than trusting hand-authored
@@ -109,7 +109,7 @@ FieldWorks-owned Avalonia modules on the active net48-to-net10 migration spine�
 components. Orchestration, LexBox/cloud sync, and any Dolt/DoltHub substrate may remain in a separate
 modern companion/service repository.
 
-As shipped today, only `SIL.LCAtom.Contract`, `.Model`, `.Runner`, `.Host`, `.Cli`, and `.Tests` exist
+As shipped today, only `SIL.Motif.Contract`, `.Model`, `.Runner`, `.Host`, `.Cli`, and `.Tests` exist
 as projects; `Diff` and `HermitCrab` are boundary decisions for work not yet started — there is no
 HermitCrab projection code of any kind in the tree.
 

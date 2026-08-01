@@ -2,14 +2,14 @@
 
 Flexicon (`C:\Users\johnm\Documents\repos\flexicon`; Python, LGPL-2.1, © Craig Farrow) is a
 battle-hardened LibLCM writer whose lexicon, grammar, and list operations are intended to move
-through LCAtom. Its source encodes hard-won LibLCM ordering, cascade, and identity rules learned from
+through Motif. Its source encodes hard-won LibLCM ordering, cascade, and identity rules learned from
 real data loss. This document harvests that knowledge.
 
 **Reuse mechanism: learn-from, not copy.** Unlike `FwDataMiniLcmBridge` (C#/MIT, copy-and-adapt per
 [ADR 0003](adr/0003-feasibility-findings.md)), Flexicon is Python/LGPL-2.1 — no line ports into
-LCAtom's C# core. What is valuable is the scar tissue below, re-implemented independently.
+Motif's C# core. What is valuable is the scar tissue below, re-implemented independently.
 
-## Coverage gaps — constructs moving through LCAtom the spec does not yet cover
+## Coverage gaps — constructs moving through Motif the spec does not yet cover
 
 - **Reversal index entries** — create, sense-linking, subentries. No operation family exists yet.
   `ReversalIndexEntry.EntriesOC` is owning, `SensesRS` is a pure reference: deleting a sense orphans
@@ -23,12 +23,12 @@ LCAtom's C# core. What is valuable is the scar tissue below, re-implemented inde
   `PossibilitiesOS`; per-chart `ICmOverlay` has no project-level list. Any generic possibility-list
   family must not assume every list has `PossibilitiesOS`.
 - **Writing-system lifecycle** — create/delete/set-default, full-list vs current-list sync. **In
-  scope**: LCAtom bootstraps projects, so this is an operation family. Creation is a two-step
+  scope**: Motif bootstraps projects, so this is an operation family. Creation is a two-step
   `Create(tag)` then `Set(ws)` (`System/WritingSystemOperations.py:246-267`); skipping `Set` leaves a
   detached writing system that errors on the next FLEx open, and the current-vs-full list must be kept
   in sync via `AddToCurrent*WritingSystems`, not raw string-list assignment.
 - **System-list deletion guard** — Flexicon's `DeleteList` refuses on well-known roots
-  (SemanticDomainList, PartsOfSpeech, …); LCAtom's generic delete family has no such policy guard.
+  (SemanticDomainList, PartsOfSpeech, …); Motif's generic delete family has no such policy guard.
 
 ## Harvested gotchas
 
@@ -46,7 +46,7 @@ LCAtom's C# core. What is valuable is the scar tissue below, re-implemented inde
 
 2. **Stratum delete leaves dangling `StratumRA`** on affix templates, MSAs, compound rules, and
    phonological rules with no LCM cleanup (`Grammar/StratumOperations.py:222-229`) — surfaces later as
-   silent HermitCrab parser failure. Test against LCAtom's delete-closure assessment.
+   silent HermitCrab parser failure. Test against Motif's delete-closure assessment.
 3. **De-referencing an owned object does not cascade** (`Lexicon/MSAOperations.py:643-717 RemoveOrphaned`,
    `Grammar/PhonologicalRuleOperations.py:869-955`): clearing/replacing an atomic reference to an
    owned-collection member leaves it as an orphan needing an explicit compensating sweep. Folded into
@@ -74,7 +74,7 @@ LCAtom's C# core. What is valuable is the scar tissue below, re-implemented inde
    a non-nullable bool; `is not None` was always true and misclassified parser agents. Check LibLCM
    metadata for unset-vs-set, don't read it off the scalar type.
 
-## Corroborations — Flexicon independently validates existing LCAtom decisions
+## Corroborations — Flexicon independently validates existing Motif decisions
 
 - **NFD normalization** (`Shared/string_utils.py:55-56` and 5+ call sites): unnormalized-NFC lookups
   silently miss LibLCM's NFD storage. Confirms the canonical snapshot's NFD rule is necessary.
@@ -85,6 +85,6 @@ LCAtom's C# core. What is valuable is the scar tissue below, re-implemented inde
 
 ## Verdict
 
-Harvest as documentation, re-implement independently. The two items that touch LCAtom's core
+Harvest as documentation, re-implement independently. The two items that touch Motif's core
 guarantees — #1 (schema mutation vs the outer unit of work) and #2/#3 (delete/de-reference closure
 completeness) — deserve Phase 0 validation and, if confirmed, their own ADR before the contract locks.

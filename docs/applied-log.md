@@ -1,7 +1,7 @@
 # Applied-change log
 
 A deliberately thin, append-only record written into the project itself, recording which Change Sets
-LCAtom applied. It answers three questions: *did LCAtom already apply this Change Set, who applied
+Motif applied. It answers three questions: *did Motif already apply this Change Set, who applied
 it, and when.*
 
 It is not the record of the change. Change Sets, Assessments, and Receipts live outside this
@@ -20,15 +20,22 @@ properties, and both are used:
 
 ```
 Version = <changeSetId>
-Name    = LCAtom|<format>|<timestamp>|<user>|<intentDigest>|<description>
+Name    = Motif|<format>|<timestamp>|<user>|<intentDigest>|<description>
 ```
 
 Every field before the description is fixed-width or constrained, so the description is a free tail
 and **no escaping is needed**: parse by splitting on the first five `|` and taking the remainder.
 
+> **The prefix changed on 2026-07-30**, from `LCAtom` to `Motif`, with the product rename
+> (grill-decisions D7). This is a **format-breaking change to persisted data**: an entry written by the
+> older code is not recognized by the current parser and is treated as a foreign `CmResource` — that is,
+> ignored, never rewritten. It was taken now, and without a `<format>` bump, because nothing has shipped
+> and no project in the field carries an `LCAtom`-prefixed entry. If one is ever found, it is a
+> migration, not a parse bug.
+
 | Field | Rule |
 | --- | --- |
-| `LCAtom` | literal prefix identifying entries this runner owns |
+| `Motif` | literal prefix identifying entries this runner owns |
 | `<format>` | decimal format version, currently `1` |
 | `<timestamp>` | UTC ISO 8601 basic, fixed 16 characters, e.g. `20260724T055701Z` |
 | `<user>` | applier identity, at most 64 characters, may be empty, must not contain `\|` or control characters |
@@ -68,17 +75,17 @@ leaves no entry. Exactly one entry is written per applied Change Set.
 
 ## What presence and absence mean
 
-- **Presence** of GUID `G`: LCAtom applied `G` to this project, at that time, by that user. It does
+- **Presence** of GUID `G`: Motif applied `G` to this project, at that time, by that user. It does
   *not* mean `G`'s effects are still present — a later Change Set or a manual edit may have changed
   or reverted them.
-- **Absence** of GUID `G`: LCAtom never applied `G` to this project. This is the idempotence check.
+- **Absence** of GUID `G`: Motif never applied `G` to this project. This is the idempotence check.
 - **Content check**: `G` present but the stored `<intentDigest>` differing from the Change Set now
   under consideration is surfaced — same identity, different content — rather than reported as a clean
   "already applied." Matching is on the stable `changeSetId`; the digest catches drift in what that
   identity refers to (the Flyway/Liquibase checksum pattern; see
   [ADR 0004](adr/0004-prerequisite-graph-stable-ids-bound-apply.md)).
-- The log says nothing about non-LCAtom edits. Projects will carry manual FieldWorks edits
-  indefinitely and those leave no entry. The log is a positive record of LCAtom applications only.
+- The log says nothing about non-Motif edits. Projects will carry manual FieldWorks edits
+  indefinitely and those leave no entry. The log is a positive record of Motif applications only.
 - The log travels inside the project, so restoring an older backup correctly restores the older log.
 
 ## Sync behavior
@@ -99,6 +106,6 @@ authoritative.
 
 ## Foreign entries
 
-Entries whose `Name` lacks the `LCAtom` prefix belong to FieldWorks or other tools. They are never
-read, rewritten, or deleted. An `LCAtom`-prefixed entry that fails to parse is reported as a
+Entries whose `Name` lacks the `Motif` prefix belong to FieldWorks or other tools. They are never
+read, rewritten, or deleted. An `Motif`-prefixed entry that fails to parse is reported as a
 diagnostic and left untouched.

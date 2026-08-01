@@ -4,7 +4,7 @@ Status: accepted (2026-07-24)
 
 ## Context
 
-LCAtom applies a whole Change Set in one outer `UndoableUnitOfWorkHelper`. Flexicon lost 1,392 senses
+Motif applies a whole Change Set in one outer `UndoableUnitOfWorkHelper`. Flexicon lost 1,392 senses
 (issue #21) by adding a custom field inside an open unit of work. Three repositories were read to
 learn how the battle-hardened tools sequence a metadata (schema) change against data changes; the
 project is new and should mirror them rather than invent a pattern. See
@@ -38,7 +38,7 @@ project is new and should mirror them rather than invent a pattern. See
 3. `Save`/`Commit` is never called while any unit of work is open; a commit happens only after a
    phase's task has closed.
 4. Schema changes are **one-way**. LibLCM's data rollback cannot revert them, and — like FieldWorks —
-   LCAtom does not try. A Change Set whose schema phase succeeds but whose data phase then fails leaves
+   Motif does not try. A Change Set whose schema phase succeeds but whose data phase then fails leaves
    the custom field defined but empty. That leftover is **not automatically idempotent**:
    `AddCustomField` throws on a duplicate name (`LcmMetaDataCache.cs:967-983`), so a retry must run the
    [custom-field](../custom-fields.md) ensure/resolve pre-check (absent → create; present and

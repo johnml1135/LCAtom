@@ -511,7 +511,7 @@ Product decisions still needed after the proof gates:
 
 High-confidence local evidence:
 
-- LCAtom contract and coverage documents, including ADR 0013;
+- Motif contract and coverage documents, including ADR 0013;
 - LibLCM `DomainDataByFlid`, decorators, UOW helpers, action-handler callbacks, and normalization
   requirements;
 - FieldWorks `FwApp`, main-window, mediator, refresh, parser-listener, and error-reporting seams;
@@ -522,7 +522,7 @@ High-confidence local evidence:
   evidence, not claims of merged/released functionality);
 - LexBox `FwHeadless` synchronization choreography, project snapshots, rollback blocking, and
   `CrdtFwdataProjectSyncService` for the bounded MiniLcm surface;
-- the measured LCAtom LibLCM inventory and grammar maps;
+- the measured Motif LibLCM inventory and grammar maps;
 - earlier curated word-evidence research in this repository.
 
 Medium-confidence planning inference:

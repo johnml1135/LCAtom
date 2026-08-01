@@ -9,7 +9,7 @@ The Smithy proposal was made in a **Codex** session (`gpt-5.6-sol`), not in this
 Claude Code — which is why nothing here or in git history mentions it. Session
 `019fa903-3a11-7c90-a115-36f9931857f5`, rollout under `~/.codex/sessions/2026/07/28/`, final two
 turns timestamped 2026-07-30 00:27 and 00:43 UTC. **No files were produced.** The only artifact from
-that whole thread is [grammar-workbench-overall-plan.md](grammar-workbench-overall-plan.md)
+that whole thread is [motif-overall-plan.md](motif-overall-plan.md)
 (commit `af79e6c`), written earlier in the session, before the IDL turn.
 
 The prompt was: *"we should have some sort of API contract we can inspect and interrogate before we
@@ -23,8 +23,8 @@ a traceability manifest (safest, weakest as a design environment). Concretely:
 
 - Custom traits `@libLcm(types, coverageIds)`, `@hcLoader(symbols, fixtures)`,
   `@panGloss(concepts, fixtures)`, `@lowersTo([...])` attached to each operation.
-- Two namespaces — `org.sil.lcatom.grammar.v1` (semantic intent) and `org.sil.harmony.grammar.v1`
-  (state transitions) — with LCAtom *declaring* which Harmony changes it may lower into.
+- Two namespaces — `org.sil.motif.grammar.v1` (semantic intent) and `org.sil.harmony.grammar.v1`
+  (state transitions) — with Motif *declaring* which Harmony changes it may lower into.
 - A runtime **lowering trace** correlating each semantic operation with its generated changes.
 - Modeled domain errors with stable codes; process exit codes as a coarse CLI adapter only.
 - A **contract workbench before runtime code**: `contract operations | show | input-schema | errors |
@@ -38,7 +38,7 @@ output-only, generic Harmony work stays in the Harmony repo, and no fork is impl
 
 **1. It reintroduced preconditions.** The proposed input carried `baseline:
 NaturalClassBaselineEvidence` and the error list carried `BaselineMismatch`; the follow-up listed
-"preconditions" among what LCAtom owns. That is correct design for an RPC API and wrong for anything
+"preconditions" among what Motif owns. That is correct design for an RPC API and wrong for anything
 that merges — see **D5** in [grill-decisions.md](grill-decisions.md). Baseline evidence is an
 observation carried by the proposal, evaluated at review time. It is not a guard inside a change.
 

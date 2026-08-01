@@ -9,10 +9,10 @@ committed before the next begins.
 The LibLCM change-set runner (`Contract`, `Model`, `Runner`, `Host`) and a **thin CLI** that is both
 the integration-test harness and the seed of a local, git-style, files-based change-package store.
 
-Also in scope, per [ADR 0011](adr/0011-experiment-loop-boundary-lcatom-is-the-record.md): **hypothetical
+Also in scope, per [ADR 0011](adr/0011-experiment-loop-boundary-motif-is-the-record.md): **hypothetical
 `.fwdata` export** (N change sets applied to a scratch copy, real project untouched) and the
 **attachment/metric record** — labelled report blobs and configuration-declared typed metrics bound to
-a change set's `intentDigest`, stored, listed, diffed, and rendered. LCAtom receives the loop's outputs;
+a change set's `intentDigest`, stored, listed, diffed, and rendered. Motif receives the loop's outputs;
 it never produces them and never interprets them.
 
 ## Explicitly out of scope (future, likely a separate repo)
@@ -36,7 +36,7 @@ a later, disposable, rebuildable cache, never the source of truth and never sync
 ## Stages
 
 - **A — Scaffold + headless load.** Solution and package shape; reference `SIL.LCModel`; adapt the
-  headless project-load plumbing from `FwDataMiniLcmBridge` (MIT); `lcatom open` prints project name +
+  headless project-load plumbing from `FwDataMiniLcmBridge` (MIT); `motif open` prints project name +
   entry count; a test opens a real project. (Phase 0.) **Done.**
 - **B — Contract kernel.** Immutable change-set DTOs, strict closed JSON parsing, RFC 8785 canonical
   JSON, intent digest, canonical/GUID IDs — no LibLCM dependency. (Phase 1; ADR 0004, 0007.) **Done.**
@@ -48,7 +48,7 @@ a later, disposable, rebuildable cache, never the source of truth and never sync
   and the applied-change log entry. (Phase 4; ADR 0005, 0006.) **Done**, and hardened since: `apply` now
   requires a bound `Assessment` and hard-stops on footprint drift (closes issue A2).
 - **E — Thin CLI.** `open / new / add-set-gloss / label / comment / finalize / reopen / list / show /
-  assess / apply / log` — 12 verbs, dispatched in `src/SIL.LCAtom.Cli/Program.cs` — over the files
+  assess / apply / log` — 12 verbs, dispatched in `src/SIL.Motif.Cli/Program.cs` — over the files
   store, driving the real core end to end. **Done.**
 
 ## Status
@@ -65,7 +65,7 @@ zero create operations, zero delete operations, zero sequence operations, and ze
 and [implementation-plan.md](implementation-plan.md) for per-phase status against the fuller plan.
 
 There is no HermitCrab projection code, and per
-[ADR 0011](adr/0011-experiment-loop-boundary-lcatom-is-the-record.md) **there never will be** — PanGloss
+[ADR 0011](adr/0011-experiment-loop-boundary-motif-is-the-record.md) **there never will be** — PanGloss
 reads `.fwdata` directly, so forward projection is deleted, not pending. Reverse `Expand` (authoring in
 HC-friendly grammar terms) remains, and is unbuilt.
 

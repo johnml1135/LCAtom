@@ -1,22 +1,29 @@
-# LCAtom
+# Motif
 
-*Atomic operations on FieldWorks' LibLCM data.*
+*Named, reusable units of linguistic intent for FieldWorks' LibLCM data.*
 
-LCAtom is the canonical C# contract and reference runner for applying portable,
-reviewable, semantic CRUD+ change sets to an already-loaded LibLCM model.
+**Motif** is the semantic operation vocabulary for changing a language project — a small, named,
+reusable unit of intent (`MergeLexicalEntries`, `SplitSense`, `CreateAffixProcessRule`) that recurs
+across a project and is *lowered* into concrete changes. In music a motif is the smallest recognizable
+unit that recurs and is developed across a work; that is exactly the shape of a semantic operation. The
+name sits in the family this ecosystem already has: **Chorus** (sync), **Harmony** (merge), **Motif**
+(intent). Slots: repository and product **Motif**, CLI **`motif`**, and inside FieldWorks' Avalonia UI
+the plain-words label **"Proposed Changes"**. Recorded in
+[grill-decisions D7](docs/grill-decisions.md#d7--the-name-is-motif-and-it-absorbs-lcatom); the project
+was called *LCAtom* until 2026-07-30 and that name is retired.
 
 **Why it exists.** A person or an AI working on a language asks *"what if we change this — does the
-text parse better?"* LCAtom makes that question safe to ask, cheap to repeat, and honest to answer:
-author a change at a high level, review the exact state delta before anything is touched, project the
-would-be grammar to HermitCrab, let [PanGloss](https://github.com/sillsdev/machine) parse a text and
-report, compare against earlier runs, then keep it or throw it away. Everything HermitCrab supports
-must be authorable here, in a friendly way — that is the primary completeness criterion. See
+text parse better?"* Motif makes that question safe to ask, cheap to repeat, and honest to answer:
+author a change at a high level, review the exact state delta before anything is touched, let
+[PanGloss](https://github.com/sillsdev/machine) parse a text and report, compare against earlier runs,
+then keep it or throw it away. Everything HermitCrab supports must be authorable here, in a friendly
+way — that is the primary completeness criterion. See
 [ADR 0010](docs/adr/0010-hermitcrab-experimentation-is-the-primary-purpose.md).
 
-The project is deliberately storage- and workflow-agnostic. A change set can come from a file,
-Git repository, database, web service, AI agent, FieldWorks panel, or another application. The
-runner gives that change set one meaning, assesses it against a specific model, and can apply it
-atomically through LibLCM's unit-of-work machinery.
+Motif is deliberately storage- and workflow-agnostic: a proposed change can come from a file, a Git
+repository, a database, a web service, an AI agent, a FieldWorks panel, or another application, and
+Motif gives it one meaning regardless. Where those changes are *stored and merged* is settled and is not
+Motif's: it is Harmony's, per ADR 0013 below.
 
 ## Status — direction reversed, 2026-07-27
 
@@ -58,15 +65,51 @@ atomically through LibLCM's unit-of-work machinery.
 > [liblcm-codegen](docs/inventory-liblcm-codegen.md) ·
 > [harmony-generation-surface](docs/inventory-harmony-generation-surface.md) ·
 > [harmony-conflict-reporting](docs/inventory-harmony-conflict-reporting.md).
-> Live decisions: [grill-decisions.md](docs/grill-decisions.md) (D1–D6).
+> Live decisions: [grill-decisions.md](docs/grill-decisions.md) (D1–D7).
+
+## Language
+
+[CONTEXT.md](CONTEXT.md) is the canonical glossary and is binding in code, CLI verbs, and prose. The
+three terms most often got wrong, settled by
+[ADR 0015](docs/adr/0015-proposal-assessment-dry-run-vocabulary.md):
+
+- **Proposal** — the stored, reviewable set of changes. *Not* "change set", which retired with the
+  contract ADR 0013 withdrew.
+- **Assessment** — an immutable PanGloss run: does the grammar parse better? PanGloss owns this word.
+- **Dry Run** — what a Proposal would do to a live LibLCM model, computed without mutating it.
+
+Documents dated before 2026-07-31 use the retired vocabulary and are historical records.
+
+## The live plans — three repositories, one milestone ladder
+
+ADR 0014's consequence is that this is a **three-repo change with a package chain between two of them**,
+so there are three plans and one file that keeps them aligned. **Start with the cross-repo ladder;** it
+is the only place milestones are defined.
+
+- **[plan-cross-repo.md](docs/plan-cross-repo.md)** — milestones M0–M5, the dependency edges between
+  repos, and the rules that keep the other three plans from drifting apart.
+- [plan-motif.md](docs/plan-motif.md) — this repo: the MiniLcm ↔ LibLCM name map, the `(Class, Field)`
+  join, the generator, and the semantic + lowering layers (`MOT-1`…`MOT-8`).
+- [plan-harmony.md](docs/plan-harmony.md) — the `harmony` repo: **primitives only, never domain
+  vocabulary** — converging sequence, reference-set policy, cross-owner move, deferred diagnostic
+  channel (`HAR-*`, numbered from [harmony-additions-needed.md](docs/harmony-additions-needed.md)).
+- [plan-lcmcrdt.md](docs/plan-lcmcrdt.md) — `languageforge-lexbox` (`backend/FwLite/LcmCrdt`): the
+  generated entities, change classes, registrations, and hand-written migrations (`CRDT-1`…`CRDT-8`).
+- [motif-overall-plan.md](docs/motif-overall-plan.md) — the product-level pitch the four serve: the
+  evidence corpus, proposal/review workflow, FieldWorks Avalonia surface, and the `motif` CLI.
+
+**Nothing in any of the four has started.** The first item is `MOT-1`, the name map, because ADR 0014
+identified it as required and non-existent.
 
 ## Status of the implementation
 
-There is a working, tested, end-to-end implementation, not just a plan. `lcatom open` loads a real
-FieldWorks project; a draft can be authored, assessed, applied atomically, read back, and logged —
-all through the real `Contract`/`Model`/`Runner`/`Host`/`Cli` projects, exercised by 82/82 passing
-tests against a real `LcmCache`. See [build stages](docs/build-stages.md) for what "done" means stage
-by stage.
+There is a working, tested, end-to-end implementation, not just a plan — of the design ADR 0013
+withdrew. `motif open` loads a real FieldWorks project; a draft can be authored, assessed, applied
+atomically, read back, and logged — all through the real `SIL.Motif.{Contract,Model,Runner,Host,Cli}`
+projects, exercised by 82/82 passing tests against a real `LcmCache`. It carries the new name; that does
+not promote it. See [build stages](docs/build-stages.md) for what "done" means stage by stage, and
+[motif-overall-plan.md](docs/motif-overall-plan.md)'s Phase 0 for the quarantine that has **not** yet
+been done.
 
 - **The catalog is one operation deep.** The only operation implemented end to end is
   `lexical/sense/setGloss`. There are no create, delete, sequence, or grammar operations yet — see the
@@ -74,7 +117,7 @@ by stage.
   completeness, and [implementation plan](docs/implementation-plan.md) for per-phase status.
 - **Forward HermitCrab projection is deleted, not pending.** PanGloss reads `.fwdata` directly, so
   there is nothing to project — see
-  [ADR 0011](docs/adr/0011-experiment-loop-boundary-lcatom-is-the-record.md). Reverse `Expand`
+  [ADR 0011](docs/adr/0011-experiment-loop-boundary-motif-is-the-record.md). Reverse `Expand`
   (authoring grammar in HC-friendly terms) remains the primary grammar surface and is unbuilt.
 - **The LibLCM coverage manifest is fully classified** (`manifest/liblcm-inventory.tsv`, 898 rows,
   zero unclassified in-scope rows) but nothing yet generates operation kinds from it — see
@@ -92,7 +135,7 @@ still binding. The full document set:
 - [Rationale](docs/rationale.md)
 - [Decision records](docs/adr/) — start with
   [ADR 0010](docs/adr/0010-hermitcrab-experimentation-is-the-primary-purpose.md) (why this exists),
-  then [ADR 0011](docs/adr/0011-experiment-loop-boundary-lcatom-is-the-record.md) (where it stops) and
+  then [ADR 0011](docs/adr/0011-experiment-loop-boundary-motif-is-the-record.md) (where it stops) and
   [ADR 0012](docs/adr/0012-build-order-hc-spine-first-kinds-generated.md) (what gets built first)
 - [Normative change-set contract](docs/change-set-contract.md)
 - [Custom fields](docs/custom-fields.md)
@@ -107,10 +150,15 @@ still binding. The full document set:
 - [Stress-test findings](docs/stress-test-findings.md)
 - [Stage-2 change management (vision)](docs/stage2-change-management.md)
 - [Conflict and rebase semantics](docs/conflicts-and-rebase.md)
-- [Implementation plan](docs/implementation-plan.md)
-- [Operation-catalog plan (lexical & grammar)](docs/operation-catalog-plan.md)
+- [Cross-repo plan — the live milestone ladder](docs/plan-cross-repo.md), and the three plans it
+  aligns: [motif](docs/plan-motif.md) · [harmony](docs/plan-harmony.md) · [LcmCrdt](docs/plan-lcmcrdt.md)
+- [Motif overall plan (product pitch)](docs/motif-overall-plan.md)
+- [What Harmony needs added — evidence behind the `HAR-*` items](docs/harmony-additions-needed.md)
+- [Implementation plan](docs/implementation-plan.md) — **superseded by ADR 0013**, retained for its
+  per-phase status detail
+- [Operation-catalog plan (lexical & grammar)](docs/operation-catalog-plan.md) — likewise superseded
 - [Build stages](docs/build-stages.md)
-- [Implementation-session handoff](HANDOFF.md)
+- [Implementation-session handoff](HANDOFF.md) — **obsolete**, see its own banner
 
 ## Product boundary
 

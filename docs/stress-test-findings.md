@@ -38,7 +38,7 @@ ordering-sensitive multi-writes that NRE if split across independent ops.
 instance of the owning classes via `AllInstances` (`RepositoryAdditions.cs:326-356`) — an O(project)
 deserialization. Cached per-flid-per-session afterward, but the first payment can land on an automatic
 pre-flight. LibLCM's own `DeleteObject` pays the same fan-out, so it is an engine reality, not an
-LCAtom mistake. Whole-project snapshots (onboarding, two-way diff, baseline digest) are inherently
+Motif mistake. Whole-project snapshots (onboarding, two-way diff, baseline digest) are inherently
 multi-second on large text-heavy projects.
 
 ## 3. Cross-language determinism (→ ADR 0007)
@@ -65,7 +65,7 @@ Largely validates the design. States: `ReadyForBeginTask`, `ProcessingDataChange
   "Single-writer" is a comment, not a lock: nothing checks thread identity, and a second writer is
   rejected by the state check before it ever waits on the `ReaderWriterLockSlim`. A colliding
   `BeginUndoTask`/`Save` calls `Rollback(0)`, which destroys the *entire* open bundle
-  (`UndoStack.cs:705-725`); LCAtom's own `EndUndoTask` then throws "Cannot end task that has not been
+  (`UndoStack.cs:705-725`); Motif's own `EndUndoTask` then throws "Cannot end task that has not been
   started" — indistinguishable from its own rollback. The periodic 1-second autosave is **benign** (it
   no-ops while a task is open, `UnitOfWorkService.cs:240-241`); the real threat is any *other* writer,
   including FieldWorks' shutdown `Save()` from a background thread, which has no skip guard
@@ -92,4 +92,4 @@ Largely validates the design. States: `ReadyForBeginTask`, `ProcessingDataChange
   `IUndoAction` (`:938-965`) — the headword/homograph caches just weren't given that treatment.
 - **On-disk save is not atomic** (host concern): `XMLBackendProvider` writes temp then two separate
   `File.Move`s (`:689-690`); a crash between them leaves the main file briefly absent. Host owns
-  save/backup, so this is noted, not LCAtom's to fix.
+  save/backup, so this is noted, not Motif's to fix.

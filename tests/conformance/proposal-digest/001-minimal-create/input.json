@@ -1,0 +1,18 @@
+{
+  "contractVersions": { "lexical": "1.0" },
+  "proposalId": "agent_AAECAwQFBgcICQoLDA0ODw",
+  "requires": [],
+  "operations": [
+    {
+      "operationId": "agent_QEFCQ0RFRkdISUpLTE1OTw",
+      "kind": "lexical/entry/create",
+      "entityId": "agent_ICEiIyQlJicoKSorLC0uLw",
+      "after": { "headword": "run", "count": 3 },
+      "rationale": "Corpus evidence suggests a new headword entry.",
+      "confidence": 0.92,
+      "provenance": [],
+      "extensions": {}
+    }
+  ],
+  "extensions": {}
+}

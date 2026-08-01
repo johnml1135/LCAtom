@@ -146,7 +146,7 @@ and remains host-owned.
 
 ## What is compared
 
-A reviewer's practical question is *what does LCAtom actually check to decide something changed?* It
+A reviewer's practical question is *what does Motif actually check to decide something changed?* It
 does not diff the whole project — under normal use the project changes constantly for reasons no
 Change Set caused. It checks each Change Set's **comparison footprint**: the facts its meaning depends
 on, and nothing else. In plain terms:

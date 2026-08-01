@@ -9,7 +9,7 @@
 
 
 *2026-07-27. Companion to [minilcm-evaluation.md](minilcm-evaluation.md). Scope: what MiniLcm and
-LCAtom each actually sit on, why "one ring to rule them all" is harder than it looks, and what the
+Motif each actually sit on, why "one ring to rule them all" is harder than it looks, and what the
 ways around it are.*
 
 ## First, a correction to the framing
@@ -54,9 +54,9 @@ to go — not because someone preferred CRDTs in the abstract.
 > stock platform ICU. Wherever this document says "cross-platform," read **"mobile"**: the Linux half
 > of the requirement is already met by LibLCM itself.
 
-**LCAtom has the same shape, with one backend instead of two.** `Contract` and `Model` are
+**Motif has the same shape, with one backend instead of two.** `Contract` and `Model` are
 `netstandard2.0` and LibLCM-free by design; `Runner` and `Host` take `SIL.LCModel` 11.0.0-beta0150.
-The difference is that LCAtom has never had to make its LibLCM-free layer *executable* against a
+The difference is that Motif has never had to make its LibLCM-free layer *executable* against a
 non-LibLCM store. MiniLcm has, and that is where all the difficulty lives.
 
 ## What "one ring" would actually have to bind
@@ -86,11 +86,11 @@ the point where they are not. This is the bind I would worry about most, because
 the API call succeeds, the data is well-formed, and the grammar now means something else.
 
 **4. The two systems are not the same kind of API.** MiniLcm is nouns and verbs — `CreateEntry`,
-`UpdateSense`, `DeletePartOfSpeech` — executed immediately. LCAtom is one noun, a change set, carrying
+`UpdateSense`, `DeletePartOfSpeech` — executed immediately. Motif is one noun, a change set, carrying
 a generated kind namespace, assessed before it is applied, hashed, reviewable, and separable into
 Change Set / Assessment / Receipt. "Unify them" usually means "make one look like the other," and
 both directions lose something real: MiniLcm gains ceremony it does not need for a live edit box,
-LCAtom loses the reviewability that is its whole reason to exist.
+Motif loses the reviewability that is its whole reason to exist.
 
 **5. Referential integrity is LibLCM's, and it does not travel.** `CmObject.Delete()` →
 `ClearIncomingReferences()` cleans up atomic references, reference collections, *and* reference
@@ -103,20 +103,20 @@ sit on LibLCM has to rebuild referential integrity for every construct it adds.*
 ## Ways around it
 
 **A. Two rings, honestly named** *(what the evaluation recommends)*. A query/interactive-edit API
-(MiniLcm) and a change-authorship/review API (LCAtom). Cost: a developer must know which to reach
+(MiniLcm) and a change-authorship/review API (Motif). Cost: a developer must know which to reach
 for. Benefit: neither is deformed to fit the other. The honest objection is that "we now have two
 APIs" is precisely what your boss is trying to get away from.
 
 **B. One ring at the *contract* level, not the method level** — the option I think is most worth
-examining. Do not extend `IMiniLcmApi` to grammar. Instead make **LCAtom's change set the lingua
-franca**, and give MiniLcm exactly one new capability: *apply an LCAtom change set*. Then:
+examining. Do not extend `IMiniLcmApi` to grammar. Instead make **Motif's change set the lingua
+franca**, and give MiniLcm exactly one new capability: *apply an Motif change set*. Then:
 
 - there **is** one API for describing a change to a FieldWorks project, everywhere, for everyone;
 - MiniLcm's method surface does not grow by thirty constructs;
 - the FwData backend can apply lexical *and* grammar change sets, because it has LibLCM underneath;
 - the CRDT backend applies the lexical ones natively and **carries grammar change sets as opaque
   synced payloads it stores but does not interpret** — the exact posture ADR 0011 already establishes
-  for LCAtom and reports, pointed the other way.
+  for Motif and reports, pointed the other way.
 
 That last point is the interesting one. A phone does not need to *understand* a phonological rule
 change to sync it, show that it is pending, carry its PanGloss report, and let someone approve it.

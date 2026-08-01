@@ -34,7 +34,7 @@ Local source was inspected at these exact revisions:
 
 | Repository | Revision |
 | --- | --- |
-| `LCAtom` | `2d47289` plus the untracked research documents listed below |
+| `Motif` | `2d47289` plus the untracked research documents listed below |
 | `harmony` | `c858cb429231298aef564354b8ec2d5c87507287` |
 | `languageforge-lexbox` | `da284fa8e628a7acfa76a080dabfc324272ce64e` |
 | `PanGloss` | `cc1e392c6fc8f6eac36a3a48ea044c7308509095` |
@@ -52,7 +52,7 @@ The current untracked research inputs were:
 Eight read-only Luna audits were first requested against the local repositories. Their filesystem
 sessions could not launch because `codex-windows-sandbox-setup.exe` is missing. Public-upstream
 audits were useful as adversarial readers, but could not expose the local PanGloss checkout or
-LCAtom documents.
+Motif documents.
 
 The decisive source passages were therefore packaged directly into eight line-numbered, commit-pinned
 evidence packets and sent to fresh Luna sessions through standard input. The packets covered Harmony

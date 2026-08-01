@@ -101,7 +101,7 @@ a guard inside an `IChange`.
 
 - A precondition inside a merging change makes the outcome depend on evaluation position; two
   replicas that resolve it differently diverge permanently.
-- This is why `OperationEnvelope` has no `Before` (`src/SIL.LCAtom.Contract/Model/OperationEnvelope.cs:62-99`), and
+- This is why `OperationEnvelope` has no `Before` (`src/SIL.Motif.Contract/Model/OperationEnvelope.cs:62-99`), and
   why that absence is what lets 412 of 473 fields fold into `IChange` natively.
 - The PR system is the machine that resolves preconditions before merge — same as a stale base branch
   in git. What crosses into history is unconditional.
@@ -125,6 +125,93 @@ a guard inside an `IChange`.
 - Consequence: the D4 acceptance gate is a **lexbox pull request**, and is worth socialising there
   before 30 grammar constructs arrive rather than after.
 
+## D7 — The name is Motif, and it absorbs LCAtom
+
+**Decided.** Closes the naming question left open since ADR 0013.
+
+| Slot | Name |
+| --- | --- |
+| Repository / product | **Motif** |
+| CLI | **`motif`** |
+| Semantic operation vocabulary | **Motif operations** — "LCAtom" retires |
+| Label inside FieldWorks' Avalonia UI | **"Proposed Changes"** — plain words, no jargon, for linguists and native speakers |
+
+**Why it fits.** In music a motif is the smallest recognizable unit that recurs and is developed
+across a work. That is what a semantic operation is: a small, named, reusable unit of intent
+(`MergeLexicalEntries`, `SplitSense`, `CreateAffixProcessRule`) that recurs across a language project
+and is transformed — lowered — into concrete changes. It preserves the sense "LCAtom" was reaching
+for with *atom*, so one name does the work of two.
+
+It also sits in the naming family this ecosystem already has: **Chorus** (sync), **Harmony** (merge),
+**Motif** (intent). A reader meeting all three infers the relationship without being told.
+
+**Known collision, accepted.** *Motif* is also the OSF/X11 widget toolkit (`libXm`, `mwm`), still
+packaged in most Linux distributions and the dominant search result for the bare word. Judged
+acceptable: it is a 1980s toolkit against which nobody writes new applications, and this project's
+audience is not its audience. The cost is searchability, mitigated by always pairing the name with
+context in prose. **Not yet checked: the NuGet and npm namespaces — do this before publishing a
+package.**
+
+**Rejected:** *Grammar Workbench* / `gbench` (grammar-only; the pitch that carried it is now
+[motif-overall-plan.md](motif-overall-plan.md)); *Language Change Workbench* / `langchange` (dull, and
+"Language Workbench" is Fowler's 2005 term of art for DSL-building tools such as MPS and Xtext, which
+mis-signals to every software reader); *Arrange* (overloaded).
+
+**Executed 2026-07-30.** The rename pass is done, not merely decided:
+
+| Slot | Before | After |
+| --- | --- | --- |
+| Git repository | `LCAtom` | `motif` |
+| Solution | `LCAtom.sln` | `Motif.sln` |
+| Projects / namespaces | `SIL.LCAtom.{Contract,Model,Runner,Host,Cli,Tests}` | `SIL.Motif.*` |
+| CLI assembly | `lcatom` | `motif` |
+| CLI store directory | `./.lcatom` | `./.motif` |
+| Applied-log `CmResource.Name` prefix | `LCAtom\|…` | `Motif\|…` |
+| IDL namespace (proposed) | `org.sil.lcatom.grammar.v1` | `org.sil.motif.grammar.v1` |
+
+82/82 tests pass after the rename. The applied-log prefix is a **persisted** marker: it is a
+format-breaking change, taken now because nothing has shipped and no project in the field carries a
+`LCAtom`-prefixed entry. Test repo-root discovery now keys on the `Motif.sln` marker file rather than
+on the checkout's folder name, which is what made the old name load-bearing at runtime.
+
+Still unchecked, and still gating a published package: the **NuGet and npm namespaces**.
+
+## D8 — One word per concept: Proposal, Assessment, Dry Run
+
+**Decided.** See [ADR 0015](adr/0015-proposal-assessment-dry-run-vocabulary.md) for the record and the
+rejected alternatives; the glossary is [CONTEXT.md](../CONTEXT.md).
+
+The word **Assessment** meant two different things in two repositories at once — a PanGloss parser run
+(`motif-overall-plan.md`) and the runner-side evaluation against a live LibLCM model
+(`linguistic-assistant/CONTEXT.md`, and `Assessment`/`ChangeSetAssessor` in this repo's code).
+Resolved by giving each word to whoever already owned it rather than inventing terms:
+
+| Concept | Canonical | Retired |
+| --- | --- | --- |
+| The stored, reviewable unit of changes | **Proposal** | change set, change group, PR, patch |
+| A PanGloss run over one grammar and one frozen word set | **Assessment** | parse report, evaluation |
+| What a Proposal would do to a live LibLCM model | **Dry Run** | assessment, preview, plan |
+| The record that a Proposal was applied | **Receipt** | application receipt |
+| One named unit of intent | **Motif operation** | CRUD+ operation, command |
+
+**Executed 2026-07-31, not merely decided.** Code renamed (`ChangeSetEnvelope`→`Proposal`,
+`Assessment`→`DryRun`, `ChangeSetAssessor`→`ProposalDryRunner`, `ChangeSetApplier`→`ProposalApplier`,
+CLI verb `assess`→`dry-run`, JSON `changeSetId`→`proposalId`), 82/82 tests pass, and the **frozen
+conformance digests did not move** — `canonical.json` and `digest.txt` are byte-identical, because the
+intent projection excludes the id. `linguistic-assistant` updated in the same pass.
+
+**It also disambiguates the CLI surface** rather than complicating it: `motif dry-run <proposal>` and
+`motif assess run|compare` are now legitimately different verbs, one per side of the loop.
+
+**Two things this did not settle**, both surfaced by the `linguistic-assistant` pass:
+
+- *Change Group* and *Canonical Change Set* sat at **two different altitudes** there — the reviewable
+  batch versus the portable document. Both folded into *Proposal*, so that distinction is now gone
+  rather than renamed. If the wire format needs its own name, it does not have one.
+- **"Assess" has a third sense** in `linguistic-assistant`: `research/assess/` and
+  `skills/assess-grammar.md` use it for *Hermit Crab grammar quality metrics* — neither a PanGloss run
+  nor a LibLCM Dry Run. Left alone, and not covered by the table above.
+
 ---
 
 ## Open, in grill order
@@ -132,10 +219,9 @@ a guard inside an `IChange`.
 - Ordering: what happens when two people concurrently reorder phonological rules (2 `feeding` fields).
 - Approval tamper-evidence: `CommitBase.GenerateHash` covers `Id` + `parentHash` only, not the payload.
 - Where proposal / review / approval state lives.
-- Naming: what, if anything, remains called LCAtom. (A Codex thread on 2026-07-30 proposed
-  *Language Change Workbench* / `langchange`, keeping LCAtom for the semantic-operation layer only;
-  an earlier turn in the same thread proposed *Grammar Workbench* / `gbench`, which is what
-  `grammar-workbench-overall-plan.md` still says. Unresolved.)
+- ~~Naming.~~ **Settled by D7 and executed 2026-07-30** — the repository, solution, namespaces, CLI,
+  store directory, and applied-log prefix are all *Motif*. One item remains: **the NuGet and npm
+  namespaces are still unchecked**, and must be before a package is published.
 - Reference-set policy (add-wins vs remove-wins) before 38 classes replicate it.
 - Cross-owner move / reparent cycle rule.
 - **Delete is not final.** `SnapshotWorker.cs:87-91` resurrects a tombstoned entity when a

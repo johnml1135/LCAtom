@@ -4,7 +4,7 @@ Status: accepted (2026-07-24)
 
 ## Context
 
-LCAtom promises C#/Python/Rust consumers agree byte-for-byte on canonical JSON (RFC 8785) and the
+Motif promises C#/Python/Rust consumers agree byte-for-byte on canonical JSON (RFC 8785) and the
 resulting digests. A stress test found the concrete points where a Python or Rust reimplementation
 diverges from .NET. This resolves the previously-open "floating-point policy" item. Evidence:
 [stress-test findings](../stress-test-findings.md).
@@ -14,7 +14,7 @@ diverges from .NET. This resolves the previously-open "floating-point policy" it
 1. **Normalization is a versioned, shipped artifact.** NFSC and NFC resolve to SIL's *custom* ICU
    data (`nfc_fw.nrm`/`nfkc_fw.nrm`), gated at runtime by `HaveCustomIcuLibrary`
    (`CustomIcu.cs:398-437`) — so even two .NET machines diverge without it, and Python/Rust stdlib
-   normalizers cannot reproduce it at all. LCAtom ships that normalization data as a versioned
+   normalizers cannot reproduce it at all. Motif ships that normalization data as a versioned
    contract artifact, folds its version into `projectionVersion`, requires every implementation to
    bind to that data (a shared native ICU binding, not stdlib/crate Unicode tables), and asserts its
    presence as a runner precondition rather than trusting the environment.

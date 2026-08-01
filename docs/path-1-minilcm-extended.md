@@ -72,7 +72,7 @@ Android failure mode is; see Question 3 for what actually blocks Android.
 ### Method: measure, don't estimate
 
 `docs/api-surface-layer1.md:69-93` (already in this repo) predicts 25 handlers behind ~1,100 kinds for
-LCAtom's own generated approach — that is a different codebase's estimate for a different architecture.
+Motif's own generated approach — that is a different codebase's estimate for a different architecture.
 The honest way to size *this* path is to find a construct MiniLcm's team actually added end-to-end and
 count what it touched. Two are recent and small: `Publication` (`CmPossibility`-shaped list plus one
 `rel/col` field on `Entry`, `PublishIn`) and `MorphType` (an enum-like `CmPossibility`-shaped class plus
@@ -411,7 +411,7 @@ MiniLcm's lexical surface is real, shipping, and good:
   **612** test methods (higher than the 431 cited elsewhere — this session's own count, from current
   `HEAD`, likely reflecting growth since that figure was written). The shared-base-class pattern is real
   and repeatable — `Publication`'s addition alone created exactly the three-file pattern (one abstract
-  base in `MiniLcm.Tests`, one concrete subclass in each backend's test project) that both existing LCAtom
+  base in `MiniLcm.Tests`, one concrete subclass in each backend's test project) that both existing Motif
   docs describe, confirmed by direct grep this session.
 - **The construct-addition playbook works**, twice, in this exact domain family
   (`PartOfSpeech`/`MorphType`/`Publication` are all grammar-*adjacent* `CmPossibility`-shaped constructs).
@@ -425,7 +425,7 @@ MiniLcm's lexical surface is real, shipping, and good:
   `RemoveReference`, 13 implementers).
 - **Comments/conversation threads are real and CRDT-native today** (`LcmCrdt/Changes/Comments/*.cs`,
   not independently re-read line-by-line this session but present in the file tree and consistent with
-  both existing LCAtom docs' description) — a genuine product capability neither of the other two
+  both existing Motif docs' description) — a genuine product capability neither of the other two
   candidate paths has, since it depends on exactly the offline multi-device sync story this path already
   ships.
 - **Offline, multi-device sync for lexical data is a real, working, non-trivial achievement.** Harmony's
@@ -456,7 +456,7 @@ concessive clause.
    different." A team that ships this without independently rebuilding HCLoader's own validation logic
    (the 24-alpha-variable ceiling, MPR referential integrity, environment-string validation — all
    currently unbuilt anywhere, per `docs/issues.md` C5/C6/C7) inherits FieldWorks' own crash-on-load
-   behavior as the first line of defense, which is exactly the failure mode LCAtom's own `hc-grammar-map.md`
+   behavior as the first line of defense, which is exactly the failure mode Motif's own `hc-grammar-map.md`
    was written to avoid.
 3. **Android is the concrete 18-month risk, not an abstract one.** The realistic failure trajectory is:
    grammar ships first in `FwDataMiniLcmBridge` (fastest path, LibLCM does the hard work), Android is
@@ -479,7 +479,7 @@ concessive clause.
    phonological-rule `Change` type than for a `Publication` one.
 6. **Organizational risk:** this domain (phonology/morphology) is one MiniLcm's team has not worked in
    (confirmed zero grammar model classes anywhere in `MiniLcm`/`LcmCrdt`/`FwDataMiniLcmBridge` by
-   exhaustive grep, consistent with the brief's ground truth and both existing LCAtom docs). The 612 tests
+   exhaustive grep, consistent with the brief's ground truth and both existing Motif docs). The 612 tests
    and two-PR precedent above are real skill in *this construct-addition playbook*, not evidence of
    HermitCrab/phonology domain expertise on the team executing it.
 
@@ -500,7 +500,7 @@ path's own design space, delivers "grammar, correctly, on Android" without work 
 by anyone, in this codebase, as of this session.
 
 **Confidence: medium-high on the technical findings** (every load-bearing claim above is a direct
-`path:line` read from this session, not inherited from the existing LCAtom docs, except where explicitly
+`path:line` read from this session, not inherited from the existing Motif docs, except where explicitly
 marked INFERRED), **medium on the cost extrapolation** (the per-construct floor is measured; the
 multiplier to "hardest grammar constructs" is not, because no one has priced a hard construct the same
 way).

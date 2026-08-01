@@ -123,7 +123,7 @@ demands, beyond bare convergence, is that a content edit to rule N never silentl
 The one place an explicit relation *would* help is **application-level prediction**: warning a user
 "moving rule X after rule Y changes what Y produces on these forms" requires actually running the rule
 pipeline, which is exactly the kind of check `docs/hc-grammar-map.md`'s "Silent-loss surface" section
-already assigns to LCAtom/the composer layer, not to the change-representation layer. That's a
+already assigns to Motif/the composer layer, not to the change-representation layer. That's a
 validation feature, not a Harmony data-model requirement.
 
 ## 4. Index-as-identity and positional Output/Input — do they dissolve?
@@ -195,7 +195,7 @@ Staged plan, ordered by what's actually blocking:
    multi-user grammar co-editing becomes an actual product feature. Until then it solves a race that
    session-boundary merging doesn't produce.
 5. **Don't build.** A dependency-edge primitive for feeding (§3) — nothing in HermitCrab's own model
-   motivates it; the actual gap is prediction/validation, already scoped as an LCAtom-layer job.
+   motivates it; the actual gap is prediction/validation, already scoped as an Motif-layer job.
 
 ## 6. Blast radius
 

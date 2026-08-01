@@ -3,7 +3,7 @@
 ## Purpose
 
 **Primary purpose — the grammar-experimentation loop.** A person or an AI working on a language asks
-*"what if we change this — does the text parse better?"* LCAtom makes that loop safe, repeatable, and
+*"what if we change this — does the text parse better?"* Motif makes that loop safe, repeatable, and
 comparable: author intent → assess the exact state delta → project the would-be grammar to HermitCrab
 XML → PanGloss parses a text and returns a report → compare with earlier runs → apply or discard.
 **Everything HermitCrab supports must be authorable through this API, in a friendly way**; HC construct
@@ -58,7 +58,7 @@ reinterprets the JSON independently.
 
 The initial solution should separate:
 
-1. `SIL.LCAtom.Contract`
+1. `SIL.Motif.Contract`
    - immutable contract DTOs;
    - closed JSON serialization;
    - schema/version validation;
@@ -66,25 +66,25 @@ The initial solution should separate:
    - intent digest;
    - canonical 128-bit ID utilities;
    - no LibLCM dependency.
-2. `SIL.LCAtom.Model`
+2. `SIL.Motif.Model`
    - canonical semantic snapshot;
    - model-surface coverage manifest;
    - LibLCM normalization adapters;
    - semantic and artifact digests.
-3. `SIL.LCAtom.Runner`
+3. `SIL.Motif.Runner`
    - identity resolution;
    - assessment and expected effects;
    - semantic lowering into an output-only mutation plan;
    - preconditions and conflict diagnostics;
    - atomic apply, read-back, invariant validation, and receipt.
-4. `SIL.LCAtom.Diff`
+4. `SIL.Motif.Diff`
    - two-way mechanical diff;
    - common-ancestor three-way comparison;
    - deterministic ordered-sequence edit synthesis.
-5. `SIL.LCAtom.Cli`
+5. `SIL.Motif.Cli`
    - optional process/JSON adapter for Python and isolated evaluation;
    - owns project lifecycle only as a host, never as core semantics.
-6. `SIL.LCAtom.HermitCrab`
+6. `SIL.Motif.HermitCrab`
    - the HermitCrab authoring-surface projection (`Expand`/reverse-HCLoader), a versioned projection
      rather than canonical intent, owned alongside the runner as its own package and CLI verbs per
      [ADR 0001](adr/0001-hermitcrab-projection-not-canonical.md).
@@ -173,7 +173,7 @@ provided application scope; they never own a nested transaction.
 **Schema operations are a separate non-undoable phase.** Custom-field definition is a metadata
 change, not a data change: `AddCustomField` is untracked and cannot be rolled back, and saving while
 a data task is open corrupts the project (Flexicon's 1,392-sense loss). Mirroring FieldWorks'
-own "Add Custom Field" path, LCAtom runs the custom-field family first in its own non-undoable unit
+own "Add Custom Field" path, Motif runs the custom-field family first in its own non-undoable unit
 of work, never saves while a task is open, and treats those schema changes as one-way — a data-phase
 rollback leaves a benign defined-but-empty field, not orphaned data. See
 [ADR 0005](adr/0005-schema-operations-non-undoable-uow.md) and [Flexicon harvest](flexicon-harvest.md).

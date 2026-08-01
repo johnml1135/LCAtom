@@ -1,4 +1,17 @@
-# Implementation plan
+# Implementation plan (superseded)
+
+> **Superseded as a plan, retained for its per-phase status detail.**
+> This document plans the change-set contract and runner that
+> [ADR 0013](adr/0013-harmony-is-the-change-mechanism.md) **withdrew**. Do not start work from its
+> phases. **The live plans are [plan-cross-repo.md](plan-cross-repo.md)** and the three it aligns —
+> [motif](plan-motif.md), [harmony](plan-harmony.md), [LcmCrdt](plan-lcmcrdt.md).
+>
+> Its value now is the honest status marker on each phase — what was actually built versus planned,
+> which is why the shipped `SIL.Motif.*` code is described accurately here and nowhere else.
+
+> **Vocabulary:** written before [ADR 0015](adr/0015-proposal-assessment-dry-run-vocabulary.md).
+> Read *change set* as **Proposal**, and *Assessment* as **Dry Run** — `Assessment` now means a PanGloss
+> run only. Glossary: [CONTEXT.md](../CONTEXT.md).
 
 The plan is deliberately test- and contract-first. Do not begin with a generic reflection CRUD
 engine.
@@ -8,7 +21,7 @@ engine.
 Landed: solution/package shape, pinned `SIL.LCModel 11.0.0-beta0150` with documented local-package
 override, an already-loaded `LcmCache` passed into the runner (never opened by it), whole-change-set
 commit/rollback via `UndoableUnitOfWorkHelper.Do` (covered by `Apply/ChangeSetApplierTests`), the
-adapted FwData/LibLCM host plumbing (`SIL.LCAtom.Host`), and the applied-change log over
+adapted FwData/LibLCM host plumbing (`SIL.Motif.Host`), and the applied-change log over
 `LexDb.Resources` (`AppliedLog/ProjectAppliedLog.cs`). Not done: **item 3, the multi-target proof, did
 not happen** — every project targets exactly one TFM (`netstandard2.0` for `Contract`/`Model`,
 `net8.0` for `Runner`/`Host`/`Cli`/`Tests`; see `AGENTS.md`'s Compatibility targets); there is no
@@ -57,7 +70,7 @@ Exit: target matrix and transaction boundary are demonstrated by executable test
 
 ## Phase 1 — contract kernel — **status: done**
 
-`SIL.LCAtom.Contract` (LibLCM-free, `netstandard2.0`) implements all ten items and is covered by the
+`SIL.Motif.Contract` (LibLCM-free, `netstandard2.0`) implements all ten items and is covered by the
 `Contract/` test suite (CanonicalId, CanonicalJson, ChangeSetJsonParser, ConformanceVector,
 IntentDigest). Exit criterion — identical parsing and hashes on every target — currently means the one
 target the contract builds on; see Phase 0's status on the multi-target proof.
@@ -85,7 +98,7 @@ Items 1–2 are done and then some: `manifest/liblcm-inventory.tsv` holds 898 ro
 out, 28 trace) across 95 in-scope classes, and classification is **100% complete for every in-scope
 row** (commit 66fe792) — ahead of where this phase originally expected to be. Item 3 (fail CI on
 unclassified/changed members) is not done — there is no CI in this repo to fail. Items 4–8, the
-canonical-representation and snapshot machinery, are built generically (`SIL.LCAtom.Model.Snapshot`,
+canonical-representation and snapshot machinery, are built generically (`SIL.Motif.Model.Snapshot`,
 `Effects`) but **snapshotting is wired up for exactly one type, `LexSense`**
 (`Runner/Snapshotting/LexSenseSnapshotter.cs`) — the other 94 in-scope classes have no snapshotter yet.
 The exact `.fwdata` byte digest (item 7) has not been verified as a separate host utility.

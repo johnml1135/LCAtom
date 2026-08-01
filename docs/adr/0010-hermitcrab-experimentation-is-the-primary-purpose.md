@@ -1,7 +1,7 @@
-# ADR 0010 — The HermitCrab experimentation loop is LCAtom's primary purpose
+# ADR 0010 — The HermitCrab experimentation loop is Motif's primary purpose
 
 Status: accepted (2026-07-25) — amended 2026-07-27 by
-[ADR 0011](0011-experiment-loop-boundary-lcatom-is-the-record.md) (the loop boundary: LCAtom is the
+[ADR 0011](0011-experiment-loop-boundary-motif-is-the-record.md) (the loop boundary: Motif is the
 record, not the orchestrator; forward projection deleted) and
 [ADR 0012](0012-build-order-hc-spine-first-kinds-generated.md) (build order: the HC-reachable lexical
 spine, not lexical completeness, is the prerequisite). The decision below — that this loop is the
@@ -9,7 +9,7 @@ primary purpose — stands unchanged.
 
 ## Context
 
-Earlier documents described LCAtom as a general-purpose LibLCM change-set runner with several
+Earlier documents described Motif as a general-purpose LibLCM change-set runner with several
 motivating consumers listed side by side, and treated the HermitCrab projection as one capability
 among many. That framing under-specified the actual product and led to at least one wrong design
 recommendation (deferring stratum support because the *model's* `MoStratum` objects are vestigial,
@@ -17,8 +17,8 @@ without noticing that HermitCrab itself supports strata and is the consumer that
 
 ## Decision
 
-**LCAtom exists primarily to serve one loop:** a person or an AI working on a language asks *"what if
-we change this — does the text parse better?"*, and LCAtom makes that question safe to ask, cheap to
+**Motif exists primarily to serve one loop:** a person or an AI working on a language asks *"what if
+we change this — does the text parse better?"*, and Motif makes that question safe to ask, cheap to
 repeat, and honest to answer.
 
 ```
@@ -34,13 +34,13 @@ The engines are: **HermitCrab** — the C# morphological parser in `../machine`
 (`src/SIL.Machine.Morphology.HermitCrab`) — and **PanGloss** in `../PanGloss`, a Rust native port of
 that parser running a propose-and-confirm FST architecture, which names *"compare grammar revisions"*
 as a first-class capability and states that *"consuming applications own history, publication
-decisions, UI, and interactive debugging."* **LCAtom is that consuming application.** The division of
+decisions, UI, and interactive debugging."* **Motif is that consuming application.** The division of
 labor is already declared from the other side.
 
 ### Consequences for coverage
 
 1. **Full coverage is defined as "C# `HCLoader` complete."** Everything `HCLoader` can produce from a
-   FieldWorks project must be authorable through LCAtom, in a friendly way — natural classes, features,
+   FieldWorks project must be authorable through Motif, in a friendly way — natural classes, features,
    phonological rewrite and metathesis rules with their contexts, affix processes, reduplication,
    circumfixes, templates and slots, compound rules, allomorph environments, co-occurrence rules, MPR
    features, stem names. LibLCM's model surface remains the storage target and must still be 100%
@@ -51,12 +51,12 @@ labor is already declared from the other side.
    Two boundaries follow. **Above:** constructs HermitCrab supports but `HCLoader` cannot produce —
    multi-stratum grammars, realizational morphology with `LexFamily` suppletion, multiple phoneme sets —
    are **out of scope**, because they are structurally unreachable from a FieldWorks project. Since
-   coverage stops there, `.fwdata` is LCAtom's only output; direct HC XML authoring would exist only to
+   coverage stops there, `.fwdata` is Motif's only output; direct HC XML authoring would exist only to
    exceed this target. **Below:** a consumer may compile less than HCLoader produces (PanGloss's Phase A
-   today). That is a moving, temporary limitation and **not** a scope boundary — but LCAtom knows the
+   today). That is a moving, temporary limitation and **not** a scope boundary — but Motif knows the
    tiers and must therefore *report* when an authored construct falls outside the consumer's current
    compile set, rather than letting a change silently fail to reach the parse.
-2. **100% lockstep with both engines, by reverse engineering — not design.** LCAtom's grammar API is
+2. **100% lockstep with both engines, by reverse engineering — not design.** Motif's grammar API is
    *exactly* the set of LibLCM inputs `HCLoader` consumes: nothing less (the user could not control the
    grammar) and nothing pointless (controls wired to nothing). The authoritative artifact is the map
    *HC construct ← LibLCM fields actually read*, derived from

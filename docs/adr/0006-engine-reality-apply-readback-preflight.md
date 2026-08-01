@@ -5,7 +5,7 @@ Status: accepted (2026-07-24)
 ## Context
 
 Stress tests against `liblcm` (scale and transaction/concurrency) both validated the transaction
-model and surfaced engine behaviors LCAtom must accommodate. This extends
+model and surfaced engine behaviors Motif must accommodate. This extends
 [ADR 0003](0003-feasibility-findings.md). Evidence: [stress-test findings](../stress-test-findings.md).
 
 ## Decisions
@@ -40,12 +40,12 @@ model and surfaced engine behaviors LCAtom must accommodate. This extends
    "Single-writer" is not an enforced lock — `ReaderWriterLockSlim`'s "UI thread only" is a comment,
    and a second writer is rejected by the state check before it waits on the lock. A colliding
    `BeginUndoTask`/`Save` calls `Rollback(0)`, which destroys the *entire* open bundle
-   (`UndoStack.cs:705-725`), and LCAtom's own `EndUndoTask` then throws "Cannot end task that has not
+   (`UndoStack.cs:705-725`), and Motif's own `EndUndoTask` then throws "Cannot end task that has not
    been started" — indistinguishable from its own rollback. The periodic 1-second autosave is benign
    (it no-ops while a task is open, `UnitOfWorkService.cs:240-241`); the real threats are any *other*
    writer, including FieldWorks' shutdown `Save()` from a background thread, which has no skip guard
    (`FieldWorks.cs:3919`). Apply therefore requires a host-provided guarantee of exclusive write access
-   for its duration (the coordinator architecture.md defers), and LCAtom must detect the collision —
+   for its duration (the coordinator architecture.md defers), and Motif must detect the collision —
    treating an unexpected transaction state at task end as an external-collision diagnostic, not its
    own decision.
 
@@ -62,5 +62,5 @@ model and surfaced engine behaviors LCAtom must accommodate. This extends
   separately from interactive checks.
 - The rollback path gains explicit derived-cache invalidation or cache-discard.
 - Apply gains a host-coordination precondition (exclusive write access) and a collision-detection
-  requirement so external interference is not misread as LCAtom's own rollback.
+  requirement so external interference is not misread as Motif's own rollback.
 - Lowering carries a no-nested-UoW discipline for reused LibLCM convenience methods.

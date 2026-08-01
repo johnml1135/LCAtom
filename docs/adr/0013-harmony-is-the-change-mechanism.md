@@ -1,10 +1,10 @@
-# ADR 0013 — Harmony is the change mechanism; LCAtom's contract layer is redundant
+# ADR 0013 — Harmony is the change mechanism; Motif's contract layer is redundant
 
 Status: accepted (2026-07-27)
 
-**Reverses the central premise of [ADR 0011](0011-experiment-loop-boundary-lcatom-is-the-record.md)
+**Reverses the central premise of [ADR 0011](0011-experiment-loop-boundary-motif-is-the-record.md)
 and [ADR 0012](0012-build-order-hc-spine-first-kinds-generated.md), and supersedes the
-"LCAtom is the one change-authorship API" recommendation in
+"Motif is the one change-authorship API" recommendation in
 [minilcm-evaluation.md](../minilcm-evaluation.md), [one-api-problem.md](../one-api-problem.md), and
 [three-paths-report.md](../three-paths-report.md).**
 
@@ -22,16 +22,16 @@ That was the methodological error that invalidates the earlier conclusions. Harm
 
 The repository owner's framing, which this ADR accepts:
 
-> LCAtom is adding a new method of change-set management to a complex system that already has two
+> Motif is adding a new method of change-set management to a complex system that already has two
 > supported methods of doing that (UOW in liblcm, and Commit in harmony). Adding a third would need
 > to provide a very strong case that the existing methods are not up to the task to justify its
 > existence.
 
-LCAtom does not meet that bar.
+Motif does not meet that bar.
 
 ## Evidence — what Harmony already provides
 
-| Capability | Harmony | LCAtom's `Contract`/`Model` |
+| Capability | Harmony | Motif's `Contract`/`Model` |
 | --- | --- | --- |
 | Semantic change objects, never raw property mutation | `Changes/Change.cs` — `IChange` / `Change<T>` | operation envelopes |
 | Polymorphic JSON with `$type` discrimination | `Changes/PeekThenConcreteChangeConverter.cs` | `Parsing/OperationKindRegistry.cs` |
@@ -42,7 +42,7 @@ LCAtom does not meet that bar.
 | **Carrying changes the client cannot interpret** | **`Changes/OpaqueChange.cs`** — preserves raw JSON, round-trips, and *becomes a real change once the type is known* | — (proposed in `one-api-problem.md` as novel; it already existed) |
 
 `GetBeforeCommit` + `GetAtCommit` means "what did this change do" is already computable. The change
-envelope, digest scheme, snapshot model, and operation-vocabulary machinery in LCAtom are
+envelope, digest scheme, snapshot model, and operation-vocabulary machinery in Motif are
 reimplementations of shipped, maintained, tested equivalents.
 
 ## Corrections to earlier claims in this repository
@@ -57,17 +57,17 @@ reimplementations of shipped, maintained, tested equivalents.
    reconciliation was cited as evidence of a permanent architecture. It is a concession to the fact
    that not all change classes exist yet. CRDTs are intended to replace Send/Receive.
 4. **Layering.** How changes are applied, and when others' changes are integrated, are *system-level*
-   integration concerns. Harmony provides the mechanism for applying changes to the model. LCAtom
+   integration concerns. Harmony provides the mechanism for applying changes to the model. Motif
    conflated the change vocabulary with the integration policy.
 
 ## Decision
 
-1. **Harmony's `Commit`/`IChange` is the change mechanism.** LCAtom does not ship a competing change
+1. **Harmony's `Commit`/`IChange` is the change mechanism.** Motif does not ship a competing change
    format, digest scheme, snapshot model, or operation registry.
 2. **Review/approval is an application-level state machine over Harmony commits**, not a new change
    format. `OpaqueChange` already provides the forward-compatibility property that motivated the
    "opaque synced payload" proposal.
-3. **LCAtom's contract layer is not extracted, not published as a schema, and not split into its own
+3. **Motif's contract layer is not extracted, not published as a schema, and not split into its own
    repository.** The sequencing proposed in the preceding conversation (move two files → publish
    schema and vectors → split repo) is cancelled at step one.
 
@@ -83,7 +83,7 @@ Not a mechanism — three analysis artifacts, which are the expensive part and r
    bleeding rule order, index-as-identity alpha variables (24-per-rule ceiling), and
    `MoAffixProcess.Output` resolving against `Input` by position.
 
-Artifact 3 is not an argument for LCAtom. It is a **defect report against Harmony**:
+Artifact 3 is not an argument for Motif. It is a **defect report against Harmony**:
 `Changes/SetOrderChange.cs` merges order as a last-writer-wins scalar, and if CRDTs are the
 destination for grammar, that must be solved in Harmony.
 
@@ -92,11 +92,11 @@ destination for grammar, that must be solved in Harmony.
 - The one shipped operation (`lexical/sense/setGloss`), the Runner, the Host, and the CLI are no
   longer on a path to being the API. Whether any of them survives in another form — in particular
   whether a CLI belongs in Harmony — is deliberately left open here.
-- ADR 0011's "LCAtom is the record" and ADR 0012's build order and generated-kind namespace are moot
+- ADR 0011's "Motif is the record" and ADR 0012's build order and generated-kind namespace are moot
   as stated: they describe how to grow a mechanism this ADR declines to build.
 - The open issues that gated that mechanism (B13 cross-process protocol, B19–B23) are moot with it.
   B17/B18 (manifest classification confidence) survive, because the manifest survives.
-- **The unresolved question that dominates all of this: who maintains LCAtom.** 40 commits, one
+- **The unresolved question that dominates all of this: who maintains Motif.** 40 commits, one
   operation, no CI, one author, against Harmony and MiniLcm's team, CI, and release train. If the
   answer is "one person, part-time," the analysis-artifacts framing above is the only version of this
   repository that survives contact with reality.

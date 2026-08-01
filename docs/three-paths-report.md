@@ -8,7 +8,7 @@
 > below do not stand.** The platform findings do.
 
 
-*2026-07-27. Synthesis of [path 1](path-1-minilcm-extended.md), [path 2](path-2-lcatom-one-surface.md),
+*2026-07-27. Synthesis of [path 1](path-1-minilcm-extended.md), [path 2](path-2-motif-one-surface.md),
 and [path 3](path-3-liblcm-crossplatform.md), each researched independently. Claims below were
 re-verified against source before inclusion; where an underlying report was wrong, it is marked.*
 
@@ -66,7 +66,7 @@ normalization mode (`Kernel.cs:2408-2411`). Normalization determines string iden
 exception, no log, no user-visible symptom, across a sync boundary. This is a data-integrity hazard,
 not a portability one, and **it is shared by all three paths**: anything running LibLCM on a phone
 must ship the custom ICU, and anything *not* running LibLCM must reimplement NFSC exactly. It is not
-in LCAtom's issues register and should be.
+in Motif's issues register and should be.
 
 ## The three paths, scored against the actual gap
 
@@ -100,19 +100,19 @@ cited), five deployment targets, shared cross-backend conformance suites, workin
 offline sync, and a real, repeatable construct-addition playbook. None of the other paths have shipped
 anything comparable.
 
-### Path 2 — LCAtom becomes the one API surface
+### Path 2 — Motif becomes the one API surface
 
 **Verdict: cannot reach Android without a client/server split that undermines the premise — and it is
 not honestly a "one API surface" in the first place.**
 
 `Runner` and `Host` are bound to `SIL.LCModel`/`LcmCache`. On Android that means LibLCM on the phone,
-which is the same unsolved problem path 3 owns. Absent that, LCAtom must run elsewhere and be reached
+which is the same unsolved problem path 3 owns. Absent that, Motif must run elsewhere and be reached
 across a process boundary — which is **issue B13, and B13 is not merely unresolved, it is unstarted**:
 zero gRPC, JSON-RPC, HTTP, or named-pipe code exists. The only consumer surface is an in-process CLI.
 
-More fundamentally: LCAtom is a **change-authorship contract, not a CRUD API**. It has no answer for
-"show me this entry" or "set this gloss as I type." LCAtom's own `one-api-problem.md` says exactly
-this. So "LCAtom is the one API surface" is only true if you redefine the surface to exclude
+More fundamentally: Motif is a **change-authorship contract, not a CRUD API**. It has no answer for
+"show me this entry" or "set this gloss as I type." Motif's own `one-api-problem.md` says exactly
+this. So "Motif is the one API surface" is only true if you redefine the surface to exclude
 interactive editing — which is most of what FieldWorks Lite does all day.
 
 The generated-kinds bet — 332 kinds from ~12 handlers — is **sound in direction but unproven**: no
@@ -158,8 +158,8 @@ the repo. Against that: `GrammarJsonServices.ExportGrammar`
 API that landed without touching the DI container or the generated model — evidence that upstream has
 appetite for exactly this shape of change.
 
-> *Correction to path 3's report:* it claimed LCAtom depends on `GrammarJsonServices` today. It does
-> not — the only occurrences of that symbol in LCAtom are inside the report itself. The precedent is
+> *Correction to path 3's report:* it claimed Motif depends on `GrammarJsonServices` today. It does
+> not — the only occurrences of that symbol in Motif are inside the report itself. The precedent is
 > real; the dependency was invented.
 
 **Critically: API modernization and portability are separable.** They are routinely conflated as one
@@ -171,7 +171,7 @@ scary project. They are two, and portability can ship first, alone.
 
 1. **Do path 3's portability work, and only the portability work.** It is the only path that closes
    the real gap, it is far smaller than assumed (two blockers, both contained), and **every consumer
-   benefits at once** — MiniLcm's FwData backend, LCAtom, Flexicon, FieldWorks. This is the highest
+   benefits at once** — MiniLcm's FwData backend, Motif, Flexicon, FieldWorks. This is the highest
    leverage per unit of work available anywhere in this analysis. Do not bundle "a good modern API"
    into it; that is a separate project and bundling them is how it dies.
 2. **Take path 2's contract, not path 2's claim to be the whole surface.** The change set is the right

@@ -4,7 +4,7 @@ Status: accepted (2026-07-24)
 
 ## Context
 
-A plan review compared LCAtom against Terraform, Django/EF Core migrations, Git/IPFS content
+A plan review compared Motif against Terraform, Django/EF Core migrations, Git/IPFS content
 addressing, and Flyway/Liquibase. Three findings warranted decisions.
 
 ## Decisions
@@ -44,7 +44,7 @@ coherent: an amendment moves the intent digest and keeps the id.
 ### 3. Apply is bound to a prior Assessment
 
 Terraform's default-safe workflow binds `apply` to a saved plan and refuses if state moved
-underneath. LCAtom's apply previously treated a prior Assessment as optional, leaving the
+underneath. Motif's apply previously treated a prior Assessment as optional, leaving the
 assess→apply window a caller-managed race. Apply now requires a prior Assessment; its footprint digest
 binds apply to a specific evaluated baseline, and a moved footprint stops apply with a drift
 diagnostic. A bare apply with no bound Assessment is a hard error.

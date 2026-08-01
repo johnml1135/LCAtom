@@ -1,6 +1,6 @@
 # Declarative commands vs. CRDT changes — a point-by-point mapping
 
-*2026-07-27. Can LCAtom's declarative operation vocabulary fold into Harmony's `IChange` model?
+*2026-07-27. Can Motif's declarative operation vocabulary fold into Harmony's `IChange` model?
 Grounded in the 473 in-scope manifest rows and both codebases, not in the abstract.*
 
 ## Headline
@@ -22,24 +22,24 @@ The "ordered grammar breaks CRDTs" objection — the one thing that survived ADR
 
 ## Why the fold works at all: no preconditions
 
-`src/SIL.LCAtom.Contract/Model/OperationEnvelope.cs:62-99` carries `Kind`, `EntityId`, `Target`, **`After`**,
-`Placement`, `DependsOn`, and provenance fields. There is **no `Before`**. LCAtom operations never say
+`src/SIL.Motif.Contract/Model/OperationEnvelope.cs:62-99` carries `Kind`, `EntityId`, `Target`, **`After`**,
+`Placement`, `DependsOn`, and provenance fields. There is **no `Before`**. Motif operations never say
 *"if the current value is X, change it to Y."* They say *"make it Y."*
 
 That is the single property that makes them CRDT-compatible. A precondition cannot survive concurrent
-application without coordination; a declarative assignment can. LCAtom arrived at "declarative, no
+application without coordination; a declarative assignment can. Motif arrived at "declarative, no
 preconditions" for reviewability reasons and landed on the shape CRDTs require. **This is a
 convergence of designs, not a collision.**
 
 ## Concept-level mapping
 
-| LCAtom concept | Harmony equivalent | Fold verdict |
+| Motif concept | Harmony equivalent | Fold verdict |
 | --- | --- | --- |
 | Operation (`OperationEnvelope`) | `IChange` (`Changes/Change.cs:14-33`) | **Direct.** Both are semantic, serializable, polymorphic-by-`$type`, applied to one entity. |
 | Change set (ordered operation array) | One `Commit` holding many `IChange`s (`DataModel.AddChanges`) | **Direct 1:1.** A commit is the atomic unit; a change set is the atomic unit. |
-| Atomic apply (whole set or nothing) | Commit is applied as a unit | **Direct.** LCAtom used LibLCM's UOW; Harmony uses its own commit boundary. |
+| Atomic apply (whole set or nothing) | Commit is applied as a unit | **Direct.** Motif used LibLCM's UOW; Harmony uses its own commit boundary. |
 | `Kind` string (`lexical/sense/setGloss`) | `IPolyType.TypeName` (`"jsonPatch:Sense"`, `"delete:Sense"`) | **Direct.** Both are a registry-keyed discriminator. Naming differs; concept identical. |
-| `CanonicalId` (22-char base64url of a GUID) | `Guid EntityId` | **Direct**, lossless both ways. LCAtom's is a display/transport encoding of the same 128 bits. |
+| `CanonicalId` (22-char base64url of a GUID) | `Guid EntityId` | **Direct**, lossless both ways. Motif's is a display/transport encoding of the same 128 bits. |
 | `After` payload | `JsonPatchChange<T>.PatchDocument`, or typed change fields | **Direct.** See the shape table below. |
 | `Placement` (before/after/index anchor) | `BetweenPosition` + `OrderPicker` | **Partial.** Same intent; convergence differs (see residue). |
 | `DependsOn` (operation dependencies) | Change order within a commit | **Weak.** Harmony relies on within-commit ordering; there is no declared dependency graph. Rarely load-bearing given no preconditions. |
@@ -48,11 +48,11 @@ convergence of designs, not a collision.**
 | Assessment ("what would change") | `GetBeforeCommit` / `GetAtCommit` / `GetSnapshotsAtCommit` | **Partial.** Harmony computes this over *committed* history; there is no uncommitted dry-run. |
 | Receipt ("what did change") | `Commit` + `ObjectSnapshot` | **Direct.** |
 | Applied-change log | The commit log itself | **Direct** — and Harmony's is better, being the storage mechanism rather than a side record. |
-| Operations LCAtom can't interpret | `OpaqueChange` — preserves raw JSON, round-trips, applies once the type is known | **Harmony wins.** LCAtom had no equivalent. |
+| Operations Motif can't interpret | `OpaqueChange` — preserves raw JSON, round-trips, applies once the type is known | **Harmony wins.** Motif had no equivalent. |
 
 ## Verb × shape mapping — where the 473 fields land
 
-| LCAtom verb pair | Fields | Field shape | CRDT type required | Harmony mechanism today | Fits? |
+| Motif verb pair | Fields | Field shape | CRDT type required | Harmony mechanism today | Fits? |
 | --- | --- | --- | --- | --- | --- |
 | `set` \| `clear` | **220** | `basic` scalars, `rel/atomic` | LWW register | `JsonPatchChange<T>` — **generic**, no per-field class | ✅ **Free.** |
 | `create` \| `delete` | **99** | `owning/atomic`, `owning/col` | Tombstone / add-once | `CreateChange<T>` (per-type, must construct) + `DeleteChange<T>` (generic, sets `DeletedAt`) | ✅ Delete free; create needs one class per type |
@@ -94,7 +94,7 @@ ordering problem at all — it is a keyed map wearing an array's clothes.
 **Harmony already knows this.** `LcmCrdt/Changes/JsonPatchChange.cs` — `JsonPatchValidator` rejects
 any patch path containing an index, with the comment: *"prevents the use of indexes in the path, as
 this will cause major problems with CRDTs."* It throws `NotSupportedException` on `remove` at an
-index. **The rule LCAtom derived from HCLoader is already enforced in Harmony's code.** Two teams
+index. **The rule Motif derived from HCLoader is already enforced in Harmony's code.** Two teams
 reached the same conclusion independently.
 
 ## The one real gap
@@ -103,7 +103,7 @@ reached the same conclusion independently.
 XxHash64 — *the change payload is never hashed*. So the commit chain proves **ordering**, not
 **content**. "I approved commit X" is not cryptographically bound to what X contains.
 
-LCAtom's intent digest (RFC 8785 canonical JSON + SHA-256) did bind content, and
+Motif's intent digest (RFC 8785 canonical JSON + SHA-256) did bind content, and
 `stage2-change-management.md` built effect-scoped, drift-invalidated approval on top of it. If that
 requirement survives, this is the one thing that must be added to Harmony rather than folded into it.
 It is cheap now and awkward after grammar change classes exist.
@@ -115,7 +115,7 @@ a proposal enters the log.
 
 ## Verdict
 
-**Fold LCAtom's vocabulary into Harmony's `IChange`; do not port its machinery.**
+**Fold Motif's vocabulary into Harmony's `IChange`; do not port its machinery.**
 
 - The **verb vocabulary** (`set|clear`, `create|delete`, `addRef|removeRef`, `move|reparent`) is a
   clean superset-free match to `JsonPatchChange` / `CreateChange` / `DeleteChange` / `SetOrderChange`

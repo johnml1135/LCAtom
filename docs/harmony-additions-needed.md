@@ -3,6 +3,14 @@
 *2026-07-27. Assumes proposal/review/approval **storage lives in the application**, not in Harmony.
 Scope: the core capabilities required so that "the rest" can be built elsewhere.*
 
+> **This is the evidence document. The plan built on it is [plan-harmony.md](plan-harmony.md).**
+> Item numbers here are load-bearing: `HAR-n` in that plan is item *n* below, so this file's citations
+> stay attached to the work. Three items were reassigned out of Harmony and are planned elsewhere —
+> **item 4** (keyed maps for alpha variables) is `CRDT-3`, **item 8** (CRDT → full `.fwdata`) is
+> `CRDT-8`, both in [plan-lcmcrdt.md](plan-lcmcrdt.md); **item 9** is the application layer, in
+> [motif-overall-plan.md](motif-overall-plan.md). Milestones for all of it:
+> [plan-cross-repo.md](plan-cross-repo.md).
+
 ## Already there — do not build these
 
 | Requirement | What provides it | Evidence |

@@ -10,13 +10,19 @@
 > Do **not** implement the phases, stages, or catalog below. They are retained as a record of what
 > was planned before `SIL.Harmony` was read.
 >
-> The live questions are now: what additions Harmony needs to carry grammar (starting with ordering
-> semantics — see ADR 0013's "what survives"), whether a CLI is wanted and whether it belongs in
-> Harmony, and who maintains what. Those are open, not answered here.
+> **For the live plan, read [docs/plan-cross-repo.md](docs/plan-cross-repo.md)** and the three plans it
+> aligns: [motif](docs/plan-motif.md), [harmony](docs/plan-harmony.md),
+> [LcmCrdt](docs/plan-lcmcrdt.md). Two of the questions this handoff left open are now answered there:
+> what additions Harmony needs to carry grammar (`HAR-*`), and where each artifact lands
+> ([ADR 0014](docs/adr/0014-generate-the-crdt-layer-from-masterlcmodel.md), D6). Still open: **who
+> staffs any of it** — D6 says where code lands, not who writes it.
+>
+> The CLI question is settled: it is `motif`, it belongs in this repository, and it does **not** belong
+> in Harmony (grill-decisions D7).
 
 ---
 
-Continue implementing the LCAtom plan in this repository.
+Continue implementing the Motif plan in this repository.
 
 Start by reading, in order:
 
@@ -46,12 +52,12 @@ ways — read `docs/implementation-plan.md`'s per-phase status markers before as
 rather than guessing from the numbered requirements alone.
 
 **Five decisions were settled on 2026-07-27** and are recorded in
-[ADR 0011](docs/adr/0011-experiment-loop-boundary-lcatom-is-the-record.md) and
+[ADR 0011](docs/adr/0011-experiment-loop-boundary-motif-is-the-record.md) and
 [ADR 0012](docs/adr/0012-build-order-hc-spine-first-kinds-generated.md). Read both before planning
 anything; they amend ADR 0010 and supersede parts of `hc-surface-scope.md`, `stage2-change-management.md`,
 and `operation-catalog-plan.md`:
 
-1. **LCAtom is the record, not the orchestrator.** It exports `.fwdata` and receives labelled reports
+1. **Motif is the record, not the orchestrator.** It exports `.fwdata` and receives labelled reports
    and typed metrics back. It never runs the parser and never renders a verdict.
 2. **Forward HermitCrab projection is deleted** — PanGloss reads `.fwdata` directly. Reverse `Expand`
    survives as the primary grammar authoring surface.

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>SIL.Motif.Cli</RootNamespace>
+    <AssemblyName>motif</AssemblyName>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SIL.Motif.Host\SIL.Motif.Host.csproj" />
+    <ProjectReference Include="..\SIL.Motif.Runner\SIL.Motif.Runner.csproj" />
+    <ProjectReference Include="..\SIL.Motif.Contract\SIL.Motif.Contract.csproj" />
+    <ProjectReference Include="..\SIL.Motif.Model\SIL.Motif.Model.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -3,14 +3,14 @@
 > **Scope note (2026-07-27).** Despite the title, this document is now about the **reverse** direction
 > only — `Expand`, which lowers HC-shaped intent into LibLCM operations. Forward projection (LibLCM →
 > HC XML) is deleted by
-> [ADR 0011](adr/0011-experiment-loop-boundary-lcatom-is-the-record.md): PanGloss reads `.fwdata`
+> [ADR 0011](adr/0011-experiment-loop-boundary-motif-is-the-record.md): PanGloss reads `.fwdata`
 > directly, so it *is* the projection. Everything below about the two-layer split, baseline-dependent
 > expansion, fill-never-frame, and the worked decompositions stands; only "Authoring input and
 > round-trip" changed.
 
 Grammar-editing consumers (Linguistic Assistant, PanGloss handoffs) reason in **HermitCrab (HC)
 constructs** — phonological rewrite rules, natural classes, affix templates, inflectional affixes.
-LCAtom does not. Its canonical contract is expressed against **LibLCM objects** (`Ph*`, `Mo*`,
+Motif does not. Its canonical contract is expressed against **LibLCM objects** (`Ph*`, `Mo*`,
 `Fs*`), and the HC grammar those consumers run is *derived* from those objects by HCLoader, not
 stored. This document fixes how HC-shaped intent relates to the canonical contract.
 
@@ -140,12 +140,12 @@ LibLCM model. The two are distinct concepts that happen to share the word.)
 
 ## Lockstep with HermitCrab and the FieldWorks grammar creator
 
-**This is reverse engineering, not design.** LCAtom's grammar API must be **exactly the set of LibLCM
+**This is reverse engineering, not design.** Motif's grammar API must be **exactly the set of LibLCM
 inputs that FieldWorks' `HCLoader` consumes** — nothing less, or the user cannot control the projected
 grammar; nothing pointless, or we offer controls wired to nothing. Two normative requirements follow:
 
 1. **100% lockstep with HermitCrab** (`../machine`, `src/SIL.Machine.Morphology.HermitCrab`). Every
-   construct the HC `Language` model can represent must be authorable through LCAtom in a friendly way.
+   construct the HC `Language` model can represent must be authorable through Motif in a friendly way.
    HC's model is the coverage yardstick ([ADR 0010](adr/0010-hermitcrab-experimentation-is-the-primary-purpose.md)).
 2. **100% lockstep with the grammar creator** (`FieldWorks/Src/LexText/ParserCore/HCLoader.cs`). The
    authoritative map is *HC construct ← the LibLCM fields HCLoader actually reads*. That map — not the
@@ -163,22 +163,22 @@ project runs on the three strata `HCLoader` hardcodes — `Morphology`, `Clitics
 `HCLoader` *can* build more, from `<HC><Strata>…</Strata></HC>` in that text field, binding rules to
 strata by **name-string matching**; and the model's `MoStratum` / `StratumRA` members are read nowhere
 in FieldWorks except three presence checks. But since nobody writes either channel, stratum
-configuration is **not a v1 requirement** — the requirement is only that LCAtom never disturbs the
+configuration is **not a v1 requirement** — the requirement is only that Motif never disturbs the
 default three. If stratum authoring is ever wanted, the reachable channel is `ParserParameters`, and
 its name-string binding makes a rule rename also a stratum edit.
 
 ## Authoring input and round-trip
 
-> **Amended 2026-07-27 by [ADR 0011](adr/0011-experiment-loop-boundary-lcatom-is-the-record.md):
+> **Amended 2026-07-27 by [ADR 0011](adr/0011-experiment-loop-boundary-motif-is-the-record.md):
 > forward projection is deleted.** This section originally described two directions, forward built
 > first as the oracle for the reverse. PanGloss reads `.fwdata` directly and calls the XML path
 > *"legacy … being sunset"* — **PanGloss is the projection** — so there is nothing to harvest and no
 > forward component to build. Only the reverse direction below survives, and it is now the *primary*
 > grammar authoring surface rather than the second half of a round trip.
 
-**Reverse (`Expand`)**, owned in `SIL.LCAtom.HermitCrab` — lower a single high-level HC-intent command
+**Reverse (`Expand`)**, owned in `SIL.Motif.HermitCrab` — lower a single high-level HC-intent command
 into the LibLCM object-ops that would produce it. The input is a **structured command** an agent or UI
-emits directly, not textual notation — there is no rule-language parser to build; LCAtom is not a
+emits directly, not textual notation — there is no rule-language parser to build; Motif is not a
 compiler. The mapping is the **inverse of `HCLoader`**: `HCLoader` says which LibLCM objects each HC
 construct corresponds to, and `Expand` emits the create/update/delete ops for them under
 fill-never-frame.
@@ -191,7 +191,7 @@ hand-authored (see [HC surface scope](hc-surface-scope.md), "The oracle"). That 
 yet; it is [issue B22](issues.md).
 
 The review-first thesis is unchanged, only its mechanism: instead of projecting a would-be grammar to
-XML, LCAtom **exports the would-be `.fwdata`** (N change sets applied to a scratch copy), external
+XML, Motif **exports the would-be `.fwdata`** (N change sets applied to a scratch copy), external
 infrastructure parses a corpus with it, and the resulting report returns as a labelled, provenance-
 stamped attachment on the change set.
 

@@ -1,5 +1,9 @@
 # Normative Change Set contract
 
+> **Vocabulary:** written before [ADR 0015](adr/0015-proposal-assessment-dry-run-vocabulary.md).
+> Read *change set* as **Proposal**, and *Assessment* as **Dry Run** — `Assessment` now means a PanGloss
+> run only. Glossary: [CONTEXT.md](../CONTEXT.md).
+
 This document fixes the semantics that implementation and conformance fixtures must enforce.
 Concrete JSON Schema files should be generated or written during Phase 1 and must agree with this
 document.

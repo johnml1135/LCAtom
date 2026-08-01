@@ -1,6 +1,12 @@
 # AGENTS.md
 
-Read `README.md` and all documents in `docs/` before implementation.
+Read `CONTEXT.md` first — it is the canonical glossary, and its terms are binding in code, comments,
+CLI verbs, and prose. Then `README.md` and the documents in `docs/`.
+
+**The vocabulary changed on 2026-07-31** ([ADR 0015](docs/adr/0015-proposal-assessment-dry-run-vocabulary.md)).
+`Proposal` replaces *change set*; `Dry Run` is the LibLCM-side evaluation; `Assessment` means a PanGloss
+run and nothing else. Documents written before that date use the old words — they are historical
+records, not counter-examples.
 
 ## Non-negotiable design rules
 
@@ -36,8 +42,8 @@ Read `README.md` and all documents in `docs/` before implementation.
 
 **Actual current targets (measured from the `.csproj` files) — nothing multi-targets:**
 
-- `SIL.LCAtom.Contract`, `SIL.LCAtom.Model`: `netstandard2.0`, LibLCM-free.
-- `SIL.LCAtom.Runner`, `SIL.LCAtom.Host`, `SIL.LCAtom.Cli`, `SIL.LCAtom.Tests`: `net8.0`, referencing
+- `SIL.Motif.Contract`, `SIL.Motif.Model`: `netstandard2.0`, LibLCM-free.
+- `SIL.Motif.Runner`, `SIL.Motif.Host`, `SIL.Motif.Cli`, `SIL.Motif.Tests`: `net8.0`, referencing
   `SIL.LCModel 11.0.0-beta0150`.
 
 **Deferred to Phase 9 ([implementation-plan.md](docs/implementation-plan.md)), not present reality:**

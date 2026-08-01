@@ -3,7 +3,7 @@
 *Researched 2026-07-27. Scope: `liblcm` as the primary subject, with `libpalaso`,
 `languageforge-lexbox`, and `FieldWorks` read for corroborating/contradicting evidence. One of
 three candidate paths to a single cross-platform API over FieldWorks language data; the other two
-are covered elsewhere. This document does not cover MiniLcm-vs-LCAtom API unification — see
+are covered elsewhere. This document does not cover MiniLcm-vs-Motif API unification — see
 `docs/one-api-problem.md` and `docs/minilcm-evaluation.md` for that, separate, question.*
 
 ## Bottom line, up front
@@ -233,7 +233,7 @@ single static call, `SIL.LCModel.DomainServices.GrammarJsonServices.ExportGramma
 (`:16`), with a spec and JSON Schema checked into the repo (`doc/lcm-grammar.md`,
 `doc/lcm-grammar.schema.json`) and enforced by unit tests (`:19-20`). This is exactly the shape of
 "modern facade over the old model" work, shipped upstream, independent of any portability change,
-and this session's LibLCM checkout is what LCAtom itself already depends on for grammar JSON —
+and this session's LibLCM checkout is what Motif itself already depends on for grammar JSON —
 i.e. this is not speculative, it is in production use by a sibling project today.
 
 **Characterizing the existing API (VERIFIED-IN-SOURCE, from direct reading):** entry points like
@@ -242,7 +242,7 @@ ILcmDirectories dirs, LcmSettings settings, IThreadedProgress progressDlg)`
 (`liblcm/src/SIL.LCModel/LcmCache.cs:156-163`) require implementing four collaborator interfaces
 (`ILcmUI`, `ILcmDirectories`, `LcmSettings`, `IThreadedProgress`) just to open a project headlessly
 — real ceremony, though workable (both `FwDataMiniLcmBridge` and, per `minilcm-evaluation.md:290-293`,
-LCAtom itself have already built headless adapters for it — "LCAtom already copy-adapted ~1,000-1,200
+Motif itself have already built headless adapters for it — "Motif already copy-adapted ~1,000-1,200
 lines of MiniLcm's project-load plumbing"). The DI wiring (`LcmServiceLocatorFactory.cs:72-244`) is
 StructureMap 4.x's fluent-registry style, itself a decade-old pattern by current .NET idiom. The
 object model is XMI/UML-generated (`GeneratedClasses.cs`, `GeneratedInterfaces.cs`, etc.,
@@ -309,7 +309,7 @@ single company's private fork; changes go through the same review process as any
 contribution, and the org already accepts and merges CI/portability-flavored PRs regularly
 (the commit history in §1a).
 
-**Other known defects (LCAtom `docs/issues.md`, C-series "upstream hazards we must defend
+**Other known defects (Motif `docs/issues.md`, C-series "upstream hazards we must defend
 against"):** these are correctness/semantics defects in LibLCM's data-migration and grammar-load
 paths, **orthogonal to portability** but relevant to "what does a consumer building a good API on
 top of LibLCM still have to guard against": `C1` (`AddCustomField` inside an open unit of work
@@ -322,7 +322,7 @@ and kills a grammar load), `C7`-`C14` (assorted silent-data-loss and dead-field 
 these are cross-platform issues — they would need defending against on Windows too — but a "good
 modern API" that markets itself as safer than the raw `LcmCache` surface would need to wrap or
 validate around all of them, which is real, separately-sized work (see `issues.md` for the current
-"detect, disclose, or refuse" mitigation posture LCAtom has adopted for each).
+"detect, disclose, or refuse" mitigation posture Motif has adopted for each).
 
 **Net honest cost:** portability (Linux: ~done; Android: DI-container swap + native-ICU packaging,
 both bounded, neither touching the 157k generated LOC) is a **small, mechanical** project relative
@@ -341,7 +341,7 @@ suggests (container swap + ICU packaging, not a fundamental rewrite), this path 
 neither of the other two candidate paths can claim by construction: **it is not a second store.**
 
 `one-api-problem.md:65-93` and `minilcm-evaluation.md` (both read this session, though their
-subject is the MiniLcm/LCAtom API question, not this one) independently document the cost that a
+subject is the MiniLcm/Motif API question, not this one) independently document the cost that a
 second, non-LibLCM store already pays today: `FwLiteProjectSync/CrdtFwdataProjectSyncService.cs`
 maintains **seven hand-written, bidirectional reconcilers** (`WritingSystemSync`, `PublicationSync`,
 `PartOfSpeechSync`, `SemanticDomainSync`, `ComplexFormTypeSync`, `MorphTypeSync`, `EntrySync`) just

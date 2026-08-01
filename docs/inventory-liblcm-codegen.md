@@ -3,7 +3,7 @@
 Status: factual inventory, evidence-based. No design or recommendation beyond the assessment in
 §9, which is scoped to obstacles actually observed. All paths are relative to
 `C:\Users\johnm\Documents\repos\liblcm` unless stated otherwise. Line numbers cited are as of the
-repo's current `main` checkout (HEAD `af79e6c` in the sibling LCAtom repo's log; liblcm itself was
+repo's current `main` checkout (HEAD `af79e6c` in the sibling Motif repo's log; liblcm itself was
 read directly from the working tree, not from a pinned commit hash — see individual `git log`
 calls below for the one file whose history I checked).
 
