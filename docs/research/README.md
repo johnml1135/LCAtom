@@ -5,6 +5,12 @@
 Research notes preserve evidence and independent reviews. They are not decisions; current ADRs,
 `CONTEXT.md`, and the live plans remain authoritative.
 
+**Dated 2026-08-01 or earlier, these reviews predate [Plan A](../plan-motif.md).** Where they name
+`HAR-*` items, a Harmony materialization step, or a MiniLcm↔LibLCM crosswalk, those belong to the
+superseded plan — see [harmony-adoption-report.md](../harmony-adoption-report.md). Their findings
+about determinism, refusal, baselines, and Receipts carry over unchanged and are `MOT-9` and
+[ADR 0016](../adr/0016-scratch-cache-copy-not-undo.md).
+
 ## 2026-08-01 cross-repository reviews
 
 - [MiniLcm ↔ LibLCM terminology audit](2026-08-01-minilcm-liblcm-terminology-audit.md) — more than
@@ -18,5 +24,5 @@ Research notes preserve evidence and independent reviews. They are not decisions
   Receipts, and crash recovery.
 
 The plan consequences are preserved in
-[the controlled-materialization amendment](../plan-amendment-2026-08-01-controlled-materialization.md).
+[Plan A](../plan-motif.md) (`MOT-9`) and [ADR 0016](../adr/0016-scratch-cache-copy-not-undo.md).
 Unresolved choices are queued in [the Plan A grill](../grill-plan-a.md).

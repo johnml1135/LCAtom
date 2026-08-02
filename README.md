@@ -24,6 +24,17 @@ target store.
 > FieldWorks in-process adapter, receipt sync, and text authoring are planned work. Nothing in the
 > plans should be read as already shipped.
 
+## Delivery
+
+**Motif delivers exactly two things: the `motif` CLI, and a FieldWorks integration.** The CLI is a
+`net10.0` executable for batch, automation, and AI-agent use; the FieldWorks integration is a
+`netstandard2.0` runner hosted in-process behind FieldWorks-owned Avalonia surfaces.
+
+Everything else is a dependency rather than a deliverable — the Lexbox receipt store is server work in
+another repository, PanGloss is a subprocess or native library, and `SIL.Motif.Contract` is a
+published contract other runners consume. There is no Motif web app, service, mobile surface, or
+FwLite presence.
+
 ## The intended workflow
 
 ```text

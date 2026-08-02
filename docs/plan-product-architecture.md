@@ -165,7 +165,8 @@ crosswalk, generator, dependency lock, build environment, and generated-output d
 
 ## Evidence behind this consolidation
 
-- [Controlled-materialization amendment](plan-amendment-2026-08-01-controlled-materialization.md)
+- [Plan A](plan-motif.md) — the controlled-materialization amendment was folded into `MOT-9` and
+  [ADR 0016](adr/0016-scratch-cache-copy-not-undo.md), then deleted
 - [Review synthesis](research/2026-08-01-pr-like-collaboration-synthesis.md)
 - [Grill queue](grill-plan-a.md)
 - [I-confluence](https://www.vldb.org/pvldb/vol8/p185-bailis.pdf)

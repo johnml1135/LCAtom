@@ -4,6 +4,22 @@
 [harmony-adoption-report.md](harmony-adoption-report.md) proposal 2. This file owns both the
 milestones and the `MOT-*` items; nothing else defines milestones.*
 
+## Delivery
+
+**Motif delivers exactly two things: the `motif` CLI, and a FieldWorks integration.** Nothing else is
+a Motif product.
+
+| | |
+| --- | --- |
+| `motif` CLI | `net10.0` executable. Batch, automation, and AI-agent use, against a `.fwdata` project it opens itself |
+| FieldWorks integration | `netstandard2.0` Runner hosted in-process, behind FieldWorks-owned Avalonia surfaces |
+
+Everything else Plan A touches is a **dependency, not a deliverable**: the Lexbox receipt store
+(`MOT-14`) is server work in someone else's repository, PanGloss is a subprocess or native library,
+and `SIL.Motif.Contract` is a published contract that other runners consume — not an application we
+ship. There is no Motif web app, no Motif service, no Motif mobile surface, and no Motif presence in
+FwLite.
+
 **Scope: lexical and grammar. Text and analysis are out**, per the manifest's own classification —
 `Segment`, `WfiAnalysis`, `WfiWordform`, `WfiMorphBundle`, `Text`, `CmAgent`, and `StTxtPara` are all
 marked `out` / `not-domain-reachable`, leaving eight text-adjacent rows in scope. Text needs its own
