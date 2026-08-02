@@ -1,5 +1,12 @@
 # Grill decision log — grammar on Harmony
 
+
+> **Historical 2026-08-01.** A decision *log*, retained in full. Decisions premised on grammar riding
+> on Harmony (notably D1, D2, D4) were reversed by [Plan A](plan-motif.md); see the
+> [adoption report](harmony-adoption-report.md). Decisions about scope, ownership, and naming still
+> stand. Open questions from this file are re-cut in [grill-plan-a.md](grill-plan-a.md); the sibling
+> `grill-*.md` research files it references were deleted with the plan they served.
+
 *Live document. Decisions are recorded as they are made, in order. Rationale is compressed; the
 supporting research is in the sibling `grill-*.md` and `declarative-commands-vs-crdt.md` files.*
 

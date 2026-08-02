@@ -1,9 +1,17 @@
 # What actually needs to be added — point by point
 
+
+> **Superseded 2026-08-01 — retained as evidence.** [Plan A](plan-motif.md) does not route grammar
+> through the CRDT, so items 1, 3, 5, 6, and 7 are withdrawn along with `plan-harmony.md`,
+> which no longer exists. This file is kept because the [adoption report](harmony-adoption-report.md)
+> cites its findings — especially item 2, that `CommitBase.GenerateHash` never hashes the change
+> payload. Read it as a record of what Harmony would have needed, not as work anyone is doing.
+
 *2026-07-27. Assumes proposal/review/approval **storage lives in the application**, not in Harmony.
 Scope: the core capabilities required so that "the rest" can be built elsewhere.*
 
-> **This is the evidence document. The plan built on it is [plan-harmony.md](plan-harmony.md).**
+> **This is the evidence document. The plan built on it — `plan-harmony.md` — was deleted; see the
+> banner above.**
 > Item numbers here are load-bearing: `HAR-n` in that plan is item *n* below, so this file's citations
 > stay attached to the work. Three items were reassigned out of Harmony and are planned elsewhere —
 > **item 4** (keyed maps for alpha variables) is `CRDT-3`, **item 8** (CRDT → full `.fwdata`) is

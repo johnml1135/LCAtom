@@ -3,7 +3,7 @@
 **Status:** live plan amendment, 2026-08-01.
 
 This document amends [plan-cross-repo.md](plan-cross-repo.md),
-[plan-harmony.md](plan-harmony.md), [plan-lcmcrdt.md](plan-lcmcrdt.md), and
+`plan-harmony.md` (deleted), [plan-lcmcrdt.md](plan-lcmcrdt.md), and
 [plan-motif.md](plan-motif.md). Where this document conflicts with those four plans, this document
 wins until its changes are consolidated into them. It preserves the findings of the 2026-08-01
 reviews:
@@ -14,7 +14,7 @@ reviews:
 
 The review recommendations are not all decisions. The decisions recorded below are the minimum
 needed to keep the live plan honest; unresolved choices are routed to
-[grill-plan-2026-08-01.md](grill-plan-2026-08-01.md).
+[grill-plan-a.md](grill-plan-a.md).
 
 ## Decisions added to the plan
 
@@ -173,7 +173,7 @@ Amended item counts: **MOT 9 · HAR 6 (1, 2, 3, 5, 6, 7) · CRDT 9**.
 
 ## Owner-plan amendments
 
-### `plan-harmony.md`
+### `plan-harmony.md` — deleted, see [Plan A](plan-motif.md)
 
 `HAR-7` expands from “deferred diagnostic channel” to **generic materialization result and diagnostic
 channel**.
@@ -333,4 +333,4 @@ This amendment does not settle:
 - whether the grammar API adopts LibLCM-aligned names or retains MiniLcm product vocabulary.
 
 These decisions are queued, in dependency order, in
-[grill-plan-2026-08-01.md](grill-plan-2026-08-01.md).
+[grill-plan-a.md](grill-plan-a.md).

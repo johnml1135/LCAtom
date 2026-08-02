@@ -31,7 +31,8 @@ The planned Harmony work explicitly identifies the needed shape:
 - The intended correction is â€œapply what you can and record a structured diagnostic.â€
 - The current `SetOrderChange<T>` is a LWW `double`, which is inadequate for phonological order.
 
-See [plan-harmony.md](C:/Users/johnm/Documents/repos/motif/docs/plan-harmony.md:51) and [plan-harmony.md](C:/Users/johnm/Documents/repos/motif/docs/plan-harmony.md:105).
+Referred to `plan-harmony.md` items `HAR-7` and `HAR-3`; that plan was deleted with Plan A's adoption
+(see [harmony-adoption-report.md](../harmony-adoption-report.md)).
 
 In Harmony:
 

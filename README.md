@@ -20,9 +20,9 @@ target store.
 > **Status: this is the target architecture and delivery plan, not the current implementation.**
 >
 > The repository contains a tested one-operation `lexical/sense/setGloss` control slice and extensive
-> LibLCM/HermitCrab coverage research. The PR-like review domain, generated grammar surface, new
-> Harmony primitives, LcmCrdt grammar support, authority migration, and text authoring are planned
-> work. Nothing in the plans should be read as already shipped.
+> LibLCM/HermitCrab coverage research. The PR-like review domain, the generated grammar surface, the
+> FieldWorks in-process adapter, receipt sync, and text authoring are planned work. Nothing in the
+> plans should be read as already shipped.
 
 ## The intended workflow
 
@@ -61,30 +61,27 @@ cannot be preserved, coordination or deterministic refusal is the correct outcom
 | Component | Responsibility |
 | --- | --- |
 | **Motif** | Semantic operations; Proposal, Check Run, Review, Decision, Dry Run, authorization, rebase, and Receipt contracts |
-| **Harmony** | Domain-neutral replicated commit history, opaque preservation, convergence primitives, atomic-group mechanics, and deterministic materialization diagnostics |
-| **LcmCrdt** | Generated LibLCM-shaped collaborative state and the target authority for domains promoted to CRDT-native operation |
+| **Harmony / LcmCrdt** | FwLite's substrate for offline, multi-device, mobile lexical work. **Not on Motif's path** — see the [adoption report](docs/harmony-adoption-report.md) |
 | **LibLCM / FieldWorks** | Model invariants, project lifecycle, unit of work, persistence, and compatibility validation when materializing `.fwdata` |
-| **FwLiteProjectSync / FieldWorks adapter** | LcmCrdt–LibLCM translation, private workspaces, exclusive live apply, save/read-back, and recovery |
+| **FieldWorks adapter** | Hosts the `netstandard2.0` Runner in-process; UI-thread marshalling, one undoable unit of work, save, read-back, and recovery |
+| **Lexbox** | Proposal and Receipt object store, optional per project |
 | **PanGloss** | Immutable parser Assessments and parser facts; Motif policy decides what evidence is required |
 
-Harmony remains domain-neutral: grammar and LibLCM vocabulary do not move into Harmony core.
-LcmCrdt receives generated entities, change classes, registrations, EF configuration, and reviewed
-hand-written migrations. Motif owns the Manifest, MiniLcm–LibLCM name/shape crosswalk, generator,
-semantic operations, and lowering rules.
+Motif owns the Manifest, the generator, the semantic operations, and the lowering rules. Its
+operations target **LibLCM objects directly**, so no MiniLcm crosswalk is required and no generated
+code lands in LcmCrdt.
 
 ## Authority and migration
 
 The target supports domains promoted to CRDT-native authority while preserving a FieldWorks-hosted
 transition:
 
-| Mode | Canonical materialized state | FieldWorks role |
-| --- | --- | --- |
-| CRDT-native domain | LcmCrdt projection | LibLCM validates and persists a compatibility projection |
-| FieldWorks-hosted transition | live LibLCM model supplied by its owning host | the host is the sole writer during final compare/apply/save |
+**The live LibLCM model is the only authority on Motif's path.** The process owning the loaded
+`LcmCache` is the sole writer; Chorus merges between people, as it does today. There is no second
+merge engine and no promotion of domains to a CRDT authority.
 
-One field has exactly one authority in an authority epoch. Chorus and Harmony must never
-independently merge the same field. Promotion is an explicit, versioned migration backed by
-bidirectional round-trip evidence, not a runtime guess.
+FwLite keeps its own authority over its own lexical data through Harmony. The two products do not
+share a substrate, and one field never has two authorities.
 
 ## Grammar first
 
@@ -110,31 +107,28 @@ standoff annotations, provenance, reanchoring/refusal, lowering, and read-back.
 
 The work is coordinated by one milestone ladder:
 
-- [cross-repository plan](docs/plan-cross-repo.md) — milestones and dependency edges;
-- [Motif plan](docs/plan-motif.md) — crosswalk, model join, generator, semantic and review domains;
-- [Harmony plan](docs/plan-harmony.md) — domain-neutral primitives and diagnostics;
-- [LcmCrdt plan](docs/plan-lcmcrdt.md) — generated collaborative model and FieldWorks bridge work;
+- **[Plan A](docs/plan-motif.md) — the live plan: milestones, model join, generator, scratch-cache dry run, FieldWorks adapter, review domain;**
+- [work in other repositories](docs/plan-cross-repo.md) — FieldWorks, PanGloss, liblcm, lexbox;
+- [why not Harmony](docs/harmony-adoption-report.md) — the two alternate proposals and the decision;
+- [withdrawn LcmCrdt plan](docs/plan-lcmcrdt.md) — what the previous routing required;
 - [product architecture](docs/plan-product-architecture.md) — normative end-state boundaries;
 - [overall product plan](docs/motif-overall-plan.md) — user workflow, evidence corpus, UI, and CLI.
 
 The milestone sequence is:
 
-1. build the MiniLcm–LibLCM name/shape crosswalk and fail-closed model join;
-2. prove generation by reproducing already-shipped LcmCrdt entities;
-3. add required Harmony sequence, reference, move, payload-binding, and diagnostic primitives;
-4. prove the PR-like control plane with `setGloss`;
-5. deliver one grammar Construct end to end;
-6. generate the remaining grammar surface and prove the ordered residue with real projects.
-
-Full CRDT-only creation of a brand-new `.fwdata` is conditional. Selective bidirectional
-compatibility is mandatory for every promoted domain.
+1. **M1** — fail-closed model join and a generator that reads it without a liblcm checkout;
+2. **M2** — one generated operation family applied end to end, with a scratch-cache dry run;
+3. **M3** — FieldWorks hosts Dry Run and Apply in-process, on `net48`;
+4. **M4** — a Proposal reviewed, approved, applied, and its Receipt shared through Lexbox;
+5. **M5** — one grammar Construct authored, applied, and parsed by PanGloss;
+6. **M6** — the remaining grammar surface, and the ordered residue proven on real projects.
 
 ## Maintainer review and open decisions
 
 The architecture has been source-checked and compared with current literature, but it deliberately
 leaves project-owner and maintainer decisions open.
 
-- [architecture-first grill queue](docs/grill-plan-2026-08-01.md) preserves 107 stable question IDs;
+- [Plan A grill queue](docs/grill-plan-a.md) carries the open questions;
 - [evidence ledger](docs/research/2026-08-01-grill-evidence-ledger.md) classifies them as 47 resolved
   principles, 27 bounded evidence tasks, and 33 owner decisions;
 - [decision log](docs/grill-decisions.md) records decisions as they are made;

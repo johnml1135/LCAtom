@@ -11,7 +11,7 @@
 > was planned before `SIL.Harmony` was read.
 >
 > **For the live plan, read [docs/plan-cross-repo.md](docs/plan-cross-repo.md)** and the three plans it
-> aligns: [motif](docs/plan-motif.md), [harmony](docs/plan-harmony.md),
+> aligns: [Plan A](docs/plan-motif.md), [other repositories](docs/plan-cross-repo.md),
 > [LcmCrdt](docs/plan-lcmcrdt.md). Two of the questions this handoff left open are now answered there:
 > what additions Harmony needs to carry grammar (`HAR-*`), and where each artifact lands
 > ([ADR 0014](docs/adr/0014-generate-the-crdt-layer-from-masterlcmodel.md), D6). Still open: **who

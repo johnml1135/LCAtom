@@ -1,5 +1,22 @@
 # Motif
 
+
+> **Substrate superseded 2026-08-01 — the product thinking stands.** This document predates
+> [Plan A](plan-motif.md), adopted from [harmony-adoption-report.md](harmony-adoption-report.md).
+> Its workflow, evidence corpus, review model, UI/CLI split, and risk analysis are unchanged and still
+> the product intent. **What is overturned is the substrate**, everywhere it appears below:
+>
+> | This document says | Plan A |
+> | --- | --- |
+> | Harmony/LcmCrdt provide the collaborative state | The live LibLCM model is the only authority on Motif's path |
+> | "Use Harmony for collaborative history and synchronization" (goal 5) | Proposals and Receipts are immutable documents in a Lexbox object store; no CRDT |
+> | "Harmony synchronizes the proposal, reviews, decision, and receipt" | Lexbox does, optionally per project (`MOT-14`) |
+> | ADR 0013 remains binding | ADR 0013 is scoped to FwLite; grammar does not route through the CRDT |
+> | Application-specific Harmony entities and changes | Generated LibLCM operations (`MOT-4`) |
+>
+> Harmony remains the right substrate for FwLite and is untouched. Read "Harmony" below as "the
+> collaborative store", and see Plan A for what that is now.
+
 ## A PR-like semantic collaboration system for language projects
 
 Motif lets humans and AI agents propose, check, review, approve, apply, and audit semantic changes
@@ -25,7 +42,6 @@ Companion plans, kept aligned with this one — see
 [plan-cross-repo.md](plan-cross-repo.md) for the shared milestone table:
 
 - [plan-motif.md](plan-motif.md) — this repository (manifest, generator, semantic + lowering layers)
-- [plan-harmony.md](plan-harmony.md) — the `harmony` repository (CRDT primitives only)
 - [plan-lcmcrdt.md](plan-lcmcrdt.md) — `languageforge-lexbox` (`backend/FwLite/LcmCrdt`)
 
 ## Executive summary

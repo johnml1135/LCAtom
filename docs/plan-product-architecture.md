@@ -1,5 +1,13 @@
 # Product architecture — semantic collaboration for language projects
 
+
+> **Superseded in part, 2026-08-01.** Written when Harmony and LcmCrdt were the collaborative
+> successor to `.fwdata`. [Plan A](plan-motif.md) removed that routing: Motif targets LibLCM objects
+> directly and the live model is the only authority on its path. The **normative boundaries this
+> document draws — Baseline Token, Dry Run binding, one-use apply authorization, drift refusal,
+> Receipt, and the reconciliation states — are unchanged and are `MOT-9`**. Read the Harmony/LcmCrdt
+> ownership rows as describing FwLite's substrate, not Motif's.
+
 *This is the product-level architecture served by the cross-repository milestone ladder. It
 consolidates the controlled-materialization amendment and the 2026-08-01 literature reviews.*
 
@@ -159,7 +167,7 @@ crosswalk, generator, dependency lock, build environment, and generated-output d
 
 - [Controlled-materialization amendment](plan-amendment-2026-08-01-controlled-materialization.md)
 - [Review synthesis](research/2026-08-01-pr-like-collaboration-synthesis.md)
-- [Grill queue](grill-plan-2026-08-01.md)
+- [Grill queue](grill-plan-a.md)
 - [I-confluence](https://www.vldb.org/pvldb/vol8/p185-bailis.pdf)
 - [Local-first software](https://doi.org/10.1145/3359591.3359737)
 - [W3C Web Annotation](https://www.w3.org/TR/annotation-model/)

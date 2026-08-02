@@ -1,5 +1,12 @@
 # Declarative commands vs. CRDT changes — a point-by-point mapping
 
+
+> **Superseded 2026-08-01 as a plan; load-bearing as evidence.** Its verdict — *fold Motif's vocabulary
+> into Harmony's `IChange`* — is not what [Plan A](plan-motif.md) does. The analysis behind it stands and
+> is cited by the [adoption report](harmony-adoption-report.md): the 412-of-473 commuting-field figure,
+> the verb-by-verb mapping, and the finding that both designs independently arrived at *declarative, no
+> preconditions*. That last point is the strongest argument in Harmony's favour and it is sourced here.
+
 *2026-07-27. Can Motif's declarative operation vocabulary fold into Harmony's `IChange` model?
 Grounded in the 473 in-scope manifest rows and both codebases, not in the abstract.*
 

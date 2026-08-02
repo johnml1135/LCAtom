@@ -5,7 +5,7 @@
 > builds toward, and [ADR 0014](adr/0014-generate-the-crdt-layer-from-masterlcmodel.md) replaced
 > hand-authoring with generation into `LcmCrdt`. **The live plans are
 > [plan-cross-repo.md](plan-cross-repo.md) and the three it aligns** —
-> [motif](plan-motif.md), [harmony](plan-harmony.md), [LcmCrdt](plan-lcmcrdt.md).
+> [Plan A](plan-motif.md) and [other repositories](plan-cross-repo.md).
 >
 > What survives here and is still used: the construct coverage, the verb/kind counts, the Flexicon
 > gotcha inventory, and the L0/G0–G2 sequencing that `MOT-7` inherits.

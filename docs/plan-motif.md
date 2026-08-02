@@ -1,271 +1,340 @@
-# Plan — work in this repository (`motif`)
+# Plan A — Motif
 
-*Ten items. Milestones are defined in [plan-cross-repo.md](plan-cross-repo.md); this file owns
-`MOT-*` item status and evidence.*
+*The live plan. Adopted 2026-08-01 from
+[harmony-adoption-report.md](harmony-adoption-report.md) proposal 2. This file owns both the
+milestones and the `MOT-*` items; nothing else defines milestones.*
 
-This repo owns, per D6: **the manifest, its classification columns, the MiniLcm ↔ LibLCM name map, the
-generator, and the semantic + lowering layers.** It does not own the generated output's home — that is
-`LcmCrdt` in lexbox ([plan-lcmcrdt.md](plan-lcmcrdt.md)) — and it does not own CRDT primitives — that is
-harmony ([plan-harmony.md](plan-harmony.md)).
+**Scope: lexical and grammar. Text and analysis are out**, per the manifest's own classification —
+`Segment`, `WfiAnalysis`, `WfiWordform`, `WfiMorphBundle`, `Text`, `CmAgent`, and `StTxtPara` are all
+marked `out` / `not-domain-reachable`, leaving eight text-adjacent rows in scope. Text needs its own
+bounded context and an occurrence-anchor contract. Neither is planned here.
 
-**Relationship to the older plans in this directory.** [implementation-plan.md](implementation-plan.md)
-and [operation-catalog-plan.md](operation-catalog-plan.md) plan the change-set contract and runner that
-[ADR 0013](adr/0013-harmony-is-the-change-mechanism.md) **withdrew**. They are retained as a record and
-for their per-phase status detail; they are not the live plan. This file is. Product-level scope,
-phases, and the FieldWorks/PanGloss/review surface are in
-[motif-overall-plan.md](motif-overall-plan.md) — CI and quarantining the retired runner are tracked
-there (its Phase 0), not duplicated here.
+## The shape of Plan A
+
+Motif authors **Proposals** against **LibLCM objects**, dry-runs them on a scratch cache copy, applies
+them through one LibLCM unit of work in whatever process owns the live cache, and records a Receipt.
+There is no CRDT in this path, no second process, and no second authority.
+
+```
+Proposal (JSON, public contract, intent digest)
+   │  generated from MasterLCModel.xml ⋈ manifest
+   ▼
+DryRun on a scratch LcmCache copy  ──▶ expected effects + BoundDryRunAnchor
+   │
+   ▼
+Apply on the live LcmCache, one UOW ──▶ Receipt + applied-log entry
+   │
+   ▼
+Receipt synced to Lexbox (optional per project)
+```
+
+**What this plan removed, and why.** The previous plan routed grammar through Harmony's CRDT. That
+required a MiniLcm↔LibLCM crosswalk, converging sequence types, reference-set policy, and a
+cross-owner move rule — none of which any FwLite requirement asked for. Removing the routing removes
+the need. See the [adoption report](harmony-adoption-report.md) for the full argument, and
+[plan-lcmcrdt.md](plan-lcmcrdt.md) for what was withdrawn.
+
+## Milestones
+
+| | Gate | Items |
+| --- | --- | --- |
+| **M1** | The generator reads and joins the model without a liblcm checkout | `MOT-2`, `MOT-3` |
+| **M2** | One generated operation family applies end to end and its effects are read back | `MOT-4`, `MOT-11` |
+| **M3** | FieldWorks hosts DryRun and Apply in-process, on `net48` | `MOT-12`, `MOT-13` |
+| **M4** | A Proposal is reviewed, approved, applied, and its Receipt is shareable | `MOT-9`, `MOT-10`, `MOT-14` |
+| **M5** | One grammar construct authored, reviewed, applied, and parsed | `MOT-6`, `MOT-15` |
+| **M6** | The remaining constructs | `MOT-7`, `MOT-8` |
+
+M1 and M2 are mechanical. M3 is integration. **M4 is the product.** M5 is the first thing a linguist
+would recognise as the point.
 
 ## Status summary
 
-| Item | Milestone | Size | Status |
+| Item | M | Size | Status |
 | --- | --- | --- | --- |
-| `MOT-1` — the MiniLcm ↔ LibLCM name and shape map | **M0** | Small, and hand-authored | Not started — **the artifact does not exist** |
-| `MOT-2` — the `(Class, Field)` join, failing the build on any unmatched key | **M1** | Small | Not started |
-| `MOT-3` — generator skeleton: read `MasterLCModel.xml`, emit nothing yet | **M1** | Medium | Not started |
-| `MOT-4` — emit possibility-list CRUD for the three reachable entities | **M2** | Medium | Not started |
-| `MOT-5` — map ordered and reference kinds onto the Harmony primitives | **M3** | Medium | Not started |
-| `MOT-9` — Baseline Token, Dry Run binding, apply authorization, Receipt/recovery contract | **M4** | Medium, correctness-critical | Not started |
-| `MOT-10` — Proposal revisions, Check Runs, Reviews, Decisions, semantic owner policy | **M4** | Medium, the PR-like product core | Not started |
-| `MOT-6` — semantic + lowering layer for grammar construct 1 | **M5** | Medium — **the first product family** | Not started |
-| `MOT-7` — the remaining 29 constructs | **M6** | Large | Not started |
-| `MOT-8` — the ordered-grammar proof | **M6** | Medium, and the highest-risk item here | Not started |
+| `MOT-2` — the `(Class, Field)` join, failing the build on any unmatched key | M1 | Small | Not started |
+| `MOT-3` — generator skeleton: read `MasterLCModel.xml`, emit nothing yet | M1 | Medium | Not started |
+| `MOT-4` — emit the operation catalog for one family | M2 | Medium | Not started |
+| `MOT-11` — scratch-cache DryRun, replacing mutate-then-rollback | M2 | Medium | Not started — **ADR 0016** |
+| `MOT-12` — FieldWorks in-process adapter | M3 | Medium | Not started |
+| `MOT-13` — `System.Text.Json` on `net48` proof | M3 | Small, and a possible blocker | Not started |
+| `MOT-9` — Baseline Token, Dry Run binding, apply authorization, Receipt | M4 | Medium, correctness-critical | **Partly built** |
+| `MOT-10` — Proposal revisions, Check Runs, Reviews, Decisions | M4 | Medium, the PR-like product core | Not started |
+| `MOT-14` — Receipt store and sync in Lexbox | M4 | Medium | Not started |
+| `MOT-6` — semantic + lowering layer for grammar construct 1 | M5 | Medium — **the first product family** | Not started |
+| `MOT-15` — PanGloss snapshot producer and FFI | M5 | Medium | Not started |
+| `MOT-7` — the remaining 29 constructs | M6 | Large | Not started |
+| `MOT-8` — ordered-grammar review proof | M6 | Medium | Not started |
 
-**What already exists and is not re-planned.** `manifest/liblcm-inventory.tsv` — 899 lines, 898 rows,
-19 columns (`Class`, `Base`, `Abstract`, `Scope`, `ScopeReason`, `Field`, `Kind`, `Sig`, `Card`,
-`HcReferenced`, `Construct`, `Group`, `Classification`, `ComparisonClass`, `Verbs`, `HcReachable`,
-`AssessPoisonsCache`, `EnumValues`, `Rationale`), 473 in-scope rows across 95 in-scope classes, **100%
-classified for every in-scope row.** The HCLoader-derived grammar map and the coverage research are
-likewise done. The retired runner also still builds and passes 82/82 tests; that is a fact about the
-repo, not a plan item.
+**Withdrawn:** `MOT-1` (the MiniLcm↔LibLCM crosswalk — not needed once the target is LibLCM) and
+`MOT-5` (mapping ordered and reference kinds onto Harmony primitives — there are no Harmony
+primitives in this path). Numbers are not reused.
 
----
-
-## `MOT-1` — the name and shape map — M0
-
-**The one artifact ADR 0014 named as required and non-existent.** The manifest is keyed on *LibLCM*
-class names; the generation target uses *MiniLcm* type names, and they do not correspond:
-
-| MiniLcm | LibLCM |
-| --- | --- |
-| `MorphType` | `MoMorphType` |
-| `ComplexFormType` | `LexEntryType` |
-| `SemanticDomain` | `CmSemanticDomain` |
-
-A MiniLcm type is also not always exactly one LibLCM class — hence *shape* map, not just *name* map.
-This is hand-maintained, is **not derivable from either source**, and is a prerequisite for everything
-that follows.
-
-**Deliverable.** A checked-in, reviewable file in `manifest/`, in the same TSV shape as the existing
-inventory so the same tooling reads it. Scope it to what M2 needs — the three reachable entities plus
-`CmPossibility` — and grow it per construct, not speculatively.
-
-**Acceptance**
-
-- Every MiniLcm type the generator targets resolves to its LibLCM class(es), and the reverse lookup is
-  unambiguous.
-- A MiniLcm type whose shape is *not* one LibLCM class is representable rather than approximated.
-- The map is reviewable by a human who knows the domain and has not read the generator.
+**What already exists and is not re-planned.** `manifest/liblcm-inventory.tsv` — 898 rows, 19 columns,
+473 in-scope rows across 95 in-scope classes, 100% classified for every in-scope row. The
+HCLoader-derived grammar map and the coverage research are done. `SIL.Motif.{Contract,Model,Runner}`
+build, `Runner` multi-targets `netstandard2.0;net10.0`, and 82/82 tests pass — including a working
+`open` / `new` / `add-set-gloss` / `finalize` / `dry-run` / `apply` / `log` CLI loop for one operation
+kind.
 
 ---
 
 ## `MOT-2` — the join, failing the build — M1
 
 Structure comes from `MasterLCModel.xml` so it tracks LibLCM upgrades; policy (`Scope`, `Construct`,
-`ComparisonClass`, `Verbs`) comes from the manifest, which is human judgement and exists nowhere else.
-They join on `(Class, Field)`, and **a key present in one and absent from the other fails the build.**
+`ComparisonClass`, `Verbs`, `AssessPoisonsCache`) comes from the manifest, which is human judgement
+and exists nowhere else. They join on `(Class, Field)`, and **a key present in one and absent from the
+other fails the build.**
 
-The join key already exists and has been checked, not assumed: 445 `<basic>` + 235 `<owning>` + 218
-`<rel>` = **898** field declarations in `MasterLCModel.xml` (424,797 bytes, 5,368 lines, model version
-`7000072`, 193 classes), against **898** manifest rows. Diffing the actual key sets yields **zero keys
-present in one and absent from the other, and no duplicates in either.** A matching count alone would
-not have shown that.
-
-**Deliverable.** The join, plus the build failure, plus a test that the build failure actually fires.
+The key set has been checked, not assumed: 445 `<basic>` + 235 `<owning>` + 218 `<rel>` = **898**
+field declarations in `MasterLCModel.xml` (424,797 bytes, 5,368 lines, model version `7000072`, 193
+classes), against 898 manifest rows, with **zero keys present in one and absent from the other and no
+duplicates in either**. A matching count alone would not have shown that.
 
 **Acceptance**
 
 - An injected extra `(Class, Field)` key on either side fails the build with a message naming the key.
 - A LibLCM upgrade that adds a field produces a row with structure and no policy, and the build stays
-  red until a human classifies it. **For a system where a wrong merge policy corrupts a language
-  project quietly, visible churn beats minimal churn** — that is the intent, not a side effect.
-- `MasterLCModel.xml` is obtained without requiring a liblcm source checkout. `SIL.LCModel.csproj:125`
-  packs `MasterLCModel.*` into the NuGet package under `contentFiles/` — but *not* in the conventional
-  `contentFiles/{lang}/{tfm}/` layout, so it may not flow automatically into a `PackageReference`
-  consumer. Reading it out of the package or the global package cache is the fallback, and which path is
-  used must be recorded rather than left to whoever runs the build.
-
----
+  red until a human classifies it. **For a system where a wrong policy corrupts a language project
+  quietly, visible churn beats minimal churn** — that is the intent, not a side effect.
+- `MasterLCModel.xml` is obtained without a liblcm source checkout. `SIL.LCModel.csproj:125` packs
+  `MasterLCModel.*` into the NuGet package under `contentFiles/`, but not in the conventional
+  `contentFiles/{lang}/{tfm}/` layout, so it may not flow into a `PackageReference` consumer
+  automatically. Reading it from the package or the global package cache is the fallback, and which
+  path is used must be recorded rather than left to whoever runs the build.
 
 ## `MOT-3` — generator skeleton — M1
 
-Read the joined model, emit nothing. Separating "can we read and join this" from "is the emitted C#
+Read the joined model, emit nothing. Separating "can we read and join this" from "is the emitted code
 right" keeps M2's gate about the output.
 
-Precedent that this is ordinary rather than novel: **LibLCM already generates the majority of itself
-from this file** — NVelocity templates (the 33 `LcmGenerate/*.vm.cs` files, explicitly `<Compile Remove>`'d
-at `SIL.LCModel.csproj:12`) driven by an MSBuild task in `SIL.LCModel.Build.Tasks`; the `GenerateModel`
-target declares `Inputs="MasterLCModel.xml"` and shells to a standalone `GenerateModel.proj`
-(`SIL.LCModel.csproj:111-119`). Output: 9 gitignored files, **~154,000 lines — more generated code than
-the ~149,000 hand-written lines in the same project.** Model-driven generation of a LibLCM-shaped C#
-layer is not speculative; it is how LibLCM exists.
+This is ordinary rather than novel: **LibLCM already generates the majority of itself from this
+file** — 33 NVelocity templates in `LcmGenerate/*.vm.cs`, `<Compile Remove>`'d at
+`SIL.LCModel.csproj:12`, driven by an MSBuild task whose `GenerateModel` target declares
+`Inputs="MasterLCModel.xml"`. Output: ~154,000 generated lines against ~149,000 hand-written lines in
+the same project.
 
-**Acceptance:** the generator loads all 898 rows joined, reports its own coverage, and is runnable in CI
+**Acceptance:** the generator loads all 898 joined rows, reports its own coverage, and runs in CI
 without a liblcm source tree.
 
----
+## `MOT-4` — emit the operation catalog for one family — M2
 
-## `MOT-4` — emit possibility-list CRUD — M2
+The output side of the gate, and the point where this plan diverges most from its predecessor.
+**Target LibLCM objects, not MiniLcm types.** Emit, per in-scope field of the chosen family:
 
-The output side of the ADR 0014 acceptance gate. Emit, for `PartOfSpeech`, `MoMorphType`/`MorphType`, and
-`LexEntryType`/`ComplexFormType`: model classes and properties; `GetReferences()`;
-`RemoveReference(id, time)` under the three fixed shape rules (**owner → delete self**, **`rel/atomic` →
-null it**, **`rel/col` → filter it**); sync helpers dispatched by `ComparisonClass`; `JsonPatchChange`-based
-edit changes; and `DeleteChange` registrations.
+- the enumerated `kind` string, `{group}/{construct}/{verb}{Noun}`, one per field — never a runtime
+  field-name parameter;
+- the closed payload schema for that kind;
+- the LibLCM lowering;
+- the read-back snapshotter that produces the effect for that field;
+- registration into `OperationKindRegistry`.
 
-**Not emitted, because the manifest cannot know it:** `CreateChange` bodies (they must construct a
-*valid* entity), HCLoader validation rules, EF relationship configuration, enum members (they live
-outside `MasterLCModel.xml` — only a type-name override file exists), and custom fields (a pure runtime
-concept, `AddCustomField`, absent from the model).
+**Not emitted, because the manifest cannot know it:** entity-construction validity for `create`,
+HCLoader validation rules, enum members (they live outside `MasterLCModel.xml`; only a type-name
+override file exists), and custom fields (a pure runtime concept, `AddCustomField`, absent from the
+model).
 
-**Acceptance** is `CRDT-1`'s, in someone else's repo: the generated code replaces the shipped
-hand-written versions and `LcmCrdt`'s existing tests pass **unmodified**. Correctness here is not
-established by the design being elegant — it is established by regenerating code that already passes its
-tests.
+**Acceptance:** every generated kind for the family round-trips author → DryRun → Apply → Receipt
+against a real project, with effects read back rather than replayed. The one hand-written kind
+(`lexical/sense/setGloss`) is regenerated and its existing tests pass **unmodified** — correctness is
+established by regenerating code that already passes, not by the design being elegant.
 
-**What passing does not license.** 37 in-scope rows: 34 `unordered`, 3 `positional`, zero `feeding`, zero
-`index-as-identity`, zero `AssessPoisonsCache=yes`. It exercises `set|clear` (20), `create|delete` (8),
-`addRef|removeRef` (4), and `create|delete|move|reparent` (3). It licenses the mechanical majority and
-says nothing about the ordered-grammar minority — precisely the residue ADR 0013 flagged as the real
-problem.
+**What passing does not license.** The possibility-list family is 37 in-scope rows: 34 `unordered`, 3
+`positional`, zero `feeding`, zero `index-as-identity`, zero `AssessPoisonsCache=yes`. It licenses the
+mechanical majority and says nothing about the ordered-grammar minority.
 
----
+## `MOT-11` — scratch-cache DryRun — M2
 
-## `MOT-5` — map ordered and reference kinds onto the primitives — M3
+Implement [ADR 0016](adr/0016-scratch-cache-copy-not-undo.md): one expensive `CreateCacheCopy` from
+the live cache into a `kMemoryOnly` pristine scratch, cheap surrogate-level fan-out from that scratch
+per dry run and per PanGloss run, and a live-cache footprint probe gating re-copy. Apply stays on the
+live cache.
 
-Once `HAR-3`, `HAR-5`, and `HAR-6` exist, the generator needs to target them:
+**Deliverables**
 
-| Manifest kind | Target |
-| --- | --- |
-| `feeding` (2 fields) | `HAR-3` converging sequence |
-| `positional` (3 in the gate; more later) | `HAR-3`, or an explicit decision to keep LWW |
-| `index-as-identity` (3 fields) | `CRDT-3` keyed map — **not** an ordered collection |
-| `addRef\|removeRef` (34 fields) | `HAR-5` reference-set policy, uniformly |
-| `create\|delete\|move\|reparent` (32 fields) | `HAR-6` cross-owner move rule |
+1. The scratch lifecycle, including a prerequisite-DAG mode that applies a topologically-sorted
+   closure of un-applied Proposals to one derived scratch.
+2. **Two measurements, before the design is built on**: `CreateCacheCopy` from a hot Sena-3-scale
+   cache into `kMemoryOnly`, and a derived copy from a pristine scratch. The whole value of the
+   pristine-scratch layer is the ratio between them, and both are currently asserted from the code
+   path rather than measured. `CreateCacheCopy` has zero callers in liblcm or FieldWorks.
+3. Retirement of `CacheReusability`, `RollbackCacheInvalidator`, and
+   `DerivedCachePoisoningOperationKinds` once the scratch path is the only dry-run path.
 
-**Acceptance:** for each kind, the generated code names the primitive rather than reimplementing it, and
-a generated field of that kind is indistinguishable in behaviour from a hand-written one using the same
-primitive.
+**Acceptance:** a dry run never mutates the live cache; a poisoned scratch costs a rebuild, not a
+session; the DAG closure produces the same effects as applying the closure serially.
 
----
+## `MOT-12` — FieldWorks in-process adapter — M3
 
-## `MOT-6` — semantic + lowering layer, construct 1 — M5
+The `net48` seam. Marshal to the UI thread, pass FieldWorks' own `LcmCache`, supply the applier
+identity, call `Save`, invalidate the parser and UI. The Runner is already `netstandard2.0` and takes
+a cache it does not own, so no Runner API changes.
 
-**This is the actual design work** that ADR 0013 left standing after it withdrew the runner. Everything
-above is mechanical; this is not.
+**Acceptance** is Gate 1 from [fieldworks-crdt-integration-research.md](fieldworks-crdt-integration-research.md):
+one lexical operation previewed and applied through a FieldWorks-owned surface, on the UI thread, as
+one undoable UOW, rejecting stale or wrong-type targets, replayable idempotently, surviving
+save/reload, and reconciling a crash before and after save.
 
-Scope: one grammar construct. The semantic vocabulary (a named, reusable unit of intent — the sense in
-which the product is called *Motif*), and its lowering into the concrete changes `MOT-4`'s output can
-apply.
+## `MOT-13` — `System.Text.Json` on `net48` — M3
 
-Two constraints inherited from settled decisions:
+FieldWorks has **no STJ reference today** — it uses `Newtonsoft.Json 13.0.4`. `SIL.Motif.Contract`
+pulls STJ 8.0.5 plus six transitive `System.*` packages into a runtime where binding redirects are
+historically painful, and FieldWorks' `Directory.Packages.props` already carries a scar in exactly
+that area (`System.Memory 4.6.3`, pinned with a comment about a ParatextData conflict).
 
-- **Preconditions live in the proposal, never in the change** (D5). Baseline evidence is an *observation
-  carried by the proposal envelope*, evaluated at review/apply time and surfaced as drift. A precondition
-  inside a merging change makes the outcome depend on evaluation position, and two replicas that resolve
-  it differently diverge permanently. What crosses into history is unconditional.
-- Construct naming is **not mechanical** (issue B19), and 17 manifest rows are multi-construct (B20).
-  Both block this item and neither is resolved by the generator.
+Mitigating: FieldWorks sets `AutoGenerateBindingRedirects` and `GenerateBindingRedirectsOutputType`.
 
-**Acceptance:** M4's gate, jointly with `CRDT-4` and `CRDT-5` — one construct merges across two replicas
-**and** round-trips through Chorus Send/Receive.
+**Do not resolve this by using Newtonsoft on `net48`.** RFC 8785 canonical bytes must be identical
+across runtimes or every intent and effect digest diverges between FieldWorks and the CLI — that is
+[ADR 0007](adr/0007-cross-language-digest-determinism.md)'s entire subject. Same JSON stack
+everywhere.
 
----
-
-## `MOT-7` — the remaining 29 constructs — M6
-
-30 constructs, 75 reference fields, 38 classes. The point of the generator is that this is **30 reviewed
-diffs rather than 30 hand-built constructs.**
-
-Sequencing is already decided by [ADR 0012](adr/0012-build-order-hc-spine-first-kinds-generated.md): of
-150 HermitCrab-reachable in-scope fields, **113 are grammar and only 32 lexical**, so grammar leads. L0
-(the ~37 non-grammar fields `HCLoader` actually reads) then G0–G2, then the lexical backfill driven by
-the non-HermitCrab consumers rather than by the parser.
-
-**Known blockers that are not generator work:** L0's object-creation closure is uncomputed (B21), and
-roughly 300 of 473 in-scope rows were classified by heuristic rather than by citation (B17, B18) —
-which matters more than it did, because generation reads those classifications directly. Verify-lazily
-versus dedicated-audit is undecided.
-
----
-
-## `MOT-8` — the ordered-grammar proof — M6
-
-**The highest-risk item in this repository, and the one the M2 gate deliberately does not cover.**
-
-Two `feeding` fields — phonological rule order, where order encodes feeding and bleeding — and three
-`index-as-identity` fields — alpha variables, where position is an identifier. ADR 0013's surviving
-finding is that these **cannot ride on a last-writer-wins scalar order**. That was recorded as a defect
-report against Harmony's `SetOrderChange`, and `HAR-3` is the answer to it.
-
-**Acceptance**
-
-- Two people concurrently reordering phonological rules converge to one order, and that order is
-  linguistically defensible — not merely identical on both replicas. Convergence to a *wrong* grammar is
-  a failure, and this is the case where the CRDT-correct answer and the linguistically-correct answer can
-  differ.
-- The three alpha-variable fields survive a concurrent edit under `CRDT-3`'s keyed representation.
-- The residue is proven against real phonological rule order from a real project, not a synthetic
-  fixture.
-
-
----
+**Acceptance:** a `net48` host loads the Contract and computes an intent digest byte-identical to the
+`net10.0` CLI's, for a fixture Proposal.
 
 ## `MOT-9` — reviewed world equals applied world — M4
 
-Define the portable Baseline Token, immutable Dry Run binding, one-use Apply Authorization, Drift
-Refusal, Receipt, and reconciliation states described in
-[plan-product-architecture.md](plan-product-architecture.md). The authored Proposal remains the only
-semantic input; a generated LibLCM Mutation Plan is output-only.
+**Partly built.** `BoundDryRunAnchor`, `FootprintProbe.ComputeCurrentFootprintDigest`, the
+drift-refusal precondition, `Receipt`, and `ProjectAppliedLog` all exist and are tested for one
+operation kind. What remains is the portable Baseline Token, one-use apply authorization, and the
+reconciliation state machine across UOW / save / receipt boundaries.
 
-**Acceptance:** two agents begin at one Baseline Token; one Proposal applies in authored order and
-the other refuses Drift before mutation. Injected failures at every UOW/save/history/Receipt boundary
-produce rollback or `NeedsReconciliation`, never blind retry.
+The authored Proposal remains the only semantic input; the LibLCM Mutation Plan is output-only.
+
+**Acceptance:** two agents begin at one Baseline Token; one Proposal applies in authored order and the
+other refuses drift before mutation. Injected failures at every UOW/save/receipt boundary produce
+rollback or `NeedsReconciliation`, never blind retry.
 
 ## `MOT-10` — Proposal review domain — M4
 
-Define immutable Proposal revisions, typed Check Runs, human/AI Reviews, versioned policy Decisions,
-semantic owner routing, and stale-binding rules. These are application records over Harmony history,
-not a competing change transport.
+Immutable Proposal revisions, typed Check Runs, human and AI Reviews, versioned policy Decisions,
+semantic owner routing, stale-binding rules.
 
 **Acceptance**
 
 - any change to Proposal, baseline, relevant artifact, tool contract, interpretation version, or
   policy revision invalidates the former Check Runs and Decision;
 - static-analysis Check Runs are first-class immutable facts with the same exact-input and stale
-  binding as Dry Run, Assessment-correlation, conformance, privacy/security, and policy checks;
-- AI actors are labeled, may recommend or abstain, and cannot satisfy a human/native-speaker role by
-  implication; permitted AI roles are declared per operation family, and any autonomous approval or
-  apply policy is versioned, independently checked, provenance-bound, least-privileged, expiring,
-  and audited;
-- granular operation/effect comments coexist with Proposal-level atomic apply;
+  binding as Dry Run, conformance, and policy checks;
+- AI actors are labeled, may recommend or abstain, and cannot satisfy a human or native-speaker role
+  by implication; permitted AI roles are declared per operation family, and any autonomous approval
+  policy is versioned, independently checked, provenance-bound, least-privileged, expiring, audited;
+- granular operation and effect comments coexist with Proposal-level atomic apply;
 - payload and provenance digests bind the approved candidate through its Receipt;
-- generated-output provenance binds the LibLCM model, manifest, crosswalk, generator, dependency
-  lock, build environment, and output digests.
-This item is why M5 is not simply "finish the volume". Open question feeding it, still unanswered in
-[grill-decisions.md](grill-decisions.md): *what happens when two people concurrently reorder
-phonological rules.*
+- generated-output provenance binds the LibLCM model, manifest, generator, dependency lock, build
+  environment, and output digests.
+
+## `MOT-14` — Receipt store and sync — M4
+
+Receipts must be durable and shareable. The applied log is thin by design —
+`(proposalId, formatVersion, timestamp, user, intentDigest, description)` — it records *that*
+something applied, not what it did. The effects live in the `Receipt`, which today is returned and
+never durably stored.
+
+**Lexbox is the home.** It already has organisations, projects, users, and a permission service.
+Proposals and Receipts are immutable, content-addressed documents with frozen identities, so they need
+an object store and an HTTP API, not a merge engine — no CRDT is required to share them. Sharing is
+**optional per project**; a linguist working alone is never obliged to publish.
+
+Review state — comments, approvals, decisions — is mutable, and is an ordinary server database unless
+offline review becomes a requirement.
+
+**Acceptance:** a Proposal authored on one machine is visible, with its Receipt and effect digest, to
+a permitted collaborator on another; an unshared project never leaves the machine.
+
+## `MOT-6` — semantic + lowering layer, construct 1 — M5
+
+**The actual design work.** Everything above is mechanical; this is not. One grammar construct: the
+named, reusable unit of intent (the sense in which the product is called *Motif*) and its lowering
+into the generated operations `MOT-4` emits.
+
+Two inherited constraints:
+
+- **Preconditions live in the Proposal, never in the operation.** Baseline evidence is an observation
+  carried by the envelope, evaluated at review and apply time and surfaced as drift. What crosses into
+  the applied record is unconditional.
+- Construct naming is **not mechanical** (issue B19), and 17 manifest rows are multi-construct (B20).
+  Both block this item and neither is resolved by the generator.
+
+**Acceptance:** one construct authored, dry-run, reviewed, applied, saved, and round-tripped through
+Chorus Send/Receive without the applied log being corrupted — see
+[the standing Chorus risk](harmony-adoption-report.md#standing-risk--chorus-does-not-merge-the-applied-log).
+
+## `MOT-15` — PanGloss snapshot producer and FFI — M5
+
+Two halves already exist and have never been connected. `HCLoader.Load(cache, logger)` takes a live
+cache and returns a HermitCrab `Language`; `pg-ffi` is a `cdylib` annotated "for P/Invoke from net48"
+whose `hc_grammar_load` accepts HC XML bytes in memory.
+
+**Do both, in this order.**
+
+1. **HC XML now.** `HCLoader.Load` → `XmlLanguageWriter` → `hc_grammar_load` → `hc_parse_batch`. No
+   `.fwdata`, no copy, no save, no lock. Zero new code on either side beyond a possible
+   stream overload. This is what makes reparse-after-apply feel real in the UI.
+2. **pg-snapshot next.** HC XML uses session-scoped `Hvo` integers that "drift across FieldWorks
+   sessions and are therefore unusable as a durable interchange key", where the snapshot format uses
+   FieldWorks GUIDs. Motif's effects are keyed by canonical ID, so an `Hvo`-keyed parser result cannot
+   be correlated with a Proposal's effect set. Write the producer in **C#** — Rust cannot read a
+   managed `LcmCache`; `pg-fwdata` is a file reader — and add one FFI entry,
+   `hc_grammar_load_snapshot`, calling `pg_grammar::compile_project`.
+
+**Acceptance:** a byte-equality conformance test proving the C# producer and `pg-fwdata` emit
+identical snapshots for the same project. The format is deterministic by construction, so this is a
+legitimate assertion, and it is the only thing preventing two producers diverging into grammars that
+parse differently. Build it with the producer, not after it.
+
+**Blocker outside this repo:** PanGloss has no release pipeline — CI is `ubuntu-latest` only, no
+artifact upload, no publish job. See [plan-cross-repo.md](plan-cross-repo.md).
+
+## `MOT-7` — the remaining 29 constructs — M6
+
+30 constructs, 75 reference fields, 38 classes. The point of the generator is that this is **30
+reviewed diffs rather than 30 hand-built constructs.**
+
+Sequencing is decided by [ADR 0012](adr/0012-build-order-hc-spine-first-kinds-generated.md): of 150
+HermitCrab-reachable in-scope fields, **113 are grammar and only 32 lexical**, so grammar leads. L0
+(the ~37 non-grammar fields HCLoader actually reads), then G0–G2, then the lexical backfill driven by
+non-HermitCrab consumers rather than by the parser.
+
+**Known blockers that are not generator work:** L0's object-creation closure is uncomputed (B21), and
+roughly 300 of 473 in-scope rows were classified by heuristic rather than by citation (B17, B18) —
+which matters more under generation, because the generator reads those classifications directly.
+Verify-lazily versus dedicated-audit is undecided.
+
+## `MOT-8` — ordered-grammar review proof — M6
+
+**Re-scoped by Plan A, and smaller than it was.** The old item asked whether two people concurrently
+reordering phonological rules converge. Under single-writer LibLCM with Chorus between people, that is
+Chorus's question, not ours.
+
+What survives is a review problem, and it is still the highest-risk item here:
+
+- Two `feeding` fields — phonological rule order, where order encodes feeding and bleeding. A reorder
+  is a small diff with a large semantic consequence. **Does a reviewer see that?** Effects are keyed
+  by identity and carry explicit moves rather than positional rewrites, which is necessary but may not
+  be sufficient.
+- Three `index-as-identity` fields — alpha variables, where position *is* the identifier. Assigned by
+  first-appearance traversal with a hard **24-per-rule ceiling that throws and kills the whole grammar
+  load**. A pre-apply check must simulate the exact traversal rather than counting distinct
+  constraints.
+
+**Acceptance:** a reorder of real phonological rules from a real project produces a review a linguist
+can judge, and an alpha-variable edit that would exceed 24 is refused before apply, not discovered at
+parse time.
 
 ---
 
 ## Cross-links
 
-- Milestones, dependency edges, alignment rules: [plan-cross-repo.md](plan-cross-repo.md)
-- Primitives this depends on: [plan-harmony.md](plan-harmony.md)
-- Where the generated output lands: [plan-lcmcrdt.md](plan-lcmcrdt.md)
+- The decision this plan implements: [harmony-adoption-report.md](harmony-adoption-report.md)
+- Work in other repositories: [plan-cross-repo.md](plan-cross-repo.md)
+- What was withdrawn from LcmCrdt: [plan-lcmcrdt.md](plan-lcmcrdt.md)
 - Product scope and phases: [motif-overall-plan.md](motif-overall-plan.md)
-- Decisions: [grill-decisions.md](grill-decisions.md) ·
-  [ADR 0013](adr/0013-harmony-is-the-change-mechanism.md) ·
-  [ADR 0014](adr/0014-generate-the-crdt-layer-from-masterlcmodel.md) ·
-  [ADR 0012](adr/0012-build-order-hc-spine-first-kinds-generated.md)
+- Architecture: [plan-product-architecture.md](plan-product-architecture.md)
+- ADRs: [0016](adr/0016-scratch-cache-copy-not-undo.md) ·
+  [0014](adr/0014-generate-the-crdt-layer-from-masterlcmodel.md) ·
+  [0012](adr/0012-build-order-hc-spine-first-kinds-generated.md) ·
+  [0007](adr/0007-cross-language-digest-determinism.md) ·
+  [0006](adr/0006-engine-reality-apply-readback-preflight.md)
 - Open issues named above: [issues.md](issues.md) (B17, B18, B19, B20, B21)
+- Open questions: [grill-plan-a.md](grill-plan-a.md)

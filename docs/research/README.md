@@ -19,4 +19,4 @@ Research notes preserve evidence and independent reviews. They are not decisions
 
 The plan consequences are preserved in
 [the controlled-materialization amendment](../plan-amendment-2026-08-01-controlled-materialization.md).
-Unresolved choices are queued in [the plan grill](../grill-plan-2026-08-01.md).
+Unresolved choices are queued in [the Plan A grill](../grill-plan-a.md).

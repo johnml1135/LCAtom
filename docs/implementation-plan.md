@@ -4,7 +4,7 @@
 > This document plans the change-set contract and runner that
 > [ADR 0013](adr/0013-harmony-is-the-change-mechanism.md) **withdrew**. Do not start work from its
 > phases. **The live plans are [plan-cross-repo.md](plan-cross-repo.md)** and the three it aligns —
-> [motif](plan-motif.md), [harmony](plan-harmony.md), [LcmCrdt](plan-lcmcrdt.md).
+> [Plan A](plan-motif.md) and [other repositories](plan-cross-repo.md).
 >
 > Its value now is the honest status marker on each phase — what was actually built versus planned,
 > which is why the shipped `SIL.Motif.*` code is described accurately here and nowhere else.
