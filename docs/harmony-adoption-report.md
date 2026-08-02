@@ -175,9 +175,13 @@ The vocabularies should converge; the substrates cannot. Concretely:
    generated catalog should be the source both draw from.
 2. **Two lowerings.** The same verb lowers to a LibLCM unit of work in FieldWorks and to an `IChange`
    in FwLite. That is the only honest way to serve two engines.
-3. **Harmony work is re-scoped, not cancelled.** `HAR-3`, `HAR-5`, `HAR-6`, and `HAR-7` are real
-   improvements for FwLite. They are not Motif blockers, and `plan-cross-repo.md`'s milestone ladder
-   currently sequences grammar work behind them. That should be corrected.
+3. **Harmony work is dropped from the critical path, and nobody loses anything they asked for.**
+   `HAR-3`, `HAR-5`, `HAR-6`, and `HAR-7` were not requested by FwLite or its users — they were
+   *necessitated by the original plan*, which routed grammar through the CRDT and so had to make the
+   CRDT safe for grammar's ordering, reference, and reparenting semantics. Remove that routing and the
+   need goes with it. They remain available as genuine FwLite improvements if a FwLite requirement ever
+   asks for them, but they stop being anybody's blocker. `plan-cross-repo.md`'s milestone ladder
+   currently sequences grammar work behind them and should be corrected.
 
 This is not "we looked at Harmony and said no." It is "Harmony is the right substrate for the product
 it serves, and the wrong substrate for a `net48` host with a different authority — and the part worth
@@ -217,15 +221,6 @@ linguist working alone is not obliged to publish.
 Review state — comments, approvals, decisions — is the mutable part, and that is an ordinary server
 database unless offline review becomes a requirement.
 
-### One unchecked risk worth testing early
-
-`ProjectAppliedLog` writes into `LexDb.Resources`, inside the `.fwdata`, and Chorus transports and
-three-way-merges the `.fwdata`. Two linguists applying different proposals offline and then
-synchronising means **Chorus merges our applied log**, with generic field-level rules and no knowledge
-of what a `proposalId` or an `intentDigest` means. Duplicate, dropped, or field-crossed entries are
-all plausible and none are currently detected. This is cheap to test with a disposable project and
-should be done before the applied log is relied on for approval continuity.
-
 ---
 
 ## Evidence
@@ -259,3 +254,25 @@ All claims above were read from source in the repositories listed, not from prio
 - Whether Chorus merges `LexDb.Resources` sanely (above).
 - Whether the shared-vocabulary convergence in the recommendation is worth a generated cross-check, or
   whether human review of the correspondence is sufficient.
+
+---
+
+## Standing risk — Chorus does not merge the applied log
+
+**Neither proposal creates this and neither proposal fixes it.** It is recorded here because it bounds
+what "collaboration" can currently mean, whichever proposal is adopted.
+
+`ProjectAppliedLog` writes into `LexDb.Resources`, inside the `.fwdata`. Chorus transports and
+three-way-merges the `.fwdata` with generic field-level rules and no knowledge of what a `proposalId`
+or an `intentDigest` means. Two linguists applying different proposals offline and then synchronising
+means Chorus merges our approval records; duplicate, dropped, or field-crossed entries are all
+plausible and none are currently detected.
+
+The consequence is a limit, not a defect introduced by this work: **the applied log is reliable
+per-machine and unreliable across a Send/Receive boundary**, so approval continuity cannot today be
+shared between collaborators through the project file. That is precisely the gap
+[receipts syncing to Lexbox](#receipts-and-sync) is meant to close — receipts held outside the
+`.fwdata`, in a store that understands what they are, rather than merged blindly inside it.
+
+Worth testing with a disposable project to learn exactly how it fails, but the fix is the Lexbox
+receipt store either way, not a Chorus merge driver.
