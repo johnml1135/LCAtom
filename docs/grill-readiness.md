@@ -7,11 +7,12 @@ of what looked like a decision was a fact nobody had gone and read.*
 
 | | Count | Meaning |
 | --- | --- | --- |
-| ✅ **Closed** | 12 | Answered from source. Do not grill; read the answer. |
-| 🔬 **Researching** | 8 | Investigation in flight. Do not grill until it lands. |
+| ✅ **Closed** | 20 | Answered from source. Do not grill; read the answer. |
 | 📐 **Needs a spike** | 1 | Cannot be read from source — must be built and measured. |
 | 🔴 **Escalated to a task** | 1 | `E19` — research found a real unclosed gap, not a question. |
-| ❓ **Yours** | 30 | Genuinely a decision. This is the grill. |
+| ❓ **Yours** | 34 | Genuinely a decision. This is the grill. |
+
+**All research has landed.** Nothing is in flight.
 
 Three of the twelve closures (`F23`, `B9`, `J42`) did not vanish — they turned into **concrete
 proposals with named alternatives**, each leaving one narrow residual (`F23a`, `B9a`, `J42a`). That is
@@ -34,16 +35,14 @@ question costs an hour.
 | `F23` | **Splits.** Content equality is *already* canonical if keyed on the **effect** digest, which the contract already requires stable under lowering (`change-set-contract.md:548`). The intent digest needs four more freezing rules. → residual `F23a`. |
 | `B9` | Kubernetes is the closest precedent — and ADR 0009 §1 already borrowed its `group/construct/verb` naming. Policy drafted: additive-minor, digest-meaning-changes-major, **dual-floor** window. → residual `B9a`. |
 | `J42` | **Already decided.** Resolved operations at rest with the query as non-hashed provenance is verbatim ADR 0009 §1 (`adr/0009:38-40`). The query-as-truth alternative is the `managedFields` pattern motif already rejected. → residual `J42a`, a Terraform-style staleness gate. |
-
-## 🔬 Researching now
-
-`A3` `kMemoryOnly` constructibility · `A4` STJ on `net48` · `B8` L0 creation closure ·
-`C10` `AssessPoisonsCache` row count · `C13` alpha-variable traversal — *all five were mislabelled as
-decisions; they are countable.*
-
-`B6` construct naming · `B7` classification evidence quality · `G27` does the data support the
-proposed taxonomy — *the generator reads these columns directly, so this is the biggest hidden risk in
-Plan A.*
+| `A3` | **Yes.** `IProjectIdentifier` is 7 trivial public members; `MemoryOnlyBackendProvider` being internal is irrelevant because liblcm wires it itself from `projectId.Type`. Write ~15 lines. The scratch need not live on disk. |
+| `A4` | **Clean, premise wrong.** FieldWorks *already* resolves `System.Text.Json 9.0.14` on net48, above Motif's 8.0.5 floor, via a `Directory.Packages.props` pin made for ICU reasons. No new pins. |
+| `B8` | **24 fields / 10 classes, not 37 / 19** — 13 of the ADR 0012 rows are never read by `HCLoader`. Minimal `LexEntry` needs 4 classes; full L0 pulls 5 grammar classes forward. → `B8a`. |
+| `C10` | **Exactly 4 rows**, all `Group=lexical`. Small enough that the decision is now cheap. → `C10a`. |
+| `C13` | **Hand-written, and already written.** Call `IPhRegularRule.FeatureConstraints`; the traversal dispatches on `ClassID` through three classes the manifest never names. |
+| `B6` | **B19 understated, B20 reconciled.** Only 26.4% of construct names are mechanical; 41.5% have no relationship to any class. B20's fan-out cannot be done from `Class`/`Field` alone — it needs runtime owner identity. |
+| `B7` | **The risk is 61 rows, not 473.** Structural columns checked 22/22 clean; `ComparisonClass` is mechanical for 405 of 412; errors concentrate in the 61 hand-classified rows (~23% flawed when sampled). **B18's ~300 is really 406.** → `B7a`. |
+| `G27` | **The data says no.** Only 52% of rows land in exactly one proposed class; 73 `lists`/`system` rows have no bucket, and classes 3/4 have zero rows to test against. |
 
 ## 🔴 Escalated — research raised it, not closed it
 
@@ -120,8 +119,9 @@ this is.
 | **Ratify** *(cheap — pick one of two written positions)* | `F23a` | Adopt the four canonical-diff freezing rules as drafted, or contest one? |
 | | `B9a` | Adopt the k8s-shaped versioning policy, calibrating the dual floor when a real cadence exists? |
 | | `J42a` | Force a resolved batch re-applied against a moved baseline through the existing pre-flight drift path, Terraform-style? *(Recommend yes.)* |
-| **Quality** | `B7` follow-up | Once the classification census lands: verify-lazily or dedicated audit? |
-| | `C10` follow-up | Once the count lands: keep, retire, or repoint `AssessPoisonsCache`? |
+| **Manifest** *(all now bounded — the counts exist)* | `B7a` | Review all **61** non-default rows before the generator ships, and spot-audit the other 412? One sitting, not a re-audit. |
+| | `B8a` | ADR 0012's L0 query yields **13 phantom fields** and understates the grammar dependency. Re-scope L0 to the confirmed 24, or fix `HcReachable` first? |
+| | `C10a` | **4 rows.** Keep, retire, or repoint `AssessPoisonsCache`? |
 
 ---
 
@@ -137,6 +137,20 @@ this is.
 5. **The bidirectional block** (`F22`, `F24`, `F26`) — the largest single design commitment.
 6. **The three ratifications** (`F23a`, `B9a`, `J42a`) — minutes each, since the alternatives are
    written down. Good filler when the harder questions stall.
+7. **The three manifest follow-ups** (`B7a`, `B8a`, `C10a`) — each is now a choice over a known number
+   rather than an open worry.
 
-**Do not grill the 12 closed items or the 8 in flight.** That is 20 of 52 — still over a third — that
-would otherwise have cost you decisions you did not need to make.
+**Do not grill the 20 closed items.** That is 20 of 56 — over a third — that would otherwise have cost
+you decisions you did not need to make. The eight that landed last were the five mislabelled
+"decisions" that were really counts, plus the three manifest-confidence questions.
+
+## What the research changed, not just answered
+
+Worth reading before the session, because three of these move the plan rather than a grill row:
+
+- **`E19` was recorded as closed and is not.** Phase 0 item 8's FLExBridge re-confirmation never
+  happened. Caveats now in ADR 0003 and the implementation plan.
+- **ADR 0012's L0 definition is unsound.** 13 of its 37 fields are never read by `HCLoader`, two via the
+  exact bare-name false-positive that `HcReachable` was introduced to fix.
+- **`issues.md` B18 understated itself by 106 rows** — but the risk turned out to be concentrated in 61
+  reviewable rows rather than spread across 473, which makes it cheaper, not more expensive.

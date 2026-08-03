@@ -33,17 +33,24 @@ The service locator is per-cache and `InitializeWritingSystemManager` runs on th
 sound. ICU initialisation is more global and was not traced. If they do not coexist, ADR 0016 needs a
 different home for the scratch.
 
-**A3. Is `IProjectIdentifier` publicly constructible with `Type = kMemoryOnly`?**
-`BackendProviderType.kMemoryOnly` is public and `MemoryOnlyBackendProvider` is internal. If the
-identifier cannot be built from outside liblcm, the scratch has to live on disk and A1's numbers
-change.
+**A3. [R→answered: yes, write ~15 lines]**
+[Findings](research/2026-08-03-five-computable-grill-items.md#a3). `IProjectIdentifier` is fully public
+with **7 trivial members**, none touching an internal type. `MemoryOnlyBackendProvider` being internal
+is irrelevant — `LcmServiceLocatorFactory.cs:151-156` wires it *inside* `SIL.LCModel` by switching on
+`projectId.Type`; the caller only has to report `kMemoryOnly`. liblcm's only public implementation
+(`TestProjectId`) is packable and already referenced by FieldWorks, but it is test infrastructure that
+drags NUnit and Moq along. **Write the class. The scratch does not have to live on disk, and `A1`'s
+numbers stand.**
 
-**A4. Does `System.Text.Json` land cleanly in FieldWorks' `net48` graph?** *(`MOT-13`)*
-FieldWorks has no STJ reference today. We would add STJ 8.0.5 plus six transitive `System.*` packages
-to a runtime where binding redirects are historically painful, and its `Directory.Packages.props`
-already pins `System.Memory 4.6.3` around a ParatextData conflict. Newtonsoft is **not** an escape
-hatch — [ADR 0007](adr/0007-cross-language-digest-determinism.md) requires byte-identical canonical
-JSON across runtimes. *If this fails, M3 needs a different answer and we should know early.*
+**A4. [R→answered: clean, and the premise was wrong]** *(`MOT-13`)*
+[Findings](research/2026-08-03-five-computable-grill-items.md#a4). **FieldWorks already has
+`System.Text.Json` in its resolved `net48` graph** — at **9.0.14**, above Motif's 8.0.5 floor, arriving
+transitively through `Microsoft.Extensions.DependencyModel`, which `Directory.Packages.props:44` pins
+for an unrelated ICU reason and `CentralPackageTransitivePinningEnabled` propagates to every project.
+Every floor in Motif's net462 dependency group is already met or exceeded, and NuGet resolves to the
+highest. `AutoGenerateBindingRedirects` is on repo-wide, covering the assembly-version gap by the same
+mechanism as the documented `System.Drawing.Common` fix (LT-22382). **No new pins required; M3 does not
+need a different answer.**
 
 ## B — Scope and vocabulary (blocks M2)
 
@@ -53,18 +60,54 @@ in-scope rows, all `unordered` or `positional`, zero `AssessPoisonsCache=yes` �
 prove *generation into LcmCrdt*, and the target has changed. Is the cheapest family still the right
 one when the acceptance test is now a LibLCM round trip?
 
-**B6. Construct naming is not mechanical, and 17 manifest rows are multi-construct.** **(carried,
-B19/B20)**
-Both block `MOT-6` and neither is resolved by the generator. Unchanged by Plan A; still unanswered.
+**B6. [R→sharpened] Construct naming is not mechanical, and 17 manifest rows are multi-construct.**
+**(carried, B19/B20)** [Audit](research/2026-08-03-manifest-trust-audit.md#6-construct-naming-b19-is-understated-not-overstated).
 
-**B7. Roughly 300 of 473 in-scope rows were classified by heuristic, not by citation.** **(carried,
-B17/B18)**
-This matters more under generation than it did under hand-authoring, because the generator reads
-`ComparisonClass` and `Verbs` directly and emits from them. Verify-lazily versus dedicated-audit is
-still undecided, and Plan A did not change the answer — only the cost of being wrong.
+**B19 is understated.** Only **26.4%** of the 53 construct names are `lowerFirst(Class)`; 32.1% need a
+`Cm`/`Mo`/`Ph`/`Fs` **prefix table** that is a lookup, not a transform, and is nowhere in the data; and
+**41.5% have no mechanical relationship to any class** — `featureStructure` spans 16 classes,
+`ruleContext` 11, `msa` 9. That grouping exists *only* in the hand-authored column. Worse, even the
+exact-match bucket is unsafe: B19's own `LexSense.Gloss` has `Construct=lexSense` yet ships as `sense`,
+a **second undocumented normalization** with no stated rule.
 
-**B8. L0's object-creation closure is uncomputed.** **(carried, B21)**
-Blocks `MOT-7` sequencing.
+**B20's 17 reconciles exactly** — 19 raw multi-construct rows minus 2 `derived-read-only`. But the
+ambiguity is not what it looks like: all 19 are plain structural fields with **one** meaning each.
+`CmPossibility` is one generic class FieldWorks reuses as storage for seven lists, so the ambiguity is
+*which list instance an object belongs to at runtime* — determined by its owner, a runtime fact.
+**B20's "fan out to one kind per construct" cannot be done from `Class`/`Field` alone.**
+
+**B7. [R→answered: the risk is 61 rows, not 473]** **(carried, B17/B18)**
+[Audit](research/2026-08-03-manifest-trust-audit.md). Better than feared in one way, worse in another.
+
+- **Trust the structural columns.** 22 of 22 direct `Kind`/`Sig`/`Card` checks against
+  `MasterLCModel.xml` matched exactly; all five Tier-A citations were byte-accurate.
+- **`ComparisonClass` is almost entirely mechanical** — derived from `Card` alone (405 of 412
+  `unordered` rows), with **7 hand-written overrides**.
+- **B18's number is wrong, pessimistically.** Not ~300 of 473 uncited but **406 (85.8%)**; even
+  counting named-source-without-line as evidence leaves 94.3% without a pinpoint citation.
+- **But the errors are concentrated in the 61 non-default rows**, where sampling 22 found ~5 wrong or
+  incomplete (~23%) — extrapolating to **12–15 rows**. Zero errors in 13 mechanical-default rows
+  checked, and the generating rule is trivial.
+
+**Decision (`B7a`) [D]:** review **all 61 non-default rows** before the generator ships and spot-audit
+the other 412? That is a bounded one-sitting task, not a manifest re-audit.
+
+**B8. [R→answered: 24 fields / 10 classes, not 37 / 19] (carried, B21 — now closed)**
+[Findings](research/2026-08-03-five-computable-grill-items.md#b8). The ADR 0012 filter reproduces
+exactly (37 rows / 19 classes), **but 13 of those 37 fields are not read by `HCLoader.cs` at all** —
+`ReversalIndex*`, `LexEtymology.*`, `LexPronunciation.Form`, `LexRefType.Members`, `LexSense.Senses`,
+`MoMorphType.Prefix`, `StText.RightToLeft`, and others. Two are bare-name false positives
+(`MoMorphTypeTags.kguidMorphPrefix`; HermitCrab's own `Direction.RightToLeft`) — **the exact failure
+mode `HcReachable` exists to correct.** All 13 carry Tier-C boilerplate rationale, corroborating `B7`.
+
+**Closure:** a minimal valid `LexEntry` needs **4 classes** — `LangProject` → `LexDb` → `MoMorphType`
+→ `LexEntry`, which cascades `LexSense` and `MoForm`. But fully populating the confirmed L0 field set
+reaches into **`PhEnvironment`, `MoInflClass`, `PartOfSpeech`, `MoInflAffixSlot`, `FsFeatStruc`** — all
+G0/G1 in ADR 0012's own build order, and pulled in by two `Group≠grammar` classes (`LexEntryRef`,
+`LexEntryInflType`). **A second cost ADR 0012 does not state.**
+
+**Consequence (`B8a`) [D]:** ADR 0012's L0 definition-by-query yields 13 phantom fields and understates
+the grammar dependency. Re-scope L0 to the confirmed 24, or fix `HcReachable` first?
 
 **B9. [R→named options] What is the versioning contract for the public intent surface?**
 `contractVersions` maps group → major/minor, but nothing yet says what a minor bump may change, what
@@ -87,11 +130,16 @@ motif has three runtimes on independent cadences plus agent callers who never re
 
 ## C — Engine behaviour (blocks M2/M5)
 
-**C10. Does `AssessPoisonsCache` still have a consumer?**
-ADR 0016 retires `DerivedCachePoisoningOperationKinds`, which was the column's only reader. The column
-is still the honest answer to "does this operation touch a forward-only derived cache," and the liblcm
-upstream fix would want it. Keep it, retire it, or repoint it — but decide, rather than leaving a
-manifest column that nothing reads.
+**C10. [R→counted: 4 rows] Does `AssessPoisonsCache` still have a consumer?**
+ADR 0016 retires `DerivedCachePoisoningOperationKinds`, which was the column's only reader — confirmed:
+`DryRun/DerivedCachePoisoningOperationKinds.cs`, read by `DryRun/ProposalDryRunner.cs`, is the single
+production consumer. **The in-scope population is exactly four rows**, all `Group=lexical`:
+`LexEntry.CitationForm`, `LexEntry.LexemeForm`, `MoForm.Form`, `MoForm.MorphType`. (Whole file: 4 `yes`,
+469 `no`, 425 blank.) Note `MoForm.Form`/`MorphType` carry it because of the **C15 correction** — they
+were originally missed and later added, so the column has a track record of being fixed rather than
+guessed.
+
+**Decision (`C10a`) [D]:** four rows is small enough that keep / retire / repoint is now cheap. Which?
 
 **C11. Is the liblcm `Rollback`/`Undo` hook asymmetry worth an upstream PR?**
 Not blocking — ADR 0016 routes around it by never reverting. It is still the correct fix, it would let
@@ -103,10 +151,19 @@ it now or accept the workaround permanently?
 necessary but may not be sufficient. This is the surviving half of the old ordered-grammar question,
 and it is a **review** question now, not a convergence one.
 
-**C13. What refuses an alpha-variable edit that would exceed 24 per rule?**
-The ceiling is a fixed 24-entry array, it throws, and it kills the whole grammar load. A pre-apply
-check must simulate the exact first-appearance traversal rather than counting distinct constraints.
-Where does that check live — generated per field, or hand-written per construct?
+**C13. [R→answered: hand-written, and it already exists]**
+[Findings](research/2026-08-03-five-computable-grill-items.md#c13). **Not manifest-derivable.**
+`IPhRegularRule.FeatureConstraints` is a synthetic `[VirtualProperty]`
+(`OverridesLing_Lex.cs:7536`), and its traversal is not a flat scan of the four documented roots — it
+dispatches on `ClassID` into `PhSequenceContext.MembersRS` and `PhIterationContext.MemberRA`, and for
+`PhSimpleContextNC` collects **`PlusConstrRS` before `MinusConstrRS`**, deduplicating by reference so
+first appearance wins (`:7595-7626`). Three classes and two fields the manifest never names, with an
+ordering rule flat `(Kind, Card, Sig)` columns cannot encode.
+
+**liblcm already centralizes this walk**, and two consumers treat its order as canonical —
+`GrammarJsonServices.cs:650` (`ordered: true`) and `M3ModelExportServices.cs:578,588`. **The pre-apply
+check should call `rule.FeatureConstraints`, not regenerate the traversal** — a direct liblcm call from
+the dry-run path, or a byte-for-byte port of `CollectVars` if liblcm cannot be referenced there.
 
 ## D — Product and boundaries (blocks M4)
 
@@ -242,12 +299,31 @@ becomes an AI/CLI path almost exclusively. That is a product decision with UI co
 
 ## G — Change classes
 
-**G27. [D] Are the proposed six classes the right cut, and what completes them?**
-Candidates offered for class 6 and beyond: **ordering** (`move`; 56 `positional` + 2 `feeding` rows),
-**reparenting** (32 rows), **schema and metadata** (custom fields, writing systems — non-undoable and
-one-way per ADR 0005), **shared vocabulary** (possibility lists, project-wide blast radius), and
-**compound graph operations** (`merge` / `replace`). Are these classes, sub-classes, or a different
-axis entirely?
+**G27. [R→the data says no; the decision is what to do about it]**
+[Audit §8](research/2026-08-03-manifest-trust-audit.md#8-does-the-proposed-change-class-taxonomy-partition-the-manifest-g27).
+The proposal's five row counts are **all verified exact**. But the table assumes `Verbs` alone
+determines class membership, and cross-tabulating against `Group` shows **only 52% of in-scope rows land
+unambiguously in one class**:
+
+| Bucket | Rows | % |
+| --- | ---: | ---: |
+| Class 1/2 clean | 246 | **52.0%** |
+| Same verbs but `Group ∈ {lists, system}` — **no home** | 73 | 15.4% |
+| Class 5 clean | 34 | 7.2% |
+| Straddles class 5 + ordering | 27 | 5.7% |
+| Straddles class 1/2 + ordering + reparenting | 32 | 6.8% |
+| Not authorable (`Verbs: n/a`) | 61 | 12.9% |
+
+Three specific breaks: the **73 `lists`/`system` rows have no bucket** (their homes are labelled
+*candidate*, not class); the **schema-and-metadata candidate describes the wrong rows** — it is defined
+around custom fields and writing systems, which per B12 have **zero manifest rows**, while the actual
+`system` group is 47 `LangProject` config rows; and **classes 3 and 4 have no data at all** — all 48
+text rows are `Scope=out`, so the cut cannot be tested for them, which is `H30`'s gate as a data fact.
+
+Candidates still open for class 6+: **ordering** (56 `positional` + 2 `feeding`), **reparenting** (32),
+**schema and metadata**, **shared vocabulary**, **compound graph operations** (`merge` / `replace`).
+**But the answer depends on `G28`** — a taxonomy for review routing can tolerate a row in two buckets;
+one for permissions cannot.
 
 **G28. [D] What is a change class *for*?**
 Review routing? Permissions? Risk tiering? Which diff operations are coverable? Coverage
