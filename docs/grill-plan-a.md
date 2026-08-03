@@ -175,9 +175,14 @@ Its effects equal the observed delta by construction, where an authored Proposal
 back from the engine per ADR 0006. Not a contradiction, but a second provenance class the review model
 does not currently distinguish. Should a reviewer be able to tell?
 
-**F25. [R] What does diffing two projects actually cost, and can two caches be open at once?**
-Only `LexSenseSnapshotter` exists — the Canonical Semantic Snapshot is proven for one type, not a
-project.
+**F25. [R→partly answered] What does diffing two projects actually cost, and can two caches be open at once?**
+Two caches **do** coexist — `PersistingLayerTests.BEPPortTests.cs:166-191` holds two live, including
+`kMemoryOnly` on both sides. But the source there is a *blank* project, so scale and
+inside-FieldWorks coexistence remain open. Cost is unmeasured and dominated by two cache loads plus a
+doubled `EnsureCompleteIncomingRefs` whole-project force-fluff. **The real blocker is upstream of
+diff**: `ObjectSnapshot` is `{CanonicalId, MultiUnicodeFields}` and cannot represent ownership,
+references, or sequence position, so 1 of 473 in-scope rows is snapshottable. See
+[findings](research/2026-08-03-bidirectional-and-test-coverage-findings.md).
 
 **F26. [D] Does diff replace or complement authored proposals as the primary human path?**
 If normal FieldWorks editing becomes the main way proposals get made, the authored-Proposal path
@@ -207,17 +212,33 @@ meaning. Same verb, categorically different review stakes.
 currently `out` / `not-domain-reachable`, and both Plan A and the README say text is out. Classes 3
 and 4 reverse that. This is a new bounded context, not extra volume in an existing one.
 
-**H31. [R] Is there any durable occurrence identity, or only `Segment` + index?**
-The known hard problem: text edits move or invalidate positional identity, and a text-specific anchor
-contract was named as a prerequisite before text becomes authoritative. Everything in classes 3 and 4
-depends on the answer.
+**H31. [R->answered: no, and it is systemic]**
+`AnalysisOccurrence` is a plain C# class, **not a `CmObject`** - no GUID, never persisted, `Equals` is
+`(Segment, Index)`. On any edit the paragraph re-segments, leftover `Segment` objects are *deleted*,
+and analyses are re-attached by a best-effort heuristic on lowercased word string plus position whose
+own comment says *"Apply various heuristics."* `TextTag` and the discourse chart use the same scheme.
+**A durable occurrence anchor must be built; nothing in the model can be repurposed.**
 
-**H32. [R] Does approving an analysis bind to the occurrence or to the wordform?**
-If approving analysis X for wordform W applies to every occurrence of W, then "a manual analysis" is
-not a per-occurrence test and the unit-test analogy needs restating.
+**H32. [R->answered: BOTH, on two separate axes - the most consequential finding]**
+`ApproveAnalysis(occ, allOccurrences, ...)` gates *repointing other occurrences* on `allOccurrences`,
+but `FinishSettingAnalysis` sits **outside** that branch and always sets
+`DefaultUserAgent.SetEvaluation(newWa, Opinions.approves)`. So a manual analysis is **two facts**:
+**A** - this `WfiAnalysis` is human-approved (global, durable `WfiAnalysis` GUID); **B** - this
+occurrence uses it (`Segment` + index, no durable identity).
 
-**H33. [R] How are human approval and parser production distinguished in the model?**
-The test model depends on being able to say "a human asserted this", not "something asserted this".
+**Consequence, now `H32a` [D]:** tests hang on Fact A and are viable *now*; coverage hangs on Fact B
+and is blocked on `H31`. **Should the test half be sequenced first and coverage treated as a research
+track**, rather than carrying classes 3 and 4 as one body of work?
+
+**H33. [R->answered: cleanly, with one provenance gotcha]**
+`CmAgent.Human` plus owned `Approves`/`Disapproves` singletons referenced from the analysis's
+`Evaluations`. `Opinions` is tri-state (`disapproves=0, approves=1, noopinion=2`), so "disapproved" is
+distinct from "no opinion" for humans *and* parsers. Fixed GUIDs exist -
+`kguidAgentDefUser = 9303883A-AD5C-4CCF-97A5-4ADD391F8DCB`, plus XAmple, HermitCrab, and Computer.
+
+**Gotcha, now `H33a` [D]:** `DefaultParserAgent` switches GUID based on `ActiveParser`, so "the parser
+agent" is not one identity across a project's history if the engine changes. Does provenance record
+the agent GUID, the engine, or both?
 
 **H34. [D] Are text edits themselves in scope, or only analyses attached to text?**
 Class 3 says "Texts". Adding, editing, and deleting *text content* is a much larger surface than
@@ -226,28 +247,51 @@ separate classes.
 
 ## I — Tests and coverage
 
-**I35. [R] Can a PanGloss analysis be mechanically compared to a FieldWorks `WfiAnalysis`?**
-The whole "failing test" definition rests on this. A `WfiAnalysis` is a graph of morph bundles
-pointing at GUID-bearing LibLCM objects; a PanGloss result comes from a compiled grammar. If the
-mapping is lossy or heuristic, "not in the set of valid analyses" is not mechanically decidable.
-**This is the single highest-risk assumption in the proposal.**
+**I35. [R→answered: yes, with a caveat that becomes a new decision]**
+**Yes.** `ParserReport.cs:380-390` already computes exactly this in production —
+`NumUserApprovedAnalysesMissing` counts human-approved analyses the parser cannot produce. On the
+`.fwdata` path PanGloss morpheme identity **is** the LibLCM MSA GUID (`lexicon.rs:301,309`), and
+`pg-assess` already has digest-keyed exact-structural set comparison.
+
+**The replacement risk — now `I35a` [D]:** PanGloss's `AnalysisIdentity` carries no **allomorph** and
+no **sense** identity, where `WfiMorphBundle` carries `MorphRA`, `MsaRA`, *and* `SenseRA`. Two
+analyses differing only in allomorph or sense collapse to one PanGloss identity — **false agreement**,
+the unsafe direction. Accept as a declared limitation, or build a richer identity?
+
+**I35b. [D] Whose analysis-equality definition wins?**
+FieldWorks already ships **two disagreeing** implementations: `WfiWordformServices.DuplicateAnalyses`
+checks `Sense`/`Msa`/`Morph` **plus category** and requires several fields empty;
+`ParseAnalysis.MatchesIWfiAnalysis` checks `Morph`/`Msa`/`InflType` only and **ignores category and
+glosses**. Neither is documented as canonical. An analysis-identity profile has to reconcile them, on
+top of PanGloss's own allomorph- and sense-blindness (`I35a`).
 
 **I36. [D] Is "one authoritative analysis per occurrence" linguistically defensible?**
 Genuine ambiguity exists, and the proposal's own disambiguation requirement implies ambiguity is a
-real state rather than a failure. Forcing one analysis may encode false certainty.
+real state rather than a failure. Forcing one analysis may encode false certainty. Note the model
+already distinguishes **disapproved** from **no opinion**, so a three-state answer is representable
+without new modelling.
 
 **I37. [D] What is the coverage ramp?**
 Most text in most projects is unanalyzed, so this metric reads near zero on day one. A number that
 starts at 3% with no defined trajectory gets ignored. Absolute target, per-text target, or delta-only
 ("this change did not reduce coverage")?
 
-**I38. [R] What is "a grammar feature" for branch coverage, and can the parser report which fired?**
-"Every grammar feature has one word that parses in a sentence" needs a definition — a rule, an affix
-slot, a morpheme, a feature constraint — and requires PanGloss to report which rules actually fired.
+**I38. [R→answered: no, and this is the weakest leg]**
+Rules, strata, and templates have **no retained GUID** — `handoff.rs:28-33` states stable FieldWorks
+IDs survive import for lexical entries only. So a mismatch caused by which rule fired is not nameable
+in FieldWorks terms. There is also no *sentence* concept (`AssessmentCase.input` is one word), and
+`pangloss coverage` today is capability coverage over **synthetic fixtures only**, explicitly never
+real-language data. Branch coverage is a build, not an integration: it needs durable rule identity, a
+per-word construct-provenance ledger, and a sentence grouping — none of which exist.
 
 **I39. [D] Do donated tests need review before they count?**
 A wrong donated analysis becomes a permanently failing test that blocks unrelated work. Reviewed,
-trusted, or quarantined?
+trusted, or quarantined? Sharpened by `H32`: a donation sets a **global** approval flag on a
+`WfiAnalysis`, so a bad donation is not scoped to the donor's occurrence.
+
+**Related, now `I39a` [D]:** computer guesses are created *outside the undo stack*
+(`GenerateEntryGuesses` uses `NonUndoableUnitOfWorkHelper`) and approved by the Computer agent. Do
+machine guesses count as assertions, tests, neither?
 
 **I40. [D] What happens when a rule change is correct but breaks an old analysis?**
 In software this is "update the test". Here the old analysis may have been a native speaker's

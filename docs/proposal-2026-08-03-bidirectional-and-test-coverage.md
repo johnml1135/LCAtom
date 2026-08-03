@@ -134,6 +134,15 @@ plus word-analysis interaction, is acknowledged as a large unspecified body of w
 
 Recorded plainly so the challenges are honest. Each has a grill item.
 
+> **Researched 2026-08-03** —
+> [findings](research/2026-08-03-bidirectional-and-test-coverage-findings.md). Headlines: the
+> failing-test definition **is** computable and FieldWorks already ships it as
+> `NumUserApprovedAnalysesMissing`; a manual analysis turns out to be **two independent facts**
+> (durable global approval, plus fragile positional occupancy), which splits this proposal's test half
+> from its coverage half; bidirectional diff is blocked on a snapshot substrate that covers 1 of 473
+> rows, not on the diff algorithm; and `reparent` *is* recoverable from a state delta while
+> index-as-identity `move` is not.
+
 **a. Text is currently out of scope, and this reverses that.** The Manifest marks `Segment` (10 rows),
 `WfiAnalysis` (9), `WfiMorphBundle` (5), `WfiWordform` (4), `Text` (6), `CmAgent` (7), and `StTxtPara`
 (7) as `out` with reason `not-domain-reachable`. [Plan A](plan-motif.md) and the README both state
