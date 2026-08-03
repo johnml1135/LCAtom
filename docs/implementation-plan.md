@@ -50,6 +50,11 @@ is unbuilt (no custom-field code exists). CI itself (item 1) does not exist — 
    unknown `CmResource` entries inertly, `CmResource.Name` accepts the capped length, and — confirmed
    at the LibChorus level, to be re-confirmed in FLExBridge — Send/Receive unions distinct-GUID
    additions rather than conflicting them, with `CmResource` registered GUID-keyed and order-irrelevant.
+   **Not closed.** The FLExBridge re-confirmation has not been done, and the FieldWorks-model merge
+   registration is absent from every locally available source. Distinct-GUID union is safe regardless;
+   the **same-`proposalId` collision** is the open case, and if the registration is missing it produces
+   duplicate-GUID `.fwdata`, not a benign overwrite. Experiment and mitigations:
+   [E19 findings](research/2026-08-03-chorus-applied-log-merge.md).
 9. Adapt the FwData/LibLCM host plumbing (project load, cache lifecycle, UOW helper, headless
    UI/progress shims, rich-text mapping) by copy-and-adapt from `FwDataMiniLcmBridge` under its MIT
    license, not a shared package; see [ADR 0003](adr/0003-feasibility-findings.md).

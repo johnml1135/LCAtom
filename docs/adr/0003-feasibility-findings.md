@@ -37,6 +37,15 @@ the same GUID with differing `Name` — costs provenance only: the GUID remains 
 so the idempotence check (which reads only the GUID) is unaffected, and the record was never
 authoritative.
 
+> **Caveat added 2026-08-03 — the Phase 0 FLExBridge re-verification has not happened**, and the
+> FieldWorks-model registration is absent from every locally available source. The distinct-GUID union
+> claim holds regardless: additions are never dropped by the generic algorithm. **The collision
+> sentence above is the part at risk.** Chorus's *default* strategy is `FindByEqualityOfTree` with
+> order relevant, so absent the guid-keyed registration the same GUID with differing `Name` yields
+> **two `<rt>` elements sharing one GUID**, not one — worse than "costs provenance only." Indirect
+> evidence strongly suggests the registration exists; it has not been observed. See
+> [E19 findings](../research/2026-08-03-chorus-applied-log-merge.md).
+
 ### 3. Reuse the FwData/LibLCM adapter plumbing by copy-and-adapt, under MIT
 
 `FwDataMiniLcmBridge` (in languageforge-lexbox; MIT, SIL Global) contains roughly 1,000–1,200 lines

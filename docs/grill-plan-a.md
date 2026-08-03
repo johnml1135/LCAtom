@@ -66,11 +66,24 @@ still undecided, and Plan A did not change the answer — only the cost of being
 **B8. L0's object-creation closure is uncomputed.** **(carried, B21)**
 Blocks `MOT-7` sequencing.
 
-**B9. What is the versioning contract for the public intent surface?**
+**B9. [R→named options] What is the versioning contract for the public intent surface?**
 `contractVersions` maps group → major/minor, but nothing yet says what a minor bump may change, what
 forces a major, or how long a runner must accept an older group version. This is now more urgent, not
 less: the intent contract is the public surface and the lowered plan is private, so the public half
 carries all the compatibility obligation.
+
+[Prior art](research/2026-08-03-prior-art-canonical-diff-versioning-batch.md#b9) surveyed SemVer,
+protobuf, Avro, JSON Schema, REST practice, and Kubernetes. **Kubernetes is the closest match** — and
+motif already took `group/construct/verb` from k8s's `(apiGroup, resource, verb)` in ADR 0009 §1, so
+versioning per group continues a precedent already adopted. Proposed policy: **minor-safe** = new
+`kind`, or a new *optional* field (safe because the contract already guarantees omission means leave
+untouched); **major-forcing** = removing/renaming a `kind`, changing a field's type or meaning, or
+anything that silently changes what a **previously hashed intent digest** means; **window** = a k8s-style
+**dual floor** (N minor versions *or* M months, whichever is longer) rather than one number, because
+motif has three runtimes on independent cadences plus agent callers who never read release notes;
+**refusal** = a structured `{group, requiredVersion, carriedVersion}` payload, not prose.
+
+**Decision (`B9a`) [D]:** adopt this, and calibrate N and M when a real release cadence exists?
 
 ## C — Engine behaviour (blocks M2/M5)
 
@@ -122,11 +135,33 @@ correspondence sufficient — and whose review?
 
 ## E — Standing risks, not blockers
 
-**E19. Chorus merges the applied log and does not understand it.**
-`ProjectAppliedLog` writes into `LexDb.Resources` inside the `.fwdata`; Chorus three-way-merges the
-`.fwdata` with generic field-level rules. Approval continuity therefore cannot be shared through the
-project file. Neither proposal created this and neither fixes it; `MOT-14`'s Lexbox receipt store is
-the answer. *Worth a disposable-project test to learn exactly how it fails.*
+**E19. [R→escalated] Chorus merges the applied log and does not understand it.**
+[Findings](research/2026-08-03-chorus-applied-log-merge.md). Research **raised** this rather than
+closing it. Three results:
+
+- **Phase 0 item 8 was never closed.** `implementation-plan.md:49-52` says the union behaviour was
+  *"confirmed at the LibChorus level, to be re-confirmed in FLExBridge."* The LibChorus half is real
+  (verified: `ChorusNotesAnnotationMergingStrategy.cs:24-27`). **The FLExBridge half never happened** —
+  no test, spike, or artifact exists, and `SIL.ChorusPlugin.LfMergeBridge` / `SIL.Chorus.ChorusMerge`
+  are not even in the local NuGet cache.
+- **The common case is safe either way.** Distinct-GUID additions — every reviewer's independent apply
+  — are never dropped by the generic algorithm. Worst case is a spurious `.ChorusNotes` order note.
+- **The documented failure mode is understated.** Chorus's *default* strategy is `FindByEqualityOfTree`
+  with order relevant (`ElementStrategy.cs:33-36`), matching only on exact recursive XML equality. If
+  the guid-keyed registration is missing, two replicas writing the **same** `proposalId` differently
+  produce **two `<rt>` elements sharing one GUID** — a `.fwdata` anomaly LibLCM's loader was never
+  designed to see, not the benign one-wins overwrite `applied-log.md:101-105` describes.
+
+Strong indirect evidence says the registration exists (`.fwdata` is flat, so one generic `rt`-by-`guid`
+rule covers every class; a decade of FieldWorks Send/Receive would otherwise corrupt constantly) — but
+that is **inference from necessity, not observation**.
+
+**`MOT-14` does not resolve this.** Moving Receipts to Lexbox fixes the product consequence; the log
+still lives in `.fwdata` and still goes through Chorus.
+
+**Action (`E19a`) — not a grill item, a task:** run the section-4 experiment. It needs no FLExBridge
+source — drive the real merge through `FwHeadless`'s own `SendReceiveHelpers.CallLfMergeBridge`. Until
+it runs, ADR 0003 decision 2 should carry a caveat rather than be cited as settled.
 
 **E20. PanGloss has no release pipeline at all.**
 CI is `ubuntu-latest` only, no artifact upload, no publish job, no binary for any OS. This blocks
@@ -170,11 +205,22 @@ degraded** to delete-plus-create? Silent degradation double-counts in the effect
 author's meaning; loud refusal makes FieldWorks-authored proposals fail on edits a linguist considers
 ordinary.
 
-**F23. [D] Is the whole diff canonical, or only its ordered-sequence part?**
-Many operation sequences produce the same state. If two people make the same edit and diff emits
-different-but-equivalent operation lists, their intent digests differ and content-equality queries
-break. `change-set-contract.md` freezes LIS tie-breaking, emission order, and anchor choice **for
-ordered sequences only**. Canonicality for the whole diff is unspecified.
+**F23. [R→answered in half; the rest is now a concrete proposal, not an open question]**
+[Prior art](research/2026-08-03-prior-art-canonical-diff-versioning-batch.md#f23). No standard exists —
+RFC 6902 and 7386 both specify *application* only, never *generation*. But the question splits:
+
+- **Content equality is already canonical.** Key it on the **effect** digest, not the intent digest.
+  The contract already makes effects state-based, read-back, identity-keyed, and *stable under lowering
+  optimization* (`change-set-contract.md:548`) — the Git/Dolt property of hashing the result, not the
+  path. Nothing to build; it needs **stating** as the dedup key.
+- **The intent digest still needs freezing beyond LIS**, because it hashes the chosen decomposition
+  into Layer-0 verbs. Four proposed rules: one total order across *all* operations (byte-ordinal by
+  canonical ID, then manifest field order, `move` keeping frozen LIS order inside its bucket); one fixed
+  decomposition per comparison class, with `feeding` **never** claiming a static anchor result; a fixed
+  dispatch for discovered-footprint operations (the contract already forecloses this — *never
+  delete-plus-create*); and normalize **before** diffing, not after.
+
+**Residual decision (`F23a`) [D]:** adopt those four rules as written, or contest one?
 
 **F24. [D] Does a diff-derived Proposal carry a distinguishable provenance?**
 Its effects equal the observed delta by construction, where an authored Proposal's effects are read
@@ -311,10 +357,19 @@ for AI and CLI. That matches ADR 0009's split and supplies its missing rationale
 diff's output vocabulary; Layer 1 is the agent's input vocabulary.** Worth adopting as the stated
 reason, because it makes the split load-bearing rather than stylistic.
 
-**J42. [D] What does a batch composer store at rest?**
-"A batch update is different if the data has changed." So the at-rest form must be the *resolved*
-operations, not the unresolved query — otherwise re-running produces a different change. Confirm, and
-decide whether the originating query is retained as provenance.
+**J42. [R→already decided; one residual]**
+[Prior art](research/2026-08-03-prior-art-canonical-diff-versioning-batch.md#j42). Resolved operations
+at rest with the query kept as **non-hashed provenance** is **verbatim ADR 0009 §1** (`adr/0009:38-40`:
+*"the composer and its parameters ride as provenance on the emitted Change Set — non-hashed,
+re-runnable"*). It matches Terraform, EF Core, and Sourcegraph. The query-as-truth alternative is the
+Kubernetes server-side-apply pattern, which **motif already rejected one layer down** (ADR 0009 §1 on
+`managedFields`) for the same reason: a reviewer cannot approve effects for an unresolved query.
+**No new machinery — this is an instance of a decision already taken.**
+
+**Residual (`J42a`) [D]:** Terraform hard-errors when a saved plan's state lineage has moved. Motif has
+the identical mechanism already — the pre-flight footprint-digest-plus-engine-version check. **Should
+re-reviewing or applying a resolved batch against a moved baseline be forced through that same drift
+path**, rather than silently re-resolving? (Recommend yes.)
 
 **J43. [D] What are the rules for removing an operation from a change set?**
 Trivial mechanically. But it moves the intent digest while `proposalId` stays frozen, and it can
