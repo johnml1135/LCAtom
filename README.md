@@ -2,38 +2,50 @@
 
 **A PR-like collaboration system for semantic changes to language data.**
 
-Motif is intended to let humans and AI agents propose, inspect, check, discuss, approve, apply, and
-audit changes to lexical, text, and grammar data. Grammar is the first product customer.
+Motif lets humans and AI agents propose, inspect, check, discuss, approve, apply, and audit changes to
+lexical and grammar data in a FieldWorks project. Grammar is the first product customer.
 
-The destination combines two collaboration models:
-
-- Google-Docs-like retention and convergence: authored work is not lost merely because it cannot be
-  applied safely yet;
-- Git/GitHub-like control: exact candidate revisions, semantic diffs, CI-style checks, typed review,
-  approvals, stale-input detection, controlled landing, and auditable outcomes.
+The model is Git/GitHub-like: exact candidate revisions, semantic diffs, CI-style checks, typed
+review, approvals, stale-input detection, controlled landing, and auditable outcomes. A Proposal is
+reviewed before it lands, not merged after the fact.
 
 Motif does not put Git commits or textual patches around `.fwdata`. Its canonical input is a
 **Proposal** containing named semantic operations such as `MergeLexicalEntries`, `SplitSense`, or
-`CreateAffixProcessRule`. Those operations are lowered into the native changes required by the
-target store.
+`CreateAffixProcessRule`. Those operations are lowered into LibLCM mutations and applied through one
+unit of work.
 
 > **Status: this is the target architecture and delivery plan, not the current implementation.**
 >
 > The repository contains a tested one-operation `lexical/sense/setGloss` control slice and extensive
 > LibLCM/HermitCrab coverage research. The PR-like review domain, the generated grammar surface, the
-> FieldWorks in-process adapter, receipt sync, and text authoring are planned work. Nothing in the
-> plans should be read as already shipped.
+> FieldWorks in-process adapter, and receipt sync are planned work. Nothing in the plans should be
+> read as already shipped.
+
+**Start with [Plan A](docs/plan-motif.md).** It is the live plan and owns both the milestones and the
+work items.
 
 ## Delivery
 
-**Motif delivers exactly two things: the `motif` CLI, and a FieldWorks integration.** The CLI is a
-`net10.0` executable for batch, automation, and AI-agent use; the FieldWorks integration is a
-`netstandard2.0` runner hosted in-process behind FieldWorks-owned Avalonia surfaces.
+**Motif delivers exactly two things: the `motif` CLI, and a FieldWorks integration.**
+
+| | |
+| --- | --- |
+| `motif` CLI | `net10.0` executable. Batch, automation, and AI-agent use, against a `.fwdata` project it opens itself |
+| FieldWorks integration | `netstandard2.0` Runner hosted in-process, behind FieldWorks-owned Avalonia surfaces |
 
 Everything else is a dependency rather than a deliverable — the Lexbox receipt store is server work in
 another repository, PanGloss is a subprocess or native library, and `SIL.Motif.Contract` is a
 published contract other runners consume. There is no Motif web app, service, mobile surface, or
 FwLite presence.
+
+## Scope
+
+**Lexical and grammar.** Text and analysis are deliberately out: the Manifest classifies `Segment`,
+`WfiAnalysis`, `WfiWordform`, `Text`, and `CmAgent` as `out` / `not-domain-reachable`, leaving eight
+text-adjacent rows in scope. Text currently supplies immutable *evidence* — occurrences, context, and
+selected analyses. Authorable text is a later bounded context that must first define durable
+occurrence identity, Unicode normalization and segmentation coordinates, standoff annotations,
+provenance, reanchoring and refusal, lowering, and read-back.
 
 ## The intended workflow
 
@@ -53,7 +65,7 @@ immutable Proposal revision ────────┐
                                      │
                               final baseline check
                                      │
-                         controlled atomic materialization
+                         controlled atomic application
                                      │
                                      ▼
                          Receipt or explicit refusal
@@ -62,37 +74,39 @@ immutable Proposal revision ────────┐
 A review or check applies only to the exact Proposal revision, Baseline Token, artifacts, tool
 contract, and policy revision it evaluated. Changed inputs make that evidence stale.
 
-“Always resolve” has a narrow meaning: history is retained and converges, and every materialization
-receives an explicit `Applied`, `Refused`, or `Deferred` disposition. It does **not** mean every
-semantic conflict is automatically applied. When authored meaning or a language-project invariant
-cannot be preserved, coordination or deterministic refusal is the correct outcome.
+Every application receives an explicit `Applied`, `Refused`, or `Deferred` disposition. Nothing is
+applied silently, and a Proposal that cannot preserve authored meaning or a language-project invariant
+is refused deterministically rather than merged optimistically.
 
 ## Responsibilities
 
 | Component | Responsibility |
 | --- | --- |
 | **Motif** | Semantic operations; Proposal, Check Run, Review, Decision, Dry Run, authorization, rebase, and Receipt contracts |
-| **Harmony / LcmCrdt** | FwLite's substrate for offline, multi-device, mobile lexical work. **Not on Motif's path** — see the [adoption report](docs/harmony-adoption-report.md) |
-| **LibLCM / FieldWorks** | Model invariants, project lifecycle, unit of work, persistence, and compatibility validation when materializing `.fwdata` |
+| **LibLCM / FieldWorks** | Model invariants, project lifecycle, unit of work, persistence, and compatibility validation. **The only authority on Motif's path** |
 | **FieldWorks adapter** | Hosts the `netstandard2.0` Runner in-process; UI-thread marshalling, one undoable unit of work, save, read-back, and recovery |
 | **Lexbox** | Proposal and Receipt object store, optional per project |
 | **PanGloss** | Immutable parser Assessments and parser facts; Motif policy decides what evidence is required |
+| **Harmony / LcmCrdt** | FwLite's substrate for offline, multi-device, mobile lexical work. **Not on Motif's path** — see the [adoption report](docs/harmony-adoption-report.md) |
 
 Motif owns the Manifest, the generator, the semantic operations, and the lowering rules. Its
 operations target **LibLCM objects directly**, so no MiniLcm crosswalk is required and no generated
 code lands in LcmCrdt.
 
-## Authority and migration
-
-The target supports domains promoted to CRDT-native authority while preserving a FieldWorks-hosted
-transition:
+## Authority
 
 **The live LibLCM model is the only authority on Motif's path.** The process owning the loaded
 `LcmCache` is the sole writer; Chorus merges between people, as it does today. There is no second
-merge engine and no promotion of domains to a CRDT authority.
+merge engine, no CRDT, and no promotion of domains to a CRDT authority.
 
 FwLite keeps its own authority over its own lexical data through Harmony. The two products do not
-share a substrate, and one field never has two authorities.
+share a substrate, and one field never has two authorities. Why that split rather than one system is
+argued in full in the [adoption report](docs/harmony-adoption-report.md).
+
+Dry runs never mutate the live model. They run against a scratch copy of the loaded cache
+([ADR 0016](docs/adr/0016-scratch-cache-copy-not-undo.md)), because neither `Rollback` nor `Undo` is
+safe to build on — `Rollback` skips the forward-only setter hooks `Undo` runs, and LibLCM has
+genuinely non-undoable units of work.
 
 ## Grammar first
 
@@ -100,25 +114,20 @@ Grammar is the first semantic customer because it exercises the difficult parts 
 
 - roughly 30 grammar Constructs and their cross-references;
 - phonological rule order where sequence encodes feeding and bleeding;
-- alpha variables whose current LibLCM representation derives identity from position;
+- alpha variables whose current LibLCM representation derives identity from position, with a hard
+  24-per-rule ceiling that throws and kills the whole grammar load;
 - HermitCrab validation and interpretation;
-- real-project round trips through LcmCrdt, the FieldWorks bridge, and LibLCM;
+- real-project round trips through the FieldWorks adapter and LibLCM;
 - parser evidence through PanGloss Assessments.
 
-A lexical `setGloss` operation is used only as the M4 lifecycle control for baselines, reviews,
-Drift, recovery, and Receipts. One grammar Construct then proves the full cross-repository path before
-the remaining grammar volume is generated.
+A lexical `setGloss` operation is used only as the lifecycle control for baselines, reviews, Drift,
+recovery, and Receipts. One grammar Construct then proves the full path before the remaining grammar
+volume is generated. Lexical coverage expands afterward from the same Manifest.
 
-Lexical coverage expands afterward from the same Manifest. Text currently supplies immutable
-evidence—occurrences, context, and selected analyses. Authorable text is a later bounded context that
-must first define durable occurrence identity, Unicode normalization and segmentation coordinates,
-standoff annotations, provenance, reanchoring/refusal, lowering, and read-back.
+## Delivery plan
 
-## Cross-repository delivery
-
-The work is coordinated by one milestone ladder:
-
-- **[Plan A](docs/plan-motif.md) — the live plan: milestones, model join, generator, scratch-cache dry run, FieldWorks adapter, review domain;**
+- **[Plan A](docs/plan-motif.md)** — the live plan: milestones, model join, generator, scratch-cache
+  dry run, FieldWorks adapter, review domain;
 - [work in other repositories](docs/plan-cross-repo.md) — FieldWorks, PanGloss, liblcm, lexbox;
 - [why not Harmony](docs/harmony-adoption-report.md) — the two alternate proposals and the decision;
 - [withdrawn LcmCrdt plan](docs/plan-lcmcrdt.md) — what the previous routing required;
@@ -127,38 +136,32 @@ The work is coordinated by one milestone ladder:
 
 The milestone sequence is:
 
-1. **M1** — fail-closed model join and a generator that reads it without a liblcm checkout;
+1. **M1** — fail-closed model join, and a generator that reads it without a liblcm checkout;
 2. **M2** — one generated operation family applied end to end, with a scratch-cache dry run;
 3. **M3** — FieldWorks hosts Dry Run and Apply in-process, on `net48`;
 4. **M4** — a Proposal reviewed, approved, applied, and its Receipt shared through Lexbox;
 5. **M5** — one grammar Construct authored, applied, and parsed by PanGloss;
 6. **M6** — the remaining grammar surface, and the ordered residue proven on real projects.
 
-## Maintainer review and open decisions
+M1 and M2 are mechanical. M3 is integration. **M4 is the product.** M5 is the first thing a linguist
+would recognise as the point.
+
+## Open decisions
 
 The architecture has been source-checked and compared with current literature, but it deliberately
-leaves project-owner and maintainer decisions open.
+leaves project-owner decisions open. **[The Plan A grill queue](docs/grill-plan-a.md) is the live
+list.** It leads with four measurements, because later answers depend on them — most importantly what
+`LcmCache.CreateCacheCopy` actually costs, an API with zero callers anywhere in liblcm or FieldWorks.
 
-- [Plan A grill queue](docs/grill-plan-a.md) carries the open questions;
-- [evidence ledger](docs/research/2026-08-01-grill-evidence-ledger.md) classifies them as 47 resolved
-  principles, 27 bounded evidence tasks, and 33 owner decisions;
-- [decision log](docs/grill-decisions.md) records decisions as they are made;
-- [research synthesis](docs/research/2026-08-01-pr-like-collaboration-synthesis.md) captures the
-  primary-source and cross-repository evidence.
+Beyond those, the questions that most affect the design are whether roughly 300 heuristically
+classified Manifest rows need a dedicated audit before the generator reads them, whether a reviewer
+can actually see that a phonological reorder changed the grammar's meaning, whether review state must
+work offline, and who owns keeping Motif's and FwLite's change vocabularies aligned.
 
-The highest-impact maintainer questions concern:
-
-1. v1 authority and the migration boundary between FieldWorks-hosted and CRDT-native domains;
-2. whether one Harmony commit can represent one strict Motif atomic materialization group;
-3. policy registration and replay across mixed client/policy versions;
-4. semantic move intent and concurrent ordered-grammar behavior;
-5. deterministic diagnostic storage, identity, resolution, and headless reporting;
-6. payload binding, authorization trust boundaries, fencing, and cross-store recovery;
-7. MiniLcm/LibLCM capability mismatches, especially morph-type creation;
-8. repository ownership, package rollout, compatibility testing, and sign-off.
-
-The intent is to answer these jointly with the Harmony and LcmCrdt maintainers before implementation
-commits bind the wrong abstraction.
+Supporting records: the [decision log](docs/grill-decisions.md), the
+[research synthesis](docs/research/2026-08-01-pr-like-collaboration-synthesis.md), and the
+[evidence ledger](docs/research/2026-08-01-grill-evidence-ledger.md) — the last two predate Plan A and
+are evidence rather than plans.
 
 ## Present implementation
 
@@ -168,13 +171,14 @@ The repository currently contains `SIL.Motif.Contract`, `SIL.Motif.Model`, `SIL.
 - parse and canonicalize a Proposal containing `lexical/sense/setGloss`;
 - compute stable intent and effect digests;
 - open a real FieldWorks project through the host;
-- perform a mutation-and-rollback Dry Run;
-- detect footprint Drift;
+- perform a Dry Run (today by mutation-and-rollback; ADR 0016 replaces this with a scratch copy);
+- detect footprint Drift and refuse an unbound apply;
 - apply in one LibLCM unit of work, read back, persist, and record an applied marker;
-- exercise the flow through the `motif` CLI.
+- exercise the whole flow through the `motif` CLI — `open`, `new`, `add-set-gloss`, `finalize`,
+  `list`, `show`, `dry-run`, `apply`, `log`.
 
-This code predates the final Harmony/LcmCrdt architecture and is a tested control/proving surface,
-not evidence that the planned product is complete.
+This is a tested control and proving surface for one operation kind, not evidence that the planned
+product is complete.
 
 Current project targets — two runtimes only, `net10.0` and `net48`, with `netstandard2.0` where an
 assembly must load in both:
@@ -206,12 +210,17 @@ dotnet test Motif.sln
 - **Manifest** — reviewed classification of the LibLCM model surface;
 - **Construct** — one staged grammar capability.
 
-Canonical Proposal input is semantic intent, never a low-level LibLCM mutation script. Generated
-LibLCM Mutation Plans are output-only. Operation order is authoritative. Unknown operation kinds and
-semantic properties fail closed. Diff is exact-identity-based and linguistically unaware. Every
-operation family must satisfy the complete schema, semantics, validation, lowering, Dry Run, apply,
-read-back, conflict/rebase, snapshot/diff, rollback, round-trip, concurrency, compatibility, and
-coverage gate before it is complete.
+Canonical Proposal input is semantic intent, never a low-level LibLCM mutation script. The **intent
+contract is public and versioned**; generated LibLCM Mutation Plans are **private and output-only**,
+which is why drift is compared over effects and never over the plan. Operation order is
+authoritative. Unknown operation kinds and semantic properties fail closed. Diff is
+exact-identity-based and linguistically unaware. Every operation family must satisfy the complete
+schema, semantics, validation, lowering, Dry Run, apply, read-back, conflict/rebase, snapshot/diff,
+rollback, round-trip, concurrency, compatibility, and coverage gate before it is complete.
+
+The contract is not private to us: `SIL.Motif.Contract` is deliberately LibLCM-free because non-.NET
+runners consume it, and [ADR 0007](docs/adr/0007-cross-language-digest-determinism.md) exists so
+digests are reproducible across languages.
 
 ## Repository
 
@@ -219,7 +228,3 @@ The project was previously named LCAtom. That name is retired. The repository, p
 solution, and CLI are now **Motif**:
 
 <https://github.com/johnml1135/motif>
-
-Start with [the product architecture](docs/plan-product-architecture.md), then read
-[the cross-repository plan](docs/plan-cross-repo.md) and the owning repository plan relevant to your
-review.
