@@ -10,6 +10,12 @@ carried forward from those files are marked **(carried)**; the rest came out of 
 **Ordering rule:** measurements first, because three later answers depend on them. Then the questions
 that block M2, then M3, then M4. IDs are stable; do not renumber.
 
+> **Read [grill-readiness.md](grill-readiness.md) before grilling.** It triages every item into
+> answered / being researched / needs a spike / genuinely yours. Of 48 items, **9 are already closed
+> by research and 11 are being investigated now** — grilling those would spend decisions you do not
+> need to make. It also identifies two **gate** questions (`H30`, `G28`) whose answers determine
+> whether twelve other items matter at all, and recommends the session order.
+
 ---
 
 ## A — Measure before deciding (blocks M2)
