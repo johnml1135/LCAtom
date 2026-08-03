@@ -25,6 +25,14 @@ FwLite.
 marked `out` / `not-domain-reachable`, leaving eight text-adjacent rows in scope. Text needs its own
 bounded context and an occurrence-anchor contract. Neither is planned here.
 
+> **Under challenge.** The
+> [2026-08-03 proposal](proposal-2026-08-03-bidirectional-and-test-coverage.md) argues for bringing
+> text and manual word analysis in as change classes 3 and 4, so that analyses act as unit tests and
+> text coverage as code coverage — and for making **bidirectional diff** (compare two LibLCM projects,
+> emit the operations between them) a foundation rather than a downstream feature. Neither is adopted.
+> Both would change this plan's scope and its item list. Open questions are `F`–`J` in
+> [grill-plan-a.md](grill-plan-a.md).
+
 ## The shape of Plan A
 
 Motif authors **Proposals** against **LibLCM objects**, dry-runs them on a scratch cache copy, applies

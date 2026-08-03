@@ -145,3 +145,132 @@ rediscovered as gaps:
 - when to bump the `SIL.Harmony` pin — no Harmony dependency;
 - whether Harmony's hash should cover the payload — Motif's intent digest already does, for Motif's
   own contract. It remains a real gap *in Harmony*, for FwLite, if FwLite ever needs tamper-evidence.
+
+---
+
+# Added 2026-08-03 — the bidirectional / test-coverage proposal
+
+*From [proposal-2026-08-03-bidirectional-and-test-coverage.md](proposal-2026-08-03-bidirectional-and-test-coverage.md),
+recorded to be challenged. Items marked **[R]** need research and grounding before a decision is
+possible; items marked **[D]** are owner decisions that can be taken now.*
+
+## F — Bidirectional encoding
+
+**F22. [D] What is the covered surface of diff-to-operations, and what happens outside it?**
+`merge`, `replace`, and `reparent` are discovered-footprint by design, and from a state delta alone
+"merged A into B" is indistinguishable from "deleted A and edited B". Draw the line explicitly. Is an
+uncovered edit **refused loudly** — "this change cannot be encoded, author it instead" — or **silently
+degraded** to delete-plus-create? Silent degradation double-counts in the effect model and loses the
+author's meaning; loud refusal makes FieldWorks-authored proposals fail on edits a linguist considers
+ordinary.
+
+**F23. [D] Is the whole diff canonical, or only its ordered-sequence part?**
+Many operation sequences produce the same state. If two people make the same edit and diff emits
+different-but-equivalent operation lists, their intent digests differ and content-equality queries
+break. `change-set-contract.md` freezes LIS tie-breaking, emission order, and anchor choice **for
+ordered sequences only**. Canonicality for the whole diff is unspecified.
+
+**F24. [D] Does a diff-derived Proposal carry a distinguishable provenance?**
+Its effects equal the observed delta by construction, where an authored Proposal's effects are read
+back from the engine per ADR 0006. Not a contradiction, but a second provenance class the review model
+does not currently distinguish. Should a reviewer be able to tell?
+
+**F25. [R] What does diffing two projects actually cost, and can two caches be open at once?**
+Only `LexSenseSnapshotter` exists — the Canonical Semantic Snapshot is proven for one type, not a
+project.
+
+**F26. [D] Does diff replace or complement authored proposals as the primary human path?**
+If normal FieldWorks editing becomes the main way proposals get made, the authored-Proposal path
+becomes an AI/CLI path almost exclusively. That is a product decision with UI consequences.
+
+## G — Change classes
+
+**G27. [D] Are the proposed six classes the right cut, and what completes them?**
+Candidates offered for class 6 and beyond: **ordering** (`move`; 56 `positional` + 2 `feeding` rows),
+**reparenting** (32 rows), **schema and metadata** (custom fields, writing systems — non-undoable and
+one-way per ADR 0005), **shared vocabulary** (possibility lists, project-wide blast radius), and
+**compound graph operations** (`merge` / `replace`). Are these classes, sub-classes, or a different
+axis entirely?
+
+**G28. [D] What is a change class *for*?**
+Review routing? Permissions? Risk tiering? Which diff operations are coverable? Coverage
+requirements? The taxonomy's shape depends on its purpose, and the purpose is not yet stated.
+
+**G29. [D] Does ordering deserve to be its own class?**
+For 54 of 56 `positional` rows order is display order; for the 2 `feeding` rows it is grammatical
+meaning. Same verb, categorically different review stakes.
+
+## H — Text and analysis as a bounded context (reverses a committed scope decision)
+
+**H30. [D] Accept re-scoping the Manifest to bring text and analysis in?**
+`Segment`, `WfiAnalysis`, `WfiMorphBundle`, `WfiWordform`, `Text`, `CmAgent`, and `StTxtPara` are
+currently `out` / `not-domain-reachable`, and both Plan A and the README say text is out. Classes 3
+and 4 reverse that. This is a new bounded context, not extra volume in an existing one.
+
+**H31. [R] Is there any durable occurrence identity, or only `Segment` + index?**
+The known hard problem: text edits move or invalidate positional identity, and a text-specific anchor
+contract was named as a prerequisite before text becomes authoritative. Everything in classes 3 and 4
+depends on the answer.
+
+**H32. [R] Does approving an analysis bind to the occurrence or to the wordform?**
+If approving analysis X for wordform W applies to every occurrence of W, then "a manual analysis" is
+not a per-occurrence test and the unit-test analogy needs restating.
+
+**H33. [R] How are human approval and parser production distinguished in the model?**
+The test model depends on being able to say "a human asserted this", not "something asserted this".
+
+**H34. [D] Are text edits themselves in scope, or only analyses attached to text?**
+Class 3 says "Texts". Adding, editing, and deleting *text content* is a much larger surface than
+attaching analyses to existing text — and it is what breaks occurrence anchors. These may need to be
+separate classes.
+
+## I — Tests and coverage
+
+**I35. [R] Can a PanGloss analysis be mechanically compared to a FieldWorks `WfiAnalysis`?**
+The whole "failing test" definition rests on this. A `WfiAnalysis` is a graph of morph bundles
+pointing at GUID-bearing LibLCM objects; a PanGloss result comes from a compiled grammar. If the
+mapping is lossy or heuristic, "not in the set of valid analyses" is not mechanically decidable.
+**This is the single highest-risk assumption in the proposal.**
+
+**I36. [D] Is "one authoritative analysis per occurrence" linguistically defensible?**
+Genuine ambiguity exists, and the proposal's own disambiguation requirement implies ambiguity is a
+real state rather than a failure. Forcing one analysis may encode false certainty.
+
+**I37. [D] What is the coverage ramp?**
+Most text in most projects is unanalyzed, so this metric reads near zero on day one. A number that
+starts at 3% with no defined trajectory gets ignored. Absolute target, per-text target, or delta-only
+("this change did not reduce coverage")?
+
+**I38. [R] What is "a grammar feature" for branch coverage, and can the parser report which fired?**
+"Every grammar feature has one word that parses in a sentence" needs a definition — a rule, an affix
+slot, a morpheme, a feature constraint — and requires PanGloss to report which rules actually fired.
+
+**I39. [D] Do donated tests need review before they count?**
+A wrong donated analysis becomes a permanently failing test that blocks unrelated work. Reviewed,
+trusted, or quarantined?
+
+**I40. [D] What happens when a rule change is correct but breaks an old analysis?**
+In software this is "update the test". Here the old analysis may have been a native speaker's
+judgement. Who may overrule it, and is that itself a reviewable change?
+
+## J — Authoring, editing, portability
+
+**J41. [D] Confirm the Layer 0 / Layer 1 rationale.**
+The proposal says the semantic layer is unnecessary for human diff-based authoring and meaningful only
+for AI and CLI. That matches ADR 0009's split and supplies its missing rationale: **Layer 0 is the
+diff's output vocabulary; Layer 1 is the agent's input vocabulary.** Worth adopting as the stated
+reason, because it makes the split load-bearing rather than stylistic.
+
+**J42. [D] What does a batch composer store at rest?**
+"A batch update is different if the data has changed." So the at-rest form must be the *resolved*
+operations, not the unresolved query — otherwise re-running produces a different change. Confirm, and
+decide whether the originating query is retained as provenance.
+
+**J43. [D] What are the rules for removing an operation from a change set?**
+Trivial mechanically. But it moves the intent digest while `proposalId` stays frozen, and it can
+orphan a dependent operation or break a `requires` edge. Refuse, cascade, or warn?
+
+**J44. [D] What is the unit of splitting a change set?**
+Portability is nearly free — `ProposalStore` is already content-addressed objects plus manifests. The
+constraint is the `requires` DAG: a split must not sever a prerequisite edge, and splitting a
+multi-operation atomic group breaks all-or-none application.
