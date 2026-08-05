@@ -73,36 +73,58 @@ GUID, global to the project); **B**, this occurrence uses it (`Segment` + index,
 
 Tests before coverage. Coverage remains a research track until the anchor contract exists.
 
-### 3. Reserve non-object targets in the canonical-id space **now**
+### ~~3. Reserve non-object targets in the canonical-id space now~~ — **WITHDRAWN 2026-08-05**
 
-`CanonicalId` is `<optional prefix><22-char base64url decoding to exactly 16 bytes>`, and the prefix is
-*"preserved exactly with no normalization"* and *"carries no structural meaning"*
-(`Contract/Ids/CanonicalId.cs:11-20`). A non-object target is therefore **already representable
-syntactically** — e.g. an `occ_`-prefixed id whose 16 bytes are a derived anchor digest.
+### ~~4. The effect tuple's identity slot may hold a non-object target~~ — **WITHDRAWN 2026-08-05**
 
-**Decide now that an operation's target need not be a LibLCM object, and reserve the prefix.** Cost
-today is approximately zero. The alternative — discovering later that targets must become a tagged
-union — changes the hashed operation shape and invalidates every stored digest.
+**Both were unnecessary, and they rested on an error.** The original reasoning was: an occurrence has
+no GUID, so it is not addressable, so the contract needs a second target kind reserved before M3
+freezes the canonical form.
 
-**This solves addressing shape, not anchor durability.** What 16 bytes survive a re-segmentation is
-still open under `H31`, and this ADR does not pretend otherwise.
+**Motif never addresses an occurrence.** It addresses a `Segment` and edits a field on it:
 
-### 4. The effect tuple's identity slot may hold a non-object target
+- **`Segment` is a `CmObject` with a GUID** (`MasterLCModel.xml:259`, `base="CmObject"`).
+- **`Segment.Analyses` is `rel` / `card="seq"`** — an ordinary reference sequence, structurally
+  identical to in-scope rows like `LexEntryRef.ComponentLexemes`.
+- **`WfiAnalysis.Evaluations` is `rel` / `card="col"`** — approval is an ordinary unordered reference
+  collection.
+- `WfiAnalysis`, `WfiWordform`, `Text`, `StText`, `StTxtPara` are all GUID-bearing `CmObject`s.
 
-Same reasoning, applied to the digest atom. State it now so the slot is not defined as "object id" by
-implication and then widened later.
+So the effect is `(SegmentCanonicalId, analysesField, before-seq, after-seq)`. **The index lives inside
+the value, not in the target.** Every text and analysis row is structurally indistinguishable from the
+473 already in scope, and the existing addressing model covers all of them unchanged.
+
+The error was conflating *"`AnalysisOccurrence` has no GUID"* with *"the thing we address has no
+GUID."* `AnalysisOccurrence` is a C# convenience wrapper over `(Segment, index)`; it is not a target.
+
+**Consequence: there is no time-sensitive decision here.** Nothing had to be reserved before M3, and
+the text-side work is additive at the addressing layer too — which raises the additive fraction well
+above the 70% this ADR originally estimated.
 
 ### 5. Do not settle change-class *naming* on lexicon and grammar alone
 
 `G27`/`G28` may proceed on everything else, but the committed kind-namespace segments should either be
 sketched with text's shape in view or deferred, because renaming is major-forcing.
 
-### 6. Name the fifth drift class — anchor invalidation
+### 6. Name the fifth drift class — segment lifecycle
 
-Four drift classes exist and are enumerated for human review (`change-set-contract.md:554`). Text adds a
-fifth: the target moved without any object changing. Adding it later is a review-model and UI change,
-not a contract change, so this is **genuinely cheap** — but name it now so the enum is not designed
-closed.
+Four drift classes exist and are enumerated for human review (`change-set-contract.md:554`). Text adds
+a fifth: **the addressed `Segment` was split, merged, or destroyed by an intervening text edit.**
+
+**This is far better bounded than first assumed.** liblcm has a dedicated `AnalysisAdjuster`
+(`DomainImpl/AnalysisAdjuster.cs:16-60`) whose stated contract is to preserve analysis across edits:
+
+> *"Any segment whose text is unaffected by edits should be unmodified in every other way, except that
+> its begin offset should be adjusted… If the text of a particular wordform has not changed then it
+> should still have the same analysis."*
+
+So a `Segment` whose text is untouched **survives with its identity intact**. Only segments overlapping
+the edited range split, merge, or vanish, and the merge/split rules are specified. The drift class is
+therefore narrow, detectable with the existing `FootprintProbe`, and refusable — not a systemic
+identity failure.
+
+Adding it later is a review-model and UI change, not a contract change, so this stays **cheap**. Name
+it now so the enum is not designed closed.
 
 ### 7. Coverage is presented as a work queue, not a score
 
@@ -122,5 +144,10 @@ The product artifact is *"here are the words no rule explains yet"*, ordered by 
   GUID and the model has no sentence concept.
 - The manifest's 48 `not-domain-reachable` rows are now **provisionally** out, pending re-scoping — a
   classification to revisit, not a boundary.
-- Decisions 3 and 4 are cheap **only if taken before M3 freezes the canonical JSON form.** After that
-  they are major bumps. This is the ADR's one time-sensitive element.
+- ~~Decisions 3 and 4 are cheap only if taken before M3 freezes the canonical JSON form.~~
+  **Withdrawn — there is no time-sensitive element.** See the amendment above: every text and analysis
+  row is an ordinary field on a GUID-bearing object, so the addressing model needs no change at all and
+  M3 can freeze the canonical form without text in view.
+- **`H31` needs correcting in the same direction.** "No durable occurrence identity exists" is true of
+  the `AnalysisOccurrence` *class* and false of what Motif actually addresses. The `Segment` is durable,
+  and `AnalysisAdjuster` explicitly preserves it when its text is unaffected.

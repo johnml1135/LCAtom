@@ -254,13 +254,17 @@ possible; items marked **[D]** are owner decisions that can be taken now.*
 
 ## F — Bidirectional encoding
 
-**F22. [D] What is the covered surface of diff-to-operations, and what happens outside it?**
-`merge`, `replace`, and `reparent` are discovered-footprint by design, and from a state delta alone
-"merged A into B" is indistinguishable from "deleted A and edited B". Draw the line explicitly. Is an
-uncovered edit **refused loudly** — "this change cannot be encoded, author it instead" — or **silently
-degraded** to delete-plus-create? Silent degradation double-counts in the effect model and loses the
-author's meaning; loud refusal makes FieldWorks-authored proposals fail on edits a linguist considers
-ordinary.
+**F22. [D→LARGELY DISSOLVED 2026-08-05 by [ADR 0019](adr/0019-observed-intent-and-proposal-edit-mode.md)]**
+For the **authoring** path there is nothing to recover: `merge`, `replace`, and index-as-identity
+`move` are **observed at edit time**, not inferred from a delta. (`reparent` was always recoverable —
+the GUID survives the cross-owner move.)
+
+For **project-to-project** diff, where no edit history is shared, the answer is **refuse loudly**.
+Silent degradation to delete-plus-create was never available anyway: `change-set-contract.md` forbids
+it outright, because LibLCM's overwrite is a detach and delete-plus-create would trigger a full
+ownership cascade.
+
+*Original framing:*
 
 **F23. [R→answered in half; the rest is now a concrete proposal, not an open question]**
 [Prior art](research/2026-08-03-prior-art-canonical-diff-versioning-batch.md#f23). No standard exists —
@@ -279,6 +283,14 @@ RFC 6902 and 7386 both specify *application* only, never *generation*. But the q
 
 **Residual decision (`F23a`) [D]:** adopt those four rules as written, or contest one?
 
+**F24. [D — sharpened by [ADR 0019](adr/0019-observed-intent-and-proposal-edit-mode.md)]**
+There are now **three** provenance classes, not two: **observed** (drafted in proposal-edit mode, intent
+recorded), **diffed** (derived from a state delta between two projects), and **authored** (built
+operation by operation, the AI/CLI path). The edit mode is what makes the first distinguishable at all.
+Question unchanged: should a reviewer see which?
+
+*Original framing:*
+
 **F24. [D] Does a diff-derived Proposal carry a distinguishable provenance?**
 Its effects equal the observed delta by construction, where an authored Proposal's effects are read
 back from the engine per ADR 0006. Not a contradiction, but a second provenance class the review model
@@ -293,9 +305,23 @@ diff**: `ObjectSnapshot` is `{CanonicalId, MultiUnicodeFields}` and cannot repre
 references, or sequence position, so 1 of 473 in-scope rows is snapshottable. See
 [findings](research/2026-08-03-bidirectional-and-test-coverage-findings.md).
 
-**F26. [D] Does diff replace or complement authored proposals as the primary human path?**
-If normal FieldWorks editing becomes the main way proposals get made, the authored-Proposal path
-becomes an AI/CLI path almost exclusively. That is a product decision with UI consequences.
+**F26. [D→DECIDED 2026-08-05 — observe intent, in a constrained proposal-edit mode]**
+[ADR 0019](adr/0019-observed-intent-and-proposal-edit-mode.md). Editing in FieldWorks **is** the
+primary human path, but FieldWorks **records what the user did** rather than Motif inferring it from
+the delta. Diff keeps the job it is good at — comparing two projects with no shared edit history.
+
+**The keystone is the constraint, not the recording:** drafting happens in an explicit *edit to create
+a proposal* mode that **bounds the edit surface to the in-scope domains**. That makes the observation
+problem finite, turns refusal into a design-time property (an unobservable edit is never offered
+rather than rejected at encode time), and bounds drift because out-of-domain edits cannot occur in the
+session at all.
+
+**Open risk (`F26a`) — needs a spike.** This requires a seam in FieldWorks' command layer. ADR 0003
+deliberately avoided liblcm's *internal undo records*; observing FieldWorks' own commands is a
+different seam whose existence and stability are **unverified**. Spike alongside `A1` and `E19`.
+
+**Side effect:** the 473-row snapshot substrate is **de-urgentized, not cancelled** — drafting no
+longer depends on diff, so it can be built incrementally behind the domains that need it.
 
 ## G — Change classes
 
@@ -377,7 +403,25 @@ meaning"*, so reserving non-object targets costs ~0 today and is a major bump la
 `I40`. Most are not v1. **`H34` splits** — text *import* is ordinary GUID-bearing object creation that
 fits the contract today; only occurrence anchoring is hard.
 
-**H31. [R->answered: no, and it is systemic]**
+**H31. [R→answered, then CORRECTED 2026-08-05 — the conclusion below overstates the problem]**
+
+> **Correction.** Everything below is true of the `AnalysisOccurrence` *class* and **false of what
+> Motif actually addresses.** Motif never addresses an occurrence; it addresses a `Segment` and edits a
+> field on it. **`Segment` is a `CmObject` with a GUID** (`MasterLCModel.xml:259`), `Segment.Analyses`
+> is `rel`/`seq` — structurally identical to in-scope rows like `LexEntryRef.ComponentLexemes` — and
+> `WfiAnalysis.Evaluations` is `rel`/`col`. The index lives **inside the value**, not in the target.
+>
+> Durability is also much better than stated: liblcm's `AnalysisAdjuster`
+> (`DomainImpl/AnalysisAdjuster.cs:16-60`) exists precisely to preserve analysis across edits — *"Any
+> segment whose text is unaffected by edits should be unmodified in every other way, except that its
+> begin offset should be adjusted."* Only segments overlapping the edited range split, merge, or
+> vanish, under specified rules. That is a **narrow, detectable drift class**, not a systemic identity
+> failure.
+>
+> This withdrew ADR 0017 decisions 3 and 4 and removed the plan's only time-sensitive item. The
+> original text stands below because it is accurate about the class, and about the full-reparse path.
+
+*Original finding:*
 `AnalysisOccurrence` is a plain C# class, **not a `CmObject`** - no GUID, never persisted, `Equals` is
 `(Segment, Index)`. On any edit the paragraph re-segments, leftover `Segment` objects are *deleted*,
 and analyses are re-attached by a best-effort heuristic on lowercased word string plus position whose
