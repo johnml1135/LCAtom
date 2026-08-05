@@ -40,12 +40,20 @@ FwLite presence.
 
 ## Scope
 
-**Lexical and grammar.** Text and analysis are deliberately out: the Manifest classifies `Segment`,
-`WfiAnalysis`, `WfiWordform`, `Text`, and `CmAgent` as `out` / `not-domain-reachable`, leaving eight
-text-adjacent rows in scope. Text currently supplies immutable *evidence* — occurrences, context, and
-selected analyses. Authorable text is a later bounded context that must first define durable
-occurrence identity, Unicode normalization and segmentation coordinates, standoff annotations,
-provenance, reanchoring and refusal, lowering, and read-back.
+**v1 is lexical and grammar. Text and analysis are staged, not excluded**
+([ADR 0017](docs/adr/0017-text-and-analysis-destination-scope.md)). Today the Manifest classifies
+`Segment`, `WfiAnalysis`, `WfiWordform`, `Text`, and `CmAgent` as `out` / `not-domain-reachable`,
+leaving eight text-adjacent rows in scope, and text supplies immutable *evidence* — occurrences,
+context, and selected analyses.
+
+They are in the destination because **coverage gaps are the feeding ground for new and refined
+rules**: the words no rule explains yet are the work queue, not a score. What defers them is not
+appetite but identity — a manual analysis is two facts, and while *this analysis is human-approved*
+has a durable GUID, *this occurrence uses it* has no durable identity anywhere in the model. Authorable
+text still needs an occurrence-anchor contract, Unicode normalization and segmentation coordinates,
+standoff annotations, provenance, reanchoring and refusal, lowering, and read-back. **Text import is
+separable and much cheaper** — `Text`, `StText`, `StTxtPara`, and `Segment` are ordinary GUID-bearing
+objects that fit the contract today.
 
 ## The intended workflow
 

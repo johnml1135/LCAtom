@@ -335,10 +335,27 @@ meaning. Same verb, categorically different review stakes.
 
 ## H — Text and analysis as a bounded context (reverses a committed scope decision)
 
-**H30. [D] Accept re-scoping the Manifest to bring text and analysis in?**
-`Segment`, `WfiAnalysis`, `WfiMorphBundle`, `WfiWordform`, `Text`, `CmAgent`, and `StTxtPara` are
-currently `out` / `not-domain-reachable`, and both Plan A and the README say text is out. Classes 3
-and 4 reverse that. This is a new bounded context, not extra volume in an existing one.
+**H30. [D→DECIDED 2026-08-05 — in the destination, staged out of v1]**
+[ADR 0017](adr/0017-text-and-analysis-destination-scope.md). Gate 1 is closed.
+
+The governing argument, accepted: **coverage gaps are the feeding ground for new and refined rules** —
+raw material, not a reporting metric. That retires the "3% on day one" objection, which assumed
+coverage is a *score*; as a **work queue**, 3% coverage means 97% backlog.
+
+Cost of deferring, checked against the code: **roughly 70% additive.** Manifest re-scoping is
+mechanical; `ObjectSnapshot` is documented additive-stable; adding a `kind` is minor-safe under `B9`;
+and the ten verbs already cover analyses (`WfiAnalysis` is a real `CmObject`, approval is a reference,
+`Segment.Analyses` is a ref seq). **The 30% that is not additive is the hashed part** — `CanonicalId`
+is 16 bytes and GUID-derived, an occurrence has no GUID, and the effect tuple
+`(canonicalId, field, before, after)` is the digest atom.
+
+**Hence the one time-sensitive consequence (`H30a`) — decisions 3 and 4 of ADR 0017 must be taken
+before M3 freezes the canonical JSON form.** `CanonicalId`'s prefix already *"carries no structural
+meaning"*, so reserving non-object targets costs ~0 today and is a major bump later.
+
+**Ten items are admitted, not deferred:** `H32a` `H33a` `H34` `I35a` `I35b` `I36` `I37` `I39` `I39a`
+`I40`. Most are not v1. **`H34` splits** — text *import* is ordinary GUID-bearing object creation that
+fits the contract today; only occurrence anchoring is hard.
 
 **H31. [R->answered: no, and it is systemic]**
 `AnalysisOccurrence` is a plain C# class, **not a `CmObject`** - no GUID, never persisted, `Equals` is

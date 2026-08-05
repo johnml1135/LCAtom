@@ -20,18 +20,27 @@ and `SIL.Motif.Contract` is a published contract that other runners consume — 
 ship. There is no Motif web app, no Motif service, no Motif mobile surface, and no Motif presence in
 FwLite.
 
-**Scope: lexical and grammar. Text and analysis are out**, per the manifest's own classification —
-`Segment`, `WfiAnalysis`, `WfiWordform`, `WfiMorphBundle`, `Text`, `CmAgent`, and `StTxtPara` are all
-marked `out` / `not-domain-reachable`, leaving eight text-adjacent rows in scope. Text needs its own
-bounded context and an occurrence-anchor contract. Neither is planned here.
+**v1 scope: lexical and grammar. Text and analysis are staged, not excluded** — see
+[ADR 0017](adr/0017-text-and-analysis-destination-scope.md). They are **in the destination**: coverage
+gaps are the feeding ground for new and refined rules, which makes them raw material rather than a
+reporting metric. They are not in v1, because a manual analysis is two independent facts and only one
+of them is buildable today — human approval of a `WfiAnalysis` has a durable GUID, while *which
+occurrence uses it* has no durable identity at all (`H31`). Tests before coverage.
 
-> **Under challenge.** The
-> [2026-08-03 proposal](proposal-2026-08-03-bidirectional-and-test-coverage.md) argues for bringing
-> text and manual word analysis in as change classes 3 and 4, so that analyses act as unit tests and
-> text coverage as code coverage — and for making **bidirectional diff** (compare two LibLCM projects,
-> emit the operations between them) a foundation rather than a downstream feature. Neither is adopted.
-> Both would change this plan's scope and its item list. Open questions are `F`–`J` in
-> [grill-plan-a.md](grill-plan-a.md).
+The manifest still marks `Segment`, `WfiAnalysis`, `WfiWordform`, `WfiMorphBundle`, `Text`, `CmAgent`,
+and `StTxtPara` as `out` / `not-domain-reachable`, leaving eight text-adjacent rows in scope. **Treat
+that as provisional pending re-scoping, not as a boundary.**
+
+> **Time-sensitive.** ADR 0017 decisions 3 and 4 — that an operation's target, and the effect tuple's
+> identity slot, need not be a LibLCM object — cost approximately nothing today because
+> `CanonicalId`'s prefix already carries no structural meaning. **They become major version bumps once
+> M3 freezes the canonical JSON form**, since they would move every stored digest.
+
+> **Still under challenge.** The
+> [2026-08-03 proposal](proposal-2026-08-03-bidirectional-and-test-coverage.md) also argues for making
+> **bidirectional diff** (compare two LibLCM projects, emit the operations between them) a foundation
+> rather than a downstream feature. That half is **not** adopted and would change this plan's item
+> list. Open questions are `F22`, `F24`, `F26` in [grill-plan-a.md](grill-plan-a.md).
 
 ## The shape of Plan A
 

@@ -72,6 +72,16 @@ should be designed before this number exists**, and `A2`'s remaining half rides 
 Two of these are **gates**: answering them changes whether other questions matter at all. Ask them
 first.
 
+### ~~Gate 1~~ — `H30`: **CLOSED 2026-08-05.** In the destination, staged out of v1
+
+[ADR 0017](adr/0017-text-and-analysis-destination-scope.md). The ten gated items are **admitted, not
+deferred** — but the deferral cost turned out to be ~70% additive, with the non-additive 30% sitting
+entirely in the hashed layer. **One time-sensitive item falls out: `H30a`** — reserve non-object
+targets in the canonical-id space *before M3 freezes the canonical JSON form*, where it costs ~0
+rather than a major version bump.
+
+*Original framing, kept for the record:*
+
 ### Gate 1 — `H30`: does text and analysis come into scope?
 
 Currently `out` / `not-domain-reachable` in the manifest, and both Plan A and the README say so.
