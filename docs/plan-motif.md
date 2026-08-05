@@ -31,16 +31,19 @@ The manifest still marks `Segment`, `WfiAnalysis`, `WfiWordform`, `WfiMorphBundl
 and `StTxtPara` as `out` / `not-domain-reachable`, leaving eight text-adjacent rows in scope. **Treat
 that as provisional pending re-scoping, not as a boundary.**
 
-> **Time-sensitive.** ADR 0017 decisions 3 and 4 — that an operation's target, and the effect tuple's
-> identity slot, need not be a LibLCM object — cost approximately nothing today because
-> `CanonicalId`'s prefix already carries no structural meaning. **They become major version bumps once
-> M3 freezes the canonical JSON form**, since they would move every stored digest.
+> **No longer time-sensitive.** An earlier note here said ADR 0017 decisions 3 and 4 had to be taken
+> before the canonical JSON form froze. **Both were withdrawn on 2026-08-05.** Motif never addresses an
+> occurrence — it addresses a `Segment`, which is a GUID-bearing `CmObject`, and edits
+> `Segment.Analyses`, an ordinary `rel`/`seq` field. The index lives inside the value, not in the
+> target, so the addressing model needs no change and the canonical form can freeze without text in
+> view.
 
-> **Still under challenge.** The
-> [2026-08-03 proposal](proposal-2026-08-03-bidirectional-and-test-coverage.md) also argues for making
-> **bidirectional diff** (compare two LibLCM projects, emit the operations between them) a foundation
-> rather than a downstream feature. That half is **not** adopted and would change this plan's item
-> list. Open questions are `F22`, `F24`, `F26` in [grill-plan-a.md](grill-plan-a.md).
+> **Bidirectional diff is settled, and it is not the drafting path.**
+> [ADR 0019](adr/0019-observed-intent-and-proposal-edit-mode.md): FieldWorks **records** what a human
+> did rather than Motif inferring it from a delta. Diff keeps project-to-project comparison, where it
+> must refuse loudly on `merge`, `replace`, and index-as-identity `move`. The snapshot substrate is
+> de-urgentized, not cancelled. `F24` (three provenance classes: observed, diffed, authored) is still
+> open in [grill-plan-a.md](grill-plan-a.md).
 
 ## The shape of Plan A
 
@@ -67,19 +70,45 @@ cross-owner move rule — none of which any FwLite requirement asked for. Removi
 the need. See the [adoption report](harmony-adoption-report.md) for the full argument, and
 [plan-lcmcrdt.md](plan-lcmcrdt.md) for what was withdrawn.
 
+## Two scopes
+
+[ADR 0020](adr/0020-cli-first-fieldworks-planned-not-built.md), 2026-08-05. **Scope 1 establishes the
+LibLCM seams and proves them through the CLI with an AI agent as the author. Scope 2 is the FieldWorks
+integration, which is planned in full and not built yet.**
+
+The acceptance question for scope 1: *can an AI agent, through the CLI alone, author a Proposal against
+a real project, see its dry-run effects, and apply it — repeatedly, with drift refused?*
+
+**And the CLI is the whole surface, not a test harness** ([ADR 0021](adr/0021-cli-is-the-full-surface-layer-1-churns.md)):
+the same lists, diagnostics, reports, summaries, actions, and workflows FieldWorks will eventually render
+for a human, rendered as text and JSON for an agent. It is faster to iterate on than a UI, which is the
+point — the agent-facing Layer 1 is **expected to churn** while FieldWorks is not yet depending on it.
+What may not churn is anything hashed: Layer 0 `kind` strings, payload schemas, the canonical JSON form,
+and the digest algorithm. That boundary is ADR 0021 decision 3.
+
+Scope 2 is planned now precisely so scope 1 does not make it more expensive. The obligations that must
+hold throughout — `netstandard2.0` on Contract/Model/Runner, one JSON stack, the Runner never owning a
+cache, apply never calling `Save`, the Layer 0/Layer 1 split, the applied log's unresolved Chorus
+caveat — are listed as decision 3 of ADR 0020 and are build-time invariants, not intentions.
+
 ## Milestones
 
-| | Gate | Items |
-| --- | --- | --- |
-| **M1** | The generator reads and joins the model without a liblcm checkout | `MOT-2`, `MOT-3` |
-| **M2** | One generated operation family applies end to end and its effects are read back | `MOT-4`, `MOT-11` |
-| **M3** | FieldWorks hosts DryRun and Apply in-process, on `net48` | `MOT-12`, `MOT-13` |
-| **M4** | A Proposal is reviewed, approved, applied, and its Receipt is shareable | `MOT-9`, `MOT-10`, `MOT-14` |
-| **M5** | One grammar construct authored, reviewed, applied, and parsed | `MOT-6`, `MOT-15` |
-| **M6** | The remaining constructs | `MOT-7`, `MOT-8` |
+Ids are **not** renumbered; the order changed.
 
-M1 and M2 are mechanical. M3 is integration. **M4 is the product.** M5 is the first thing a linguist
-would recognise as the point.
+| | Gate | Items | Scope |
+| --- | --- | --- | --- |
+| **M1** | The generator reads and joins the model without a liblcm checkout | `MOT-2`, `MOT-3` | 1 |
+| **M2** | One generated operation family applies end to end, driven from the CLI, and its effects are read back | `MOT-4`, `MOT-11`, `MOT-16`, `MOT-19` | 1 |
+| **M4** | A Proposal is authored by an agent, reviewed, approved, applied, and its Receipt is durable | `MOT-9`, `MOT-10`, `MOT-17`, `MOT-18` | 1 |
+| **M5** | One grammar construct authored, reviewed, applied, and parsed | `MOT-6`, `MOT-15` | 1 |
+| **M6** | The remaining constructs | `MOT-7`, `MOT-8` | 1 |
+| **M3** | FieldWorks hosts DryRun and Apply in-process, on `net48` | `MOT-12`, `MOT-13` | **2 — planned, not built** |
+| **M4b** | Receipts shared between people | `MOT-14` | **2** |
+
+Execution order: `M1 → M2 → M4 → M5 → M6`, then M3 and M4b.
+
+M1 and M2 are mechanical. **M4 is the product**, and under scope 1 it is AI-facing first — the agent is
+the first author, not the last. M5 is the first thing a linguist would recognise as the point.
 
 ## Status summary
 
@@ -87,21 +116,39 @@ would recognise as the point.
 | --- | --- | --- | --- |
 | `MOT-2` — the `(Class, Field)` join, failing the build on any unmatched key | M1 | Small | Not started |
 | `MOT-3` — generator skeleton: read `MasterLCModel.xml`, emit nothing yet | M1 | Medium | Not started |
-| `MOT-4` — emit the operation catalog for one family | M2 | Medium | Not started |
-| `MOT-11` — scratch-cache DryRun, replacing mutate-then-rollback | M2 | Medium | Not started — **ADR 0016** |
-| `MOT-12` — FieldWorks in-process adapter | M3 | Medium | Not started |
-| `MOT-13` — `System.Text.Json` on `net48` proof | M3 | Small, and a possible blocker | Not started |
+| `MOT-4` — emit the operation catalog for one family | M2 | Medium | Not started — family undecided (`B5`) |
+| `MOT-11` — scratch-cache DryRun, replacing mutate-then-rollback | M2 | Medium | Not started — **ADR 0016**, gated on the `A1` spike |
+| `MOT-16` — long-lived CLI session over a warm cache | M2 | Small–medium | Not started |
+| `MOT-19` — the CLI as the full product surface, text and JSON | M2/M4 | Large, and grows with every other item | Not started — **ADR 0021** |
 | `MOT-9` — Baseline Token, Dry Run binding, apply authorization, Receipt | M4 | Medium, correctness-critical | **Partly built** |
 | `MOT-10` — Proposal revisions, Check Runs, Reviews, Decisions | M4 | Medium, the PR-like product core | Not started |
-| `MOT-14` — Receipt store and sync in Lexbox | M4 | Medium | Not started |
+| `MOT-17` — Layer-1 semantic and batch authoring for agents | M4 | Medium, and **expected to churn** | Not started |
+| `MOT-18` — selective Proposal editing: duplicate, remove, split | M4 | Small, and required by the agent loop | Not started — `J43` decided |
 | `MOT-6` — semantic + lowering layer for grammar construct 1 | M5 | Medium — **the first product family** | Not started |
 | `MOT-15` — PanGloss snapshot producer and FFI | M5 | Medium | Not started |
 | `MOT-7` — the remaining 29 constructs | M6 | Large | Not started |
 | `MOT-8` — ordered-grammar review proof | M6 | Medium | Not started |
+| `MOT-12` — FieldWorks in-process adapter | M3 | Medium | **Scope 2** — gated on the `F26a` spike |
+| `MOT-13` — `System.Text.Json` on `net48` proof | M3 | Small | **Scope 2** — research says clean (`A4`); the proof itself remains |
+| `MOT-14` — Receipt store and sync in Lexbox | M4b | Medium | **Scope 2** |
 
 **Withdrawn:** `MOT-1` (the MiniLcm↔LibLCM crosswalk — not needed once the target is LibLCM) and
 `MOT-5` (mapping ordered and reference kinds onto Harmony primitives — there are no Harmony
 primitives in this path). Numbers are not reused.
+
+## The one spike on the critical path
+
+**`A1` — what does `LcmCache.CreateCacheCopy` cost?** In this repository: a harness calling liblcm's
+public API, timing one copy from a hot cache and one from a pristine scratch. `CreateCacheCopy` has
+zero callers in liblcm or FieldWorks, and ADR 0016's whole value is the ratio between those two
+numbers. Nothing in `MOT-11` should be designed before it exists. Half a day, plus `A3`'s ~15-line
+`IProjectIdentifier` implementation reporting `kMemoryOnly`.
+
+The other two spikes — `E19` (Chorus merges the applied log) and `F26a` (does a usable seam exist in
+FieldWorks' command layer?) — are **both scope 2 and both outside this repository**. `E19` needs
+`FwHeadless` plus Chorus packages that are not in the local NuGet cache; `F26a` needs a FieldWorks
+checkout. Neither blocks scope 1: a single-machine CLI never triggers a Chorus merge. **That silence is
+not evidence** — `E19` stays open.
 
 **What already exists and is not re-planned.** `manifest/liblcm-inventory.tsv` — 898 rows, 19 columns,
 473 in-scope rows across 95 in-scope classes, 100% classified for every in-scope row. The
@@ -178,52 +225,150 @@ mechanical majority and says nothing about the ordered-grammar minority.
 
 ## `MOT-11` — scratch-cache DryRun — M2
 
-Implement [ADR 0016](adr/0016-scratch-cache-copy-not-undo.md): one expensive `CreateCacheCopy` from
-the live cache into a `kMemoryOnly` pristine scratch, cheap surrogate-level fan-out from that scratch
-per dry run and per PanGloss run, and a live-cache footprint probe gating re-copy. Apply stays on the
-live cache.
+Implement [ADR 0016](adr/0016-scratch-cache-copy-not-undo.md) **as amended 2026-08-05: one canonical path —
+copy the project's files and open the copy** (~50 ms + ~550 ms at Sena-3 scale). A live-cache footprint probe
+gates rebuilding it. Apply stays on the live cache.
+
+**`CreateCacheCopy` and the in-memory fan-out are withdrawn.** They were ~5× faster and measurably lossy:
+every `kMemoryOnly` cache re-synthesizes its writing systems from the bare language tag, so Sena 3's
+vernacular lost its collation rules and all four writing systems lost their valid-character sets — including
+when the copy was taken from a file-loaded scratch whose writing systems were intact. One path, no
+per-operation judgement call about whether collation matters.
 
 **Deliverables**
 
 1. The scratch lifecycle, including a prerequisite-DAG mode that applies a topologically-sorted
    closure of un-applied Proposals to one derived scratch.
-2. **Two measurements, before the design is built on**: `CreateCacheCopy` from a hot Sena-3-scale
-   cache into `kMemoryOnly`, and a derived copy from a pristine scratch. The whole value of the
-   pristine-scratch layer is the ratio between them, and both are currently asserted from the code
-   path rather than measured. `CreateCacheCopy` has zero callers in liblcm or FieldWorks.
+2. ~~Two measurements before the design is built on.~~ **Done, 2026-08-05** — `A1` is measured against real
+   Sena 3 (152,222 objects). Harness: `spikes/SIL.Motif.Spikes.ScratchCache`; equivalence assertions live in
+   `tests/SIL.Motif.Tests/Runner/ScratchCacheEquivalenceTests.cs`. Results and the resulting amendment are
+   in [ADR 0016](adr/0016-scratch-cache-copy-not-undo.md) and the
+   [research note](research/2026-08-05-createcachecopy-provenance-and-hazards.md#10-measured--the-spike-was-built-and-run).
+   **The fan-out holds (140 ms vs 4,445 ms, 31.8×), but build the pristine scratch from the XML path by
+   default** — a memory-only copy loses every writing system's collation and valid-character settings, and
+   the file path is cheaper once more than ~9% of the live cache is fluffed.
 3. Retirement of `CacheReusability`, `RollbackCacheInvalidator`, and
    `DerivedCachePoisoningOperationKinds` once the scratch path is the only dry-run path.
+4. A guard so a dry run that depends on collation, valid characters, or sort order cannot silently run on a
+   memory-only scratch. Inert for `setGloss`; live from the first collation-sensitive operation.
 
 **Acceptance:** a dry run never mutates the live cache; a poisoned scratch costs a rebuild, not a
 session; the DAG closure produces the same effects as applying the closure serially.
 
-## `MOT-12` — FieldWorks in-process adapter — M3
+## `MOT-16` — long-lived CLI session over a warm cache — M2
 
-The `net48` seam. Marshal to the UI thread, pass FieldWorks' own `LcmCache`, supply the applier
-identity, call `Save`, invalidate the parser and UI. The Runner is already `netstandard2.0` and takes
-a cache it does not own, so no Runner API changes.
+Today the CLI is process-per-command: `Commands.DryRun` and `Commands.Apply` each call
+`loader.LoadCache(fullFwDataPath)` and dispose, so a dry run followed by an apply pays two full project
+loads (`E21`). That was acceptable when the cost did not matter. Under [ADR 0016](adr/0016-scratch-cache-copy-not-undo.md)
+it does: the pristine scratch is worth having only if something outlives one command.
 
-**Acceptance** is Gate 1 from [fieldworks-crdt-integration-research.md](fieldworks-crdt-integration-research.md):
-one lexical operation previewed and applied through a FieldWorks-owned surface, on the UI thread, as
-one undoable UOW, rejecting stale or wrong-type targets, replayable idempotently, surviving
-save/reload, and reconciling a crash before and after save.
+An agent loop makes this sharper than a human CLI ever would — author, dry-run, inspect effects, revise,
+dry-run again is many round trips against one project. It is also the same shape FieldWorks has for free,
+since FieldWorks already holds an open cache for the length of a session: **`MOT-16` is the CLI catching
+up to FieldWorks' natural lifecycle, not diverging from it.**
 
-## `MOT-13` — `System.Text.Json` on `net48` — M3
+**Deliverables.** A session holding one live cache and one pristine scratch; commands that operate against
+the session rather than a path; footprint-gated scratch re-copy; explicit teardown that never leaves a
+lock held. The Runner is unchanged — it already takes a cache it does not own, which is the same property
+that lets FieldWorks host it in scope 2.
 
-FieldWorks has **no STJ reference today** — it uses `Newtonsoft.Json 13.0.4`. `SIL.Motif.Contract`
-pulls STJ 8.0.5 plus six transitive `System.*` packages into a runtime where binding redirects are
-historically painful, and FieldWorks' `Directory.Packages.props` already carries a scar in exactly
-that area (`System.Memory 4.6.3`, pinned with a comment about a ParatextData conflict).
+**Acceptance:** N dry runs across one session cost one project load, and the second dry run's effects are
+identical to the first's when nothing changed.
 
-Mitigating: FieldWorks sets `AutoGenerateBindingRedirects` and `GenerateBindingRedirectsOutputType`.
+## `MOT-19` — the CLI is the full product surface, in text and JSON — M2/M4
 
-**Do not resolve this by using Newtonsoft on `net48`.** RFC 8785 canonical bytes must be identical
-across runtimes or every intent and effect digest diverges between FieldWorks and the CLI — that is
-[ADR 0007](adr/0007-cross-language-digest-determinism.md)'s entire subject. Same JSON stack
-everywhere.
+[ADR 0021](adr/0021-cli-is-the-full-surface-layer-1-churns.md) decision 1. Not an authoring tool with a
+dry run attached: **everything FieldWorks will eventually show a human, the CLI shows an agent** — entity
+and proposal lists, diagnostics, reports, summaries, actions, workflows. Faster to iterate on than a UI,
+and the agent is a demanding first user.
 
-**Acceptance:** a `net48` host loads the Contract and computes an intent digest byte-identical to the
-`net10.0` CLI's, for a fixture Proposal.
+**The structural requirement that makes it transferable.** Every list, report, and summary is computed in
+a query/projection layer and *rendered* by the CLI — never computed inside a command handler:
+
+```
+      query / projection layer
+        │                    │
+   CLI renderer         Avalonia view models  (scope 2)
+   (text + JSON)
+```
+
+The same rule the FieldWorks side already states from its own direction — keep UI projects LCModel-free,
+put projectors in the integration layer. A report whose logic lives in a CLI handler is a report
+FieldWorks must rebuild, and it will not be rebuilt identically.
+
+**Definition of done includes JSON.** Structured emission is part of each report, not a later `--json`
+flag. A summary that can be printed but not emitted is the tell that the projection layer was skipped.
+
+**Log the surface's own usage** (ADR 0021 decision 4). The churn is not just faster iteration — it is
+**evidence for which FieldWorks screens are worth building.** Which reports the agent calls, how often, and
+which ones run back-to-back is the closest thing to a requirements document scope 2 will get, and it is
+free if captured and unrecoverable if not. A session-local log of command, argument *shape*, and call
+counts is enough; it carries no project data.
+
+**Most of the read surface is deliberately ephemeral.** An agent asking *"what is true now"* stores
+nothing and replays nothing, so those queries carry **no compatibility obligation at all** and may churn
+permanently (ADR 0021 decision 3). The exception is sharp: **the moment a query's output is cited as
+evidence on a Proposal it becomes a Check Run** and inherits `MOT-10`'s exact-input and stale-binding
+rules. Both directions of that boundary are expensive to get wrong.
+
+**Acceptance:** every surface an agent uses is available as structured data; the text form is
+reproducible from that data alone; nothing a reviewer would need is computable only by parsing prose.
+
+## `MOT-17` — Layer-1 semantic and batch authoring for agents — M4
+
+[ADR 0009](adr/0009-layered-api-primitives-and-composers.md)'s Layer 1, which scope 1 makes urgent
+because the agent is the first author. Layer 0 primitives are the diff's *output* vocabulary; Layer 1 is
+the agent's *input* vocabulary (`J41`), and building Layer 1 first is exactly when that split is
+easiest to blur.
+
+Batch reads and batch updates, multi-rule creation, and composers that resolve a query into concrete
+operations. **The at-rest form is the resolved operations, with the originating query carried as
+non-hashed provenance** — verbatim ADR 0009 §1, and the reason is that a reviewer cannot approve effects
+for an unresolved query. `J42a` proposes that re-applying a resolved batch against a moved baseline go
+through the existing pre-flight drift path rather than silently re-resolving.
+
+**This item is expected to churn, and that is the plan** ([ADR 0021](adr/0021-cli-is-the-full-surface-layer-1-churns.md)
+decision 3). Merging two batch operations, adding a verb because it turned out to be useful, collapsing
+four calls into one report — that is the refinement loop working, and it is far cheaper now than after
+FieldWorks depends on it. **The boundary is mechanical: if a change alters the bytes that get hashed, it
+is not Layer 1 churn.** Composers are free; a new `kind` is additive and minor-safe; renaming an existing
+`kind` or touching the canonical form is not churn at all.
+
+The accepted cost is that stored Proposals are not guaranteed portable across the churn window —
+tolerable while the author is an agent that can re-author on demand, and it must end before a human's
+approval is recorded against a stored Proposal (`B9b`).
+
+**Acceptance:** an agent authors a Proposal it did not enumerate operation by operation; the stored form
+replays to byte-identical operations; the query round-trips as provenance without entering any digest.
+
+## `MOT-18` — selective Proposal editing: duplicate, remove, split — M4
+
+Required by the agent loop, and **a core FieldWorks review workflow in scope 2** — the same mechanism
+serves *"don't add that lexeme"* and *"only rules 1 and 4, not 5."* Removal is per-operation and
+individually addressable; the unit of splitting is the individual operation, subject to `requires`
+(`J44`).
+
+**The dependency rule, decided** — [ADR 0021](adr/0021-cli-is-the-full-surface-layer-1-churns.md)
+decision 6, answering `J43`:
+
+1. A removal with no dependents just happens.
+2. A removal that severs a `requires` edge or orphans a dependent **warns and names every consequence**,
+   then requires an explicit force.
+3. **Force never means "guess."** It means the caller accepted an enumerated consequence set — if the
+   consequences cannot be enumerated, the removal is refused rather than forced.
+4. `proposalId` stays frozen and the intent digest moves; removal produces a new revision, never a
+   mutation of an approved one.
+
+Consequence enumeration is not free for `delete`: deleting an owner cascades, and de-referencing does
+not — LibLCM leaves an orphan. That is discovered-footprint territory, so a removal whose consequence set
+depends on discovered reach must recompute it rather than reason from the declared footprint.
+
+Portability is mostly already there: `ProposalStore` is content-addressed objects plus manifests, so
+duplicate, zip, and transport are packaging.
+
+**Acceptance:** an operation can be removed from a finalized-then-reopened Proposal; a removal that would
+orphan a dependent enumerates the consequences and refuses without force; a removal whose consequences
+cannot be enumerated refuses even with force.
 
 ## `MOT-9` — reviewed world equals applied world — M4
 
@@ -256,24 +401,6 @@ semantic owner routing, stale-binding rules.
 - payload and provenance digests bind the approved candidate through its Receipt;
 - generated-output provenance binds the LibLCM model, manifest, generator, dependency lock, build
   environment, and output digests.
-
-## `MOT-14` — Receipt store and sync — M4
-
-Receipts must be durable and shareable. The applied log is thin by design —
-`(proposalId, formatVersion, timestamp, user, intentDigest, description)` — it records *that*
-something applied, not what it did. The effects live in the `Receipt`, which today is returned and
-never durably stored.
-
-**Lexbox is the home.** It already has organisations, projects, users, and a permission service.
-Proposals and Receipts are immutable, content-addressed documents with frozen identities, so they need
-an object store and an HTTP API, not a merge engine — no CRDT is required to share them. Sharing is
-**optional per project**; a linguist working alone is never obliged to publish.
-
-Review state — comments, approvals, decisions — is mutable, and is an ordinary server database unless
-offline review becomes a requirement.
-
-**Acceptance:** a Proposal authored on one machine is visible, with its Receipt and effect digest, to
-a permitted collaborator on another; an unshared project never leaves the machine.
 
 ## `MOT-6` — semantic + lowering layer, construct 1 — M5
 
@@ -357,6 +484,82 @@ parse time.
 
 ---
 
+# Scope 2 — planned, not built
+
+[ADR 0020](adr/0020-cli-first-fieldworks-planned-not-built.md). Everything below is fully planned and
+deliberately unbuilt until scope 1 is shown to work. The detail is kept because the point of planning
+it now is that scope 1 must not make it more expensive — see ADR 0020 decision 3 for the invariants
+scope 1 owes it.
+
+## `MOT-12` — FieldWorks in-process adapter — M3 *(scope 2)*
+
+**Gated on the `F26a` spike, which is deferred.** [ADR 0019](adr/0019-observed-intent-and-proposal-edit-mode.md)'s
+authoring path rests on a seam in FieldWorks' command layer whose existence and stability are
+unverified. Nothing here should be built before that spike runs.
+
+The `net48` seam. Marshal to the UI thread, pass FieldWorks' own `LcmCache`, supply the applier
+identity, call `Save`, invalidate the parser and UI. The Runner is already `netstandard2.0` and takes
+a cache it does not own, so no Runner API changes.
+
+**Acceptance** is Gate 1 from [fieldworks-crdt-integration-research.md](fieldworks-crdt-integration-research.md):
+one lexical operation previewed and applied through a FieldWorks-owned surface, on the UI thread, as
+one undoable UOW, rejecting stale or wrong-type targets, replayable idempotently, surviving
+save/reload, and reconciling a crash before and after save.
+
+## `MOT-13` — `System.Text.Json` on `net48` — M3 *(scope 2)*
+
+**Research says this is clean** (`A4`): FieldWorks already resolves `System.Text.Json 9.0.14` in its
+`net48` graph, above Motif's 8.0.5 floor, arriving transitively through
+`Microsoft.Extensions.DependencyModel` which `Directory.Packages.props:44` pins for an unrelated ICU
+reason, propagated by `CentralPackageTransitivePinningEnabled`. Every floor in Motif's `net462`
+dependency group is met or exceeded, and `AutoGenerateBindingRedirects` is on repo-wide. No new pins
+are expected. Only the proof remains.
+
+**Do not resolve any residual friction by using Newtonsoft on `net48`.** RFC 8785 canonical bytes must
+be identical across runtimes or every intent and effect digest diverges between FieldWorks and the CLI
+— that is [ADR 0007](adr/0007-cross-language-digest-determinism.md)'s entire subject. Same JSON stack
+everywhere. This is one of ADR 0020's scope-1 invariants, not a scope-2 decision.
+
+**Acceptance:** a `net48` host loads the Contract and computes an intent digest byte-identical to the
+`net10.0` CLI's, for a fixture Proposal.
+
+## `MOT-14` — Receipt store and sync — M4b *(scope 2)*
+
+**Scope 1 needs receipts to be *durable*, not *shared*.** One machine, one author. Local durability is
+scope 1; this item is the second-person half.
+
+The applied log is thin by design — `(proposalId, formatVersion, timestamp, user, intentDigest,
+description)` — it records *that* something applied, not what it did. The effects live in the
+`Receipt`, which today is returned and never durably stored.
+
+**Lexbox is the home.** It already has organisations, projects, users, and a permission service.
+Proposals and Receipts are immutable, content-addressed documents with frozen identities, so they need
+an object store and an HTTP API, not a merge engine — no CRDT is required to share them. Sharing is
+**optional per project**; a linguist working alone is never obliged to publish.
+
+Review state — comments, approvals, decisions — is mutable, and is an ordinary server database unless
+offline review becomes a requirement.
+
+**Acceptance:** a Proposal authored on one machine is visible, with its Receipt and effect digest, to
+a permitted collaborator on another; an unshared project never leaves the machine.
+
+## The two deferred spikes
+
+Both are outside this repository and both are deferred by owner decision, 2026-08-05.
+
+**`E19` — Chorus merges the applied log and does not understand it.** Deferred deliberately: *"we don't
+care about Chorus right now. It's not great, and we know it will fail in some ways."* The distinct-GUID
+case (every reviewer's independent apply) is safe regardless; the same-`proposalId` collision is the
+open one, and if the guid-keyed merge registration is missing it produces duplicate-GUID `.fwdata`.
+Phase 0 item 8's FLExBridge re-confirmation **was never done** and the caveat stands in
+[ADR 0003](adr/0003-feasibility-findings.md) and [implementation-plan.md](implementation-plan.md).
+A single-machine CLI never triggers a Chorus merge — **do not read that silence as evidence.**
+
+**`F26a` — does a usable seam exist in FieldWorks' command layer?** Deferred with scope 2. ADR 0019's
+entire authoring path depends on it, so it runs before any `MOT-12` code, not after.
+
+---
+
 ## Cross-links
 
 - The decision this plan implements: [harmony-adoption-report.md](harmony-adoption-report.md)
@@ -364,7 +567,12 @@ parse time.
 - What was withdrawn from LcmCrdt: [plan-lcmcrdt.md](plan-lcmcrdt.md)
 - Product scope and phases: [motif-overall-plan.md](motif-overall-plan.md)
 - Architecture: [plan-product-architecture.md](plan-product-architecture.md)
-- ADRs: [0016](adr/0016-scratch-cache-copy-not-undo.md) ·
+- ADRs: [0021](adr/0021-cli-is-the-full-surface-layer-1-churns.md) ·
+  [0020](adr/0020-cli-first-fieldworks-planned-not-built.md) ·
+  [0019](adr/0019-observed-intent-and-proposal-edit-mode.md) ·
+  [0018](adr/0018-change-class-is-two-axes-not-one.md) ·
+  [0017](adr/0017-text-and-analysis-destination-scope.md) ·
+  [0016](adr/0016-scratch-cache-copy-not-undo.md) ·
   [0014](adr/0014-generate-the-crdt-layer-from-masterlcmodel.md) ·
   [0012](adr/0012-build-order-hc-spine-first-kinds-generated.md) ·
   [0007](adr/0007-cross-language-digest-determinism.md) ·

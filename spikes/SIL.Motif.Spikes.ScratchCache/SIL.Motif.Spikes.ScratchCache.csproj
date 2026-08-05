@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Spike harness for grill item A1 / ADR 0016 — not a product deliverable.
+
+    It exists to answer two questions with measurements instead of inference: how much a scratch cache
+    costs by each candidate strategy, and whether either strategy produces a cache that is actually
+    equivalent to the live one. It is referenced by SIL.Motif.Tests so the equivalence checks can also run
+    as ordinary assertions against the small fixture.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <RootNamespace>SIL.Motif.Spikes.ScratchCache</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\SIL.Motif.Host\SIL.Motif.Host.csproj" />
+  </ItemGroup>
+
+</Project>

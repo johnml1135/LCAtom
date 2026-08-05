@@ -8,11 +8,17 @@ of what looked like a decision was a fact nobody had gone and read.*
 | | Count | Meaning |
 | --- | --- | --- |
 | ✅ **Closed** | 20 | Answered from source. Do not grill; read the answer. |
-| 📐 **Needs a spike** | 1 | Cannot be read from source — must be built and measured. |
-| 🔴 **Escalated to a task** | 1 | `E19` — research found a real unclosed gap, not a question. |
-| ❓ **Yours** | 34 | Genuinely a decision. This is the grill. |
+| ✅ **Decided** | 8 | `H30`, `G28`, `G27`, `G29`, `F26`/`F22`, `J43`, `J44` — ADRs 0017–0019, 0021. |
+| 📐 **Spike** | 1 active, 2 deferred | `A1` is in this repo and on the path. `E19` and `F26a` are other-repo and scope 2. |
+| ❓ **Yours** | ~29 | Genuinely a decision. This is the grill. |
 
-**All research has landed.** Nothing is in flight.
+**All desk research has landed** except `A1`, which is in flight as of 2026-08-05: its git history and
+correctness hazards are being read before any timing harness is written.
+
+**Sequencing changed, 2026-08-05** ([ADR 0020](adr/0020-cli-first-fieldworks-planned-not-built.md)):
+scope 1 is the LibLCM seams proved through the CLI with an AI agent as author; scope 2 is the FieldWorks
+integration, planned and not built. Items below inherit that — anything FieldWorks- or Chorus-shaped is
+still worth deciding on paper, but it is not what unblocks work this month.
 
 Three of the twelve closures (`F23`, `B9`, `J42`) did not vanish — they turned into **concrete
 proposals with named alternatives**, each leaving one narrow residual (`F23a`, `B9a`, `J42a`). That is
@@ -26,7 +32,7 @@ question costs an hour.
 | `A2` | Two `LcmCache` instances **do** coexist (liblcm's own `BEPPortTests`) — but proven with a *blank* source project. Scale and in-FieldWorks coexistence still open under `A1`. |
 | `D17` | Answered by your own delivery statement: Motif ships a CLI and a FieldWorks integration, so grammar authoring is desktop-only by construction. |
 | `F25` | The blocker is **upstream of diff**: `ObjectSnapshot` is `{CanonicalId, MultiUnicodeFields}` and supports 1 of 473 rows. Cost is unmeasurable until a snapshot substrate exists. |
-| `H31` | **No durable occurrence identity exists.** `AnalysisOccurrence` is a plain C# class, not a `CmObject`. Re-segmentation deletes `Segment` objects; re-attachment is a string+position heuristic. Systemic across interlinear and discourse. |
+| `H31` | **Corrected 2026-08-05 — the original answer overstated it.** True of the `AnalysisOccurrence` *class*; false of what Motif addresses. Motif addresses a `Segment` (a GUID-bearing `CmObject`) and edits `Segment.Analyses` (`rel`/`seq`); the index lives inside the value. liblcm's `AnalysisAdjuster` preserves segments whose text is unaffected. Narrow, detectable drift class — not a systemic identity failure. This withdrew ADR 0017 decisions 3 and 4. |
 | `H32` | **Both, on two axes.** Approval is global to the `WfiAnalysis` (durable GUID); occurrence assignment is positional (no identity). → spawns `H32a`. |
 | `H33` | Tri-state `Opinions` per agent, fixed well-known GUIDs. → spawns `H33a`. |
 | `I35` | **Yes, computable.** FieldWorks already ships it as `NumUserApprovedAnalysesMissing`; PanGloss morpheme identity is the LibLCM MSA GUID on the `.fwdata` path. → spawns `I35a`, `I35b`. |
@@ -59,11 +65,50 @@ guid-keyed registration yields **duplicate GUIDs in `.fwdata`**, not a benign ov
 ADR 0003 now carry the caveat. **`MOT-14` does not resolve this** — Lexbox fixes the product
 consequence, but the log still lives in the `.fwdata`.
 
-## 📐 Needs a spike, not research
+## 📐 Spikes — and which repository each one lives in
 
-**`A1` — what does `CreateCacheCopy` cost?** Cannot be read from source. Needs a build against a real
-project, timing one copy from a hot cache and one from a pristine scratch. Half a day. **Nothing in M2
-should be designed before this number exists**, and `A2`'s remaining half rides on it.
+Owner decision, 2026-08-05 ([ADR 0020](adr/0020-cli-first-fieldworks-planned-not-built.md)): only `A1`
+is on the critical path, and it is the only one in this repository.
+
+| Spike | Whose code | Needs | Scope | Status |
+| --- | --- | --- | --- | --- |
+| `A1` — `CreateCacheCopy` cost **and equivalence** | **motif** — `spikes/SIL.Motif.Spikes.ScratchCache` | Sena 3 from the FieldWorks checkout | 1 | ✅ **DONE 2026-08-05 — measured; ADR 0016 amended** |
+| `A3` — `IProjectIdentifier` for `kMemoryOnly` | **motif** — ~15 lines | nothing | 1 | `A1`'s prerequisite |
+| `E19` — Chorus applied-log merge | languageforge-lexbox (`FwHeadless`) + Chorus packages **absent from the local NuGet cache** | a restored feed, a disposable project | 2 | **Deferred by decision** |
+| `F26a` — FieldWorks command-layer seam | FieldWorks | a FieldWorks checkout | 2 | **Deferred by decision** |
+
+**`A1` is closed — measured, not inferred, and it settled on one path.** Sena 3, 152,222 objects. The
+in-memory fan-out is fast (140 ms vs 4,445 ms from a hot cache) but **measurably lossy: 0 of 4 writing systems
+value-equal**, including when copied from a file-loaded scratch whose writing systems were intact — the loss
+belongs to the `kMemoryOnly` target, not the source. The file path returned **4 of 4** and no findings at all.
+ADR 0016 is [amended](adr/0016-scratch-cache-copy-not-undo.md): **one canonical path — copy the files, open
+the copy** (~600 ms). `CreateCacheCopy` is withdrawn from the Dry Run design, giving up ~5× speed to remove a
+per-operation judgement call about whether collation matters.
+[Full results](research/2026-08-05-createcachecopy-provenance-and-hazards.md#10-measured--the-spike-was-built-and-run).
+
+*The research that scoped the spike, kept because it is why the spike looked for equivalence and not just
+speed:*
+
+- **Two silent correctness hazards** the ADR had not anticipated. A memory-only scratch synthesizes writing
+  systems **from the bare language tag** (no custom collation, sort rules, valid characters), and
+  custom-field **`flid`s are re-derived** through non-contractual `HashSet` order. Motif is safe on both
+  today, and the ADR now states the reasons as invariants rather than luck.
+- **Provenance:** SDK-sample infrastructure for XML ↔ Db4o porting; both repos' histories truncate at 2012
+  synthetic roots, so original intent is **unattributable**. The primitive underneath it runs on every
+  object of every project open, so only the cache-to-cache path is untested.
+- **The harness already exists** — `git -C ../FieldWorks show f0d837288^:Samples/ImportExport/ImportExport.cs`,
+  average-of-N mode included. Don't write it from scratch.
+- **Fixture trap:** real Sena 3 (152,222 objects) is in the FieldWorks checkout; a 50-object `%TEMP%` stub
+  reuses the name. The only existing test used 688 objects.
+
+`A2` is largely answered (two caches coexist, no unsafe statics, and the scratch must keep
+`Path`/`ProjectFolder` empty to avoid the one global singleton) — only scale remains, and it rides along.
+
+**`E19` and `F26a` are deferred, not resolved.** `E19` in the owner's words: *"we don't care about Chorus
+right now. It's not great, and we know it will fail in some ways."* The caveats stay in ADR 0003 and
+`implementation-plan.md`; a single-machine CLI never triggers a Chorus merge, and **that silence is not
+evidence.** `F26a` waits with scope 2 but must run before any `MOT-12` code, since ADR 0019's authoring
+path depends on it.
 
 ---
 
@@ -112,13 +157,15 @@ this is.
 
 ### Then, roughly in this order
 
+Scope tags added 2026-08-05: **[1]** blocks scope-1 work now, **[2]** is worth deciding on paper but
+gates only the FieldWorks integration.
+
 | | Item | Decision |
 | --- | --- | --- |
-| **Bidirectional** | `F22` | `merge`, `replace`, index-as-identity `move` are unrecoverable from a state delta; `reparent` is recoverable. Refuse loudly, degrade to delete-plus-create, or accept an external identity mapping? |
-| | `F24` | Should a reviewer be able to tell a diff-derived Proposal from an authored one? |
-| | `F26` | Is diff the primary human authoring path, making authored Proposals an AI/CLI path? |
-| **Classes** | `G29` | Does ordering deserve its own class? 54 of 56 `positional` rows are display order; 2 are grammatical meaning. |
-| | `B5` | Which family is M2's first, now that the acceptance test is a LibLCM round trip rather than regenerating LcmCrdt? |
+| **Next up** | `B5` **[1]** | Which family is M2's first? The criterion changed twice: acceptance is no longer regenerating LcmCrdt, and under ADR 0020 it is now an **AI-authored, CLI-driven round trip** — which favours a family an agent has a real reason to touch over the mechanically cheapest one. |
+| ~~Bidirectional~~ | ~~`F22`~~, ~~`F26`~~ | **Decided** — [ADR 0019](adr/0019-observed-intent-and-proposal-edit-mode.md). Observe intent in a constrained proposal-edit mode; diff refuses loudly on the unrecoverable set. |
+| | `F24` **[1]** | Three provenance classes now, not two: **observed**, **diffed**, **authored**. Should a reviewer see which? Scope 1 produces *authored* only, which is exactly when the field is cheapest to add. |
+| ~~Classes~~ | ~~`G29`~~ | **Resolved** by [ADR 0018](adr/0018-change-class-is-two-axes-not-one.md) — ordering is a shape, and `ComparisonClass` already separates display order (56 `positional`) from meaning (2 `feeding`). |
 | **Text** *(gated on `H30`)* | `H34` | Text *edits* in scope, or only analyses attached to existing text? Editing is what breaks anchors. |
 | | `I35a` | Accept PanGloss's allomorph- and sense-blindness as a declared limitation, or build a richer identity? It causes **false agreement**, the unsafe direction. |
 | | `I35b` | FieldWorks ships two disagreeing equality definitions. Which wins? |
@@ -133,9 +180,10 @@ this is.
 | | `D18` | Who owns keeping Motif's and FwLite's vocabularies aligned? |
 | **Engine** | `C11` | Raise the liblcm `Rollback`/`Undo` hook fix upstream now, or accept ADR 0016's workaround permanently? |
 | | `C12` | Does a reviewer actually see that a phonological reorder changed meaning? |
-| **Contract** | `J41` | Confirm Layer 0 = diff's output vocabulary, Layer 1 = agent's input vocabulary, as the *stated* rationale for ADR 0009's split. |
-| | `J43` | Removing an operation moves the intent digest and can orphan a dependent. Refuse, cascade, or warn? |
-| | `J44` | What is the unit of splitting a change set, given the `requires` DAG and atomic groups? |
+| **Contract** | `J41` **[1]** | Confirm Layer 0 = diff's output vocabulary, Layer 1 = agent's input vocabulary. **Now the guard on ADR 0021's deliberate Layer 1 churn**, not a stylistic preference — the mechanical test is whether a change alters hashed bytes. |
+| | `B9b` **[1]** | When does the churn window end and the intent surface declare itself stable? Recommended trigger: the first human approval recorded against a stored Proposal. Until then, say *unstable by declaration* rather than implying stability by omission. |
+| ~~`J43`~~ | | **Decided** — [ADR 0021](adr/0021-cli-is-the-full-surface-layer-1-churns.md) §6: warn and enumerate, force to proceed, refuse when consequences are unenumerable. |
+| ~~`J44`~~ | | **Answered** — the individual operation, subject to `requires`; atomic groups stay indivisible. |
 | **Ratify** *(cheap — pick one of two written positions)* | `F23a` | Adopt the four canonical-diff freezing rules as drafted, or contest one? |
 | | `B9a` | Adopt the k8s-shaped versioning policy, calibrating the dual floor when a real cadence exists? |
 | | `J42a` | Force a resolved batch re-applied against a moved baseline through the existing pre-flight drift path, Terraform-style? *(Recommend yes.)* |
@@ -147,22 +195,25 @@ this is.
 
 ## Recommended session shape
 
-**Two spikes, then two gates, then the design.**
+Revised 2026-08-05. Both gates are closed and the bidirectional block is decided, so what remains is
+one spike and a short run of scope-1 decisions.
 
-1. **`A1` spike** — what does `CreateCacheCopy` cost? Half a day; unblocks the M2 design.
-2. **`E19` experiment** — half a day; closes a Phase 0 item that was recorded as closed and is not.
-   Independent of `A1`, so they can run together.
-3. **Gate 1 (`H30`)** — one answer removes or admits ten questions.
-4. **Gate 2 (`G28`)** — one answer unblocks two more.
-5. **The bidirectional block** (`F22`, `F24`, `F26`) — the largest single design commitment.
-6. **The three ratifications** (`F23a`, `B9a`, `J42a`) — minutes each, since the alternatives are
+1. **`A1`** — research first (git history, correctness hazards), then a falsifying timing test only if
+   that is inconclusive. The one thing `MOT-11` should not be designed ahead of.
+2. **`B5`** — M2's first generated family, on the new AI-authored-round-trip criterion.
+3. **The three ratifications** (`F23a`, `B9a`, `J42a`) — minutes each, since the alternatives are
    written down. Good filler when the harder questions stall.
-7. **The three manifest follow-ups** (`B7a`, `B8a`, `C10a`) — each is now a choice over a known number
-   rather than an open worry.
+4. **The three manifest follow-ups** (`B7a`, `B8a`, `C10a`) — each is now a choice over a known number
+   rather than an open worry, and `B7a`/`B8a` gate the generator.
+5. **`F24` and `J41`** — cheap now, and scope 1 is when provenance and the Layer 0/1 split are easiest
+   to get right rather than retrofit.
+6. **The text block** (`H32a`, `H34`, `I35a`–`I40`) — admitted by ADR 0017, but not v1. Grill when the
+   test half is actually being built.
+7. **Scope-2 decisions** (`D14`, `D15`, `D16`, `C11`, `C12`) — worth answering on paper before
+   FieldWorks work starts, not before scope 1 does.
 
-**Do not grill the 20 closed items.** That is 20 of 56 — over a third — that would otherwise have cost
-you decisions you did not need to make. The eight that landed last were the five mislabelled
-"decisions" that were really counts, plus the three manifest-confidence questions.
+**Do not grill the 20 closed or 5 decided items.** That is 25 of ~56 — nearly half — that would
+otherwise have cost you decisions you did not need to make.
 
 ## What the research changed, not just answered
 

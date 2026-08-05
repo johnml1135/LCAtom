@@ -8,30 +8,106 @@ carried forward from those files are marked **(carried)**; the rest came out of 
 [motif-overall-plan.md](motif-overall-plan.md).*
 
 **Ordering rule:** measurements first, because three later answers depend on them. Then the questions
-that block M2, then M3, then M4. IDs are stable; do not renumber.
+that block M2, then M4, then M5. IDs are stable; do not renumber.
 
 > **Read [grill-readiness.md](grill-readiness.md) before grilling.** It triages every item into
-> answered / being researched / needs a spike / genuinely yours. Of 48 items, **9 are already closed
-> by research and 11 are being investigated now** — grilling those would spend decisions you do not
-> need to make. It also identifies two **gate** questions (`H30`, `G28`) whose answers determine
-> whether twelve other items matter at all, and recommends the session order.
+> answered / decided / needs a spike / genuinely yours. **20 items are closed by research and 5 are
+> decided** (ADRs 0017, 0018, 0019) — grilling those would spend decisions you do not need to make.
+> Both gate questions (`H30`, `G28`) are now closed.
+
+> **Sequencing, 2026-08-05** — [ADR 0020](adr/0020-cli-first-fieldworks-planned-not-built.md). **Scope 1
+> is the LibLCM seams proved through the CLI, with an AI agent as author. Scope 2 is the FieldWorks
+> integration: planned, not built.** FieldWorks- and Chorus-shaped questions below are still worth
+> answering on paper, but they no longer gate work. `A1` is the only spike on the critical path and the
+> only one in this repository; `E19` and `F26a` are deferred by owner decision.
 
 ---
 
 ## A — Measure before deciding (blocks M2)
 
-**A1. What does `CreateCacheCopy` actually cost?**
+**A1. [CLOSED 2026-08-05 — measured against real Sena 3; ADR 0016 amended]**
+Harness: `spikes/SIL.Motif.Spikes.ScratchCache` plus equivalence assertions in
+`tests/SIL.Motif.Tests/Runner/ScratchCacheEquivalenceTests.cs` (5 tests, passing; suite now 86/86).
+[Results](research/2026-08-05-createcachecopy-provenance-and-hazards.md#10-measured--the-spike-was-built-and-run).
+
+| | Sena 3 (152,222 objects) |
+| --- | ---: |
+| file copy (control) | 49 ms |
+| in-memory copy, cold live cache | 209 ms |
+| **derived copy from pristine scratch** | **140 ms** |
+| in-memory copy, fully hot live cache | 4,445 ms |
+| **file copy + open (XML path)** | **580 ms** |
+| in-memory copy **of the file-loaded scratch** | 78 ms |
+
+- **Fan-out is genuinely fast** — 31.8× cheaper than re-copying from a hot cache.
+- **"In-memory is cheaper" DEPENDS** — break-even at ~**9% of objects fluffed**. In a live session the XML
+  path is likely cheaper, the opposite of what ADR 0016 assumed.
+- **Equivalence is the decider: 0 of 4 writing systems value-equal** on *every* in-memory variant (valid
+  character sets 2 → 0, fonts replaced, `seh` lost its collation rules); the file path returned **4 of 4**
+  and no findings. Text, object counts, entry counts and custom-field flids matched on both paths.
+- **The hybrid does not exist.** An in-memory copy *of the file-loaded scratch* — whose writing systems are
+  provably intact — still came back 0 of 4. The loss belongs to the `kMemoryOnly` target, not the source
+  (`useMemoryWsManager` is hardwired, `BackendProvider.cs:263-265`). Cheap fan-out and lossless cannot both
+  be had.
+- **Hazard (b) did not reproduce** — both fixtures carry two custom fields on `LexEntry`, the required
+  condition, and flids matched. Not disproven; the resolve-by-name invariant stays as cheap insurance.
+
+**Amendment: one canonical path — the XML path.** `CreateCacheCopy` is withdrawn from the Dry Run design and
+marked non-canonical in code. The ~5× speed is given up deliberately, because keeping both would require every
+future operation's author to judge "does this depend on collation?" correctly, forever, with silence as the
+failure mode. Uncommitted live edits are the one loss and they fail closed — apply refuses on drift, so the
+precondition is simply *save before dry-running*.
+
+*Original framing:*
+
+**A1. What does `CreateCacheCopy` actually cost — and can it be trusted?**
 [ADR 0016](adr/0016-scratch-cache-copy-not-undo.md)'s entire value is the ratio between one copy from
 a hot live cache and N copies from a pristine scratch. Both are asserted from the code path
 (`ToXmlString()` per reconstituted object versus a surrogate copy-construct), neither is measured, and
 `CreateCacheCopy` has **zero callers** in liblcm or FieldWorks. If a copy from a hot Sena-3-scale cache
-takes ten seconds, the warm-scratch strategy changes shape. *Half-day spike. Nothing in M2 should be
-designed before this number exists.*
+takes ten seconds, the warm-scratch strategy changes shape. **Nothing in `MOT-11` should be designed
+before this is settled.**
 
-**A2. Do two `LcmCache` instances coexist in one FieldWorks process?**
-The service locator is per-cache and `InitializeWritingSystemManager` runs on the copy, which looks
-sound. ICU initialisation is more global and was not traced. If they do not coexist, ADR 0016 needs a
-different home for the scratch.
+**[R→research landed 2026-08-05; the spike survives but is now narrow and sharper]**
+[Findings](research/2026-08-05-createcachecopy-provenance-and-hazards.md). ADR 0016 is
+[amended](adr/0016-scratch-cache-copy-not-undo.md).
+
+- **Cost model confirmed from source** — hot source pays `ToXmlString()` per object, dormant source is a
+  byte-array reference copy, work is O(n objects), `kMemoryOnly` does zero disk I/O.
+- **Provenance: SDK-sample infrastructure for XML ↔ Db4o backend porting.** Both repos' histories are
+  truncated at 2012 synthetic roots, so original intent is **unattributable** — no `git blame` claim about
+  it is supportable. Db4o was removed in 2015, the sample deleted in 2017. But the primitive underneath
+  (`RegisterInactiveSurrogate`) runs on every object of every project open, so only the *cache-to-cache
+  port path* is untested.
+- **The harness already exists.** Recoverable at
+  `git -C ../FieldWorks show f0d837288^:Samples/ImportExport/ImportExport.cs`, with an average-of-N timing
+  mode. The people who built the API measured it; the numbers are gone. Start there.
+- **Two silent correctness hazards ADR 0016 had not anticipated**, and they matter more than milliseconds:
+  a memory-only scratch's **writing systems are synthesized from the bare language tag** (no custom
+  collation, sort rules, or valid characters), and **custom-field `flid`s are re-derived** through a
+  `HashSet` whose enumeration order is not contractual. Motif is safe on both today — no `flid` anywhere in
+  `src/`, and writing systems resolved per cache by tag — and ADR 0016 now states those as invariants
+  rather than luck.
+- **Fixture trap:** the genuine Sena 3 (152,222 objects, 55.9 MB) is in the FieldWorks checkout; a 50-object
+  stub in `%TEMP%` reuses the same name. The only test ever to exercise this path used a 688-object blank
+  project — 221× smaller.
+
+**What the spike must now do:** measure the hot-copy and scratch-derived-copy ratio at Sena-3 scale, **and**
+round-trip a project with ≥2 custom fields on one class plus a customized writing system, comparing flids
+and writing-system state live vs. scratch. The three falsification criteria are in the findings note §9.
+Criterion 3 is the one that would change the architecture rather than its parameters.
+
+**A2. [R→largely answered 2026-08-05; only scale remains]**
+[Findings](research/2026-08-05-createcachecopy-provenance-and-hazards.md#3-a2--two-live-caches-coexist-and-the-scratch-avoids-the-one-shared-singleton).
+Two caches **do** coexist — `BEPPortTests` holds both live — and **no unsafe shared state was found**: ICU
+init is idempotent by its own documented design (`CustomIcu.cs:208-210`), `CmObjectId` interning is
+per-cache not static, and `CmObjectSurrogate`'s two statics are lock-guarded reflection caches. The one
+genuinely shared singleton, `CoreGlobalWritingSystemRepository`, is only touched when
+`ProjectId.ProjectFolder` is non-empty — so **a memory-only scratch must keep `Path`/`ProjectFolder`
+empty**, which is now a design requirement rather than a detail (see `A3`).
+
+What remains is scale only: coexistence is proven with a 688-object blank project, not at Sena-3 scale
+inside a live FieldWorks process. That rides along with `A1`'s spike.
 
 **A3. [R→answered: yes, write ~15 lines]**
 [Findings](research/2026-08-03-five-computable-grill-items.md#a3). `IProjectIdentifier` is fully public
@@ -41,6 +117,12 @@ is irrelevant — `LcmServiceLocatorFactory.cs:151-156` wires it *inside* `SIL.L
 (`TestProjectId`) is packable and already referenced by FieldWorks, but it is test infrastructure that
 drags NUnit and Moq along. **Write the class. The scratch does not have to live on disk, and `A1`'s
 numbers stand.**
+
+**Refined 2026-08-05:** liblcm's internal convenience implementation is `SimpleProjectId`
+(`Infrastructure/Impl/SimpleProjectId.cs:21`) and it is `internal`, so motif writes its own regardless. Two
+constraints on that class: `Type => kMemoryOnly`, and **`Path`/`ProjectFolder` null or empty** — the latter
+is what keeps the scratch clear of the process-global `CoreGlobalWritingSystemRepository` singleton (`A2`).
+Not cosmetic.
 
 **A4. [R→answered: clean, and the premise was wrong]** *(`MOT-13`)*
 [Findings](research/2026-08-03-five-computable-grill-items.md#a4). **FieldWorks already has
@@ -127,6 +209,22 @@ motif has three runtimes on independent cadences plus agent callers who never re
 **refusal** = a structured `{group, requiredVersion, carriedVersion}` payload, not prose.
 
 **Decision (`B9a`) [D]:** adopt this, and calibrate N and M when a real release cadence exists?
+
+**New: `B9b` [D] — when does the intent surface declare itself stable, and what ends the churn window?**
+[ADR 0021](adr/0021-cli-is-the-full-surface-layer-1-churns.md) decisions 3 and 5 accept deliberate churn
+in Layer 1 while FieldWorks is not yet depending on it, and accept its one real cost: **a Proposal
+authored during the window may not replay later.** That is tolerable while the author is an agent that can
+re-author on demand on one machine. It stops being tolerable the moment a *human's approval* is recorded
+against a stored Proposal, because `MOT-9`'s premise is that a Receipt binds what was approved.
+
+**Narrower than it first looked.** The question applies only to **stored, hashed artifacts** — Proposals
+and Receipts. The ephemeral read surface (an agent asking *"what is true now"*) stores nothing, replays
+nothing, and therefore needs no stability declaration at all, permanently. The boundary where an ephemeral
+answer becomes durable is precise: **citing it as evidence turns it into a Check Run.**
+
+So: does the churn window end at the first human approval (recommended), at scope 2, or at a declared
+version? And until it ends, the contract-version metadata should say **unstable by declaration** rather
+than implying stability by omission.
 
 ## C — Engine behaviour (blocks M2/M5)
 
@@ -219,6 +317,12 @@ still lives in `.fwdata` and still goes through Chorus.
 **Action (`E19a`) — not a grill item, a task:** run the section-4 experiment. It needs no FLExBridge
 source — drive the real merge through `FwHeadless`'s own `SendReceiveHelpers.CallLfMergeBridge`. Until
 it runs, ADR 0003 decision 2 should carry a caveat rather than be cited as settled.
+
+> **Deferred by owner decision, 2026-08-05.** *"We don't care about Chorus right now. It's not great, and
+> we know it will fail in some ways."* The experiment stays specified and unscheduled; it is scope 2 and
+> lives in another repository ([ADR 0020](adr/0020-cli-first-fieldworks-planned-not-built.md)). The
+> caveats remain in ADR 0003 and `implementation-plan.md`. A single-machine CLI never triggers a Chorus
+> merge — **that silence is not evidence.**
 
 **E20. PanGloss has no release pipeline at all.**
 CI is `ubuntu-latest` only, no artifact upload, no publish job, no binary for any OS. This blocks
@@ -316,9 +420,11 @@ problem finite, turns refusal into a design-time property (an unobservable edit 
 rather than rejected at encode time), and bounds drift because out-of-domain edits cannot occur in the
 session at all.
 
-**Open risk (`F26a`) — needs a spike.** This requires a seam in FieldWorks' command layer. ADR 0003
-deliberately avoided liblcm's *internal undo records*; observing FieldWorks' own commands is a
-different seam whose existence and stability are **unverified**. Spike alongside `A1` and `E19`.
+**Open risk (`F26a`) — needs a spike, deferred 2026-08-05.** This requires a seam in FieldWorks' command
+layer. ADR 0003 deliberately avoided liblcm's *internal undo records*; observing FieldWorks' own commands
+is a different seam whose existence and stability are **unverified**. It is scope 2 and in the FieldWorks
+repository ([ADR 0020](adr/0020-cli-first-fieldworks-planned-not-built.md)), so it waits — but it must run
+**before any `MOT-12` code**, since this ADR's authoring path depends on it.
 
 **Side effect:** the 473-row snapshot substrate is **de-urgentized, not cancelled** — drafting no
 longer depends on diff, so it can be built incrementally behind the domains that need it.
@@ -508,11 +614,17 @@ judgement. Who may overrule it, and is that itself a reviewable change?
 
 ## J — Authoring, editing, portability
 
-**J41. [D] Confirm the Layer 0 / Layer 1 rationale.**
+**J41. [D — and now load-bearing rather than tidy]**
 The proposal says the semantic layer is unnecessary for human diff-based authoring and meaningful only
 for AI and CLI. That matches ADR 0009's split and supplies its missing rationale: **Layer 0 is the
 diff's output vocabulary; Layer 1 is the agent's input vocabulary.** Worth adopting as the stated
 reason, because it makes the split load-bearing rather than stylistic.
+
+**Raised in stakes by [ADR 0021](adr/0021-cli-is-the-full-surface-layer-1-churns.md)**, which makes
+Layer 1 deliberately churn-tolerant while Layer 0 stays hashed. The split is now the *guard* on that
+churn, not a stylistic preference: the mechanical test is **whether a change alters the bytes that get
+hashed.** Confirming this rationale in writing is what stops "churn is fine" from reaching a `kind`
+string or the canonical form.
 
 **J42. [R→already decided; one residual]**
 [Prior art](research/2026-08-03-prior-art-canonical-diff-versioning-batch.md#j42). Resolved operations
@@ -528,9 +640,34 @@ the identical mechanism already — the pre-flight footprint-digest-plus-engine-
 re-reviewing or applying a resolved batch against a moved baseline be forced through that same drift
 path**, rather than silently re-resolving? (Recommend yes.)
 
-**J43. [D] What are the rules for removing an operation from a change set?**
-Trivial mechanically. But it moves the intent digest while `proposalId` stays frozen, and it can
-orphan a dependent operation or break a `requires` edge. Refuse, cascade, or warn?
+**J43. [D→DECIDED 2026-08-05 — warn, enumerate, force; refuse only when consequences are unenumerable]**
+[ADR 0021](adr/0021-cli-is-the-full-surface-layer-1-churns.md) decision 6. The owner's requirement was
+per-item removal — *"don't add that lexeme"*, *"only rules 1 and 4, not 5"* — with dependencies warned and
+a force required when removal causes further deletes.
+
+So the answer is none of refuse / cascade / warn alone:
+
+1. no dependents → it just happens;
+2. severs a `requires` edge or orphans a dependent → **warn, naming every consequence**, then require an
+   explicit force;
+3. **force never means "guess"** — it means an enumerated consequence set was accepted. Unenumerable
+   consequences are refused, not forced;
+4. `proposalId` frozen, intent digest moves, new revision — never a mutation of an approved one.
+
+**Not free for `delete`:** deleting an owner cascades and de-referencing does not (LibLCM leaves an
+orphan), so a removal whose consequence set depends on *discovered* reach must recompute it rather than
+reason from the declared footprint.
+
+*Original framing: trivial mechanically, but it moves the intent digest while `proposalId` stays frozen,
+and it can orphan a dependent operation or break a `requires` edge — refuse, cascade, or warn?*
+
+**J44. [D→ANSWERED 2026-08-05 — the individual operation, subject to `requires`]**
+Falls out of `J43`: removal and splitting are the same mechanism, and *"only rules 1 and 4, not 5"*
+requires operation-level granularity. An atomic group stays indivisible — a split that would break one is
+a `J43` case, so it warns and forces, or refuses. See
+[ADR 0021](adr/0021-cli-is-the-full-surface-layer-1-churns.md) decision 6 and `MOT-18`.
+
+*Original framing:*
 
 **J44. [D] What is the unit of splitting a change set?**
 Portability is nearly free — `ProposalStore` is already content-addressed objects plus manifests. The

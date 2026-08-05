@@ -142,17 +142,28 @@ volume is generated. Lexical coverage expands afterward from the same Manifest.
 - [product architecture](docs/plan-product-architecture.md) — normative end-state boundaries;
 - [overall product plan](docs/motif-overall-plan.md) — user workflow, evidence corpus, UI, and CLI.
 
-The milestone sequence is:
+**Two scopes** ([ADR 0020](docs/adr/0020-cli-first-fieldworks-planned-not-built.md)). Scope 1
+establishes the LibLCM seams and proves them through the CLI, with an AI agent as the author. Scope 2 is
+the FieldWorks integration — planned in full, and deliberately not built until scope 1 works.
 
-1. **M1** — fail-closed model join, and a generator that reads it without a liblcm checkout;
-2. **M2** — one generated operation family applied end to end, with a scratch-cache dry run;
-3. **M3** — FieldWorks hosts Dry Run and Apply in-process, on `net48`;
-4. **M4** — a Proposal reviewed, approved, applied, and its Receipt shared through Lexbox;
-5. **M5** — one grammar Construct authored, applied, and parsed by PanGloss;
-6. **M6** — the remaining grammar surface, and the ordered residue proven on real projects.
+Milestone ids are stable; the order is `M1 → M2 → M4 → M5 → M6`, then scope 2.
 
-M1 and M2 are mechanical. M3 is integration. **M4 is the product.** M5 is the first thing a linguist
-would recognise as the point.
+| | | Scope |
+| --- | --- | --- |
+| **M1** | fail-closed model join, and a generator that reads it without a liblcm checkout | 1 |
+| **M2** | one generated operation family applied end to end from the CLI, with a scratch-cache dry run | 1 |
+| **M4** | a Proposal authored by an agent, reviewed, approved, applied, with a durable Receipt | 1 |
+| **M5** | one grammar Construct authored, applied, and parsed by PanGloss | 1 |
+| **M6** | the remaining grammar surface, and the ordered residue proven on real projects | 1 |
+| **M3** | FieldWorks hosts Dry Run and Apply in-process, on `net48` | **2** |
+| **M4b** | Receipts shared between people, through Lexbox | **2** |
+
+M1 and M2 are mechanical. **M4 is the product**, and it is AI-facing first — the agent is the first
+author, not the last. M5 is the first thing a linguist would recognise as the point.
+
+Scope 2 is planned now so scope 1 cannot make it more expensive: `netstandard2.0` on
+Contract/Model/Runner, one JSON stack everywhere, a Runner that never owns a cache, and an apply that
+never calls `Save` are build-time invariants throughout, not later concerns.
 
 ## Open decisions
 

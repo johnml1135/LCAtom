@@ -8,14 +8,21 @@ Plan A's dependency surface shrank sharply when grammar stopped being routed thr
 three-repo ladder (motif / harmony / lexbox) is gone; what remains is four small, mostly independent
 asks.
 
+**Scope, added 2026-08-05** ([ADR 0020](adr/0020-cli-first-fieldworks-planned-not-built.md)): scope 1 —
+the LibLCM seams proved through the CLI with an AI agent as author — **needs nothing from any other
+repository.** Every row below is scope 2 except PanGloss's, which arrives at M5. That is the point of
+the CLI-first sequencing: no other team's review cycle is on the critical path.
+
 | Repository | Item | For | Blocking? |
 | --- | --- | --- | --- |
-| **FieldWorks** | Host the `netstandard2.0` Runner in-process behind a semantic adapter | `MOT-12` | **Yes, for M3** |
-| **FieldWorks** | Avalonia review/proposal/diff modules on the migration spine | `MOT-10` | Yes, for M4 |
-| **PanGloss** | `hc_grammar_load_snapshot` FFI entry calling `pg_grammar::compile_project` | `MOT-15` | Yes, for M5 step 2 |
+| **PanGloss** | `hc_grammar_load_snapshot` FFI entry calling `pg_grammar::compile_project` | `MOT-15` | Yes, for M5 step 2 (scope 1) |
 | **PanGloss** | A release pipeline — per-RID `cargo build --release` and artifact publish | `MOT-15` | **Yes, and it does not exist at all** |
+| **FieldWorks** | Host the `netstandard2.0` Runner in-process behind a semantic adapter | `MOT-12` | Scope 2 — and gated on the `F26a` seam spike |
+| **FieldWorks** | A recordable command-layer seam for observed intent (`F26a`) | `MOT-12`, [ADR 0019](adr/0019-observed-intent-and-proposal-edit-mode.md) | Scope 2 — **unverified that it exists** |
+| **FieldWorks** | Avalonia review/proposal/diff modules on the migration spine | `MOT-10` | Scope 2 |
+| **lexbox** | Proposal and Receipt object store, optional per project | `MOT-14` | Scope 2 (`M4b`). Scope 1 needs receipts *durable*, not *shared* |
+| **lexbox / FwHeadless** | The `E19` Chorus applied-log merge experiment | `E19` | **Deferred by owner decision** — Chorus is known-imperfect and not a near-term concern |
 | **liblcm** | Make `Rollback` run the refresh hooks `Undo` runs, or expose a non-committing invalidation | `MOT-11` | No — ADR 0016 routes around it |
-| **lexbox** | Proposal and Receipt object store, optional per project | `MOT-14` | Yes, for M4 |
 | **harmony** | *nothing* | — | — |
 
 ## FieldWorks
