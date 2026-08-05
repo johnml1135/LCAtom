@@ -299,7 +299,13 @@ becomes an AI/CLI path almost exclusively. That is a product decision with UI co
 
 ## G — Change classes
 
-**G27. [R→the data says no; the decision is what to do about it]**
+**G27. [R→DISSOLVED by [ADR 0018](adr/0018-change-class-is-two-axes-not-one.md)]**
+*"Are the six classes the right cut"* was the wrong question — **the cut was two cuts.** The six
+classes conflated a **domain** axis (classes 1–4) with an **operation-shape** axis (class 5), which is
+exactly why 59 rows straddled and 73 had no home. Split into `(domain, shape)`, all 473 rows land in
+exactly one of 21 cells. The row counts below were all verified exact; it is the grouping that changed.
+
+*Original finding, kept because it is what forced the diagnosis:*
 [Audit §8](research/2026-08-03-manifest-trust-audit.md#8-does-the-proposed-change-class-taxonomy-partition-the-manifest-g27).
 The proposal's five row counts are **all verified exact**. But the table assumes `Verbs` alone
 determines class membership, and cross-tabulating against `Group` shows **only 52% of in-scope rows land
@@ -325,13 +331,27 @@ Candidates still open for class 6+: **ordering** (56 `positional` + 2 `feeding`)
 **But the answer depends on `G28`** — a taxonomy for review routing can tolerate a row in two buckets;
 one for permissions cannot.
 
-**G28. [D] What is a change class *for*?**
-Review routing? Permissions? Risk tiering? Which diff operations are coverable? Coverage
-requirements? The taxonomy's shape depends on its purpose, and the purpose is not yet stated.
+**G28. [D→DECIDED 2026-08-05 — two orthogonal axes, not one label]**
+[ADR 0018](adr/0018-change-class-is-two-axes-not-one.md). Gate 2 is closed.
 
-**G29. [D] Does ordering deserve to be its own class?**
-For 54 of 56 `positional` rows order is display order; for the 2 `feeding` rows it is grammatical
-meaning. Same verb, categorically different review stakes.
+A change class is a **`(domain, shape)` pair**. Verified across all 473 in-scope rows: **21 populated
+cells, every row in exactly one, zero straddle.** Domains are `grammar` 230 / `lexical` 157 / `system`
+47 / `lists` 39; shapes are the six `Verbs` values.
+
+**And it is not a new vocabulary.** ADR 0009's kind namespace is already `group/construct/verb`
+(`lexical/sense/setGloss`), so **domain is the kind's first segment and shape derives from its verb
+segment**. A change class is a *projection* of an identifier that already exists — nothing new becomes
+versioned contract, so the major-forcing rename risk that made this gate urgent never arises. This also
+discharges ADR 0017 decision 5: adding a `text` domain is adding a `group`, which is minor-safe.
+
+**Risk tier is derived, not an axis** — a function of `(domain, shape)` plus `ComparisonClass`. The
+39 `lists` rows' project-wide blast radius falls out of the domain axis without a third classification.
+
+**G29. [D→RESOLVED by ADR 0018 — ordering is a shape, not a class]**
+Ordering needs no class of its own. And the substantive worry — 54 of 56 `positional` rows are display
+order while 2 are grammatical meaning — **is already carried by a column that exists**:
+`ComparisonClass` separates `positional` (56) from `feeding` (2). The manifest already distinguishes
+"order is presentation" from "order is meaning"; nothing needed building.
 
 ## H — Text and analysis as a bounded context (reverses a committed scope decision)
 

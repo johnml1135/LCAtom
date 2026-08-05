@@ -94,6 +94,16 @@ Bringing it in is a new bounded context, not extra volume.
 and coverage hangs on fragile positional occupancy, so **sequence the test half first and treat
 coverage as a research track?**
 
+### ~~Gate 2~~ — `G28`: **CLOSED 2026-08-05.** Two orthogonal axes, not one label
+
+[ADR 0018](adr/0018-change-class-is-two-axes-not-one.md). A change class is a `(domain, shape)` pair —
+21 cells, all 473 rows, zero straddle — and **both axes are already segments of ADR 0009's kind name**,
+so nothing new becomes versioned contract. **`G27` dissolves and `G29` resolves** as consequences: the
+six classes were two axes conflated, and ordering is a shape whose display-vs-meaning split
+`ComparisonClass` already carries.
+
+*Original framing, kept for the record:*
+
 ### Gate 2 — `G28`: what is a change class *for*?
 
 Review routing, permissions, risk tiering, which diff operations are coverable, coverage
