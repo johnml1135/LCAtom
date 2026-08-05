@@ -116,7 +116,7 @@ the first author, not the last. M5 is the first thing a linguist would recognise
 | --- | --- | --- | --- |
 | `MOT-2` — the `(Class, Field)` join, failing the build on any unmatched key | M1 | Small | Not started |
 | `MOT-3` — generator skeleton: read `MasterLCModel.xml`, emit nothing yet | M1 | Medium | Not started |
-| `MOT-4` — emit the operation catalog for one family | M2 | Medium | Not started — family undecided (`B5`) |
+| `MOT-4` — emit the operation catalog for one family | M2 | Medium | Not started — family decided (`B5`): the lexical entry |
 | `MOT-11` — scratch-cache DryRun, replacing mutate-then-rollback | M2 | Medium | Not started — **ADR 0016**, gated on the `A1` spike |
 | `MOT-16` — long-lived CLI session over a warm cache | M2 | Small–medium | Not started |
 | `MOT-19` — the CLI as the full product surface, text and JSON | M2/M4 | Large, and grows with every other item | Not started — **ADR 0021** |
@@ -200,7 +200,16 @@ without a liblcm source tree.
 ## `MOT-4` — emit the operation catalog for one family — M2
 
 The output side of the gate, and the point where this plan diverges most from its predecessor.
-**Target LibLCM objects, not MiniLcm types.** Emit, per in-scope field of the chosen family:
+**Target LibLCM objects, not MiniLcm types.**
+
+**The family is the lexical entry** (`B5`, decided 2026-08-05): start where an agent's work starts. Concretely
+the `lexEntry` construct's 10 authorable rows, **plus** `LexEntry.LexemeForm` and the `MoForm` rows that bring
+an entry into existence — because `lexEntry` alone contains **zero `create|delete`** and a generator that can
+edit entries but not create one does not test the gate. `LexEntry.AlternateForms` is excluded: it is a
+`feeding` row and belongs to `MOT-8`. Cache-poisoning flags are not a selection criterion any more, since a
+Dry Run runs on a throwaway scratch and Apply never rolls back.
+
+Emit, per in-scope field of that family:
 
 - the enumerated `kind` string, `{group}/{construct}/{verb}{Noun}`, one per field — never a runtime
   field-name parameter;
@@ -219,9 +228,11 @@ against a real project, with effects read back rather than replayed. The one han
 (`lexical/sense/setGloss`) is regenerated and its existing tests pass **unmodified** — correctness is
 established by regenerating code that already passes, not by the design being elegant.
 
-**What passing does not license.** The possibility-list family is 37 in-scope rows: 34 `unordered`, 3
-`positional`, zero `feeding`, zero `index-as-identity`, zero `AssessPoisonsCache=yes`. It licenses the
-mechanical majority and says nothing about the ordered-grammar minority.
+**What passing does not license.** The slice is lexical and almost entirely `unordered`: it exercises
+`set|clear`, `addRef|removeRef`, and `create|delete`, and touches **no** `feeding` or `index-as-identity` row.
+It licenses the mechanical majority and says nothing about ordered grammar — which is `MOT-8`, deliberately.
+Only 4 of the `lexSense` rows and none of the `lexEntry` rows are HermitCrab-reachable, so it also says
+nothing about whether a generated kind can change a parse; that is `MOT-6` and `MOT-15`.
 
 ## `MOT-11` — scratch-cache DryRun — M2
 

@@ -162,7 +162,8 @@ gates only the FieldWorks integration.
 
 | | Item | Decision |
 | --- | --- | --- |
-| **Next up** | `B5` **[1]** | Which family is M2's first? The criterion changed twice: acceptance is no longer regenerating LcmCrdt, and under ADR 0020 it is now an **AI-authored, CLI-driven round trip** — which favours a family an agent has a real reason to touch over the mechanically cheapest one. |
+| ~~`B5`~~ | | **Decided 2026-08-05 — the lexical entry**, on the criterion *start where an agent's work starts*. The slice is the `lexEntry` construct **plus** `LexemeForm`/`MoForm`, because `lexEntry` alone has zero `create|delete` and cannot create an entry; `AlternateForms` (a `feeding` row) is excluded. Poison flags stopped being a selection criterion once the scratch became throwaway. |
+| **Next up** | `B7a` **[1]** | Review all **61** non-default manifest rows before the generator ships? It reads `ComparisonClass` and `Verbs` directly, so a wrong row becomes wrong code — and sampling 22 found ~5 flawed. One sitting, and it gates `MOT-4`. |
 | ~~Bidirectional~~ | ~~`F22`~~, ~~`F26`~~ | **Decided** — [ADR 0019](adr/0019-observed-intent-and-proposal-edit-mode.md). Observe intent in a constrained proposal-edit mode; diff refuses loudly on the unrecoverable set. |
 | | `F24` **[1]** | Three provenance classes now, not two: **observed**, **diffed**, **authored**. Should a reviewer see which? Scope 1 produces *authored* only, which is exactly when the field is cheapest to add. |
 | ~~Classes~~ | ~~`G29`~~ | **Resolved** by [ADR 0018](adr/0018-change-class-is-two-axes-not-one.md) — ordering is a shape, and `ComparisonClass` already separates display order (56 `positional`) from meaning (2 `feeding`). |

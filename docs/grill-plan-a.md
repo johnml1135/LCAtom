@@ -136,6 +136,35 @@ need a different answer.**
 
 ## B — Scope and vocabulary (blocks M2)
 
+**B5. [D→DECIDED 2026-08-05 — the lexical entry, plus the minimum that can create one]**
+Owner decision: *"starting with lexemes sounds intelligent."* Criterion recorded: **start where an agent's
+work starts — the dictionary entry** — rather than at the mechanically cheapest family. The old
+possibility-list default is explicitly rejected: those 19 rows are B20's multi-construct set, whose fan-out
+*cannot* be derived from `Class`/`Field` alone, so it would front-load the manifest's hardest naming problem.
+
+**The slice is not simply the `lexEntry` construct, because that construct cannot create a lexeme.** All 16
+in-scope `lexEntry` rows are `set|clear` (7), `addRef|removeRef` (3), or `n/a` (6) — **zero `create|delete`.**
+`LexEntry.LexemeForm` is classified under `allomorph` and `LexEntry.Senses` under `lexSense`, so a generator
+built from `lexEntry` alone could edit entries and never make one. That is a concrete instance of `B8`'s
+object-creation closure: construct boundaries do not match object boundaries.
+
+**M2's slice, therefore:**
+
+- the `lexEntry` construct's 10 authorable rows (`set|clear` ×7, `addRef|removeRef` ×3);
+- **plus** `LexEntry.LexemeForm` and the `MoForm` rows needed to bring an entry into existence
+  (`MoForm.Form`, `MoForm.MorphType`, `MoForm.IsAbstract`), which is what makes `create|delete` — the verb
+  shape `setGloss` does not exercise — part of the gate;
+- **excluding `LexEntry.AlternateForms`**, a `feeding` row belonging to `MOT-8`;
+- 6 `n/a` rows (`HomographNumber`, the dates, residue, `MainEntriesOrSenses`) generate no kinds, per `B16`.
+
+**Cache poisoning is no longer a selection criterion.** `LexEntry.CitationForm`, `LexEntry.LexemeForm`,
+`MoForm.Form` and `MoForm.MorphType` are all `AssessPoisonsCache=yes`, and under
+[ADR 0016 as amended](adr/0016-scratch-cache-copy-not-undo.md) a Dry Run runs on a throwaway file-loaded
+scratch while Apply commits without rollback — so the flag has no bearing on this choice. That strengthens
+the case for retiring the column (`C10a`).
+
+*Original framing:*
+
 **B5. Which family is M2's first generated family, and on what criterion?**
 Plan A says "one family" without naming it. The possibility-list family is the obvious candidate — 37
 in-scope rows, all `unordered` or `positional`, zero `AssessPoisonsCache=yes` — but that was chosen to
