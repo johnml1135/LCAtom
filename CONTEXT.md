@@ -1,8 +1,8 @@
 # Motif
 
 Motif is the semantic vocabulary and tooling for proposing, evaluating, and applying changes to a
-FieldWorks language project — its lexicon and, above all, its grammar. It sits between FieldWorks
-(which owns the data), Harmony (which merges changes), and PanGloss (which parses with the result).
+FieldWorks language project — its lexicon and, above all, its grammar. It sits between **LibLCM** (which
+owns the data and is the only authority on it) and **PanGloss** (which parses with the result).
 
 ## The unit of change
 
@@ -44,9 +44,9 @@ retained, or became incomplete.
 _Avoid_: diff, score change, improvement
 
 **Dry Run**:
-What a Proposal would do to a live LibLCM model, computed without mutating it: before-state, planned
-effects, warnings, conflicts, and applicability. Named for lexbox's existing `DryRunMiniLcmApi`, which
-records what *would* have been written.
+What a Proposal would do, computed by applying it to a throwaway copy of the project and reading the
+effects back from the engine — never by predicting them. The live model is not mutated
+([ADR 0016](docs/adr/0016-scratch-cache-copy-not-undo.md)).
 _Avoid_: assessment, preview, plan, simulation
 
 **Drift**:
@@ -72,10 +72,11 @@ are computed and Proposals applied. A Motif tool never opens or owns a project's
 handed one.
 _Avoid_: cache, session, connection
 
-**Change store**:
-The Harmony/LcmCrdt commit log holding Proposals as CRDT changes, so they merge between replicas
-rather than conflicting.
-_Avoid_: database, repository, queue
+**Proposal store**:
+The content-addressed object store holding Proposals and Receipts as immutable documents with frozen
+identities. There is no merge engine and no replication: a Proposal is either the same document or a new
+revision.
+_Avoid_: change store, database, repository, queue
 
 **HC interpretation**:
 The rules by which grammar in a language project becomes a HermitCrab grammar — the semantics
@@ -85,14 +86,17 @@ _Avoid_: HC XML, export, projection
 ## Coverage and generation
 
 **Manifest**:
-The reviewed classification of every field in LibLCM's model — what is in scope, which Construct it
-belongs to, how it compares, and which verbs it supports. Human judgement that exists nowhere else.
+One row per field in LibLCM's model, recording what is in scope and which Construct it belongs to. Those
+two are human judgement that exists nowhere else. Verbs and comparison behaviour are **derived** from
+LibLCM's own structural declarations and checked against the manifest, not taken from it
+([ADR 0022](docs/adr/0022-structure-is-derived-policy-is-five-rows.md)).
 _Avoid_: inventory, schema, spec
 
-**Name map**:
-The hand-maintained correspondence between MiniLcm type names and LibLCM class names, which do not
-match and cannot be derived from either side.
-_Avoid_: mapping table, alias list
+**Construct**:
+The middle segment of an operation kind — `lexical/`**`sense`**`/setGloss`. Hand-authored and genuinely
+not derivable: only about a quarter of construct names match their LibLCM class, and some
+(`featureStructure`, `ruleContext`) group many classes under one linguistic idea.
+_Avoid_: name map, mapping table, alias list
 
 **Ordered grammar**:
 The grammar whose meaning depends on sequence — phonological rule order encoding feeding and

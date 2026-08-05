@@ -8,12 +8,12 @@ of what looked like a decision was a fact nobody had gone and read.*
 | | Count | Meaning |
 | --- | --- | --- |
 | ✅ **Closed** | 20 | Answered from source. Do not grill; read the answer. |
-| ✅ **Decided** | 8 | `H30`, `G28`, `G27`, `G29`, `F26`/`F22`, `J43`, `J44` — ADRs 0017–0019, 0021. |
+| ✅ **Decided** | 11 | `H30`, `G28`, `G27`, `G29`, `F26`/`F22`, `J43`, `J44`, `B5`, `B7a`, `B18` — ADRs 0017–0022. |
 | 📐 **Spike** | 1 active, 2 deferred | `A1` is in this repo and on the path. `E19` and `F26a` are other-repo and scope 2. |
 | ❓ **Yours** | ~29 | Genuinely a decision. This is the grill. |
 
-**All desk research has landed** except `A1`, which is in flight as of 2026-08-05: its git history and
-correctness hazards are being read before any timing harness is written.
+**All research and the one on-path spike have landed.** `A1` was measured against real Sena 3 on 2026-08-05
+and closed; `E19` and `F26a` are deferred by decision.
 
 **Sequencing changed, 2026-08-05** ([ADR 0020](adr/0020-cli-first-fieldworks-planned-not-built.md)):
 scope 1 is the LibLCM seams proved through the CLI with an AI agent as author; scope 2 is the FieldWorks
@@ -47,7 +47,7 @@ question costs an hour.
 | `C10` | **Exactly 4 rows**, all `Group=lexical`. Small enough that the decision is now cheap. → `C10a`. |
 | `C13` | **Hand-written, and already written.** Call `IPhRegularRule.FeatureConstraints`; the traversal dispatches on `ClassID` through three classes the manifest never names. |
 | `B6` | **B19 understated, B20 reconciled.** Only 26.4% of construct names are mechanical; 41.5% have no relationship to any class. B20's fan-out cannot be done from `Class`/`Field` alone — it needs runtime owner identity. |
-| `B7` | **The risk is 61 rows, not 473.** Structural columns checked 22/22 clean; `ComparisonClass` is mechanical for 405 of 412; errors concentrate in the 61 hand-classified rows (~23% flawed when sampled). **B18's ~300 is really 406.** → `B7a`. |
+| `B7` / `B7a` | **Dissolved by [ADR 0022](adr/0022-structure-is-derived-policy-is-five-rows.md).** The audit premise was that the generator trusts these rows. It does not any more: `Verbs` is a pure function of `Kind`/`Card` (7 combinations, zero exceptions, 412 rows) and `ComparisonClass` is `seq`→`positional` with **five** cited exceptions. Both are derived; the build fails on unexplained departures. No 61-row audit. |
 | `G27` | **The data says no.** Only 52% of rows land in exactly one proposed class; 73 `lists`/`system` rows have no bucket, and classes 3/4 have zero rows to test against. |
 
 ## 🔴 Escalated — research raised it, not closed it
@@ -175,10 +175,10 @@ gates only the FieldWorks integration.
 | | `I39` / `I39a` | Are donated tests reviewed, trusted, or quarantined — noting a donation sets a *global* flag? Do machine guesses count as assertions? |
 | | `I40` | When a rule change is correct but breaks an old analysis, who may overrule a native speaker's judgement? |
 | | `H33a` | Does provenance record the agent GUID, the engine, or both? `DefaultParserAgent` switches GUID with `ActiveParser`. |
-| **Product** | `D14` | Two review surfaces, or one? FwLite already ships comment threads. |
-| | `D15` | Must review state work offline? This is the one place a CRDT would earn its cost. |
+| **Product** | `D14` | Two review surfaces, or one? Another product in the organisation already ships comment threads. |
+| | `D15` | Must review state work offline? This is the one place a replicated store would earn its cost. |
 | | `D16` | What does "optional per project" mean operationally? |
-| | `D18` | Who owns keeping Motif's and FwLite's vocabularies aligned? |
+| ~~`D18`~~ | | **Retired** — it asked who keeps two change vocabularies aligned, which only mattered while operations were routed through a second model. They are not. |
 | **Engine** | `C11` | Raise the liblcm `Rollback`/`Undo` hook fix upstream now, or accept ADR 0016's workaround permanently? |
 | | `C12` | Does a reviewer actually see that a phonological reorder changed meaning? |
 | **Contract** | `J41` **[1]** | Confirm Layer 0 = diff's output vocabulary, Layer 1 = agent's input vocabulary. **Now the guard on ADR 0021's deliberate Layer 1 churn**, not a stylistic preference — the mechanical test is whether a change alters hashed bytes. |

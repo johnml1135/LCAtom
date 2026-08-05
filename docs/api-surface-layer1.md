@@ -141,8 +141,7 @@ tracking its referent. There is no silent breakage and no discovered footprint h
 keeps a static footprint.
 
 This matters beyond this paragraph: it removes one of the three mechanisms cited as evidence that
-ordered grammar cannot ride on a scalar-order CRDT (see
-[ADR 0013](adr/0013-harmony-is-the-change-mechanism.md)). Two survive — feeding/bleeding rule order
+ordered grammar cannot ride on a last-writer-wins scalar order. Two survive — feeding/bleeding rule order
 and index-as-identity alpha variables — and they reduce to a single requirement, a sequence that
 converges correctly.
 

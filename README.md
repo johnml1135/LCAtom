@@ -35,8 +35,8 @@ work items.
 
 Everything else is a dependency rather than a deliverable — the Lexbox receipt store is server work in
 another repository, PanGloss is a subprocess or native library, and `SIL.Motif.Contract` is a
-published contract other runners consume. There is no Motif web app, service, mobile surface, or
-FwLite presence.
+published contract other runners consume. There is no Motif web app, service, or mobile surface, and no
+Motif presence inside any other product.
 
 ## Scope
 
@@ -95,26 +95,23 @@ is refused deterministically rather than merged optimistically.
 | **FieldWorks adapter** | Hosts the `netstandard2.0` Runner in-process; UI-thread marshalling, one undoable unit of work, save, read-back, and recovery |
 | **Lexbox** | Proposal and Receipt object store, optional per project |
 | **PanGloss** | Immutable parser Assessments and parser facts; Motif policy decides what evidence is required |
-| **Harmony / LcmCrdt** | FwLite's substrate for offline, multi-device, mobile lexical work. **Not on Motif's path** — see the [adoption report](docs/harmony-adoption-report.md) |
 
-Motif owns the Manifest, the generator, the semantic operations, and the lowering rules. Its
-operations target **LibLCM objects directly**, so no MiniLcm crosswalk is required and no generated
-code lands in LcmCrdt.
+Motif owns the Manifest, the generator, the semantic operations, and the lowering rules. **Its operations
+target LibLCM objects directly** — there is no intermediate model and no generated code lands anywhere
+else. The Manifest is an authority on only two things, scope and Construct naming; verbs and comparison
+behaviour are derived from LibLCM's own declarations and checked against it
+([ADR 0022](docs/adr/0022-structure-is-derived-policy-is-five-rows.md)).
 
 ## Authority
 
-**The live LibLCM model is the only authority on Motif's path.** The process owning the loaded
-`LcmCache` is the sole writer; Chorus merges between people, as it does today. There is no second
-merge engine, no CRDT, and no promotion of domains to a CRDT authority.
+**The live LibLCM model is the only authority.** The process owning the loaded `LcmCache` is the sole
+writer, and Chorus moves projects between people as it already does. There is no second merge engine and
+no replicated copy of the data — one field never has two authorities.
 
-FwLite keeps its own authority over its own lexical data through Harmony. The two products do not
-share a substrate, and one field never has two authorities. Why that split rather than one system is
-argued in full in the [adoption report](docs/harmony-adoption-report.md).
-
-Dry runs never mutate the live model. They run against a scratch copy of the loaded cache
-([ADR 0016](docs/adr/0016-scratch-cache-copy-not-undo.md)), because neither `Rollback` nor `Undo` is
-safe to build on — `Rollback` skips the forward-only setter hooks `Undo` runs, and LibLCM has
-genuinely non-undoable units of work.
+Dry runs never mutate the live model. They run against a throwaway copy of the project
+([ADR 0016](docs/adr/0016-scratch-cache-copy-not-undo.md)), because neither `Rollback` nor `Undo` is safe
+to build on — `Rollback` skips the forward-only setter hooks `Undo` runs, and LibLCM has genuinely
+non-undoable units of work.
 
 ## Grammar first
 
@@ -137,10 +134,12 @@ volume is generated. Lexical coverage expands afterward from the same Manifest.
 - **[Plan A](docs/plan-motif.md)** — the live plan: milestones, model join, generator, scratch-cache
   dry run, FieldWorks adapter, review domain;
 - [work in other repositories](docs/plan-cross-repo.md) — FieldWorks, PanGloss, liblcm, lexbox;
-- [why not Harmony](docs/harmony-adoption-report.md) — the two alternate proposals and the decision;
-- [withdrawn LcmCrdt plan](docs/plan-lcmcrdt.md) — what the previous routing required;
 - [product architecture](docs/plan-product-architecture.md) — normative end-state boundaries;
 - [overall product plan](docs/motif-overall-plan.md) — user workflow, evidence corpus, UI, and CLI.
+
+An earlier design routed changes through a CRDT merge layer instead of LibLCM. It was assessed and
+rejected; the reasoning is kept once, in [the adoption report](docs/harmony-adoption-report.md), and is a
+historical record rather than part of any plan.
 
 **Two scopes** ([ADR 0020](docs/adr/0020-cli-first-fieldworks-planned-not-built.md)). Scope 1
 establishes the LibLCM seams and proves them through the CLI, with an AI agent as the author. Scope 2 is
@@ -167,15 +166,21 @@ never calls `Save` are build-time invariants throughout, not later concerns.
 
 ## Open decisions
 
-The architecture has been source-checked and compared with current literature, but it deliberately
-leaves project-owner decisions open. **[The Plan A grill queue](docs/grill-plan-a.md) is the live
-list.** It leads with four measurements, because later answers depend on them — most importantly what
-`LcmCache.CreateCacheCopy` actually costs, an API with zero callers anywhere in liblcm or FieldWorks.
+The architecture has been source-checked, but it deliberately leaves project-owner decisions open.
+**[The Plan A grill queue](docs/grill-plan-a.md) is the live list**, and
+[grill-readiness.md](docs/grill-readiness.md) triages it into answered, decided, and genuinely open.
 
-Beyond those, the questions that most affect the design are whether roughly 300 heuristically
-classified Manifest rows need a dedicated audit before the generator reads them, whether a reviewer
-can actually see that a phonological reorder changed the grammar's meaning, whether review state must
-work offline, and who owns keeping Motif's and FwLite's change vocabularies aligned.
+Recently closed by measurement rather than opinion: the scratch-copy question, where a memory-only copy of
+a project turned out to lose every writing system's collation and valid-character settings, settling the
+design on one canonical path ([ADR 0016](docs/adr/0016-scratch-cache-copy-not-undo.md)); and the manifest's
+trustworthiness, where verbs turned out to be a pure function of LibLCM's own declarations, so the
+generator derives them instead of trusting hand-typed rows
+([ADR 0022](docs/adr/0022-structure-is-derived-policy-is-five-rows.md)).
+
+Still genuinely open, and shaping the design: whether a reviewer can actually see that a phonological
+reorder changed the grammar's meaning; whether review state must work offline; how Construct names get
+settled, since only about a quarter are derivable from their class; and when the agent-facing contract
+stops churning and declares itself stable.
 
 Supporting records: the [decision log](docs/grill-decisions.md), the
 [research synthesis](docs/research/2026-08-01-pr-like-collaboration-synthesis.md), and the

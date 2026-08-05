@@ -1,5 +1,11 @@
 # Declarative commands vs. CRDT changes — a point-by-point mapping
 
+> **HISTORICAL — a path not taken.** This document evaluates routing Motif's changes through a CRDT merge
+> layer, or inventories the repositories that would have been involved. **That design was assessed and
+> rejected** ([adoption report](harmony-adoption-report.md)); operations target LibLCM directly and there is
+> no merge layer. Kept as the evidence behind that decision. **It is not a plan, and nothing in it is
+> scheduled.** For the live plan see [Plan A](plan-motif.md).
+
 
 > **Superseded 2026-08-01 as a plan; load-bearing as evidence.** Its verdict — *fold Motif's vocabulary
 > into Harmony's `IChange`* — is not what [Plan A](plan-motif.md) does. The analysis behind it stands and

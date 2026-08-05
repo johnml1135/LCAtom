@@ -1,5 +1,11 @@
 # What actually needs to be added — point by point
 
+> **HISTORICAL — a path not taken.** This document evaluates routing Motif's changes through a CRDT merge
+> layer, or inventories the repositories that would have been involved. **That design was assessed and
+> rejected** ([adoption report](harmony-adoption-report.md)); operations target LibLCM directly and there is
+> no merge layer. Kept as the evidence behind that decision. **It is not a plan, and nothing in it is
+> scheduled.** For the live plan see [Plan A](plan-motif.md).
+
 
 > **Superseded 2026-08-01 — retained as evidence.** [Plan A](plan-motif.md) does not route grammar
 > through the CRDT, so items 1, 3, 5, 6, and 7 are withdrawn along with `plan-harmony.md`,

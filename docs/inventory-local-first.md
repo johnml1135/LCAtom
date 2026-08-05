@@ -1,5 +1,11 @@
 # Inventory: What Runs Locally, Where, With What Footprint
 
+> **HISTORICAL — a path not taken.** This document evaluates routing Motif's changes through a CRDT merge
+> layer, or inventories the repositories that would have been involved. **That design was assessed and
+> rejected** ([adoption report](harmony-adoption-report.md)); operations target LibLCM directly and there is
+> no merge layer. Kept as the evidence behind that decision. **It is not a plan, and nothing in it is
+> scheduled.** For the live plan see [Plan A](plan-motif.md).
+
 Scope per brief: establish platform truth for FwLite from build files, CI workflows, and code — not
 prose. Every claim below is marked **VERIFIED** (read directly from a build file, workflow, or
 source line, cited `path:line`) or **INFERRED** (reasoned from verified facts but not itself

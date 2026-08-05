@@ -4,9 +4,8 @@
 does. It lists work that lands outside `motif`, so none of it is our pull request, our review, or our
 release train.*
 
-Plan A's dependency surface shrank sharply when grammar stopped being routed through the CRDT. The
-three-repo ladder (motif / harmony / lexbox) is gone; what remains is four small, mostly independent
-asks.
+Plan A's dependency surface is small: operations target LibLCM directly, so there is no intermediate
+model and no third repository in the critical path. What remains is a few mostly independent asks.
 
 **Scope, added 2026-08-05** ([ADR 0020](adr/0020-cli-first-fieldworks-planned-not-built.md)): scope 1 —
 the LibLCM seams proved through the CLI with an AI agent as author — **needs nothing from any other
@@ -23,7 +22,6 @@ the CLI-first sequencing: no other team's review cycle is on the critical path.
 | **lexbox** | Proposal and Receipt object store, optional per project | `MOT-14` | Scope 2 (`M4b`). Scope 1 needs receipts *durable*, not *shared* |
 | **lexbox / FwHeadless** | The `E19` Chorus applied-log merge experiment | `E19` | **Deferred by owner decision** — Chorus is known-imperfect and not a near-term concern |
 | **liblcm** | Make `Rollback` run the refresh hooks `Undo` runs, or expose a non-committing invalidation | `MOT-11` | No — ADR 0016 routes around it |
-| **harmony** | *nothing* | — | — |
 
 ## FieldWorks
 
@@ -66,29 +64,23 @@ the only candidate, is not safe to call there. Either fix closes the problem cla
 it is **not blocking**. It is still the correct fix, and it would let the manifest's
 `AssessPoisonsCache` column retire.
 
-Also worth confirming rather than assuming: `LcmCache.CreateCacheCopy` and
-`BackendProviderType.kMemoryOnly` are public and are what ADR 0016 depends on, but `CreateCacheCopy`
-has **zero callers** anywhere in liblcm or FieldWorks. Plan A's `MOT-11` measures it before building
-on it.
+**A second, better-evidenced upstream ask, found by measurement 2026-08-05:** a `kMemoryOnly` cache
+re-synthesizes its writing systems from the bare language tag, losing collation rules, valid-character
+sets, fonts and keyboards — 0 of 4 value-equal on Sena 3. `useMemoryWsManager` is hardwired true for that
+backend (`BackendProvider.cs:263-265`), so no caller can opt out. **An in-memory backend that can carry the
+source's writing systems would make a cheap in-memory scratch viable**; without it, ADR 0016 pays ~600 ms
+per scratch instead of ~120 ms. Not blocking, well characterised, and cheap to describe upstream — see
+[the findings](research/2026-08-05-createcachecopy-provenance-and-hazards.md).
 
 ## lexbox
 
 Proposals and Receipts are immutable, content-addressed documents with frozen identities. Sharing them
-needs an object store and an HTTP API — **not a merge engine, and not a CRDT**. Lexbox already has
-organisations, projects, users, and a permission service, and is already FwLite's sync authority.
+needs **an object store and an HTTP API — not a merge engine**. Lexbox already has organisations, projects,
+users, and a permission service.
 
 Sharing must be **optional per project**: a linguist working alone is never obliged to publish.
 
-Review state — comments, approvals, decisions — is the mutable part and is an ordinary server database
-unless offline review becomes a requirement. Note that FwLite already ships comment threads in
-`LcmCrdt/Changes/Comments/`; building a second review surface is a duplication to make deliberately
-rather than by accident.
-
-## harmony
-
-**No asks.** `HAR-2`, `HAR-3`, `HAR-5`, `HAR-6`, and `HAR-7` were necessitated by routing grammar
-through the CRDT and are withdrawn with that routing — see
-[harmony-adoption-report.md](harmony-adoption-report.md) and [plan-lcmcrdt.md](plan-lcmcrdt.md). They
-remain available as genuine FwLite improvements if a FwLite requirement ever asks for them.
-
-Harmony continues to be the right substrate for FwLite, unchanged.
+Review state — comments, approvals, decisions — is the mutable part, and is an ordinary server database
+unless offline review becomes a requirement (`D15`). One thing to decide deliberately rather than by
+accident: another product in the same organisation already ships comment threads, so a Motif review surface
+would be the second one (`D14`).

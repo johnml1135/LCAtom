@@ -17,8 +17,8 @@ a Motif product.
 Everything else Plan A touches is a **dependency, not a deliverable**: the Lexbox receipt store
 (`MOT-14`) is server work in someone else's repository, PanGloss is a subprocess or native library,
 and `SIL.Motif.Contract` is a published contract that other runners consume — not an application we
-ship. There is no Motif web app, no Motif service, no Motif mobile surface, and no Motif presence in
-FwLite.
+ship. There is no Motif web app, no Motif service, no Motif mobile surface, and no Motif presence inside
+any other product.
 
 **v1 scope: lexical and grammar. Text and analysis are staged, not excluded** — see
 [ADR 0017](adr/0017-text-and-analysis-destination-scope.md). They are **in the destination**: coverage
@@ -49,7 +49,7 @@ that as provisional pending re-scoping, not as a boundary.**
 
 Motif authors **Proposals** against **LibLCM objects**, dry-runs them on a scratch cache copy, applies
 them through one LibLCM unit of work in whatever process owns the live cache, and records a Receipt.
-There is no CRDT in this path, no second process, and no second authority.
+One authority, one writer, one process — no second store and nothing to merge.
 
 ```
 Proposal (JSON, public contract, intent digest)
@@ -64,11 +64,10 @@ Apply on the live LcmCache, one UOW ──▶ Receipt + applied-log entry
 Receipt synced to Lexbox (optional per project)
 ```
 
-**What this plan removed, and why.** The previous plan routed grammar through Harmony's CRDT. That
-required a MiniLcm↔LibLCM crosswalk, converging sequence types, reference-set policy, and a
-cross-owner move rule — none of which any FwLite requirement asked for. Removing the routing removes
-the need. See the [adoption report](harmony-adoption-report.md) for the full argument, and
-[plan-lcmcrdt.md](plan-lcmcrdt.md) for what was withdrawn.
+**One authority, one writer.** The process holding the loaded `LcmCache` is the only writer; Chorus moves
+projects between people as it already does. There is no second merge engine and no replicated copy of the
+data. Why an alternative design was considered and rejected is recorded once, in the
+[adoption report](harmony-adoption-report.md) — it is history, not a plan, and nothing below depends on it.
 
 ## Two scopes
 
@@ -132,9 +131,9 @@ the first author, not the last. M5 is the first thing a linguist would recognise
 | `MOT-13` — `System.Text.Json` on `net48` proof | M3 | Small | **Scope 2** — research says clean (`A4`); the proof itself remains |
 | `MOT-14` — Receipt store and sync in Lexbox | M4b | Medium | **Scope 2** |
 
-**Withdrawn:** `MOT-1` (the MiniLcm↔LibLCM crosswalk — not needed once the target is LibLCM) and
-`MOT-5` (mapping ordered and reference kinds onto Harmony primitives — there are no Harmony
-primitives in this path). Numbers are not reused.
+**Withdrawn:** `MOT-1` and `MOT-5`. Both existed only to serve a merge layer that is not on this path;
+operations target LibLCM directly, so neither a type crosswalk nor a mapping onto merge primitives has
+anything to do. Numbers are not reused.
 
 ## The one spike on the critical path
 
@@ -161,10 +160,19 @@ kind.
 
 ## `MOT-2` — the join, failing the build — M1
 
-Structure comes from `MasterLCModel.xml` so it tracks LibLCM upgrades; policy (`Scope`, `Construct`,
-`ComparisonClass`, `Verbs`, `AssessPoisonsCache`) comes from the manifest, which is human judgement
-and exists nowhere else. They join on `(Class, Field)`, and **a key present in one and absent from the
-other fails the build.**
+Structure comes from `MasterLCModel.xml` so it tracks LibLCM upgrades. They join on `(Class, Field)`, and
+**a key present in one and absent from the other fails the build.**
+
+**What the manifest is actually an authority on** ([ADR 0022](adr/0022-structure-is-derived-policy-is-five-rows.md)):
+`Scope` and `Construct`, and nothing else. `Verbs` is a **pure function** of `Kind`/`Card` — seven
+combinations, zero exceptions across all 412 authorable rows — and `ComparisonClass` is `seq` → `positional`,
+everything else → `unordered`, with **exactly five exceptions** where order carries linguistic meaning
+(`LexEntry.AlternateForms`, `PhPhonData.PhonRules`, and the three `PhSegRuleRHS` alpha-variable fields).
+
+So this item gains a second check: **derive both columns, compare against the manifest, and fail the build
+naming any row that departs from the derivation without appearing in the five-row exception table.** That
+replaces `B7a`'s proposed hand-audit of 61 rows — deriving fixes every row, including rows LibLCM has not
+shipped yet.
 
 The key set has been checked, not assumed: 445 `<basic>` + 235 `<owning>` + 218 `<rel>` = **898**
 field declarations in `MasterLCModel.xml` (424,797 bytes, 5,368 lines, model version `7000072`, 193
@@ -174,9 +182,14 @@ duplicates in either**. A matching count alone would not have shown that.
 **Acceptance**
 
 - An injected extra `(Class, Field)` key on either side fails the build with a message naming the key.
-- A LibLCM upgrade that adds a field produces a row with structure and no policy, and the build stays
-  red until a human classifies it. **For a system where a wrong policy corrupts a language project
-  quietly, visible churn beats minimal churn** — that is the intent, not a side effect.
+- A LibLCM upgrade that adds a field produces a row whose verbs and comparison behaviour are **derived**,
+  and the build stays red only until a human decides its `Scope` and `Construct` — the two things nobody
+  can compute. **For a system where a wrong decision degrades a language project quietly, visible churn
+  beats minimal churn** — that is the intent, not a side effect.
+- An injected row whose `Verbs` or `ComparisonClass` disagrees with the derivation, and which is not one of
+  the five cited exceptions, fails the build naming the row.
+- The five exceptions are asserted explicitly, so silently losing one is a test failure rather than a
+  quieter grammar.
 - `MasterLCModel.xml` is obtained without a liblcm source checkout. `SIL.LCModel.csproj:125` packs
   `MasterLCModel.*` into the NuGet package under `contentFiles/`, but not in the conventional
   `contentFiles/{lang}/{tfm}/` layout, so it may not flow into a `PackageReference` consumer
@@ -199,8 +212,8 @@ without a liblcm source tree.
 
 ## `MOT-4` — emit the operation catalog for one family — M2
 
-The output side of the gate, and the point where this plan diverges most from its predecessor.
-**Target LibLCM objects, not MiniLcm types.**
+The output side of the gate. **Operations target LibLCM objects directly** — there is no intermediate
+model to translate through.
 
 **The family is the lexical entry** (`B5`, decided 2026-08-05): start where an agent's work starts. Concretely
 the `lexEntry` construct's 10 authorable rows, **plus** `LexEntry.LexemeForm` and the `MoForm` rows that bring
@@ -545,7 +558,7 @@ description)` — it records *that* something applied, not what it did. The effe
 
 **Lexbox is the home.** It already has organisations, projects, users, and a permission service.
 Proposals and Receipts are immutable, content-addressed documents with frozen identities, so they need
-an object store and an HTTP API, not a merge engine — no CRDT is required to share them. Sharing is
+an object store and an HTTP API rather than a merge engine. Sharing is
 **optional per project**; a linguist working alone is never obliged to publish.
 
 Review state — comments, approvals, decisions — is mutable, and is an ordinary server database unless
@@ -573,9 +586,8 @@ entire authoring path depends on it, so it runs before any `MOT-12` code, not af
 
 ## Cross-links
 
-- The decision this plan implements: [harmony-adoption-report.md](harmony-adoption-report.md)
+- Why the rejected alternative was rejected (history, not a plan): [harmony-adoption-report.md](harmony-adoption-report.md)
 - Work in other repositories: [plan-cross-repo.md](plan-cross-repo.md)
-- What was withdrawn from LcmCrdt: [plan-lcmcrdt.md](plan-lcmcrdt.md)
 - Product scope and phases: [motif-overall-plan.md](motif-overall-plan.md)
 - Architecture: [plan-product-architecture.md](plan-product-architecture.md)
 - ADRs: [0021](adr/0021-cli-is-the-full-surface-layer-1-churns.md) ·

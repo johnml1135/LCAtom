@@ -1,5 +1,11 @@
 # Inventory: how much of SIL.Harmony per-entity work is boilerplate vs. design
 
+> **HISTORICAL — a path not taken.** This document evaluates routing Motif's changes through a CRDT merge
+> layer, or inventories the repositories that would have been involved. **That design was assessed and
+> rejected** ([adoption report](harmony-adoption-report.md)); operations target LibLCM directly and there is
+> no merge layer. Kept as the evidence behind that decision. **It is not a plan, and nothing in it is
+> scheduled.** For the live plan see [Plan A](plan-motif.md).
+
 Scope: `C:\Users\johnm\Documents\repos\harmony` (`src\SIL.Harmony`, `src\SIL.Harmony.Core`, `src\SIL.Harmony.Sample`)
 and `C:\Users\johnm\Documents\repos\languageforge-lexbox\backend\FwLite\{LcmCrdt,MiniLcm}`. All claims below are
 sourced from reading the files at the cited path:line; where I could not verify something from code I say so

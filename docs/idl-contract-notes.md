@@ -23,16 +23,18 @@ a traceability manifest (safest, weakest as a design environment). Concretely:
 
 - Custom traits `@libLcm(types, coverageIds)`, `@hcLoader(symbols, fixtures)`,
   `@panGloss(concepts, fixtures)`, `@lowersTo([...])` attached to each operation.
-- Two namespaces — `org.sil.motif.grammar.v1` (semantic intent) and `org.sil.harmony.grammar.v1`
-  (state transitions) — with Motif *declaring* which Harmony changes it may lower into.
+- Two namespaces — one for semantic intent, one for the state transitions it lowered into — with the
+  intent surface *declaring* which lowered changes it may produce. **Historical:** the second namespace
+  existed to describe a merge layer that is not on this path; today the lowering target is LibLCM and the
+  lowered plan is private and output-only.
 - A runtime **lowering trace** correlating each semantic operation with its generated changes.
 - Modeled domain errors with stable codes; process exit codes as a coarse CLI adapter only.
 - A **contract workbench before runtime code**: `contract operations | show | input-schema | errors |
   lowering | coverage | gaps | trace`.
 - Generate JSON Schema and documentation first, **not** production C#. Generated files never canonical.
 
-Compatible with [ADR 0013](adr/0013-harmony-is-the-change-mechanism.md): the lowering plan is
-output-only, generic Harmony work stays in the Harmony repo, and no fork is implied.
+The durable part: the lowering plan is output-only, and only the intent surface is public. What has changed
+is the lowering target — LibLCM, not a merge layer.
 
 ## Two corrections
 

@@ -1,4 +1,10 @@
 \
+
+> **HISTORICAL — a path not taken.** This document evaluates routing Motif's changes through a CRDT merge
+> layer, or inventories the repositories that would have been involved. **That design was assessed and
+> rejected** ([adoption report](harmony-adoption-report.md)); operations target LibLCM directly and there is
+> no merge layer. Kept as the evidence behind that decision. **It is not a plan, and nothing in it is
+> scheduled.** For the live plan see [Plan A](plan-motif.md).
 # Lexbox Repository — Exhaustive Capability Inventory
 
 **Repo:** `C:\Users\johnm\Documents\repos\languageforge-lexbox`, branch `develop` @ `da284fa8e628a7acfa76a080dabfc324272ce64e` (2026-07-23).

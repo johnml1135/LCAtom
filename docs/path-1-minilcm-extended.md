@@ -1,5 +1,11 @@
 # Path 1 — Extend MiniLcm (in Lexbox) to be the one API surface, including grammar
 
+> **HISTORICAL — a path not taken.** This document evaluates routing Motif's changes through a CRDT merge
+> layer, or inventories the repositories that would have been involved. **That design was assessed and
+> rejected** ([adoption report](harmony-adoption-report.md)); operations target LibLCM directly and there is
+> no merge layer. Kept as the evidence behind that decision. **It is not a plan, and nothing in it is
+> scheduled.** For the live plan see [Plan A](plan-motif.md).
+
 *Prepared 2026-07-27. Scope: cost, risk, and platform-reach of growing `IMiniLcmApi` and its two
 backends (`FwDataMiniLcmBridge`, `LcmCrdt`) to cover LibLCM's grammar surface, so that MiniLcm becomes
 the single API over FieldWorks language data for every consumer on every platform. Sources: primary

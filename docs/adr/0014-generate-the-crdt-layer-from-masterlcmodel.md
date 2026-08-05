@@ -1,6 +1,18 @@
 # ADR 0014 — Generate the CRDT layer from MasterLCModel.xml; Harmony gains primitives only
 
-Status: accepted (2026-07-30)
+Status: accepted (2026-07-30). **Retitled in effect: the generation target is LibLCM, not a CRDT layer.**
+
+> **Read this first.** The *method* this ADR settles — generate the LibLCM-shaped layer from
+> `MasterLCModel.xml` joined to the manifest, rather than hand-authoring it — is live and is `MOT-3`/`MOT-4`.
+> Two things in it are not:
+>
+> - **The target.** Operations are generated against **LibLCM objects directly**. The merge layer this ADR
+>   was written to feed is not on Motif's path; the crosswalk it called "required and non-existent" is
+>   withdrawn with it. The filename is kept because ADRs are immutable records and many documents link to it.
+> - **Decision 2's line between structure and policy.** It said `Scope`, `Construct`, `ComparisonClass` and
+>   `Verbs` are all human judgement. Measured, only the first two are:
+>   [ADR 0022](0022-structure-is-derived-policy-is-five-rows.md) derives the other two and keeps five cited
+>   exceptions.
 
 Builds on [ADR 0013](0013-harmony-is-the-change-mechanism.md), which settled that Harmony's
 `Commit`/`IChange` is the change mechanism. This ADR settles **how the LibLCM-shaped part of that

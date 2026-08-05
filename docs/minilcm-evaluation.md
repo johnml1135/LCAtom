@@ -1,5 +1,11 @@
 # MiniLcm vs. Motif — decision report
 
+> **HISTORICAL — a path not taken.** This document evaluates routing Motif's changes through a CRDT merge
+> layer, or inventories the repositories that would have been involved. **That design was assessed and
+> rejected** ([adoption report](harmony-adoption-report.md)); operations target LibLCM directly and there is
+> no merge layer. Kept as the evidence behind that decision. **It is not a plan, and nothing in it is
+> scheduled.** For the live plan see [Plan A](plan-motif.md).
+
 > **SUPERSEDED (2026-07-27) by [ADR 0013](adr/0013-harmony-is-the-change-mechanism.md).** This
 > document was written without `SIL.Harmony` having been read — it was not checked out, and the
 > analysis reasoned around the gap instead of closing it. Harmony already provides semantic change

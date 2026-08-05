@@ -1,5 +1,11 @@
 # Inventory: SIL.Harmony failure/diagnostic semantics on non-mergeable changes
 
+> **HISTORICAL — a path not taken.** This document evaluates routing Motif's changes through a CRDT merge
+> layer, or inventories the repositories that would have been involved. **That design was assessed and
+> rejected** ([adoption report](harmony-adoption-report.md)); operations target LibLCM directly and there is
+> no merge layer. Kept as the evidence behind that decision. **It is not a plan, and nothing in it is
+> scheduled.** For the live plan see [Plan A](plan-motif.md).
+
 Scope: what Harmony (and its production consumer LcmCrdt / FwLite sync hosts) actually does today
 when a change cannot be meaningfully applied — not what it should do. All claims below are backed
 by `path:line` references to code that was read directly, or to tests that exercise that code. Where
