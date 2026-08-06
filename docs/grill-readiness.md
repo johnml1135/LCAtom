@@ -182,11 +182,11 @@ gates only the FieldWorks integration.
 | | `I36` | Is "one authoritative analysis per occurrence" linguistically defensible? The model already distinguishes disapproved from no-opinion. |
 | | `I37` | What is the coverage ramp? Absolute, per-text, or delta-only? |
 | | `I39` / `I39a` | Are donated tests reviewed, trusted, or quarantined — noting a donation sets a *global* flag? Do machine guesses count as assertions? |
-| | `I40` | When a rule change is correct but breaks an old analysis, who may overrule a native speaker's judgement? |
+| | `I40` | When a rule change is correct but breaks an old analysis, who may overrule a native speaker's judgement? **Less urgent than it looked** — the two sampled projects hold 8 human evaluations between them against 7,646 wordforms, so the body of approved analysis being protected is currently almost empty (ADR 0031). Thin sample; recheck before relying on it. |
 | | `H33a` | Does provenance record the agent GUID, the engine, or both? `DefaultParserAgent` switches GUID with `ActiveParser`. |
-| **Product** | `D14` | Two review surfaces, or one? Another product in the organisation already ships comment threads. |
-| | `D15` | Must review state work offline? This is the one place a replicated store would earn its cost. |
-| | `D16` | What does "optional per project" mean operationally? |
+| **Product** | ~~`D14`~~ | **Decided** — [ADR 0031](adr/0031-collaboration-follows-the-data-not-the-surface.md): neither. Review lives with the project, so there is no second comment system and no dependency on another team's roadmap. |
+| | ~~`D15`~~ | **Decided** — it works offline because it never needed a network. No replicated store, so it never has to earn its cost (ADR 0031). |
+| | ~~`D16`~~ | **Decided** — sharing is a deliberate export of an immutable document, not a mode the system runs in; a project that never exports is unaffected (ADR 0031). |
 | ~~`D18`~~ | | **Retired** — it asked who keeps two change vocabularies aligned, which only mattered while operations were routed through a second model. They are not. |
 | ~~`C12`~~ | | **Decided** — a `feeding` reorder requires a Grammar Delta before approval ([ADR 0028](adr/0028-feeding-reorders-require-a-grammar-delta.md)); the anchor machinery already covered staleness, but not comprehension when nothing drifted. |
 | **Engine** | `C11` | Raise the liblcm `Rollback`/`Undo` hook fix upstream now, or accept ADR 0016's workaround permanently? |

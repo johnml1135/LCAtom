@@ -131,7 +131,7 @@ the first author, not the last. M5 is the first thing a linguist would recognise
 | `MOT-16` — long-lived CLI session over a warm cache | M2 | Small–medium | Not started |
 | `MOT-19` — the CLI as the full product surface, text and JSON | M2/M4 | Large, and grows with every other item | Not started — **ADR 0021** |
 | `MOT-9` — Baseline Token, Dry Run binding, apply authorization, Receipt | M4 | Medium, correctness-critical | **Partly built** |
-| `MOT-10` — Proposal revisions, Check Runs, Reviews, Decisions | M4 | Medium, the PR-like product core | Not started |
+| `MOT-10` — Proposal revisions, Check Runs, Reviews, Decisions | M4 | Medium, the PR-like product core | Not started — **rescoped 2026-08-06** by [ADR 0031](adr/0031-collaboration-follows-the-data-not-the-surface.md): the centre is the durable rationale record and the revision loop, not concurrent review |
 | `MOT-17` — Layer-1 semantic and batch authoring for agents | M4 | Medium, and **expected to churn** | Not started |
 | `MOT-18` — selective Proposal editing: duplicate, remove, split | M4 | Small, and required by the agent loop | Not started — `J43` decided |
 | `MOT-6` — semantic + lowering layer for grammar construct 1 | M5 | Medium — **the first product family** | Not started |
@@ -503,8 +503,34 @@ rollback or `NeedsReconciliation`, never blind retry.
 
 ## `MOT-10` — Proposal review domain — M4
 
+**What this is for:** so that the reason a change was made outlives the person who made it. The grammar
+will be written almost entirely by one person or one AI, and that person will eventually leave the
+project; a successor inherits a working grammar and no idea why any of it is the way it is. This item
+exists to close that gap, not to let several people edit safely — which
+[ADR 0031](adr/0031-collaboration-follows-the-data-not-the-surface.md) establishes is not achievable for a
+grammar at all.
+
 Immutable Proposal revisions, typed Check Runs, human and AI Reviews, versioned policy Decisions,
 semantic owner routing, stale-binding rules.
+
+**Scoped by [ADR 0031](adr/0031-collaboration-follows-the-data-not-the-surface.md).** Concurrent-review
+reconciliation is out. In scope, and now the centre of the item:
+
+- **A short description and an extended explanation on every Proposal**, both surviving into the applied
+  record. The long form is expected to be AI-written for a human to read — that is its normal origin, not
+  a fallback. The short form exists so a human can *skip*; a strong model reads all forty pending
+  proposals, a human reads three.
+- **A human reply that changes a Proposal produces a new revision**, not a comment attached to a frozen
+  document. The amend loop already exists in the CLI (`ReopenAmendTests`); this is its review-side half.
+- **Statuses are decisions, and dependency is not one of them.** `proposed`, `deferred`, `approved`,
+  `rejected`, `applied`, `superseded`. "Depends on another Proposal" is already `requires`
+  ([ADR 0004](adr/0004-prerequisite-graph-stable-ids-bound-apply.md)), a fact about content that governs
+  apply order — displayed beside the status, never as one, or a status edit could silently break ordering.
+- **`deferred` means "still wanted, needs re-validation", never "frozen and still applicable"** — a
+  deferred Proposal's bound anchor goes stale as the project moves underneath it.
+- **No server, no review database, no replicated store.** Review happens where the Proposal is, and the
+  CLI and FieldWorks are two surfaces over one record. This is what makes it work offline: it never needed
+  a network.
 
 **Acceptance**
 
