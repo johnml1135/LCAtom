@@ -28,7 +28,8 @@ Checked against the manifest, **two of those four columns are not judgement at a
 **Seven combinations, zero exceptions, all 412 authorable rows.** It was typed out 412 times by hand.
 
 `ComparisonClass` is nearly as mechanical — `seq` → `positional`, everything else → `unordered` — with
-**exactly five exceptions in the entire manifest**, the rows where order carries linguistic meaning:
+**seven exceptions in the entire manifest, in two opposite categories.** Five where order carries *more* than
+position:
 
 ```
 LexEntry.AlternateForms      feeding             allomorph order
@@ -37,6 +38,20 @@ PhSegRuleRHS.LeftContext     index-as-identity   alpha variables: position IS th
 PhSegRuleRHS.RightContext    index-as-identity
 PhSegRuleRHS.StrucChange     index-as-identity
 ```
+
+**And two where `card=seq` carries *nothing*** — corrected 2026-08-05, when the check found them on its first
+run against real data:
+
+```
+PhPhonData.Contexts          unordered           pooled storage, not an order
+PhPhonData.FeatConstraints   unordered           pooled storage, not an order
+```
+
+These are the *pooled-but-private* objects of [issue B9](../issues.md): a rule's private interior that lives in
+a shared pool. They are `seq` in `MasterLCModel.xml` because a sequence is how LibLCM stores a pool, not
+because position means anything — what matters is which rule references which context. So **`card=seq` does
+not imply that order is meaningful**, and this ADR's original claim of "exactly five exceptions" was wrong in
+the direction that matters: it asserted a completeness the data did not support.
 
 **And the stakes attached to that column were inherited from a withdrawn design.** `ComparisonClass` was
 introduced to decide which CRDT type each field merged with — `declarative-commands-vs-crdt.md` calls it
@@ -51,10 +66,12 @@ to risk silent divergence between replicas; now it risks a less helpful diff. No
 
 Both are computed from `Kind`, `Card`, and `Sig`. Neither is read from the manifest as an authority.
 
-### 2. Five rows are an explicit, cited exception table
+### 2. Seven rows are an explicit, cited exception table, in two named categories
 
-`feeding` and `index-as-identity` are real and not derivable. They live in a short table in the generator —
-five rows, each citing why order carries meaning — rather than as a column across 473 rows.
+Neither category is derivable, and they must not be flattened into one list, because they mean opposite
+things: `feeding` and `index-as-identity` say order carries *more* than position; pooled storage says a `seq`
+carries *nothing*. Each row cites which category it is in and why, so anyone adding an eighth has to say which
+kind it is. Seven rows in the generator beats a column across 494.
 
 ### 3. The build fails on any unexplained departure
 
@@ -80,12 +97,15 @@ Small, and each item is a decision rather than a transcription:
 
 - **`B7a` is answered without an audit**, and `B18` is largely retired: "406 of 473 rows lack a citation"
   stops mattering when 407 of them are computed rather than asserted. What survives of `B18` is the handful
-  of rows where a citation would document a real decision — the five exceptions and the `Scope` calls.
+  of rows where a citation would document a real decision — the seven exceptions and the `Scope` calls.
 - **`MOT-2` grows one check** and `MOT-4` loses an input. The manifest keeps `Verbs` and `ComparisonClass` as
   *derived, checked* columns — useful for querying and for review, no longer trusted as authority.
 - **`C10a` gets easier.** `AssessPoisonsCache` already had no consumer; with dry runs on a throwaway
   file-loaded scratch ([ADR 0016](0016-scratch-cache-copy-not-undo.md) as amended) it has no purpose either.
   Retire it in the same pass.
+- **The check earned its keep on its first run**, which is the argument for keeping it fail-closed rather than
+  advisory. It was specified as having exactly five exceptions and immediately found two more — a category the
+  specification asserted did not exist. An advisory warning would have been read as noise and suppressed.
 - **A lesson worth recording, since it recurred twice in one session.** The alarming version of `B7a` — "23%
   of the rows the generator trusts are flawed" — was true only while `ComparisonClass` decided merge
   behaviour. The number survived the architecture change; the consequence did not. When a decision is

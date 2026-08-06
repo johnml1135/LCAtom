@@ -178,8 +178,10 @@ Structure comes from `MasterLCModel.xml` so it tracks LibLCM upgrades. They join
 **What the manifest is actually an authority on** ([ADR 0022](adr/0022-structure-is-derived-policy-is-five-rows.md)):
 `Scope` and `Construct`, and nothing else. `Verbs` is a **pure function** of `Kind`/`Card` — seven
 combinations, zero exceptions across all 412 authorable rows — and `ComparisonClass` is `seq` → `positional`,
-everything else → `unordered`, with **exactly five exceptions** where order carries linguistic meaning
-(`LexEntry.AlternateForms`, `PhPhonData.PhonRules`, and the three `PhSegRuleRHS` alpha-variable fields).
+everything else → `unordered`, with **seven exceptions in two opposite categories**: five where order carries
+*more* than position (`LexEntry.AlternateForms`, `PhPhonData.PhonRules`, and the three `PhSegRuleRHS`
+alpha-variable fields) and two where a `seq` carries *nothing* — `PhPhonData.Contexts` and `.FeatConstraints`
+are pooled storage, not an order (issue B9).
 
 So this item gains a second check: **derive both columns, compare against the manifest, and fail the build
 naming any row that departs from the derivation without appearing in the five-row exception table.** That
@@ -208,8 +210,9 @@ duplicates in either**. A matching count alone would not have shown that.
   closed table fails the build. The hand-authored **`domain`** column is *not* checked against it — the two
   answer different questions and disagree on 53 rows by design.
 - A kind with no description fails the build.
-- The five exceptions are asserted explicitly, so silently losing one is a test failure rather than a
-  quieter grammar.
+- **Both exception categories are asserted explicitly**, so silently losing one is a test failure rather than
+  a quieter grammar — and an injected eighth exception belonging to neither category is rejected, because the
+  point of the table is that it is closed.
 - `MasterLCModel.xml` is obtained without a liblcm source checkout. `SIL.LCModel.csproj:125` packs
   `MasterLCModel.*` into the NuGet package under `contentFiles/`, but not in the conventional
   `contentFiles/{lang}/{tfm}/` layout, so it may not flow into a `PackageReference` consumer
