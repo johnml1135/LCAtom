@@ -126,8 +126,8 @@ the first author, not the last. M5 is the first thing a linguist would recognise
 | --- | --- | --- | --- |
 | `MOT-2` — the `(Class, Field)` join, failing the build on any unmatched key | M1 | Small | ✅ **Built 2026-08-05** — `src/SIL.Motif.Generator`, 898=898, zero orphans; found two exceptions the spec denied |
 | `MOT-3` — generator skeleton: read `MasterLCModel.xml`, emit nothing yet | M1 | Medium | ✅ **Built 2026-08-05** — model 7000072 from the NuGet cache, no liblcm checkout; label harvest done |
-| `MOT-4` — emit the operation catalog for one family | M2 | Medium | Not started — family decided (`B5`): the lexical entry. Includes renaming the one shipped kind to `lexical/lexSense/setGloss` and regenerating its conformance vectors (ADR 0023) |
-| `MOT-11` — scratch-cache DryRun, replacing mutate-then-rollback | M2 | Medium | Not started — **ADR 0016**, gated on the `A1` spike |
+| `MOT-4` — emit the operation catalog for one family | M2 | Medium | **Slice A built 2026-08-06** — 10 `set\|clear` kinds emitted, `setGloss` regenerated, its tests pass unmodified. Round-trips against a real project **but only via a full project reload per operation**, because the poisoning guard now fires — see `MOT-11`. Slice B (`create\|delete`, `addRef\|removeRef`) in progress |
+| `MOT-11` — scratch-cache DryRun, replacing mutate-then-rollback | M2 | Medium | **Not started, and now the blocker** — `A1` is measured, and slice A made the poisoning fire for real (see below) |
 | `MOT-16` — long-lived CLI session over a warm cache | M2 | Small–medium | Not started |
 | `MOT-19` — the CLI as the full product surface, text and JSON | M2/M4 | Large, and grows with every other item | Not started — **ADR 0021** |
 | `MOT-9` — Baseline Token, Dry Run binding, apply authorization, Receipt | M4 | Medium, correctness-critical | **Partly built** |
@@ -283,6 +283,17 @@ Only 4 of the `lexSense` rows and none of the `lexEntry` rows are HermitCrab-rea
 nothing about whether a generated kind can change a parse; that is `MOT-6` and `MOT-15`.
 
 ## `MOT-11` — scratch-cache DryRun — M2
+
+> **This is now the blocker, on evidence rather than principle.** ADR 0016 predicted the cache-poisoning guard
+> would stop being dormant "the moment you add a second operation kind." `MOT-4` slice A added nine, two of them
+> `AssessPoisonsCache=yes` (`LexEntry.CitationForm`, `MoForm.Form`), and the round-trip test for `MoForm.Form`
+> now **disposes and reloads the entire project twice in a single test** to survive its own Dry Run
+> (`tests/SIL.Motif.Tests/Runner/GeneratedBasicFieldOperationsTests.cs:74`, `:97`).
+>
+> Tolerable in a test on a small fixture. Fatal to the product: a reload is ~1.8 s on Sena 3, and the whole
+> premise of the agent loop is many Dry Runs against one open project. The measured XML-path scratch is ~600 ms
+> **and does not poison the live cache at all**, so the live cache stays usable and no reload is forced. That
+> makes this the next thing to build, not a later cleanup.
 
 Implement [ADR 0016](adr/0016-scratch-cache-copy-not-undo.md) **as amended 2026-08-05: one canonical path —
 copy the project's files and open the copy** (~50 ms + ~550 ms at Sena-3 scale). A live-cache footprint probe
