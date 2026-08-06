@@ -25,6 +25,7 @@
     <ProjectReference Include="..\..\src\SIL.Motif.Model\SIL.Motif.Model.csproj" />
     <ProjectReference Include="..\..\src\SIL.Motif.Runner\SIL.Motif.Runner.csproj" />
     <ProjectReference Include="..\..\src\SIL.Motif.Cli\SIL.Motif.Cli.csproj" />
+    <ProjectReference Include="..\..\src\SIL.Motif.Generator\SIL.Motif.Generator.csproj" />
     <!-- A1 spike: the equivalence comparison is shared with the console timing harness. -->
     <ProjectReference Include="..\..\spikes\SIL.Motif.Spikes.ScratchCache\SIL.Motif.Spikes.ScratchCache.csproj" />
     <!-- ADR 0023 decision 5 spike: the parsers are exercised directly against inline fixtures below. -->

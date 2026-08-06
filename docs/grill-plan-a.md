@@ -633,10 +633,31 @@ separate classes.
 `.fwdata` path PanGloss morpheme identity **is** the LibLCM MSA GUID (`lexicon.rs:301,309`), and
 `pg-assess` already has digest-keyed exact-structural set comparison.
 
-**The replacement risk — now `I35a` [D]:** PanGloss's `AnalysisIdentity` carries no **allomorph** and
+**`I35a` [D→RESOLVED 2026-08-05]** by [ADR 0027](adr/0027-what-counts-as-the-same-word-analysis.md): the
+sense-blindness is real but correctly scoped. It can cause false agreement only about **sense**, which is not
+under test and is reported separately; it cannot cause false agreement about morphology, which is what the
+gate checks. And a sense-sensitive gate is **unimplementable** anyway — PanGloss's `AnalysisIdentity`
+(`pg-assess/src/identity.rs:36-44`) has no per-morpheme sense field, and a morphological parser has no
+evidence on which to choose one.
+
+*Original framing —* **the replacement risk:** PanGloss's `AnalysisIdentity` carries no **allomorph** and
 no **sense** identity, where `WfiMorphBundle` carries `MorphRA`, `MsaRA`, *and* `SenseRA`. Two
 analyses differing only in allomorph or sense collapse to one PanGloss identity — **false agreement**,
 the unsafe direction. Accept as a declared limitation, or build a richer identity?
+
+**I35b. [D→RESOLVED 2026-08-05 — neither; they answer different questions]**
+[ADR 0027](adr/0027-what-counts-as-the-same-word-analysis.md). The two implementations are not competing
+answers to one question. `MatchesIWfiAnalysis` compares **across representations**, where the parser side
+structurally lacks `SenseRA` and `CategoryRA` — verified: `ParseFiler.cs` never assigns either, and only the
+human approval path does (`SandboxBase.GetRealyAnalysisMethod.cs:383`, `:445`).
+`WfiWordformServices.DuplicateAnalyses` compares **two human-authored objects of the same kind**, where both
+fields exist on both sides. Two tools, two jobs.
+
+**So the test gate is `MatchesIWfiAnalysis`'s shape**, and sense plus word-level category are reported as
+non-gating diagnostics. A green result claims *“the parser agrees about the morphology”* — not *“the parser
+agrees with the linguist”* — and any report showing it must say so.
+
+*Original framing:*
 
 **I35b. [D] Whose analysis-equality definition wins?**
 FieldWorks already ships **two disagreeing** implementations: `WfiWordformServices.DuplicateAnalyses`
