@@ -22,4 +22,12 @@ public static class RepoPaths
 
     public static string DefaultManifestPath(string? startDirectory = null) =>
         Path.Combine(FindRepoRoot(startDirectory), "manifest", "liblcm-inventory.tsv");
+
+    /// <summary>
+    /// Hand-written descriptions, one per authorable field, required for every emitted kind
+    /// (ADR 0023 decision 5 as amended). A companion file rather than a manifest column: it grows per
+    /// family as families ship, where the inventory is a fixed 898-row projection of the model.
+    /// </summary>
+    public static string DefaultDescriptionsPath(string? startDirectory = null) =>
+        Path.Combine(FindRepoRoot(startDirectory), "manifest", "kind-descriptions.tsv");
 }
