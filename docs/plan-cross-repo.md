@@ -38,6 +38,23 @@ acceptance.
 
 ## PanGloss
 
+**Two interface requirements, from [ADR 0031](adr/0031-collaboration-follows-the-data-not-the-surface.md).**
+The cheap analysis loop — add stems, reanalyse the corpus, report coverage and mis-categorisation, all
+without recompiling — is what makes an AI-centric workflow affordable, and it needs two things from
+PanGloss that the interface recorded in `MOT-15` does not yet show:
+
+1. **Analyse a batch against the currently loaded lexicon without recompiling.** As recorded, `hc_grammar_load`
+   takes the whole grammar as one XML payload, so there is no "add these stems to the loaded grammar" entry
+   point in what we have written down. Either one exists and we have not recorded it, or one is needed.
+2. **A stem added at runtime must go through the same rule machinery as a compiled-in stem.** If the runtime
+   path short-circuits any rule application, a coverage report is optimistically wrong — a stem looks
+   correctly categorised when it is not — which is worse than having no report. **Confirm this before
+   building anything on the loop.**
+
+Also unmeasured: what a full-corpus reanalysis costs (6,973 wordforms in Sena 3). Expected to be cheap
+since it scales with corpus size rather than grammar size, but a four-minute report would change how often
+it can run.
+
 Two asks, and the second is larger than it sounds.
 
 `hc_grammar_load` already accepts HC XML bytes in memory, which is enough for step 1 of `MOT-15` with

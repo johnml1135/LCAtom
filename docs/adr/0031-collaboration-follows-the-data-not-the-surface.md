@@ -10,7 +10,8 @@ neither of them meant. So Motif will not build machinery for several people to e
 What it builds instead is a durable record of *why* each change was made, because the person who wrote
 the grammar will eventually leave and the reasoning must not leave with them. Dictionary and text work is
 the opposite — large, safely parallel, and **already handled by other tools**, so Motif touches it only to
-give a machine a validated path. A human adding a word should use FLEx. See the amendment below, which
+give a machine a validated path, plus a recorded report of what the change did to parser coverage. A human
+adding a word should use FLEx. See the amendment below, which
 narrows this further than the original analysis did.
 
 ## Context
@@ -226,6 +227,65 @@ second comment system in the same organisation, which decision 5 declined for th
 
 **What this leaves M4 as:** the rationale record for grammar changes, and a machine-usable path for
 everything else.
+
+### Amended again, same day — decision 9 was too coarse: "no compile" is not "no report"
+
+Decision 9 said a lexical or text Proposal "gets the cheap path: validate, apply, receipt." That is wrong,
+and it discards the most useful thing available. The owner:
+
+> *PanGloss has a native system for adding stems in specific categories for end users in FieldWorks. If I
+> add 200 new stems with the proper categories, I should be able to analyze existing text and get a good
+> report without even recompiling the grammar. Conversely, if I add a new text, I should be able to analyze
+> it and get new coverage information without compiling the grammar newly. This may be important for an AI
+> or human to assess when they get a new list of words — to determine that they are categorized correctly,
+> and have the appropriate allomorphs.*
+
+**Recompiling the parser and running the parser are different costs, and I had collapsed them into one.**
+The right taxonomy is by what a check *needs*, which is derivable rather than judged:
+
+| Check needs | Applies to | Cost |
+| --- | --- | --- |
+| A **recompiled** parser | grammar changes only | expensive |
+| A **parser run** over text, no recompile | grammar, **stems, and texts** | cheap, and load-bearing |
+| Neither | everything else | free |
+
+So a Proposal adding 200 stems earns a real report, and that report is the **whole point of the change**:
+did the stems get the right category, do they have the right allomorphs, do occurrences that previously
+failed to parse now parse — and *correctly*, not merely at all. A Proposal adding a text earns fresh
+coverage numbers. Neither needs a compile.
+
+### The loop this creates is the one an AI will live in
+
+```
+   new text  ------------> analyze -----> coverage + the forms that did not parse
+                                                   |
+                                                   v
+   confirm they now parse <--- analyze <--- propose stems with categories
+                                                   |
+                                                   +--> anything still failing is
+                                                        a GRAMMAR question, and only
+                                                        that needs a recompile
+```
+
+**No step in that loop compiles anything.** That is why an AI-centric workflow is viable at all: the cycle
+is cheap enough to run on every Proposal and to run unattended, and it self-selects the small number of
+cases that genuinely need grammar work. It also gives the coverage ramp question (`I37`) a natural answer
+shape — delta against the previous run — though it does not settle which denominator to use.
+
+### Two conditions this rests on, and neither is confirmed here
+
+1. **A stem added at runtime must go through the same machinery a compiled-in stem does.** If the runtime
+   path skips any rule application, the report is optimistically wrong: a stem would look correctly
+   categorised when it is not, which is worse than no report. This is a question for PanGloss, recorded as
+   an interface requirement in [the cross-repo plan](../plan-cross-repo.md#pangloss).
+2. **"Cheap" needs a number.** Reanalysing Sena 3's corpus is 6,973 wordforms; the cost scales with corpus
+   size, not grammar size, so it is almost certainly fine — but it is unmeasured, and a coverage report
+   that takes four minutes changes how often it can run. Measure before relying on it.
+
+**Note what does not change:** a human adding stems in FieldWorks gets this report from PanGloss natively
+and still does not need Motif (decisions 8 and 10 stand). What Motif adds is the report as **durable
+evidence bound to a Proposal** — "these 200 stems moved coverage from 71% to 78%, and 14 produced no
+analysis" — recorded rather than glanced at on screen.
 
 ## Consequences
 
