@@ -4,7 +4,6 @@ using SIL.Motif.Contract.Model;
 using SIL.Motif.Host.LcmUtils;
 using SIL.Motif.Model.Snapshot;
 using SIL.Motif.Runner.DryRun;
-using SIL.Motif.Runner.Caching;
 using SIL.Motif.Runner.Operations;
 using SIL.Motif.Tests.TestFixtures;
 using SIL.LCModel;
@@ -55,8 +54,8 @@ public sealed class ProposalDryRunnerTests : IDisposable
 
         var proposal = BuildSetGlossProposal(canonicalId, wsTag, newGloss);
 
-        var firstDryRun = ProposalDryRunner.Run(_cache, proposal);
-        var secondDryRun = ProposalDryRunner.Run(_cache, proposal);
+        var firstDryRun = ScratchDryRun.Of(_cache, proposal);
+        var secondDryRun = ScratchDryRun.Of(_cache, proposal);
 
         // (a) + "an effect is produced for the right canonical id/field": exactly one expected
         // effect, keyed by the sense's own canonical id and the gloss field, whose before/after
@@ -83,53 +82,65 @@ public sealed class ProposalDryRunnerTests : IDisposable
         var bogusTarget = CanonicalId.FromGuid(Guid.NewGuid());
         var proposal = BuildSetGlossProposal(bogusTarget, "en", "does not matter");
 
-        Assert.ThrowsAny<Exception>(() => ProposalDryRunner.Run(_cache, proposal));
+        Assert.ThrowsAny<Exception>(() => ScratchDryRun.Of(_cache, proposal));
     }
 
-    // --- Defect 4: the "may poison a derived cache" guard. ---
+    // --- The scratch is single-use, and it is really mutated. ---
+
+    /// <remarks>
+    /// Two tests named DryRun_SetGloss_UnflaggedKind_DoesNotMarkCachePoisoned and
+    /// DryRun_FlaggedKind_MarksCachePoisoned stood here, guarding a hand-maintained list of fields whose
+    /// derived caches a rollback would leave stale. Both are gone with the rollback
+    /// (docs/adr/0016-scratch-cache-copy-not-undo.md, amended 2026-08-06). What replaces them is not
+    /// another classification but the two properties the new design actually rests on: the scratch is
+    /// genuinely mutated (so read-back is real), and it can only be used once (so a baseline is always
+    /// a baseline the live project was really in).
+    /// </remarks>
+    [Fact]
+    public void DryRun_MutatesTheScratchAndDoesNotRevertIt()
+    {
+        var (sense, wsHandle, wsTag, originalGloss) = FindSenseWithKnownGloss();
+        var newGloss = originalGloss + " (written into the scratch)";
+        var proposal = BuildSetGlossProposal(CanonicalId.FromGuid(sense.Guid), wsTag, newGloss);
+
+        // Hold the scratch's own cache reference so its post-run state can be read. DryRunScratch does
+        // not hand it back — production has no reason to read a scratch after the run — but whoever
+        // built it already has it, which is enough for a test and adds no API.
+        var scratchRoot = Path.Combine(_tempRoot, "scratch-inspect");
+        var scratchCache = new ScratchCacheFactory().CreateFromFileCopy(_cache.ProjectId.Path, scratchRoot);
+        using var scratch = DryRunScratch.Adopt(scratchCache, "test scratch, inspected after the run");
+
+        var dryRun = ProposalDryRunner.Run(scratch, proposal);
+
+        // The scratch really holds the new value: nothing reverted it, which is the whole point —
+        // rollback is what skipped LibLCM's forward-only setter hooks and left derived caches stale.
+        var scratchWsHandle = scratchCache.WritingSystemFactory.GetWsFromStr(wsTag);
+        var scratchSense = scratchCache.ServiceLocator.GetInstance<ILexSenseRepository>().GetObject(sense.Guid);
+        Assert.Equal(newGloss, scratchSense.Gloss.get_String(scratchWsHandle).Text);
+
+        // And the live cache is untouched, for a better reason than before: the DryRun was never here.
+        Assert.Equal(originalGloss, sense.Gloss.get_String(wsHandle).Text);
+        Assert.Equal(newGloss, Assert.Single(dryRun.ExpectedEffects).After[wsTag]);
+    }
 
     [Fact]
-    public void DryRun_SetGloss_UnflaggedKind_DoesNotMarkCachePoisoned()
+    public void DryRunScratch_RefusesASecondRun()
     {
         var (sense, _, wsTag, originalGloss) = FindSenseWithKnownGloss();
         var proposal = BuildSetGlossProposal(CanonicalId.FromGuid(sense.Guid), wsTag, originalGloss + " x");
 
-        Assert.False(CacheReusability.IsPoisoned(_cache, out _));
-        ProposalDryRunner.Run(_cache, proposal);
-        Assert.False(CacheReusability.IsPoisoned(_cache, out _));
-    }
+        var scratchRoot = Path.Combine(_tempRoot, "scratch-single-use");
+        using var scratch = DryRunScratch.Adopt(
+            new ScratchCacheFactory().CreateFromFileCopy(_cache.ProjectId.Path, scratchRoot),
+            "test scratch, reused on purpose");
 
-    [Fact]
-    public void DryRun_FlaggedKind_MarksCachePoisoned()
-    {
-        // No operation handler exists yet for a flagged kind (Stage C/D implement only setGloss) —
-        // the guard must still mark the cache before Run's dispatch loop rejects it as
-        // unsupported, per DerivedCachePoisoningOperationKinds' remarks ("wired in ahead of the
-        // operation kinds that will need it").
-        var flaggedKind = "lexical/entry/setLexemeForm";
-        Assert.True(DerivedCachePoisoningOperationKinds.MayPoisonDerivedCache(flaggedKind));
+        ProposalDryRunner.Run(scratch, proposal);
 
-        var afterJson = JsonSerializer.Serialize(new { ws = "en", text = "does not matter" });
-        using var afterDocument = JsonDocument.Parse(afterJson);
-        var operation = new OperationEnvelope(
-            operationId: CanonicalId.Mint(),
-            kind: flaggedKind,
-            target: CanonicalId.FromGuid(Guid.NewGuid()),
-            after: afterDocument.RootElement.Clone());
-        var proposal = new Proposal(
-            contractVersions: new Dictionary<string, string> { ["lexical"] = "1.0" },
-            proposalId: CanonicalId.Mint(),
-            requires: null,
-            operations: new[] { operation });
-
-        Assert.False(CacheReusability.IsPoisoned(_cache, out _));
-
-        // Not (yet) dispatchable — Run still correctly refuses an unsupported kind — but the
-        // poisoning guard must have already run before that refusal.
-        Assert.ThrowsAny<Exception>(() => ProposalDryRunner.Run(_cache, proposal));
-
-        Assert.True(CacheReusability.IsPoisoned(_cache, out var reason));
-        Assert.False(string.IsNullOrWhiteSpace(reason));
+        // A second run here would read a baseline that already contains the first run's mutation, so
+        // its footprint digest would describe a state the live project was never in — the same defect
+        // as rolling a scratch back, just quieter. Refused rather than silently wrong.
+        var reuse = Assert.Throws<InvalidOperationException>(() => ProposalDryRunner.Run(scratch, proposal));
+        Assert.Contains("single-use", reuse.Message);
     }
 
     /// <summary>

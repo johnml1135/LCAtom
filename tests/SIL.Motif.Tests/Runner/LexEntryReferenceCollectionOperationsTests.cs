@@ -18,8 +18,9 @@ namespace SIL.Motif.Tests.Runner;
 /// MOT-4 slice 2's round-trip proof for the three <c>rel/col</c>/<c>rel/seq</c>
 /// <c>addRef</c>/<c>removeRef</c> fields against a real project: <c>LexEntry.DialectLabels</c>
 /// (<c>rel/seq</c>), <c>.DoNotPublishIn</c>, <c>.DoNotShowMainEntryIn</c> (both <c>rel/col</c>). None
-/// of the three carry <c>AssessPoisonsCache=yes</c>, so — unlike the LexemeForm/MorphType
-/// counterparts — no dispose/reload dance is needed between DryRun and Apply.
+/// Once distinguished from the LexemeForm/MorphType counterparts by needing no dispose/reload dance
+/// between DryRun and Apply; since ADR 0016's 2026-08-06 amendment none of them do, because no DryRun
+/// touches the live cache at all.
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
 public sealed class LexEntryReferenceCollectionOperationsTests : IDisposable
@@ -56,7 +57,7 @@ public sealed class LexEntryReferenceCollectionOperationsTests : IDisposable
 
         // --- addRef ---
         var addProposal = BuildProposal(addKind, target, memberId);
-        var addDryRun = ProposalDryRunner.Run(_cache, addProposal);
+        var addDryRun = ScratchDryRun.Of(_cache, addProposal);
         var addEffect = Assert.Single(addDryRun.ExpectedEffects);
         Assert.DoesNotContain(memberId.Value, addEffect.Before.Keys);
         Assert.Contains(memberId.Value, addEffect.After.Keys);
@@ -67,7 +68,7 @@ public sealed class LexEntryReferenceCollectionOperationsTests : IDisposable
 
         // --- removeRef ---
         var removeProposal = BuildProposal(removeKind, target, memberId);
-        var removeDryRun = ProposalDryRunner.Run(_cache, removeProposal);
+        var removeDryRun = ScratchDryRun.Of(_cache, removeProposal);
         var removeEffect = Assert.Single(removeDryRun.ExpectedEffects);
         Assert.Contains(memberId.Value, removeEffect.Before.Keys);
         Assert.DoesNotContain(memberId.Value, removeEffect.After.Keys);
@@ -86,14 +87,14 @@ public sealed class LexEntryReferenceCollectionOperationsTests : IDisposable
         var memberId = CanonicalId.FromGuid(member.Guid);
 
         var proposal = BuildProposal(LexEntryDoNotPublishInOperationKinds.AddRefDoNotPublishIn, target, memberId);
-        var dryRun1 = ProposalDryRunner.Run(_cache, proposal);
+        var dryRun1 = ScratchDryRun.Of(_cache, proposal);
         ProposalApplier.Apply(_cache, proposal, dryRun1.Anchor, "motif-tests");
         Assert.Equal(1, entry.DoNotPublishInRC.Count(m => m.Guid == member.Guid));
 
         // A second, distinct addRef of the SAME member must not duplicate it.
         var secondProposal = BuildProposal(
             LexEntryDoNotPublishInOperationKinds.AddRefDoNotPublishIn, target, memberId, CanonicalId.Mint());
-        var dryRun2 = ProposalDryRunner.Run(_cache, secondProposal);
+        var dryRun2 = ScratchDryRun.Of(_cache, secondProposal);
         ProposalApplier.Apply(_cache, secondProposal, dryRun2.Anchor, "motif-tests");
         Assert.Equal(1, entry.DoNotPublishInRC.Count(m => m.Guid == member.Guid));
     }
@@ -108,7 +109,7 @@ public sealed class LexEntryReferenceCollectionOperationsTests : IDisposable
 
         var proposal = BuildProposal(LexEntryDoNotShowMainEntryInOperationKinds.RemoveRefDoNotShowMainEntryIn, target, memberId);
 
-        var dryRun = ProposalDryRunner.Run(_cache, proposal);
+        var dryRun = ScratchDryRun.Of(_cache, proposal);
         var receipt = ProposalApplier.Apply(_cache, proposal, dryRun.Anchor, "motif-tests");
 
         Assert.False(receipt.AlreadyApplied);
@@ -185,7 +186,7 @@ public sealed class LexEntryReferenceCollectionOperationsTests : IDisposable
 
         var proposal = BuildProposal(LexEntryDoNotPublishInOperationKinds.AddRefDoNotPublishIn, target, wrongTypeId);
 
-        var ex = Assert.Throws<InvalidOperationException>(() => ProposalDryRunner.Run(_cache, proposal));
+        var ex = Assert.Throws<InvalidOperationException>(() => ScratchDryRun.Of(_cache, proposal));
         Assert.Contains("not a CmPossibility", ex.Message);
     }
 

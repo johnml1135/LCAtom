@@ -21,7 +21,7 @@ public class ModelManifestJoinerTests
         Field: field, Kind: "basic", Sig: "Unicode", Card: "", HcReferenced: "no",
         Construct: "x", Group: "system", Classification: "semantic-operation",
         ComparisonClass: "unordered", Verbs: "set|clear", HcReachable: "no",
-        AssessPoisonsCache: "no", EnumValues: "", Rationale: "test fixture");
+        EnumValues: "", Rationale: "test fixture");
 
     [Fact]
     public void Join_RealModelAndManifest_Balances898To898WithNoOrphans()

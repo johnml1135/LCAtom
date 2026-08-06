@@ -6,7 +6,6 @@ using SIL.Motif.Host.LcmUtils;
 using SIL.Motif.Model.DryRun;
 using SIL.Motif.Runner.AppliedLog;
 using SIL.Motif.Runner.Apply;
-using SIL.Motif.Runner.Caching;
 using SIL.Motif.Runner.DryRun;
 using SIL.Motif.Runner.Operations;
 using SIL.Motif.Tests.TestFixtures;
@@ -24,12 +23,11 @@ namespace SIL.Motif.Tests.Runner;
 /// abstract and which concrete class to build depends on the authored morph type.
 /// </summary>
 /// <remarks>
-/// Both verbs carry <c>manifest/liblcm-inventory.tsv</c> <c>AssessPoisonsCache=yes</c>
-/// (<c>MorphTypeRASideEffects</c>/<c>LexemeFormOASideEffects</c> -&gt; <c>UpdateHomographs</c>), wired
-/// into <see cref="DerivedCachePoisoningOperationKinds"/> alongside slice 1's
-/// <c>CitationForm</c>/<c>Form</c> — so, exactly like <c>GeneratedBasicFieldOperationsTests</c>'
-/// <c>MoFormForm</c> test, a DryRun poisons this cache instance and the test disposes/reloads before
-/// the matching Apply.
+/// Both verbs feed <c>UpdateHomographs</c> (<c>MorphTypeRASideEffects</c>/<c>LexemeFormOASideEffects</c>),
+/// which used to matter here: a DryRun mutated this cache and rolled back, rollback does not refresh
+/// those derived caches, so each round-trip had to dispose and reload the project between DryRun and
+/// Apply. The DryRun now runs on a throwaway copy, so it does not — see
+/// <c>docs/adr/0016-scratch-cache-copy-not-undo.md</c>, amended 2026-08-06.
 /// </remarks>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
 public sealed class LexEntryLexemeFormOperationsTests : IDisposable
@@ -62,14 +60,13 @@ public sealed class LexEntryLexemeFormOperationsTests : IDisposable
 
         var proposal = BuildCreateProposal(CanonicalId.FromGuid(entryGuid), newFormId, stemMorphTypeId, vernWs, "zzMotifStem");
 
-        var dryRun = ProposalDryRunner.Run(_cache, proposal);
-        Assert.True(CacheReusability.IsPoisoned(_cache, out _));
+        var dryRun = ScratchDryRun.Of(_cache, proposal);
         var effect = Assert.Single(dryRun.ExpectedEffects);
         Assert.Empty(effect.Before);
         Assert.Equal(newFormId.Value, effect.After[ReferenceFieldAlternativesKey]);
 
-        _cache.Dispose();
-        _cache = _loader.LoadCache(_fwDataPath);
+        // No dispose/reload between DryRun and Apply: the DryRun ran on a throwaway copy, so this
+        // cache never saw it (docs/adr/0016-scratch-cache-copy-not-undo.md, amended 2026-08-06).
 
         var receipt = ProposalApplier.Apply(_cache, proposal, dryRun.Anchor, "motif-tests");
         Assert.False(receipt.AlreadyApplied);
@@ -97,7 +94,7 @@ public sealed class LexEntryLexemeFormOperationsTests : IDisposable
 
         var proposal = BuildCreateProposal(CanonicalId.FromGuid(entryGuid), newFormId, prefixMorphTypeId, vernWs, "zzMotifPrefix");
 
-        var dryRun = ProposalDryRunner.Run(_cache, proposal);
+        var dryRun = ScratchDryRun.Of(_cache, proposal);
         _cache.Dispose();
         _cache = _loader.LoadCache(_fwDataPath);
         ProposalApplier.Apply(_cache, proposal, dryRun.Anchor, "motif-tests");
@@ -117,7 +114,7 @@ public sealed class LexEntryLexemeFormOperationsTests : IDisposable
 
         var proposal = BuildCreateProposal(CanonicalId.FromGuid(entryGuid), newFormId, stemMorphTypeId, vernWs, "zzMotifReplacement");
 
-        var dryRun = ProposalDryRunner.Run(_cache, proposal);
+        var dryRun = ScratchDryRun.Of(_cache, proposal);
         var oldRef = Assert.Single(dryRun.ExpectedEffects).Before;
         Assert.Equal(oldFormGuid.ToString(), CanonicalId.Parse(oldRef[ReferenceFieldAlternativesKey]).ToGuid().ToString());
 
@@ -139,14 +136,13 @@ public sealed class LexEntryLexemeFormOperationsTests : IDisposable
         var (entryGuid, oldFormGuid) = FindEntryWithLexemeForm();
         var proposal = BuildDeleteProposal(CanonicalId.FromGuid(entryGuid));
 
-        var dryRun = ProposalDryRunner.Run(_cache, proposal);
-        Assert.True(CacheReusability.IsPoisoned(_cache, out _));
+        var dryRun = ScratchDryRun.Of(_cache, proposal);
         var effect = Assert.Single(dryRun.ExpectedEffects);
         Assert.Equal(oldFormGuid, CanonicalId.Parse(effect.Before[ReferenceFieldAlternativesKey]).ToGuid());
         Assert.Empty(effect.After);
 
-        _cache.Dispose();
-        _cache = _loader.LoadCache(_fwDataPath);
+        // No dispose/reload between DryRun and Apply: the DryRun ran on a throwaway copy, so this
+        // cache never saw it (docs/adr/0016-scratch-cache-copy-not-undo.md, amended 2026-08-06).
         var receipt = ProposalApplier.Apply(_cache, proposal, dryRun.Anchor, "motif-tests");
         Assert.False(receipt.AlreadyApplied);
 
@@ -161,7 +157,7 @@ public sealed class LexEntryLexemeFormOperationsTests : IDisposable
         var entryGuid = CreateBareEntry();
         var proposal = BuildDeleteProposal(CanonicalId.FromGuid(entryGuid));
 
-        Assert.ThrowsAny<Exception>(() => ProposalDryRunner.Run(_cache, proposal));
+        Assert.ThrowsAny<Exception>(() => ScratchDryRun.Of(_cache, proposal));
 
         var entry = _cache.ServiceLocator.GetInstance<ILexEntryRepository>().GetObject(entryGuid);
         Assert.Null(entry.LexemeFormOA);
@@ -205,7 +201,6 @@ public sealed class LexEntryLexemeFormOperationsTests : IDisposable
         var entry = _cache.ServiceLocator.GetInstance<ILexEntryRepository>().GetObject(entryGuid);
         Assert.Null(entry.LexemeFormOA); // op1's create was rolled back
         Assert.Empty(ProjectAppliedLog.ReadAll(_cache));
-        Assert.True(CacheReusability.IsPoisoned(_cache, out _));
     }
 
     [Fact]
@@ -255,7 +250,7 @@ public sealed class LexEntryLexemeFormOperationsTests : IDisposable
         var proposal = BuildCreateProposal(
             CanonicalId.FromGuid(entryGuid), CanonicalId.Mint(), bogusMorphType, "en", "x");
 
-        var ex = Assert.ThrowsAny<Exception>(() => ProposalDryRunner.Run(_cache, proposal));
+        var ex = Assert.ThrowsAny<Exception>(() => ScratchDryRun.Of(_cache, proposal));
         Assert.Contains(unresolvableGuid.ToString(), ex.Message);
     }
 
@@ -270,7 +265,7 @@ public sealed class LexEntryLexemeFormOperationsTests : IDisposable
         var proposal = BuildCreateProposal(
             CanonicalId.FromGuid(entryGuid), CanonicalId.Mint(), wrongTypeId, "en", "x");
 
-        var ex = Assert.Throws<InvalidOperationException>(() => ProposalDryRunner.Run(_cache, proposal));
+        var ex = Assert.Throws<InvalidOperationException>(() => ScratchDryRun.Of(_cache, proposal));
         Assert.Contains("not a MoMorphType", ex.Message);
         Assert.Contains("LexEntry", ex.Message);
     }
@@ -295,7 +290,7 @@ public sealed class LexEntryLexemeFormOperationsTests : IDisposable
         var proposal = BuildCreateProposal(
             CanonicalId.FromGuid(entryGuid), CanonicalId.Mint(), CanonicalId.FromGuid(customMorphTypeGuid), "en", "x");
 
-        var ex = Assert.Throws<InvalidOperationException>(() => ProposalDryRunner.Run(_cache, proposal));
+        var ex = Assert.Throws<InvalidOperationException>(() => ScratchDryRun.Of(_cache, proposal));
         Assert.Contains(customMorphTypeGuid.ToString(), ex.Message);
         Assert.Contains("MasterLCModel.xml", ex.Message);
     }
@@ -303,11 +298,10 @@ public sealed class LexEntryLexemeFormOperationsTests : IDisposable
     private const string ReferenceFieldAlternativesKey = "ref";
 
     /// <summary>
-    /// Creates a bare <c>LexEntry</c> with no lexeme form and persists it, so a later dispose/reload
-    /// (required by this field's <c>AssessPoisonsCache=yes</c> dry-run poisoning, matching
-    /// <c>GeneratedBasicFieldOperationsTests</c>' <c>MoFormForm</c> test) still finds it -- Apply never
-    /// saves itself (docs/change-set-contract.md, "Application Receipt"), so a from-scratch setup
-    /// mutation that is never persisted would vanish on reload, same as any other unsaved edit.
+    /// Creates a bare <c>LexEntry</c> with no lexeme form and persists it, so the DryRun's scratch copy
+    /// -- which is a copy of the FILE -- can see it. Apply never saves itself
+    /// (docs/change-set-contract.md, "Application Receipt"), so a setup mutation left uncommitted would
+    /// be invisible to the copy and the resulting anchor would describe a state this cache is not in.
     /// </summary>
     private Guid CreateBareEntry()
     {

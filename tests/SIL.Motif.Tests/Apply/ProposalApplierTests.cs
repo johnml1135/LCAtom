@@ -7,7 +7,6 @@ using SIL.Motif.Model.DryRun;
 using SIL.Motif.Runner.Apply;
 using SIL.Motif.Runner.AppliedLog;
 using SIL.Motif.Runner.DryRun;
-using SIL.Motif.Runner.Caching;
 using SIL.Motif.Runner.Operations;
 using SIL.Motif.Tests.TestFixtures;
 using SIL.LCModel;
@@ -70,7 +69,7 @@ public sealed class ProposalApplierTests : IDisposable
         const string description = "Stage D test: revise sense gloss";
 
         // --- 1. First apply: a real commit, not a rollback. Bound to a prior dry run (ADR 0004 §3). ---
-        var dryRun = ProposalDryRunner.Run(_cache, proposal);
+        var dryRun = ScratchDryRun.Of(_cache, proposal);
         var receipt = ProposalApplier.Apply(_cache, proposal, dryRun.Anchor, applierIdentity, description);
 
         Assert.False(receipt.AlreadyApplied);
@@ -141,7 +140,7 @@ public sealed class ProposalApplierTests : IDisposable
         const string secondDescription = "Stage D test: second, distinct proposal";
 
         // A genuinely new mutation needs a fresh dry run against the live (post-first-apply) baseline.
-        var secondDryRun = ProposalDryRunner.Run(_cache, secondProposal);
+        var secondDryRun = ScratchDryRun.Of(_cache, secondProposal);
         var secondReceipt = ProposalApplier.Apply(
             _cache, secondProposal, secondDryRun.Anchor, applierIdentity, secondDescription);
 
@@ -198,7 +197,7 @@ public sealed class ProposalApplierTests : IDisposable
         var target = CanonicalId.FromGuid(senseGuid);
         var proposal = BuildSetGlossProposal(target, wsTag, originalGloss + " (bound apply)");
 
-        var dryRun = ProposalDryRunner.Run(_cache, proposal);
+        var dryRun = ScratchDryRun.Of(_cache, proposal);
         var receipt = ProposalApplier.Apply(_cache, proposal, dryRun.Anchor, "motif-tests");
 
         Assert.False(receipt.AlreadyApplied);
@@ -213,7 +212,7 @@ public sealed class ProposalApplierTests : IDisposable
         var proposal = BuildSetGlossProposal(target, wsTag, originalGloss + " (intended apply)");
 
         // Run against the ORIGINAL baseline.
-        var dryRun = ProposalDryRunner.Run(_cache, proposal);
+        var dryRun = ScratchDryRun.Of(_cache, proposal);
 
         // The baseline moves out from underneath: someone else commits a real, different gloss
         // change to the very same target/field before apply runs.
@@ -236,11 +235,19 @@ public sealed class ProposalApplierTests : IDisposable
             senseRepo.GetObject(senseGuid).Gloss.get_String(wsHandle).Text);
     }
 
-    // --- Defect 3 (RollbackCacheInvalidator): a mid-Change-Set failure rolls back and marks the
-    // cache instance non-reusable, never commits a homograph renumber. ---
+    // --- The one surviving rollback: a mid-Change-Set failure unwinds the whole Proposal. ---
 
+    /// <remarks>
+    /// This is the only rollback left in Motif, and it is forced by atomicity rather than chosen
+    /// (AGENTS.md rule 4; docs/adr/0016-scratch-cache-copy-not-undo.md as amended 2026-08-06). What this
+    /// test no longer asserts is as important as what it does: there is no "the cache is now flagged
+    /// non-reusable" check, because the flag, the field list that fed it, and the exception it threw
+    /// were all deleted. The obligation moved to the host as an unconditional rule — if Apply throws,
+    /// reload — which needs no per-field knowledge and is strictly stronger, since reload also discards
+    /// ADR 0005's non-undoable schema phase that a rollback cannot reach.
+    /// </remarks>
     [Fact]
-    public void Apply_MidProposalFailure_RollsBack_AndMarksCacheNonReusable()
+    public void Apply_MidProposalFailure_RollsBack_AndWritesNoAppliedLogEntry()
     {
         var (senseGuid, wsTag, originalGloss) = FindSenseWithKnownGloss(_cache);
         var target = CanonicalId.FromGuid(senseGuid);
@@ -271,8 +278,6 @@ public sealed class ProposalApplierTests : IDisposable
         var footprintDigest = FootprintProbe.ComputeCurrentFootprintDigest(_cache, proposal);
         var anchor = DummyAnchor() with { FootprintDigest = footprintDigest };
 
-        Assert.False(CacheReusability.IsPoisoned(_cache, out _));
-
         Assert.ThrowsAny<Exception>(() => ProposalApplier.Apply(_cache, proposal, anchor, "motif-tests"));
 
         // Rollback proof: op1's mutation was undone too (the whole Proposal is one unit of work).
@@ -283,14 +288,11 @@ public sealed class ProposalApplierTests : IDisposable
         // No applied-log entry (docs/applied-log.md, "Atomicity").
         Assert.Empty(ProjectAppliedLog.ReadAll(_cache));
 
-        // The cache instance is now flagged non-reusable, per the fixed RollbackCacheInvalidator
-        // (it must NOT have committed a project-wide homograph renumber to get there — see that
-        // type's remarks for the liblcm citations proving why a real commit was the old bug).
-        Assert.True(CacheReusability.IsPoisoned(_cache, out var reason));
-        Assert.False(string.IsNullOrWhiteSpace(reason));
-
-        // And a poisoned cache now refuses a further dry run or apply outright.
-        Assert.Throws<CachePoisonedException>(() => ProposalDryRunner.Run(_cache, proposal));
+        // Nothing is asserted about the failure path beyond this, because the failure path now does
+        // nothing: no invalidation attempt, no flag, no exception type of its own. That is the fix.
+        // RollbackCacheInvalidator's real defect was reaching for ILexEntryRepository.ResetHomographs
+        // as though it were cache invalidation when it renumbers every entry in the project inside its
+        // own committed unit of work — a hazard that cannot recur in code that no longer exists.
     }
 
     private static OperationEnvelope BuildSetGlossOperation(CanonicalId target, string wsTag, string text)

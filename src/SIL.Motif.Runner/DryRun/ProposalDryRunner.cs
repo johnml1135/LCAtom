@@ -7,7 +7,6 @@ using SIL.Motif.Model.AppliedLog;
 using SIL.Motif.Model.DryRun;
 using SIL.Motif.Model.Effects;
 using SIL.Motif.Model.Snapshot;
-using SIL.Motif.Runner.Caching;
 using SIL.Motif.Runner.Operations;
 using SIL.LCModel;
 using SIL.LCModel.Core.KernelInterfaces;
@@ -18,83 +17,69 @@ using ContractIntentDigest = SIL.Motif.Contract.Canonicalization.IntentDigest;
 namespace SIL.Motif.Runner.DryRun;
 
 /// <summary>
-/// Stage C's non-mutating Run: for each operation, resolves the target, snapshots it before and
-/// after applying the lowering inside an open (never-committed) unit of work, diffs the two
-/// snapshots into expected effects, then rolls back so the project is left unchanged. See
-/// docs/change-set-contract.md, "DryRun", and docs/adr/0006-engine-reality-apply-readback-preflight.md
-/// decision 1 (read-back inside the open task sees true, synchronously-applied engine state).
+/// Stage C's Run: applies each operation to a <see cref="DryRunScratch"/> — a throwaway copy of the
+/// project — snapshotting the target before and after, diffing the two into expected effects, and
+/// binding an anchor a later Apply must match. See docs/change-set-contract.md, "DryRun", and
+/// docs/adr/0006-engine-reality-apply-readback-preflight.md decision 1 (read-back inside the open task
+/// sees true, synchronously-applied engine state).
 /// </summary>
 /// <remarks>
+/// <para>
 /// Dispatch is by <see cref="OperationHandlerRegistry"/> lookup, one <see cref="IOperationHandler"/>
 /// per registered kind (MOT-4) — before a second kind existed this was "a single case deliberately,
-/// not a plugin registry"; the generated catalog is that second kind, many times over. This type
-/// never commits a unit of work — it is the non-mutating counterpart to
-/// <see cref="SIL.Motif.Runner.Apply.ProposalApplier"/> (Stage D), which shares the same
-/// resolve/snapshot/lower/snapshot sequence via the same handlers but commits instead of rolling
-/// back, and writes the applied-change log.
+/// not a plugin registry"; the generated catalog is that second kind, many times over. It shares the
+/// whole resolve/snapshot/lower/snapshot sequence with <see cref="SIL.Motif.Runner.Apply.ProposalApplier"/>
+/// (Stage D) via those same handlers.
+/// </para>
+/// <para>
+/// <b>The one difference from Stage D, and it is the point:</b> Apply mutates the live project inside an
+/// undoable unit of work it commits; Run mutates a copy inside a non-undoable one and <b>never reverts
+/// it</b>. The copy is discarded instead (<see cref="DryRunScratch.Dispose"/>). That is why this method
+/// no longer classifies operations by whether they might leave a derived cache stale: staleness came
+/// from <c>UndoStack.Rollback</c> skipping forward-only setter hooks, and there is no rollback here to
+/// skip them (docs/adr/0016-scratch-cache-copy-not-undo.md, amended 2026-08-06).
+/// </para>
+/// <para>
+/// <b>The scratch reads the project as it was last saved</b>, so the host must save before calling this
+/// or the anchor will describe a baseline the live cache has already moved past — reported at Apply as
+/// drift that did not really happen. See ADR 0016, "Save first, and recovery is reload".
+/// </para>
 /// </remarks>
 public static class ProposalDryRunner
 {
-    public static DryRunModel Run(LcmCache cache, Proposal proposal)
+    public static DryRunModel Run(DryRunScratch scratch, Proposal proposal)
     {
-        if (cache is null) throw new ArgumentNullException(nameof(cache));
+        if (scratch is null) throw new ArgumentNullException(nameof(scratch));
         if (proposal is null) throw new ArgumentNullException(nameof(proposal));
 
-        // Refuse outright rather than silently return a possibly-different digest against a cache
-        // already known to carry stale derived caches (docs/adr/0006, decision 3). See
-        // SIL.Motif.Runner.Caching.CacheReusability.
-        CacheReusability.EnsureReusable(cache);
+        var cache = scratch.ConsumeForOneRun();
 
         var intentDigest = ContractIntentDigest.Compute(proposal);
         var effects = new List<ExpectedEffect>();
         var touchedTargets = new List<CanonicalId>();
 
-        // Defect-4 guard: mark the cache poisoned BEFORE running the mutate-then-rollback sequence
-        // below when any operation's kind is flagged as possibly touching a forward-only derived
-        // cache — it is the rollback itself (not the mutation) that leaves such a cache stale (see
-        // DerivedCachePoisoningOperationKinds and docs/adr/0006, decision 3). Live (no longer
-        // dormant) as of MOT-4 for lexical/lexEntry/{set,clear}CitationForm and
-        // grammar/moForm/{set,clear}Form, per manifest/liblcm-inventory.tsv's AssessPoisonsCache
-        // column for those two fields.
-        foreach (var operation in proposal.Operations)
-        {
-            if (DerivedCachePoisoningOperationKinds.MayPoisonDerivedCache(operation.Kind))
-            {
-                CacheReusability.MarkPoisoned(
-                    cache,
-                    $"Run ran a mutate-then-rollback pass over a '{operation.Kind}' operation, " +
-                    "flagged as possibly touching a LexEntry headword/homograph or " +
-                    "MoStemAllomorph monomorphemic derived cache; UndoStack.Rollback does not " +
-                    "refresh those caches (docs/adr/0006, decision 3).");
-                break;
-            }
-        }
-
         var actionHandler = cache.ServiceLocator.GetInstance<IActionHandler>();
 
-        // Deliberately construct the helper directly (not the static UndoableUnitOfWorkHelper.Do,
-        // which sets RollBack = false on success) so Dispose always rolls back: Run must never
-        // leave a mutation committed. See docs/adr/0006, decision 3 ("Rollback is not Undo") — the
-        // object graph and identity map revert correctly for this scope (a MultiUnicode field has
-        // no headword/homograph/monomorphemic derived cache dependent on it).
-        using (var undoHelper = new UndoableUnitOfWorkHelper(
-            actionHandler, "Motif dry run (non-committing)", "Motif dry run (non-committing)"))
+        // Non-undoable, and RollBack cleared before the first mutation rather than after the last one:
+        // there is nothing to protect here — the cache is a copy that is about to be thrown away — and
+        // a rollback is the one thing that would leave a derived cache stale. So even a *failed* Run
+        // ends its task instead of reverting it, and the damage goes out with the scratch.
+        using (var unitOfWork = new NonUndoableUnitOfWorkHelper(actionHandler))
         {
+            unitOfWork.RollBack = false;
+
             foreach (var operation in proposal.Operations)
             {
                 var handler = OperationHandlerRegistry.Resolve(operation.Kind, "Stage C dryRun");
                 effects.Add(handler.ApplyAndCaptureEffect(cache, operation, touchedTargets));
             }
-
-            // No undoHelper.RollBack = false: Dispose() rolls the unit of work back unconditionally,
-            // so the project is exactly as it was before this call, regardless of success.
         }
 
         var effectDigest = ExpectedEffectSetDigest.Compute(effects);
         var baselineNote = touchedTargets.Count == 0
-            ? "Empty footprint: no operations resolved a target."
-            : "Footprint-scoped baseline read back from LibLCM immediately before rollback " +
-              $"({touchedTargets.Count} target object(s): " +
+            ? $"Empty footprint: no operations resolved a target. Scratch: {scratch.Provenance}."
+            : "Footprint-scoped baseline read back from LibLCM on a single-use scratch copy " +
+              $"({scratch.Provenance}; {touchedTargets.Count} target object(s): " +
               string.Join(", ", touchedTargets.Select(t => t.Value)) + ").";
 
         // Binds a subsequent Apply to exactly this evaluated baseline (docs/adr/0004, decision 3).

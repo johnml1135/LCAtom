@@ -6,7 +6,6 @@ using SIL.Motif.Host.LcmUtils;
 using SIL.Motif.Model.DryRun;
 using SIL.Motif.Runner.AppliedLog;
 using SIL.Motif.Runner.Apply;
-using SIL.Motif.Runner.Caching;
 using SIL.Motif.Runner.DryRun;
 using SIL.Motif.Runner.Operations;
 using SIL.Motif.Tests.TestFixtures;
@@ -17,11 +16,10 @@ namespace SIL.Motif.Tests.Runner;
 
 /// <summary>
 /// MOT-4 slice 2's round-trip proof for <c>MoForm.MorphType</c> (<c>rel/atomic</c>, <c>set|clear</c>)
-/// against a real project. Carries <c>manifest/liblcm-inventory.tsv</c> <c>AssessPoisonsCache=yes</c>
-/// (<c>MorphTypeRASideEffects</c> -&gt; <c>UpdateHomographs</c>), wired into
-/// <see cref="DerivedCachePoisoningOperationKinds"/> — so, like <c>GeneratedBasicFieldOperationsTests</c>'
-/// <c>MoFormForm</c> test, a DryRun poisons this cache instance and the test disposes/reloads before
-/// the matching Apply.
+/// against a real project. This field feeds <c>UpdateHomographs</c> (<c>MorphTypeRASideEffects</c>),
+/// which used to force a dispose/reload between DryRun and Apply because the DryRun mutated this cache
+/// and rolled back. It runs on a throwaway copy now, so it does not — see
+/// <c>docs/adr/0016-scratch-cache-copy-not-undo.md</c>, amended 2026-08-06.
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
 public sealed class MoFormMorphTypeOperationsTests : IDisposable
@@ -58,14 +56,13 @@ public sealed class MoFormMorphTypeOperationsTests : IDisposable
         var target = CanonicalId.FromGuid(formGuid);
         var proposal = BuildSetProposal(target, CanonicalId.FromGuid(newMorphTypeGuid));
 
-        var dryRun = ProposalDryRunner.Run(_cache, proposal);
-        Assert.True(CacheReusability.IsPoisoned(_cache, out _));
+        var dryRun = ScratchDryRun.Of(_cache, proposal);
         var effect = Assert.Single(dryRun.ExpectedEffects);
         Assert.Equal(originalMorphTypeGuid, CanonicalId.Parse(effect.Before[RefKey]).ToGuid());
         Assert.Equal(newMorphTypeGuid, CanonicalId.Parse(effect.After[RefKey]).ToGuid());
 
-        _cache.Dispose();
-        _cache = _loader.LoadCache(_fwDataPath);
+        // No dispose/reload between DryRun and Apply: the DryRun ran on a throwaway copy, so this
+        // cache never saw it (docs/adr/0016-scratch-cache-copy-not-undo.md, amended 2026-08-06).
         var receipt = ProposalApplier.Apply(_cache, proposal, dryRun.Anchor, "motif-tests");
         Assert.False(receipt.AlreadyApplied);
 
@@ -83,14 +80,13 @@ public sealed class MoFormMorphTypeOperationsTests : IDisposable
         var target = CanonicalId.FromGuid(formGuid);
         var proposal = BuildClearProposal(target);
 
-        var dryRun = ProposalDryRunner.Run(_cache, proposal);
-        Assert.True(CacheReusability.IsPoisoned(_cache, out _));
+        var dryRun = ScratchDryRun.Of(_cache, proposal);
         var effect = Assert.Single(dryRun.ExpectedEffects);
         Assert.Equal(originalMorphTypeGuid, CanonicalId.Parse(effect.Before[RefKey]).ToGuid());
         Assert.Empty(effect.After);
 
-        _cache.Dispose();
-        _cache = _loader.LoadCache(_fwDataPath);
+        // No dispose/reload between DryRun and Apply: the DryRun ran on a throwaway copy, so this
+        // cache never saw it (docs/adr/0016-scratch-cache-copy-not-undo.md, amended 2026-08-06).
         var receipt = ProposalApplier.Apply(_cache, proposal, dryRun.Anchor, "motif-tests");
         Assert.False(receipt.AlreadyApplied);
 
@@ -130,7 +126,6 @@ public sealed class MoFormMorphTypeOperationsTests : IDisposable
 
         Assert.Equal(originalMorphTypeGuid, form.MorphTypeRA.Guid); // op1 rolled back too
         Assert.Empty(ProjectAppliedLog.ReadAll(_cache));
-        Assert.True(CacheReusability.IsPoisoned(_cache, out _));
     }
 
     [Fact]
@@ -160,7 +155,7 @@ public sealed class MoFormMorphTypeOperationsTests : IDisposable
 
         var proposal = BuildSetProposal(target, wrongTypeId);
 
-        var ex = Assert.Throws<InvalidOperationException>(() => ProposalDryRunner.Run(_cache, proposal));
+        var ex = Assert.Throws<InvalidOperationException>(() => ScratchDryRun.Of(_cache, proposal));
         Assert.Contains("not a MoMorphType", ex.Message);
     }
 

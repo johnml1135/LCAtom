@@ -95,10 +95,20 @@ public class ScratchCacheFactory
     /// entries, text, custom-field flids, and all four writing systems value-equal.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// <b>This reads the project as it exists on disk.</b> Anything the source cache has in memory but has
-    /// not saved is absent from the result. Whoever calls this owns deciding whether that is acceptable —
-    /// saving the live project first to close the gap would mutate the real project, which is exactly what
-    /// a hypothetical Dry Run must not do.
+    /// not saved is absent from the result.
+    /// </para>
+    /// <para>
+    /// <b>So the caller must save first, and that was settled the other way round from how it reads.</b> An
+    /// earlier version of this comment said saving the live project to close that gap "would mutate the real
+    /// project, which is exactly what a hypothetical Dry Run must not do." That framing was wrong: a save
+    /// commits what the user already authored, it does not add anything, and the alternative — validating
+    /// against a state the live cache has already left — produces an anchor that is stale on arrival and an
+    /// apply that reports drift which never happened. ADR 0016 (amended 2026-08-06) makes save-before-copy
+    /// the host precondition. Use <see cref="FwDataProjectLoader.Save"/>, which waits for the write to
+    /// actually reach disk — <c>Commit()</c> alone does not, and that asynchrony was found the hard way.
+    /// </para>
     /// </remarks>
     /// <returns>The opened scratch cache. Deleting <paramref name="destinationRoot"/> is the caller's job.</returns>
     public virtual LcmCache CreateFromFileCopy(string sourceFwDataPath, string destinationRoot)

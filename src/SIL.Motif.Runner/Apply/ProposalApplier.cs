@@ -7,7 +7,6 @@ using SIL.Motif.Model.DryRun;
 using SIL.Motif.Model.Effects;
 using SIL.Motif.Model.Receipts;
 using SIL.Motif.Runner.AppliedLog;
-using SIL.Motif.Runner.Caching;
 using SIL.Motif.Runner.Operations;
 using SIL.LCModel;
 using SIL.LCModel.Core.KernelInterfaces;
@@ -70,10 +69,6 @@ public static class ProposalApplier
                 "apply with no bound DryRun is a hard error.");
         }
 
-        // Refuse outright rather than silently proceed against a cache already known to carry
-        // stale derived caches (docs/adr/0006, decision 3). See SIL.Motif.Runner.Caching.CacheReusability.
-        CacheReusability.EnsureReusable(cache);
-
         var proposalGuid = proposal.ProposalId.ToGuid();
         var fullIntentDigest = ContractIntentDigest.Compute(proposal);
         var intentDigestHex = StripSha256Prefix(fullIntentDigest);
@@ -94,10 +89,19 @@ public static class ProposalApplier
         var currentFootprintDigest = FootprintProbe.ComputeCurrentFootprintDigest(cache, proposal);
         if (!string.Equals(currentFootprintDigest, anchor.FootprintDigest, StringComparison.Ordinal))
         {
+            // Name both sides and where each came from. An earlier version reported only the two
+            // digests, and when the real fault was a save that had not yet reached disk — so the Dry
+            // Run's scratch copy was a stale file — this message sent the investigation after the drift
+            // check instead of the save (ADR 0016, "'save' was not a save").
             throw new ApplyPreconditionException(
-                "Footprint drift detected: the live project no longer matches the bound DryRun's " +
-                $"baseline (anchor footprintDigest={anchor.FootprintDigest}, current footprintDigest=" +
-                $"{currentFootprintDigest}). Re-run the dry run and review the new effects before applying.");
+                "Footprint drift detected: the pre-mutation state of the objects this Proposal touches " +
+                "is not what the bound DryRun measured." + Environment.NewLine +
+                $"  bound DryRun baseline (measured {anchor.DryRunAtUtc} against a scratch copy of the " +
+                $"project file): {anchor.FootprintDigest}" + Environment.NewLine +
+                $"  live project now:  {currentFootprintDigest}" + Environment.NewLine +
+                "Either something changed the project after the dry run — re-run it and review the new " +
+                "effects — or the project was never saved before the dry run copied it, in which case " +
+                "the copy was stale and nothing actually drifted.");
         }
 
         // Build (and validate) the entry to write now, before opening any unit of work, so a bad
@@ -118,42 +122,38 @@ public static class ProposalApplier
 
         // One outer UndoableUnitOfWorkHelper for the whole Proposal (docs/adr/0005 amends this
         // for the customField/schema family only, which is out of scope here). Constructed
-        // directly (not the static .Do helper) so this method can both capture effects/build the
-        // log entry from inside the task and run failure-path cache invalidation from the catch
-        // block before the exception propagates and Dispose() rolls back.
+        // directly (not the static .Do helper) so effects can be captured and the log entry written
+        // from inside the task.
+        //
+        // This is the ONLY rollback left in Motif, and it is forced rather than chosen: AGENTS.md
+        // rule 4 makes one Change Set one atomic unit of work, so a mid-proposal failure must unwind
+        // — a half-applied Proposal is worse than a stale derived cache. Nothing here tries to repair
+        // the caches that rollback leaves stale, because nothing can: the obligation lands on the
+        // host instead, unconditionally and with no field list to consult —
+        //
+        //     if Apply throws, discard this LcmCache and reload the project from the file that was
+        //     saved before the Dry Run.
+        //
+        // Reload is strictly stronger than the rollback anyway: it also discards the non-undoable
+        // schema phase of docs/adr/0005, which rollback cannot reach. See
+        // docs/adr/0016-scratch-cache-copy-not-undo.md, amended 2026-08-06.
         using (var undoHelper = new UndoableUnitOfWorkHelper(actionHandler, "Motif apply", "Motif apply"))
         {
-            try
+            foreach (var operation in proposal.Operations)
             {
-                foreach (var operation in proposal.Operations)
-                {
-                    var handler = OperationHandlerRegistry.Resolve(operation.Kind, "Stage D apply");
-                    effects.Add(handler.ApplyAndCaptureEffect(cache, operation, touchedTargets));
-                }
-
-                // Exactly one applied-log entry, written inside this same unit of work
-                // (docs/change-set-contract.md, "Application Receipt"; docs/applied-log.md,
-                // "Atomicity") — so a rolled-back apply leaves no entry at all.
-                ProjectAppliedLog.WriteEntry(cache, logEntry);
-
-                // Success: commit instead of the default rollback-on-Dispose. Never call Save here
-                // — the core does not save projects; that is the host's job, after this unit of
-                // work has closed.
-                undoHelper.RollBack = false;
+                var handler = OperationHandlerRegistry.Resolve(operation.Kind, "Stage D apply");
+                effects.Add(handler.ApplyAndCaptureEffect(cache, operation, touchedTargets));
             }
-            catch
-            {
-                // undoHelper.RollBack stays true, so Dispose() (below, on the way out) rolls back.
-                // Per docs/adr/0006, decision 3, that rollback is not Undo and leaves derived
-                // caches (monomorphemic morph data, headword, homograph) stale, and no non-committing
-                // invalidation of them is reachable through LibLCM's public surface (see
-                // RollbackCacheInvalidator's remarks for the liblcm citations) — so mark this cache
-                // instance not safely reusable instead of attempting one. The in-scope setGloss
-                // operation touches none of those caches, so this is a wired-in safety net, not a
-                // fix this failure needs today.
-                RollbackCacheInvalidator.InvalidateReachableCaches(cache);
-                throw;
-            }
+
+            // Exactly one applied-log entry, written inside this same unit of work
+            // (docs/change-set-contract.md, "Application Receipt"; docs/applied-log.md,
+            // "Atomicity") — so a rolled-back apply leaves no entry at all.
+            ProjectAppliedLog.WriteEntry(cache, logEntry);
+
+            // Success: commit instead of the default rollback-on-Dispose. Never call Save here
+            // — the core does not save projects; that is the host's job, after this unit of
+            // work has closed. On any exception RollBack stays true and Dispose unwinds.
+            undoHelper.RollBack = false;
         }
 
         var effectDigest = ExpectedEffectSetDigest.Compute(effects);

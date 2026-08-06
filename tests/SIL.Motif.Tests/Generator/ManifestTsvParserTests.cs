@@ -22,7 +22,7 @@ public class ManifestTsvParserTests
     private const string Header =
         "\"Class\"\t\"Base\"\t\"Abstract\"\t\"Scope\"\t\"ScopeReason\"\t\"Field\"\t\"Kind\"\t\"Sig\"\t\"Card\"\t" +
         "\"HcReferenced\"\t\"Construct\"\t\"Group\"\t\"Classification\"\t\"ComparisonClass\"\t\"Verbs\"\t" +
-        "\"HcReachable\"\t\"AssessPoisonsCache\"\t\"EnumValues\"\t\"Rationale\"";
+        "\"HcReachable\"\t\"EnumValues\"\t\"Rationale\"";
 
     [Fact]
     public void Parse_Fixture_UnquotesAndUnescapesEmbeddedQuotes()
@@ -30,7 +30,7 @@ public class ManifestTsvParserTests
         var row =
             "\"LexSense\"\t\"CmObject\"\t\"false\"\t\"in\"\t\"reason\"\t\"Gloss\"\t\"basic\"\t\"MultiUnicode\"\t\"\"\t" +
             "\"name-referenced\"\t\"lexSense\"\t\"lexical\"\t\"semantic-operation\"\t\"unordered\"\t\"set|clear\"\t" +
-            "\"yes\"\t\"no\"\t\"\"\t\"Has \"\"embedded\"\" quotes.\"";
+            "\"yes\"\t\"\"\t\"Has \"\"embedded\"\" quotes.\"";
         var path = WriteFixture(Header + "\r\n" + row + "\r\n");
 
         var rows = ManifestTsvParser.Parse(path);
@@ -49,7 +49,7 @@ public class ManifestTsvParserTests
         var path = WriteFixture(Header + "\r\n" + "\"OnlyOneColumn\"\r\n");
 
         var ex = Assert.Throws<GeneratorException>(() => ManifestTsvParser.Parse(path));
-        Assert.Contains("19 columns", ex.Message);
+        Assert.Contains("18 columns", ex.Message);
     }
 
     [Fact]

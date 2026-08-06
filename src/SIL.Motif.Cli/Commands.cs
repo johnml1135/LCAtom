@@ -14,7 +14,6 @@ using SIL.Motif.Model.Effects;
 using SIL.Motif.Runner.Apply;
 using SIL.Motif.Runner.AppliedLog;
 using SIL.Motif.Runner.DryRun;
-using SIL.Motif.Runner.Caching;
 using SIL.Motif.Runner.Operations;
 using SIL.LCModel;
 
@@ -454,6 +453,7 @@ public static class Commands
     public static CommandResult DryRun(string storeDir, string proposalId, string fwDataPath)
     {
         LcmCache? cache = null;
+        DryRunScratch? scratch = null;
         try
         {
             var store = new ProposalStore(storeDir);
@@ -471,11 +471,32 @@ public static class Commands
 
             var fullFwDataPath = ResolveProjectPath(fwDataPath);
             var loader = new FwDataProjectLoader();
-            // Read-only usage: the dry run itself never commits (Stage C rolls back internally), and
-            // this call performs no Save, so the project on disk is left untouched.
+
+            // Open the live project and hold it open for the whole command. Motif-as-CLI is a
+            // FieldWorks-class writer of this project, not a bystander reading around one: there is
+            // exactly one writer at a time, and while Motif has the project, FieldWorks must not
+            // (ADR 0006 decision 4). Holding it here is what makes the anchor mean anything — a
+            // baseline measured while someone else could still be editing is not a baseline.
             cache = loader.LoadCache(fullFwDataPath);
 
-            var dryRun = ProposalDryRunner.Run(cache, envelope);
+            // Save before the copy, not before the apply (ADR 0016 as amended 2026-08-06). The
+            // scratch is a copy of the FILE, so any uncommitted edit in this cache would be invisible
+            // to it and the resulting anchor would describe a state the live cache is not in — which
+            // Apply would then report as drift that never happened. Nothing is pending on a
+            // freshly-opened project, so this is cheap here; it is written out anyway because the
+            // FieldWorks host will run the identical sequence with real in-flight edits behind it.
+            loader.Save(cache);
+
+            // Mutate a throwaway copy and delete it: no rollback anywhere, so nothing can leave this
+            // cache's derived caches stale.
+            var scratchRoot = Path.Combine(
+                Path.GetTempPath(), "SIL.Motif.DryRun", Guid.NewGuid().ToString("N"));
+            scratch = DryRunScratch.Adopt(
+                new ScratchCacheFactory(loader).CreateFromFileCopy(fullFwDataPath, scratchRoot),
+                $"file copy of {fullFwDataPath}",
+                onDisposed: () => TryDeleteDirectory(scratchRoot));
+
+            var dryRun = ProposalDryRunner.Run(scratch, envelope);
 
             // Persist the bound-DryRun anchor (docs/adr/0004, decision 3): `apply` requires
             // this to be present and unmoved before it will touch the project.
@@ -492,7 +513,18 @@ public static class Commands
             sb.AppendLine($"  effectDigest: {dryRun.EffectDigest}");
             sb.AppendLine($"  footprintDigest: {dryRun.Anchor.FootprintDigest}");
             sb.AppendLine("  (bound-DryRun anchor recorded on the manifest; 'apply' will require it)");
+
+            // State the side effect rather than performing it quietly. A dry run reads as "nothing
+            // happens", and mostly nothing does — but it saved the project to make the copy an honest
+            // picture of it (ADR 0016), and a save is the user's business even when it commits only what
+            // they had already authored.
+            sb.AppendLine("  (the project was saved before measuring, so the scratch copy matched it; " +
+                          "the project itself was not modified by this dry run)");
             return Ok(sb);
+        }
+        catch (LcmFileLockedException)
+        {
+            return Fail(ProjectInUseMessage(fwDataPath, "dry-run"));
         }
         catch (Exception ex)
         {
@@ -500,6 +532,10 @@ public static class Commands
         }
         finally
         {
+            // Discard, never revert: disposing the scratch is what undoes the dry run's mutations.
+            scratch?.Dispose();
+
+            // And release the project, so the linguist can have FieldWorks back.
             if (cache is { IsDisposed: false }) cache.Dispose();
         }
     }
@@ -574,17 +610,22 @@ public static class Commands
                 if (cache is { IsDisposed: false }) cache.Dispose();
             }
         }
+        catch (LcmFileLockedException)
+        {
+            return Fail(ProjectInUseMessage(fwDataPath, "apply"));
+        }
         catch (Exception ex)
         {
-            // Surface cache-instance poisoning (docs/adr/0006, decision 3; see
-            // SIL.Motif.Runner.Caching.CacheReusability) in the failure result rather than only in
-            // whatever the exception message already happened to say, so a caller reusing this same
-            // LcmCache instance across multiple CLI-library calls (not this short-lived process,
-            // which discards it either way) knows not to trust it afterward.
-            var message = ex.Message;
-            if (cache is not null && CacheReusability.IsPoisoned(cache, out var poisonReason))
-                message += $" [LcmCache instance no longer safe to reuse: {poisonReason}]";
-            return Fail(message);
+            // A failed apply rolled back, and a rollback is not an Undo: LexEntry headword/homograph
+            // and MoStemAllomorph monomorphemic caches can be stale afterwards, and ADR 0005's
+            // non-undoable schema phase can survive outright. There is no field list to consult and
+            // nothing to repair — the rule is unconditional and belongs to whoever holds the cache
+            // (ADR 0016, amended 2026-08-06). This process discards it either way; a caller reusing
+            // one LcmCache across several library calls has to reload, so say so rather than assume.
+            return Fail(
+                ex.Message +
+                " [This LcmCache is no longer trustworthy: a failed apply rolls back, which does not " +
+                "refresh LibLCM's derived caches. Discard it and reload the project.]");
         }
     }
 
@@ -621,6 +662,39 @@ public static class Commands
         catch (Exception ex)
         {
             return Fail(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Explains a refused open in Motif's own terms. LibLCM's message for a locked project says
+    /// "FieldWorks cannot open the project ... because another program is using it", which is both
+    /// confusing (the thing that could not open it was Motif) and short of the one instruction that
+    /// resolves it.
+    /// </summary>
+    /// <remarks>
+    /// Refusing here is correct, not a limitation: exactly one program writes a project at a time, and
+    /// Motif takes the same <c>{project}.fwdata.lock</c> FieldWorks does
+    /// (docs/adr/0030-one-writer-cli-locks-like-fieldworks.md).
+    /// </remarks>
+    private static string ProjectInUseMessage(string fwDataPath, string verb) =>
+        $"Cannot {verb}: the project '{Path.GetFileNameWithoutExtension(fwDataPath)}' is in use by " +
+        "another program — most likely FieldWorks, or another Motif command that has not finished. " +
+        "Only one program may hold a FieldWorks project at a time, and Motif takes the same lock " +
+        "FieldWorks does. Close the other program and try again.";
+
+    /// <summary>
+    /// Deletes a Dry Run scratch copy. Best effort by design: a leaked temp directory is a nuisance,
+    /// but failing the command over one would turn a successful Dry Run into a reported failure.
+    /// </summary>
+    private static void TryDeleteDirectory(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
+        }
+        catch
+        {
+            // A still-locked native handle must not fail a dry run that already succeeded.
         }
     }
 

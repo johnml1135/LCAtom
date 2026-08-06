@@ -30,7 +30,7 @@ public class DescriptionCheckTests
         Kind: "basic", Sig: "MultiUnicode", Card: "", HcReferenced: "yes",
         Construct: "lexSense", Group: "lexical", Classification: "semantic-operation",
         ComparisonClass: "unordered", Verbs: "set|clear", HcReachable: "yes",
-        AssessPoisonsCache: "no", EnumValues: "", Rationale: "test fixture");
+        EnumValues: "", Rationale: "test fixture");
 
     private static KindDescription Desc(string cls, string field, string label, string description) =>
         new(cls, field, label, description, "draft");

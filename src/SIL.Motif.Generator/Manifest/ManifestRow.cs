@@ -1,7 +1,7 @@
 namespace SIL.Motif.Generator.Manifest;
 
 /// <summary>
-/// One row of <c>manifest/liblcm-inventory.tsv</c>, all 19 columns (manifest/README.md). Values stay
+/// One row of <c>manifest/liblcm-inventory.tsv</c>, all 18 columns (manifest/README.md). Values stay
 /// as the raw (unquoted) strings the TSV carries — <c>Scope != in</c> rows leave most policy columns
 /// blank, and modelling that as <see cref="string.Empty"/> rather than parsing into stricter types
 /// keeps <see cref="ManifestTsvParser"/> a pure, lossless transcription with no row-shape judgement
@@ -33,6 +33,5 @@ public sealed record ManifestRow(
     string ComparisonClass,
     string Verbs,
     string HcReachable,
-    string AssessPoisonsCache,
     string EnumValues,
     string Rationale);

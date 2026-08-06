@@ -3,7 +3,6 @@ using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Model;
 using SIL.Motif.Host.LcmUtils;
 using SIL.Motif.Runner.Apply;
-using SIL.Motif.Runner.Caching;
 using SIL.Motif.Runner.DryRun;
 using SIL.Motif.Runner.Operations;
 using SIL.Motif.Tests.TestFixtures;
@@ -53,26 +52,20 @@ public sealed class GeneratedBasicFieldOperationsTests : IDisposable
     [Fact]
     public void SetThenClear_MoFormForm_MultiUnicode_RoundTripsThroughDryRunAndApply()
     {
-        // MoForm.Form has manifest/liblcm-inventory.tsv AssessPoisonsCache=yes, unlike Gloss/Comment/
-        // DoNotUseForParsing above — so DryRun's mutate-then-rollback pass marks THIS cache instance
-        // poisoned before it even runs (docs/adr/0006, decision 3; see the
-        // DerivedCachePoisoningGuard_... test below for the guard knowing this field's real,
-        // ADR-0023-derived kind name). Applying then requires a freshly reloaded cache — exactly
-        // what CachePoisonedException's own message says to do, so this test (uniquely among this
-        // file's round-trips) disposes and reloads between DryRun and Apply for each half, one cache
-        // open at a time — never two live LcmCache instances on the same .fwdata concurrently, which
-        // is its own hazard independent of the poisoning guard.
+        // `MoForm.Form` feeds LexEntry headword and homograph caches, which used to make this test the
+        // most contorted in the file: the old DryRun mutated the live cache and rolled back, and
+        // rollback leaves those caches stale, so each half had to dispose the cache and reload the
+        // project between DryRun and Apply. None of that is needed now — the DryRun mutates a copy and
+        // deletes it, so this field round-trips exactly like the MultiUnicode and boolean fields above
+        // (docs/adr/0016-scratch-cache-copy-not-undo.md, amended 2026-08-06). The deleted ceremony is
+        // the evidence: what was special about this field was never the field, it was the rollback.
         var formGuid = FindEntryWithLexemeForm().LexemeFormOA.Guid;
         var target = CanonicalId.FromGuid(formGuid);
         var wsTag = _cache.WritingSystemFactory.GetStrFromWs(_cache.DefaultVernWs);
 
         // --- set ---
         var setProposal = BuildProposal(MoFormFormOperationKinds.SetForm, target, new { ws = wsTag, text = "zzMotifTestForm" });
-        var setDryRun = ProposalDryRunner.Run(_cache, setProposal);
-        Assert.True(CacheReusability.IsPoisoned(_cache, out _));
-
-        _cache.Dispose();
-        _cache = _loader.LoadCache(_fwDataPath);
+        var setDryRun = ScratchDryRun.Of(_cache, setProposal);
         var setReceipt = ProposalApplier.Apply(_cache, setProposal, setDryRun.Anchor, "motif-tests");
 
         Assert.False(setReceipt.AlreadyApplied);
@@ -82,20 +75,12 @@ public sealed class GeneratedBasicFieldOperationsTests : IDisposable
         var setEffect = Assert.Single(setReceipt.ActualEffects);
         Assert.Equal("zzMotifTestForm", setEffect.After[wsTag]);
 
-        // Apply never saves (that is the host's job, docs/change-set-contract.md, "Application
-        // Receipt") — the set commits only inside _cache's in-memory UOW. Persist it now so the
-        // reload below (required by the clear-side DryRun's own poisoning, same as above) actually
-        // observes "zzMotifTestForm" as its baseline rather than the original on-disk content.
-        _loader.Save(_cache);
-
-        // --- clear: the cache _cache now points at is itself poisoned by the clear-side DryRun
-        // below, exactly as the previous one was above, so dispose and reload once more ---
+        // --- clear ---
+        // No save and no reload between the halves: ScratchDryRun.Of saves before it copies, which is
+        // the host precondition ADR 0016 names, so the clear-side DryRun's baseline sees
+        // "zzMotifTestForm" — the state Apply just produced — rather than the original on-disk content.
         var clearProposal = BuildProposal(MoFormFormOperationKinds.ClearForm, target, new { ws = wsTag });
-        var clearDryRun = ProposalDryRunner.Run(_cache, clearProposal);
-        Assert.True(CacheReusability.IsPoisoned(_cache, out _));
-
-        _cache.Dispose();
-        _cache = _loader.LoadCache(_fwDataPath);
+        var clearDryRun = ScratchDryRun.Of(_cache, clearProposal);
         var clearReceipt = ProposalApplier.Apply(_cache, clearProposal, clearDryRun.Anchor, "motif-tests");
 
         Assert.False(clearReceipt.AlreadyApplied);
@@ -116,14 +101,14 @@ public sealed class GeneratedBasicFieldOperationsTests : IDisposable
         var wsHandle = _cache.DefaultAnalWs;
 
         var setProposal = BuildProposal(LexEntryCommentOperationKinds.SetComment, target, new { ws = wsTag, text = "zzMotifTestComment" });
-        var setDryRun = ProposalDryRunner.Run(_cache, setProposal);
+        var setDryRun = ScratchDryRun.Of(_cache, setProposal);
         var setReceipt = ProposalApplier.Apply(_cache, setProposal, setDryRun.Anchor, "motif-tests");
 
         Assert.False(setReceipt.AlreadyApplied);
         Assert.Equal("zzMotifTestComment", entry.Comment.get_String(wsHandle).Text);
 
         var clearProposal = BuildProposal(LexEntryCommentOperationKinds.ClearComment, target, new { ws = wsTag });
-        var clearDryRun = ProposalDryRunner.Run(_cache, clearProposal);
+        var clearDryRun = ScratchDryRun.Of(_cache, clearProposal);
         var clearReceipt = ProposalApplier.Apply(_cache, clearProposal, clearDryRun.Anchor, "motif-tests");
 
         Assert.False(clearReceipt.AlreadyApplied);
@@ -144,7 +129,7 @@ public sealed class GeneratedBasicFieldOperationsTests : IDisposable
         UndoableUnitOfWorkHelper.Do("test setup", "test setup", actionHandler, () => entry.DoNotUseForParsing = false);
 
         var setProposal = BuildProposal(LexEntryDoNotUseForParsingOperationKinds.SetDoNotUseForParsing, target, new { value = true });
-        var setDryRun = ProposalDryRunner.Run(_cache, setProposal);
+        var setDryRun = ScratchDryRun.Of(_cache, setProposal);
         var setReceipt = ProposalApplier.Apply(_cache, setProposal, setDryRun.Anchor, "motif-tests");
 
         Assert.False(setReceipt.AlreadyApplied);
@@ -154,7 +139,7 @@ public sealed class GeneratedBasicFieldOperationsTests : IDisposable
         Assert.Equal("true", setEffect.After["value"]);
 
         var clearProposal = BuildProposal(LexEntryDoNotUseForParsingOperationKinds.ClearDoNotUseForParsing, target, new { });
-        var clearDryRun = ProposalDryRunner.Run(_cache, clearProposal);
+        var clearDryRun = ScratchDryRun.Of(_cache, clearProposal);
         var clearReceipt = ProposalApplier.Apply(_cache, clearProposal, clearDryRun.Anchor, "motif-tests");
 
         Assert.False(clearReceipt.AlreadyApplied);
@@ -172,7 +157,7 @@ public sealed class GeneratedBasicFieldOperationsTests : IDisposable
         var target = CanonicalId.FromGuid(sense.Guid);
 
         var clearProposal = BuildProposal(LexicalSenseOperationKinds.ClearGloss, target, new { ws = wsTag });
-        var dryRun = ProposalDryRunner.Run(_cache, clearProposal);
+        var dryRun = ScratchDryRun.Of(_cache, clearProposal);
         var receipt = ProposalApplier.Apply(_cache, clearProposal, dryRun.Anchor, "motif-tests");
 
         Assert.False(receipt.AlreadyApplied);
@@ -225,20 +210,12 @@ public sealed class GeneratedBasicFieldOperationsTests : IDisposable
             () => LexEntryDoNotUseForParsingClearPayload.Parse(afterDocument.RootElement));
     }
 
-    [Fact]
-    public void DerivedCachePoisoningGuard_FlagsTheTwoRealAssessPoisonsCacheFields()
-    {
-        // manifest/liblcm-inventory.tsv's AssessPoisonsCache=yes for LexEntry.CitationForm and
-        // MoForm.Form, both now live (dispatchable) kinds — the guard must know about their real,
-        // ADR-0023-derived names, not just the stale pre-MOT-4 placeholders it already carried.
-        Assert.True(DerivedCachePoisoningOperationKinds.MayPoisonDerivedCache(LexEntryCitationFormOperationKinds.SetCitationForm));
-        Assert.True(DerivedCachePoisoningOperationKinds.MayPoisonDerivedCache(LexEntryCitationFormOperationKinds.ClearCitationForm));
-        Assert.True(DerivedCachePoisoningOperationKinds.MayPoisonDerivedCache(MoFormFormOperationKinds.SetForm));
-        Assert.True(DerivedCachePoisoningOperationKinds.MayPoisonDerivedCache(MoFormFormOperationKinds.ClearForm));
-
-        // A field with AssessPoisonsCache=no must not be flagged.
-        Assert.False(DerivedCachePoisoningOperationKinds.MayPoisonDerivedCache(LexEntryCommentOperationKinds.SetComment));
-    }
+    // A test named DerivedCachePoisoningGuard_FlagsTheTwoRealAssessPoisonsCacheFields stood here. It
+    // asserted that a hand-maintained list knew LexEntry.CitationForm and MoForm.Form feed derived
+    // caches — knowledge that cost a read of liblcm's OverridesLing_Lex.cs to establish and would have
+    // had to be re-established for every field added to the catalog, forever. Deleted with the list
+    // itself: no Dry Run rolls back any more, so nothing needs to know which fields would have
+    // suffered if one did (docs/adr/0016-scratch-cache-copy-not-undo.md, amended 2026-08-06).
 
     private ILexEntry FindAnyEntry() =>
         _cache.ServiceLocator.GetInstance<ILexEntryRepository>().AllInstances().First();

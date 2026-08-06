@@ -126,8 +126,8 @@ the first author, not the last. M5 is the first thing a linguist would recognise
 | --- | --- | --- | --- |
 | `MOT-2` — the `(Class, Field)` join, failing the build on any unmatched key | M1 | Small | ✅ **Built 2026-08-05** — `src/SIL.Motif.Generator`, 898=898, zero orphans; found two exceptions the spec denied |
 | `MOT-3` — generator skeleton: read `MasterLCModel.xml`, emit nothing yet | M1 | Medium | ✅ **Built 2026-08-05** — model 7000072 from the NuGet cache, no liblcm checkout; label harvest done |
-| `MOT-4` — emit the operation catalog for one family | M2 | Medium | **Slice A built 2026-08-06** — 10 `set\|clear` kinds emitted, `setGloss` regenerated, its tests pass unmodified. Round-trips against a real project **but only via a full project reload per operation**, because the poisoning guard now fires — see `MOT-11`. Slice B (`create\|delete`, `addRef\|removeRef`) in progress |
-| `MOT-11` — scratch-cache DryRun, replacing mutate-then-rollback | M2 | Medium | **Not started, and now the blocker** — `A1` is measured, and slice A made the poisoning fire for real (see below) |
+| `MOT-4` — emit the operation catalog for one family | M2 | Medium | **Slice A built 2026-08-06** — 10 `set\|clear` kinds emitted, `setGloss` regenerated, its tests pass unmodified. Round-trips against a real project; the full-project-reload-per-operation the poisoning guard used to force was removed with the guard on 2026-08-06 (`MOT-11`). Slice B (`create\|delete`, `addRef\|removeRef`) in progress |
+| `MOT-11` — scratch-cache DryRun, replacing mutate-then-rollback | M2 | Medium | **Built 2026-08-06.** Run takes a single-use `DryRunScratch` and never rolls back; the four poisoning items and the manifest column are deleted; the CLI saves, copies, and holds the project lock. Two real defects surfaced on the way: LibLCM's save is asynchronous, and `classify.ps1` has fallen behind the manifest (`D7`). Remaining: the DAG-closure mode and the collation guard |
 | `MOT-16` — long-lived CLI session over a warm cache | M2 | Small–medium | Not started |
 | `MOT-19` — the CLI as the full product surface, text and JSON | M2/M4 | Large, and grows with every other item | Not started — **ADR 0021** |
 | `MOT-9` — Baseline Token, Dry Run binding, apply authorization, Receipt | M4 | Medium, correctness-critical | **Partly built** |
@@ -344,6 +344,32 @@ one thing it needs is to be **visible to the user** — a save commits in-flight
 
 **Acceptance:** a dry run never mutates the live cache; a poisoned scratch costs a rebuild, not a
 session; the DAG closure produces the same effects as applying the closure serially.
+
+### Built 2026-08-06 — what shipped, and the two things it uncovered
+
+Deliverables 3 and 4 are done, and the type system carries rule 4 rather than a comment: `Run` takes a
+`DryRunScratch` (`src/SIL.Motif.Runner/DryRun/DryRunScratch.cs`) instead of an `LcmCache`, refuses a second
+use, and mutates inside a *non-undoable* unit of work with `RollBack` cleared **before** the first mutation —
+so even a failing dry run ends its task rather than reverting it. Discarding the scratch is the undo.
+`DerivedCachePoisoningOperationKinds`, `RollbackCacheInvalidator`, `CacheReusability`,
+`CachePoisonedException` and the `AssessPoisonsCache` column are deleted; net **negative** code, and the
+operation round-trip tests lost their dispose-and-reload dances entirely.
+
+The CLI performs the full sequence — **open the live project (which takes the lock), save, copy, open the
+copy, run, discard, release** — per [ADR 0030](adr/0030-one-writer-cli-locks-like-fieldworks.md). An earlier
+attempt skipped the live open on the grounds that the dry run no longer needs the live cache; that was wrong,
+because the anchor is only meaningful if nobody else can edit while it is being measured.
+
+**Two defects found by building it, both worth more than the feature.**
+
+1. **LibLCM has no synchronous save.** `Commit()` enqueues the write on a background thread and returns, so
+   the copy read a file one operation stale and Apply reported *footprint drift on a project nobody had
+   touched* — twelve tests, with a diagnostic that accused the wrong component. `FwDataProjectLoader.Save`
+   now waits on `CompleteAllCommits()`, matching what liblcm's own `ProjectLockingService` does, and
+   `SaveIsSynchronousTests` pins it at file level. The barrier is only reachable by reflection, so **a
+   liblcm PR exposing a synchronous save is an upstream ask.** Details in ADR 0016.
+2. **`classify.ps1` no longer reproduces the manifest** — rerunning it reverts 26 hand-authored ADR 0025
+   rows. Recorded as `D7`; the README now calls it a first-pass tool rather than the producer.
 
 ## `MOT-16` — long-lived CLI session over a warm cache — M2
 

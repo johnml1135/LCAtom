@@ -6,6 +6,7 @@
 // path (no NewProject). Reintroduce those only if a later stage needs them.
 
 using System.Diagnostics;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using SIL.LCModel;
 using SIL.LCModel.Utils;
@@ -86,23 +87,81 @@ public class FwDataProjectLoader
 
     /// <summary>
     /// Persists every committed change in <paramref name="cache"/> to its backing <c>.fwdata</c>
-    /// file. The core does not save projects itself (docs/change-set-contract.md, "Application
-    /// Receipt"): <c>SIL.Motif.Runner.Apply.ProposalApplier.Apply</c> commits its unit of work but
-    /// never calls this — it is the host's job, called only after every unit of work has closed
-    /// (never while a task is open — docs/adr/0005, decision 3; docs/adr/0006, decision 4).
+    /// file, and <b>does not return until the bytes are actually there</b>. The core does not save
+    /// projects itself (docs/change-set-contract.md, "Application Receipt"):
+    /// <c>SIL.Motif.Runner.Apply.ProposalApplier.Apply</c> commits its unit of work but never calls
+    /// this — it is the host's job, called only after every unit of work has closed (never while a
+    /// task is open — docs/adr/0005, decision 3; docs/adr/0006, decision 4).
     /// </summary>
     /// <remarks>
-    /// Mirrors <c>FwDataMiniLcmBridge.Api.FwDataMiniLcmApi.Save()</c>
-    /// (languageforge-lexbox/backend/FwLite/FwDataMiniLcmBridge/Api/FwDataMiniLcmApi.cs), which
-    /// calls the same <see cref="IActionHandler.Commit"/> to flush the XML/.fwdata backend
-    /// provider's pending writes to disk: for this backend, <c>Commit()</c> is both "close out the
-    /// undo/redo bookkeeping since the last commit" and the save trigger — there is no separate
-    /// LibLCM "save" verb to call instead.
+    /// <para>
+    /// The <see cref="IActionHandler.Commit"/> call mirrors
+    /// <c>FwDataMiniLcmBridge.Api.FwDataMiniLcmApi.Save()</c>
+    /// (languageforge-lexbox/backend/FwLite/FwDataMiniLcmBridge/Api/FwDataMiniLcmApi.cs): for this
+    /// backend, <c>Commit()</c> is both "close out the undo/redo bookkeeping since the last commit" and
+    /// the save trigger — there is no separate LibLCM "save" verb to call instead.
+    /// </para>
+    /// <para>
+    /// <b>But <c>Commit()</c> alone does not put anything on disk.</b>
+    /// <c>XMLBackendProvider.PerformCommit</c> (liblcm
+    /// <c>Infrastructure/Impl/XMLBackendProvider.cs:458-467</c>) only enqueues a <c>CommitWork</c> item
+    /// on a background <c>ConsumerThread</c> and returns; the write lands whenever that thread gets to
+    /// it. <c>IUndoStackManager.Save()</c> is no better — <c>UnitOfWorkService.SaveInternal</c> reaches
+    /// the same <c>Commit</c>. Nothing in Motif noticed until the Dry Run started copying the project
+    /// file immediately after saving and read a file that was still one operation behind, which
+    /// surfaced as "footprint drift" on an apply where nothing had drifted.
+    /// </para>
+    /// <para>
+    /// LibLCM's own answer is the <c>CompleteAllCommits()</c> barrier, which waits for that thread to go
+    /// idle, and both places liblcm needs the file to be authoritative pair the two calls:
+    /// <c>ProjectLockingService.UnlockCurrentProject</c> (<c>DomainServices/ProjectLockingService.cs:37-41</c>)
+    /// and <c>ProjectBackupService</c> (<c>:61</c>). So this is the documented sequence, not an invention.
+    /// </para>
+    /// <para>
+    /// <b>The one wart:</b> that barrier is not on Motif's side of the fence. It is declared on the
+    /// <c>internal</c> <c>IDataStorer</c>, so the only reachable route is the public
+    /// <c>ILcmServiceLocator.DataSetup</c> property — which returns the very same backend-provider
+    /// instance (liblcm <c>LcmCache.cs:631</c> casts it: <c>var bep = (IDataStorer)m_serviceLocator.DataSetup;</c>)
+    /// — and then its <c>public virtual CompleteAllCommits</c> by reflection. It is one call, resolved
+    /// once, and it throws rather than degrading if a future liblcm renames it, because silently
+    /// falling back to the asynchronous behaviour would restore a bug whose symptom points at the wrong
+    /// component entirely. <b>Making a synchronous save publicly reachable is an upstream ask on
+    /// liblcm</b> (docs/adr/0016-scratch-cache-copy-not-undo.md), and this reflection is what should be
+    /// deleted when it lands.
+    /// </para>
     /// </remarks>
     public virtual void Save(LcmCache cache)
     {
         if (cache is null) throw new ArgumentNullException(nameof(cache));
 
         cache.ActionHandlerAccessor.Commit();
+        WaitForPendingWritesToReachDisk(cache);
+    }
+
+    private static MethodInfo? _completeAllCommits;
+
+    /// <summary>
+    /// Blocks until the backend's background commit thread has drained, so the <c>.fwdata</c> file on
+    /// disk reflects everything committed so far. See <see cref="Save"/>'s remarks for why this is
+    /// reflection and why it is a hard failure rather than a best-effort skip.
+    /// </summary>
+    private static void WaitForPendingWritesToReachDisk(LcmCache cache)
+    {
+        var backend = cache.ServiceLocator.DataSetup;
+
+        var flush = _completeAllCommits ??= backend.GetType().GetMethod(
+            "CompleteAllCommits", BindingFlags.Public | BindingFlags.Instance, Type.EmptyTypes);
+
+        if (flush is null)
+        {
+            throw new InvalidOperationException(
+                $"This LibLCM's backend provider ({backend.GetType().FullName}) has no public " +
+                "CompleteAllCommits() to wait on, so Save cannot guarantee the .fwdata file is current. " +
+                "Refusing rather than returning from a save that has not saved: a Dry Run copies the " +
+                "file immediately afterwards, and a stale copy produces a false 'footprint drift' " +
+                "report on apply. See docs/adr/0016-scratch-cache-copy-not-undo.md.");
+        }
+
+        flush.Invoke(backend, null);
     }
 }

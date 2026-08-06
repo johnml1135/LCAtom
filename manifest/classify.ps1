@@ -8,7 +8,7 @@
 #
 # New columns appended, blank/"n/a" for Scope != in:
 #   Construct, Group, Classification, ComparisonClass, Verbs, HcReachable,
-#   AssessPoisonsCache, EnumValues, Rationale
+#   EnumValues, Rationale
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -344,21 +344,15 @@ $unconfirmedClasses = @('FsDisjunctiveValue','FsNegatedValue','FsSharedValue','M
 $unconfirmedFieldKeys = @( (K 'FsFeatStruc' 'FeatureDisjunctions') )
 
 # ---------------------------------------------------------------------------
-# 5. AssessPoisonsCache -- verified against liblcm's OverridesLing_Lex.cs /
-#    OverridesLing_MoClasses.cs / RepositoryAdditions.cs (research agent findings).
+# 5. (retired) AssessPoisonsCache -- this section listed the four fields whose
+#    mutation left a derived LibLCM cache stale that Rollback could not repair,
+#    verified against OverridesLing_Lex.cs / OverridesLing_MoClasses.cs /
+#    RepositoryAdditions.cs. Deleted 2026-08-06 with the column itself: no Dry Run
+#    rolls back any more, so nothing needs to know which fields would have suffered
+#    if one did. See docs/adr/0016-scratch-cache-copy-not-undo.md. This mattered
+#    because the list was hand-maintained and would have had to grow with every
+#    field added to the catalog, forever.
 # ---------------------------------------------------------------------------
-$PoisonsCacheKeys = @(
-    (K 'LexEntry' 'CitationForm')
-    (K 'LexEntry' 'LexemeForm')
-    (K 'MoForm' 'Form')
-    (K 'MoForm' 'MorphType')
-)
-$PoisonsCacheRationale = @{
-    (K 'LexEntry' 'CitationForm') = 'OverridesLing_Lex.cs ITsStringAltChangedSideEffectsInternal: default-vernacular-WS edits call UpdateHomographs + MLHeadwordChanged.'
-    (K 'LexEntry' 'LexemeForm')   = 'OverridesLing_Lex.cs LexemeFormOASideEffects -> LexemeFormChanged -> UpdateHomographs when CitationForm is empty.'
-    (K 'MoForm' 'Form')           = 'OverridesLing_MoClasses.cs: MoForm.Form owned by a LexEntry (LexemeForm/AlternateForms[0]) fires MLHeadwordChanged/MoFormFormChanged -> UpdateHomographs; MoStemAllomorph.Form additionally clears the monomorphemic-morph-data cache.'
-    (K 'MoForm' 'MorphType')      = 'OverridesLing_MoClasses.cs MorphTypeRASideEffects: clears monomorphemic morph data and, when the entry''s primary morph type changes, calls UpdateHomographs.'
-}
 
 # ---------------------------------------------------------------------------
 # 6. EnumValues for the 30 in-scope Integer fields (issue B7).
@@ -490,7 +484,7 @@ foreach ($r in $rows) {
     if ($r.Scope -ne 'in') {
         $out.Construct = ''; $out.Group = ''; $out.Classification = ''
         $out.ComparisonClass = ''; $out.Verbs = ''; $out.HcReachable = 'n/a'
-        $out.AssessPoisonsCache = ''; $out.EnumValues = ''; $out.Rationale = ''
+        $out.EnumValues = ''; $out.Rationale = ''
         $outRows.Add([pscustomobject]$out)
         continue
     }
@@ -583,9 +577,6 @@ foreach ($r in $rows) {
     $newIsYes = ($hc -eq 'yes')
     if ($oldWasReferenced -ne $newIsYes) { $hcVerdictChanges++ }
 
-    # --- AssessPoisonsCache ---
-    $poisons = if ($PoisonsCacheKeys -contains $key) { 'yes' } else { 'no' }
-
     # --- EnumValues (Integer fields only) ---
     $enumVal = ''
     if ($r.Sig -eq 'Integer') {
@@ -608,7 +599,6 @@ foreach ($r in $rows) {
         elseif ($MagnitudeReason.ContainsKey($key)) { $ratParts.Add("Magnitude: $($MagnitudeReason[$key])") }
         elseif ($UnknownReason.ContainsKey($key)) { $ratParts.Add("Unknown: $($UnknownReason[$key])") }
     }
-    if ($PoisonsCacheKeys -contains $key) { $ratParts.Add("AssessPoisonsCache: $($PoisonsCacheRationale[$key])") }
 
     $out.Construct = $construct
     $out.Group = $group
@@ -616,7 +606,6 @@ foreach ($r in $rows) {
     $out.ComparisonClass = $compClass
     $out.Verbs = $verbs
     $out.HcReachable = $hc
-    $out.AssessPoisonsCache = $poisons
     $out.EnumValues = $enumVal
     $out.Rationale = ($ratParts -join ' | ')
 

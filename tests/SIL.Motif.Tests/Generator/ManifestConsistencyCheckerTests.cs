@@ -21,7 +21,7 @@ public class ManifestConsistencyCheckerTests
         Field: field, Kind: "basic", Sig: "Unicode", Card: "", HcReferenced: "no",
         Construct: "x", Group: "system", Classification: "semantic-operation",
         ComparisonClass: comparisonClass, Verbs: verbs, HcReachable: "no",
-        AssessPoisonsCache: "no", EnumValues: "", Rationale: "test fixture");
+        EnumValues: "", Rationale: "test fixture");
 
     private static JoinedRow Row(string cls, string field, FieldKind kind, FieldCard? card, ManifestRow manifest) =>
         new(cls, field, kind, "Unicode", card, manifest);

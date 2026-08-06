@@ -1,14 +1,14 @@
 namespace SIL.Motif.Generator.Manifest;
 
 /// <summary>
-/// Parses <c>manifest/liblcm-inventory.tsv</c>: 19 columns, tab-separated, every value
+/// Parses <c>manifest/liblcm-inventory.tsv</c>: 18 columns, tab-separated, every value
 /// double-quoted, CRLF line endings (manifest/README.md and docs/plan-motif.md MOT-2). This file is
 /// read-only to the generator — never modify it, per manifest/README.md's own instruction — so this
 /// class only ever reads.
 /// </summary>
 public static class ManifestTsvParser
 {
-    private const int ColumnCount = 19;
+    private const int ColumnCount = 18;
 
     public static IReadOnlyList<ManifestRow> Parse(string path)
     {
@@ -55,9 +55,8 @@ public static class ManifestTsvParser
                 ComparisonClass: columns[13],
                 Verbs: columns[14],
                 HcReachable: columns[15],
-                AssessPoisonsCache: columns[16],
-                EnumValues: columns[17],
-                Rationale: columns[18]));
+                EnumValues: columns[16],
+                Rationale: columns[17]));
         }
 
         return rows;

@@ -47,9 +47,8 @@ blank/`n/a` for every row where `Scope != in`.
 | `ComparisonClass` | how instances of this field compare for drift/effect purposes: `unordered`, `positional`, `index-as-identity` (alpha-variable pools — [issue B8](../docs/issues.md)), `feeding` (order encodes rule interaction — [issue B8](../docs/issues.md)). |
 | `Verbs` | the CRUD verb subset this field's `(Kind, Card)` shape generates (`set|clear`, `create|delete`, `create|delete|move|reparent`, `addRef|removeRef`, `addRef|removeRef|move`), or `n/a` when `Classification` marks the field non-authorable. |
 | `HcReachable` | does `HCLoader` actually read this field — `yes` / `no` / `unconfirmed`, corrected from `HcReferenced` against the curated surface map (see [the HC grammar map](../docs/hc-grammar-map.md)). |
-| `AssessPoisonsCache` | `yes` for the 4 fields whose mutation poisons a derived LibLCM cache that `Rollback` cannot repair ([issue A4](../docs/issues.md), [issue C15](../docs/issues.md)); `no` otherwise. |
 | `EnumValues` | for the 28 in-scope `Integer` fields only: a confirmed `value=Name;...` mapping, `unknown` (named-enum-shaped but no confirming code found), or blank (a magnitude, not an enumeration) — [issue B7](../docs/issues.md). |
-| `Rationale` | required prose for every in-scope row, citing the classification decision and folding in any `ComparisonClass`/`HcReachable`/`EnumValues`/`AssessPoisonsCache` notes. Distinguishes a cited source from a generic field-name-heuristic default — see [issue B18](../docs/issues.md). |
+| `Rationale` | required prose for every in-scope row, citing the classification decision and folding in any `ComparisonClass`/`HcReachable`/`EnumValues` notes. Distinguishes a cited source from a generic field-name-heuristic default — see [issue B18](../docs/issues.md). |
 
 ### `Scope` is computed, not guessed
 
@@ -92,12 +91,16 @@ inventory into the type system the (not-yet-written) kind generator is meant to 
 [ADR 0009](../docs/adr/0009-layered-api-primitives-and-composers.md) and
 [API surface layer 1](../docs/api-surface-layer1.md), each field's `Construct`, `Classification`,
 `ComparisonClass`, `Verbs`, `HcReachable` (does `HCLoader` read it — see
-[the HC grammar map](../docs/hc-grammar-map.md)), `AssessPoisonsCache`, `EnumValues` (for the 28
+[the HC grammar map](../docs/hc-grammar-map.md)) and `EnumValues` (for the 28
 in-scope `Integer` fields), and `Rationale` are all populated. See the column table above for what
 each one means and the value set it takes.
 
-[`classify.ps1`](classify.ps1) is the mechanized, checked-in, re-runnable producer of these columns —
-rerun it after any inventory regeneration rather than hand-editing the TSV.
+[`classify.ps1`](classify.ps1) is the mechanized, checked-in, re-runnable producer of these columns.
+**But it has fallen behind the file, and rerunning it now loses work:** as of 2026-08-06 it rewrites 26
+rows — the `CmAgent`/`TextTag`/`Wfi*` families — reverting the `Group`/`HcReachable`/`Rationale` values
+that [ADR 0025](../docs/adr/0025-parser-first-build-order.md)'s analysis-approval scoping set by hand,
+because the script does not know about that ADR. Treat it as a **first-pass tool**, and diff its output
+against the committed file before accepting it. See [issue D7](../docs/issues.md).
 
 ### What genuinely still remains
 

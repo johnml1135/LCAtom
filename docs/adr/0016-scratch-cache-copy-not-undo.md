@@ -201,10 +201,59 @@ Sena 3, paid only on a failed apply, which after a validated Dry Run and a match
 Build cost is nearly nil: `ProposalApplier` already never saves — documented as the host's job — so "save first"
 is a **host precondition**, not new Runner code.
 
+### Found while building it: "save" was not a save
+
+The sequence above was written, then implemented, and twelve round-trip tests failed with
+**footprint drift on projects nobody had touched.** The anchor's digest matched the project's *pristine*
+state while the live cache had already moved on — so the scratch was reading a file that was one
+operation behind.
+
+`FwDataProjectLoader.Save` did what `FwDataMiniLcmBridge` does: `cache.ActionHandlerAccessor.Commit()`.
+That call does **not** write the file. `XMLBackendProvider.PerformCommit`
+(`Infrastructure/Impl/XMLBackendProvider.cs:458-467`) enqueues a `CommitWork` item on a background
+`ConsumerThread` and returns; the write lands whenever that thread gets to it. `IUndoStackManager.Save()`
+is no better — `UnitOfWorkService.SaveInternal` reaches the same `Commit`. **LibLCM has no synchronous
+save.** Its own answer is a separate barrier, `CompleteAllCommits()`, which waits for that thread to go
+idle, and both places liblcm needs the file to be authoritative pair the two calls:
+`ProjectLockingService.UnlockCurrentProject` (`DomainServices/ProjectLockingService.cs:37-41`) and
+`ProjectBackupService` (`:61`).
+
+Three things follow.
+
+**1. Save-first is not merely a good idea, it is load-bearing — and it had a hole in it.** The decision
+above assumed "save" meant "the file is current". It did not, and nothing had ever noticed because until
+now nothing read the file straight after saving. The Dry Run copying a file is what made an
+eleven-year-old asynchrony visible, which is a fair argument that the copy-based design is *more*
+observable than the rollback-based one it replaces, not merely safer.
+
+**2. The barrier is not publicly reachable, and that is an upstream ask.** `CompleteAllCommits` is
+declared on the `internal` `IDataStorer`. The only route from outside is the public
+`ILcmServiceLocator.DataSetup` property — the very same backend-provider instance, as liblcm's own
+`LcmCache.cs:631` shows by casting it — and then its `public virtual CompleteAllCommits` by reflection.
+Motif does that, once, in `FwDataProjectLoader.Save`, and **throws rather than degrading** if the member
+ever disappears: silently reverting to the asynchronous behaviour would restore a bug whose symptom
+accuses the drift check instead of the save. **Making a synchronous save publicly reachable is a liblcm
+PR worth filing** (`ProjectLockingService` already demonstrates the intent), and that reflection is the
+line to delete when it lands.
+
+**3. The diagnostic was misleading in a specific, worth-recording way.** "Footprint drift" is a true
+statement about digests and a false accusation about causes. It named the mechanism that noticed rather
+than the one that failed, and cost most of an afternoon. Anything reporting drift should say *what it
+compared and where each side came from* — the live cache versus a file copy taken at a stated moment —
+because with that in the message the answer is immediate.
+
 ### What `MOT-11` becomes
 
 Smaller than written: point the Dry Run at `ScratchCacheFactory.CreateFromFileCopy` (which already exists, built
 during the `A1` spike), make the scratch single-use, and delete the four items above. Net negative code.
+
+**Built 2026-08-06, and it came out smaller still.** `Run` takes a `DryRunScratch` rather than an
+`LcmCache`, so "a Dry Run does not touch the live project" is a compile-time fact instead of a comment; the
+scratch refuses a second use; the unit of work is non-undoable with `RollBack` cleared *before* the first
+mutation, so even a failing Dry Run ends its task rather than reverting. All four items are deleted, and the
+operation round-trip tests lost their dispose-and-reload dances — the clearest evidence that what was special
+about `MoForm.Form` was never the field, it was the rollback. See [ADR 0030](0030-one-writer-cli-locks-like-fieldworks.md)
+for why the CLI still opens the live project despite mutating only a copy.
 
 **One subtlety that keeps it simple:** the scratch must be *discarded*, never reverted. Rolling back inside a
 reused scratch would recreate the same staleness inside the scratch, and the next Dry Run would read back

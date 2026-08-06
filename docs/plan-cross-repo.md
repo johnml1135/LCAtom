@@ -61,8 +61,9 @@ no non-committing invalidation is reachable from a consumer — `ILexEntryReposi
 the only candidate, is not safe to call there. Either fix closes the problem class permanently.
 
 [ADR 0016](adr/0016-scratch-cache-copy-not-undo.md) routes around this by never reverting anything, so
-it is **not blocking**. It is still the correct fix, and it would let the manifest's
-`AssessPoisonsCache` column retire.
+it is **not blocking** — and as of 2026-08-06 the route-around is built and the manifest's
+`AssessPoisonsCache` column has retired, along with every type that consumed it. An upstream fix would
+still be the right thing for other consumers; Motif no longer needs it.
 
 **A second, better-evidenced upstream ask, found by measurement 2026-08-05:** a `kMemoryOnly` cache
 re-synthesizes its writing systems from the bare language tag, losing collation rules, valid-character
@@ -71,6 +72,25 @@ backend (`BackendProvider.cs:263-265`), so no caller can opt out. **An in-memory
 source's writing systems would make a cheap in-memory scratch viable**; without it, ADR 0016 pays ~600 ms
 per scratch instead of ~120 ms. Not blocking, well characterised, and cheap to describe upstream — see
 [the findings](research/2026-08-05-createcachecopy-provenance-and-hazards.md).
+
+**A third ask, and the most concrete of the three — found 2026-08-06 by a failing test, not by reading:**
+**there is no publicly reachable synchronous save.** `IActionHandler.Commit()` and
+`IUndoStackManager.Save()` both end at `XMLBackendProvider.PerformCommit`, which enqueues a `CommitWork`
+item on a background `ConsumerThread` and returns; the `.fwdata` file lands later. The barrier that waits
+for it, `CompleteAllCommits()`, is declared on the **`internal`** `IDataStorer`, so liblcm's own
+`ProjectLockingService.UnlockCurrentProject` and `ProjectBackupService` can pair save-then-barrier and an
+outside consumer cannot.
+
+Any consumer that saves and then reads the file — a copy, a backup, a Send/Receive, a sync tool — is
+racing, and the symptom is silent and misattributed: Motif's scratch copy read a file one operation stale
+and the failure surfaced as *"footprint drift"*, accusing the drift check rather than the save. Motif's
+workaround is to reach `CompleteAllCommits` by reflection through the public
+`ILcmServiceLocator.DataSetup`, which returns the same backend-provider instance.
+
+**The ask is small:** either make `CompleteAllCommits()` public, or add a save verb that does not return
+until the bytes are on disk. Either one deletes Motif's reflection and closes a race for every other
+consumer. This is the highest-value of the three: a one-line visibility change against a defect class that
+is invisible until something reads the file.
 
 ## lexbox
 

@@ -27,12 +27,15 @@ public class MotifModelLoaderTests
         var realManifestPath = RepoPaths.DefaultManifestPath();
         var realText = File.ReadAllText(realManifestPath);
 
-        // One extra, well-formed, 19-column row whose (Class, Field) key exists nowhere in
-        // MasterLCModel.xml — the manifest-side orphan the join must refuse.
+        // One extra, well-formed, 18-column row whose (Class, Field) key exists nowhere in
+        // MasterLCModel.xml — the manifest-side orphan the join must refuse. The column count has to
+        // match the manifest exactly, or the parser rejects the row on shape before the join ever sees
+        // the key, and this test would pass for the wrong reason. (It failed loudly instead when
+        // `AssessPoisonsCache` was retired on 2026-08-06, which is the behaviour to want.)
         var injectedRow =
             "\"ZzzSyntheticInjectedClass\"\t\"CmObject\"\t\"false\"\t\"in\"\t\"synthetic test row\"\t" +
             "\"ZzzSyntheticInjectedField\"\t\"basic\"\t\"Unicode\"\t\"\"\t\"no\"\t\"x\"\t\"system\"\t" +
-            "\"semantic-operation\"\t\"unordered\"\t\"set|clear\"\t\"no\"\t\"no\"\t\"\"\t\"synthetic\"";
+            "\"semantic-operation\"\t\"unordered\"\t\"set|clear\"\t\"no\"\t\"\"\t\"synthetic\"";
 
         var fixturePath = Path.Combine(Path.GetTempPath(), "motif-tests", Guid.NewGuid().ToString("N") + ".tsv");
         Directory.CreateDirectory(Path.GetDirectoryName(fixturePath)!);
