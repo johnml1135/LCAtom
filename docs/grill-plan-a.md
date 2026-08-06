@@ -727,8 +727,14 @@ tool surface is the number of composers rather than the ~480 fields.
 The owner's framing is what makes that a design rather than a restriction: *"when we can't reach a specific
 field we need, it exposes a need to expand Layer 1."* An escape hatch would let the agent route around a
 missing composer invisibly, and the surface would look complete while the semantic vocabulary never
-materialised. Without one, hitting the wall **is the requirement being discovered** — which is why decision 3
-requires logging refused requests, or the signal is thrown away.
+materialised. Without one, hitting the wall **is the requirement being discovered**.
+
+And the agent closes the gap itself: it has this repository while the repository is being built, so it *writes*
+the composer as an ordinary reviewed change rather than filing a request. The signal is a commit, and git
+history is already the record — an earlier draft of mine required a refusal log, which imagined a deployed
+runtime that does not exist. That also makes the no-escape-hatch rule **cheaper** rather than costlier: the wall
+is removable by whatever hit it. Enforcement therefore lives in code review, and the criterion is that a
+composer must name an intent a linguist would recognise, not a mechanism.
 
 Consequence for descriptions: Layer 0 kind descriptions are read by **the reviewer**, Layer 1 composer
 descriptions by **the agent**. Both required, neither a substitute.

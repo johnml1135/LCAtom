@@ -1,7 +1,6 @@
 # ADR 0029 — Agents address Layer 1 only; an unreachable field is a requirement, not a gap
 
-**Status:** accepted, 2026-08-06. Resolves `J41` by making it concrete. Scopes `MOT-17` and constrains
-`MOT-19`. Builds on [ADR 0009](0009-layered-api-primitives-and-composers.md) and
+**Status:** accepted, 2026-08-06. Resolves `J41` by making it concrete. Scopes `MOT-17`. Builds on [ADR 0009](0009-layered-api-primitives-and-composers.md) and
 [ADR 0021](0021-cli-is-the-full-surface-layer-1-churns.md).
 
 ## Context
@@ -33,16 +32,33 @@ composer, and the routing would be invisible — the surface would look complete
 Motif is named for quietly failed to materialise. Without the hatch, the agent hitting a wall **is the
 requirement being discovered**, at the moment and in the words of whoever needed it.
 
-### 3. So the wall has to be instrumented, or the signal is lost
+### 3. The agent closes the gap itself, in this repository
 
-A refusal that just errors wastes the information. When an agent asks for something no composer covers, the
-system records **what was wanted** — the field or the intent as expressed — and surfaces it as a queue of
-Layer 1 gaps.
+*Revised 2026-08-06, before implementation.* This decision originally required logging refused requests so a
+human could later read the queue. **That was wrong, and it imagined a deployment that does not exist.** It
+pictured an agent as a runtime consumer hitting an API, being refused, and filing a request. The owner's
+correction:
 
-This is the same instrument ADR 0021 decision 4 already requires for a different purpose: logging which
-reports the agent actually calls, to learn which FieldWorks screens are worth building. One usage log, two
-questions — *what does the agent use* and *what does the agent reach for and fail to find*. The second is the
-more valuable of the two, because it is a requirement rather than a preference.
+> *Logging refusals for Layer 0 makes no sense — the AI agent will not see it. The agent will have access to
+> this repository while it is being built up, and propose and add more to Layer 1. And the same when we are
+> building up FieldWorks.*
+
+The agent is not petitioning for a capability; it is **a contributor that adds one**. When it needs a field no
+composer covers, it writes the composer — with its description — as an ordinary reviewed change in this repo.
+The signal is a commit, not a log entry, and git history is already the record.
+
+This makes decision 1 **cheaper rather than costlier**: the reason no escape hatch is needed is that the wall
+is trivially removable by whatever hit it. A missing composer is a half-hour of work by the party that
+discovered the need, not a ticket waiting on someone else's sprint.
+
+**And the same pattern holds in scope 2.** When the FieldWorks surface is built, the agent contributes to it
+rather than merely consuming it — so "the agent cannot do X yet" is a statement about what has been written so
+far, never about what is reachable in principle.
+
+**Where the discipline actually lives, therefore: code review.** Nothing mechanical stops a broad
+`updateLexEntry(field, value)` composer that is the escape hatch in disguise. What stops it is a reviewer
+declining it, which makes the note in this ADR's consequences a **review criterion for agent-authored
+composers** rather than general advice.
 
 ### 4. Descriptions have two audiences, and now it is clear which is which
 
@@ -64,16 +80,20 @@ performance applies to the composer descriptions specifically — those are the 
   updates, multi-rule creation, composite reports — each one a named semantic operation with a description
   written for an agent. The at-rest form remains resolved Layer 0 operations with the query as non-hashed
   provenance (ADR 0009 §1).
-- **`MOT-19` gains a required output**: the refused-request log from decision 3. It is cheap now and
-  unrecoverable later — a refusal not recorded is a requirement lost.
+- **`MOT-19` gains nothing from this ADR.** An earlier draft added a refused-request log; decision 3 withdrew
+  it. ADR 0021 decision 4's usage log stands on its own merits — it records which reports the agent *uses*, to
+  learn which FieldWorks screens are worth building — and that is a different question from what the agent
+  cannot reach.
 - **The long tail is deliberately unreachable until someone writes a composer.** Accepted with eyes open: the
   agent cannot do routine field-level data entry, and "set the bibliography" needs a composer before it needs
   an agent. The trade is that every capability is deliberate, described, and reviewable, and that the pressure
   to add one arrives as evidence rather than as a guess.
-- **A discipline this creates, stated so it is not discovered as drift:** the temptation will be to write one
-  broad composer that effectively *is* the escape hatch — `updateLexEntry(field, value)` in composer's
-  clothing. That defeats decision 1 while passing its letter. A composer should name an intent a linguist would
-  recognise, not a mechanism.
-- **Risk accepted:** early on, the agent will hit the wall often, and the queue will be long before it is
-  useful. That is the cost of learning the vocabulary from use instead of inventing it up front, and it is
-  cheapest now while the contract is declared unstable (`B9b`).
+- **The one review criterion this creates**, and it is the whole enforcement mechanism: a broad composer that
+  is the escape hatch in disguise — `updateLexEntry(field, value)` in composer's clothing — defeats decision 1
+  while passing its letter. **A composer must name an intent a linguist would recognise, not a mechanism.**
+  Since the agent writes composers (decision 3) and nothing mechanical can check this, it belongs on the review
+  checklist for any new composer, agent-authored or not.
+- **Risk accepted, and it moved:** the risk is no longer a long queue of unmet requests. It is that Layer 1
+  grows *fast*, one composer at a time, in whatever shape each need suggested — so the vocabulary could sprawl
+  before anyone looks at it whole. The mitigation is the review criterion above plus a periodic consolidation
+  pass, which is cheap while the contract is declared unstable (`B9b`) and expensive after.

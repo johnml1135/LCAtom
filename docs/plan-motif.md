@@ -358,12 +358,6 @@ FieldWorks must rebuild, and it will not be rebuilt identically.
 **Definition of done includes JSON.** Structured emission is part of each report, not a later `--json`
 flag. A summary that can be printed but not emitted is the tell that the projection layer was skipped.
 
-**Log refused requests too** ([ADR 0029](adr/0029-agents-address-layer-1-only.md) decision 3). When an agent
-reaches for something no composer covers, record what it wanted: under ADR 0029 an unreachable field *is* a
-Layer 1 requirement being discovered, and a refusal that only errors throws that away. Same instrument as
-below, two questions — what the agent uses, and what it reaches for and cannot find. The second is worth more,
-because it is evidence rather than preference.
-
 **Log the surface's own usage** (ADR 0021 decision 4). The churn is not just faster iteration — it is
 **evidence for which FieldWorks screens are worth building.** Which reports the agent calls, how often, and
 which ones run back-to-back is the closest thing to a requirements document scope 2 will get, and it is
