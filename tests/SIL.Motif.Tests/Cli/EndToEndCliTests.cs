@@ -65,7 +65,7 @@ public sealed class EndToEndCliTests : IDisposable
         // --- add-set-gloss ---
         var addResult = Commands.AddSetGloss(_storeDir, draftName, canonicalId.Value, wsTag, newGloss);
         Assert.Equal(0, addResult.ExitCode);
-        Assert.Contains("lexical/sense/setGloss", addResult.Output);
+        Assert.Contains("lexical/lexSense/setGloss", addResult.Output);
 
         // --- finalize ---
         var finalizeResult = Commands.Finalize(_storeDir, draftName);

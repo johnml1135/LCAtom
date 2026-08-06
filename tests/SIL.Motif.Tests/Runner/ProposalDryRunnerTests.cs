@@ -14,7 +14,7 @@ namespace SIL.Motif.Tests.Runner;
 
 /// <summary>
 /// Stage C proof, on a real project: <see cref="ProposalDryRunner.Run"/> reads back real LibLCM
-/// state (not the intent) to compute expected effects for a <c>lexical/sense/setGloss</c> change
+/// state (not the intent) to compute expected effects for a <c>lexical/lexSense/setGloss</c> change
 /// set, is deterministic, and never leaves a mutation committed. See
 /// docs/change-set-contract.md, "DryRun" / "Expected effects", and
 /// docs/adr/0006-engine-reality-apply-readback-preflight.md.

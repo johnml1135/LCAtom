@@ -16,7 +16,7 @@ unit of work.
 
 > **Status: this is the target architecture and delivery plan, not the current implementation.**
 >
-> The repository contains a tested one-operation `lexical/sense/setGloss` control slice and extensive
+> The repository contains a tested one-operation `lexical/lexSense/setGloss` control slice and extensive
 > LibLCM/HermitCrab coverage research. The PR-like review domain, the generated grammar surface, the
 > FieldWorks in-process adapter, and receipt sync are planned work. Nothing in the plans should be
 > read as already shipped.
@@ -192,7 +192,7 @@ are evidence rather than plans.
 The repository currently contains `SIL.Motif.Contract`, `SIL.Motif.Model`, `SIL.Motif.Runner`,
 `SIL.Motif.Host`, `SIL.Motif.Cli`, and tests. The implemented control slice can:
 
-- parse and canonicalize a Proposal containing `lexical/sense/setGloss`;
+- parse and canonicalize a Proposal containing `lexical/lexSense/setGloss`;
 - compute stable intent and effect digests;
 - open a real FieldWorks project through the host;
 - perform a Dry Run (today by mutation-and-rollback; ADR 0016 replaces this with a scratch copy);

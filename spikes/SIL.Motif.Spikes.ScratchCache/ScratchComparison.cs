@@ -212,7 +212,7 @@ public static class ScratchComparison
     {
         /// <summary>
         /// Safe for operations that read and write text without depending on writing-system behaviour —
-        /// today's <c>lexical/sense/setGloss</c> is the whole of that category.
+        /// today's <c>lexical/lexSense/setGloss</c> is the whole of that category.
         /// </summary>
         /// <remarks>
         /// Deliberately does <b>not</b> consider degraded writing systems, because a `MultiUnicode` string

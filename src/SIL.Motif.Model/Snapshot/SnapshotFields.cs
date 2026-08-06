@@ -8,7 +8,7 @@ namespace SIL.Motif.Model.Snapshot;
 /// </summary>
 /// <remarks>
 /// Stage C populates exactly one: the <see cref="LexSenseGloss"/> field behind the in-scope
-/// <c>lexical/sense/setGloss</c> operation. New fields are added here as later stages add
+/// <c>lexical/lexSense/setGloss</c> operation. New fields are added here as later stages add
 /// operation kinds; the snapshot/effect shapes below do not need to change to accommodate them.
 /// </remarks>
 public static class SnapshotFields

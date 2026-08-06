@@ -10,7 +10,7 @@ namespace SIL.Motif.Runner.Operations;
 /// </summary>
 public static class LexicalSenseOperationKinds
 {
-    public const string SetGloss = "lexical/sense/setGloss";
+    public const string SetGloss = "lexical/lexSense/setGloss";
 
     /// <summary>
     /// Registers <see cref="SetGloss"/> with the LibLCM-free <see cref="OperationKindRegistry"/>.

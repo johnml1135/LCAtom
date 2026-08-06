@@ -500,7 +500,7 @@ cells, every row in exactly one, zero straddle.** Domains are `grammar` 230 / `l
 47 / `lists` 39; shapes are the six `Verbs` values.
 
 **And it is not a new vocabulary.** ADR 0009's kind namespace is already `group/construct/verb`
-(`lexical/sense/setGloss`), so **domain is the kind's first segment and shape derives from its verb
+(`lexical/lexSense/setGloss`), so **domain is the kind's first segment and shape derives from its verb
 segment**. A change class is a *projection* of an identifier that already exists — nothing new becomes
 versioned contract, so the major-forcing rename risk that made this gate urgent never arises. This also
 discharges ADR 0017 decision 5: adding a `text` domain is adding a `group`, which is minor-safe.
@@ -689,6 +689,21 @@ reason from the declared footprint.
 
 *Original framing: trivial mechanically, but it moves the intent digest while `proposalId` stays frozen,
 and it can orphan a dependent operation or break a `requires` edge — refuse, cascade, or warn?*
+
+**J45. [D] Do field-agnostic placement primitives exist alongside per-field kinds?**
+Surfaced 2026-08-05 while renaming the shipped kind. The frozen conformance vector
+`002-requires-placement-dependencies` contains `sequence/move` — **two segments, not three**, whose first
+segment (`sequence`) is not one of the four domains, and whose payload is `target` + `placement` rather than a
+field. Every other kind is `group/construct/verb` over a named field.
+
+So either there is a second, field-agnostic family of primitives that moves an object within whatever sequence
+owns it — in which case the naming rule in
+[ADR 0023](adr/0023-derived-kind-names-required-descriptions.md) needs a stated exemption for it — or the
+vector predates the vocabulary and a move should be `lexical/lexEntry/moveSenses`, in which case the vector's
+*shape* is wrong and not merely its name.
+
+Not urgent, and deliberately not guessed at: it changes the payload schema, not just a string. The vector was
+left untouched.
 
 **J44. [D→ANSWERED 2026-08-05 — the individual operation, subject to `requires`]**
 Falls out of `J43`: removal and splitting are the same mechanism, and *"only rules 1 and 4, not 5"*

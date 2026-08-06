@@ -58,7 +58,7 @@ namespace SIL.Motif.Runner.Apply;
 /// cache and reload the project rather than trust or reuse it.
 /// </para>
 /// <para>
-/// The in-scope <c>lexical/sense/setGloss</c> operation touches none of the three caches (a
+/// The in-scope <c>lexical/lexSense/setGloss</c> operation touches none of the three caches (a
 /// MultiUnicode field has no headword/homograph/monomorphemic dependency), so today this call is a
 /// no-op safety net rather than a load-bearing fix — it is wired in ahead of the operation kinds that
 /// will need it (see also <see cref="SIL.Motif.Runner.DryRun.DerivedCachePoisoningOperationKinds"/>,

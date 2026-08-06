@@ -60,7 +60,7 @@ a later, disposable, rebuildable cache, never the source of truth and never sync
 copied FieldWorks project — not mocks — which is why the suite takes minutes rather than seconds.
 
 The walking skeleton genuinely walks end to end (open → new draft → author → assess → apply → read
-back → log), but it walks with exactly **one** operation on it: `lexical/sense/setGloss`. There are
+back → log), but it walks with exactly **one** operation on it: `lexical/lexSense/setGloss`. There are
 zero create operations, zero delete operations, zero sequence operations, and zero grammar operations.
 "Done" above means *this thin slice* is done, not that the catalog is complete — see
 [operation-catalog-plan.md](operation-catalog-plan.md) for what thickening the skeleton requires next,

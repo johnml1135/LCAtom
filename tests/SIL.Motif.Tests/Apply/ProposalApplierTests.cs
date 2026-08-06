@@ -19,7 +19,7 @@ namespace SIL.Motif.Tests.Apply;
 
 /// <summary>
 /// Stage D proof, on a real project: <see cref="ProposalApplier.Apply"/> commits a
-/// <c>lexical/sense/setGloss</c> Proposal, writes exactly one applied-log entry inside the same
+/// <c>lexical/lexSense/setGloss</c> Proposal, writes exactly one applied-log entry inside the same
 /// unit of work, and the result survives a real save + reopen from disk — not merely an in-memory
 /// assertion. Also proves idempotence (a second Apply of the same Proposal against the reopened
 /// project does nothing) and that a distinct Proposal adds a second, distinct log entry. See

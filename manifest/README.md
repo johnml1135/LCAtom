@@ -25,7 +25,7 @@ blank/`n/a` for every row where `Scope != in`.
 | `Card` | `atomic` / `col` / `seq` |
 | `HcReferenced` | raw name-only join against [`hcloader-surface.tsv`](hcloader-surface.tsv): `name-referenced` or `no`. Precursor to `HcReachable`, which corrects the false positives a bare-name join produces (see issue D1 in [issues.md](../docs/issues.md)). |
 | `Construct` | the layer-1 construct this field belongs to (`lexEntry`, `msa`, `phoneme`, `rewriteRule`, …; the possibility family fans out to a multi-construct string) — see [ADR 0009](../docs/adr/0009-layered-api-primitives-and-composers.md) and [API surface layer 1](../docs/api-surface-layer1.md). 54 distinct constructs across the in-scope rows. |
-| `Group` | `grammar` / `lexical` / `system` / `lists` — coarse grouping of `Construct`. |
+| `Group` | `grammar` / `lexical` / `system` / `lists` / `analysis` — **the editorial domain: who should review a change**, per [ADR 0024](../docs/adr/0024-group-is-derived-domain-is-editorial.md). It is *not* the first segment of an operation's name; that segment is derived from the declaring class and the two deliberately disagree on 53 rows. `analysis` was added by [ADR 0025](../docs/adr/0025-parser-first-build-order.md). |
 | `Classification` | what kind of field this is for kind-generation purposes: `semantic-operation` (core authorable content), `supporting-detail` (secondary/administrative), `unsupported` (explicitly not offered as a control), `internal` (import residue, singleton roots), `derived-read-only` (engine-computed), `runner-bookkeeping` (the applied-log's reuse of `CmResource`), `observable-not-authorable` (engine-maintained reverse index). |
 | `ComparisonClass` | how instances of this field compare for drift/effect purposes: `unordered`, `positional`, `index-as-identity` (alpha-variable pools — [issue B8](../docs/issues.md)), `feeding` (order encodes rule interaction — [issue B8](../docs/issues.md)). |
 | `Verbs` | the CRUD verb subset this field's `(Kind, Card)` shape generates (`set|clear`, `create|delete`, `create|delete|move|reparent`, `addRef|removeRef`, `addRef|removeRef|move`), or `n/a` when `Classification` marks the field non-authorable. |
@@ -52,7 +52,10 @@ A naming heuristic was wrong in **both** directions, which is why this is comput
   `CmTranslation`, `CmResource` (the applied-log), `StText`/`StPara` — no domain prefix, but they back
   in-scope fields.
 
-**In scope: 473 properties across 95 classes** (473 = 209 `basic` + 141 `owning` + 123 `rel`). Basic —
+**In scope: 494 properties across 100 classes** (494 = 214 `basic` + 148 `owning` + 132 `rel`). Was 473
+across 95 until [ADR 0025](../docs/adr/0025-parser-first-build-order.md) brought in 21 analysis rows —
+the approval half of word analysis, which has durable identity. Occurrence assignment
+(`Segment.Analyses`) remains out. Basic —
 MultiUnicode 52, MultiString 51, Unicode 35, Integer 28, Boolean 25, String 10, Time 5, Guid 2,
 TextPropBinary 1. Relations — owning/atomic 69, rel/atomic 57, owning/col 39, rel/col 38, owning/seq 33,
 rel/seq 28. Excluded as `trace`: 28 props across 9 classes.
@@ -83,13 +86,18 @@ rerun it after any inventory regeneration rather than hand-editing the TSV.
 
 - **No kind generator yet.** The manifest is the type system a generator would read, but nothing in
   `src/` reads `Construct`/`Classification`/`Verbs` to emit operation kinds. Today's runner still
-  implements exactly one hand-written operation, `lexical/sense/setGloss`.
+  implements exactly one hand-written operation, `lexical/lexSense/setGloss`.
 - **`manifest/generate-inventory.ps1` does not exist.** The raw first-nine-column inventory was
   produced by ad-hoc commands rather than a committed script, so the drift gate this file's opening
   section promises ("regenerating it after a LibLCM package bump must produce no diff") cannot
   actually be re-run yet. Tracked as [issue D6](../docs/issues.md).
 - **Confidence caveats.** `HcReachable` is `unconfirmed` for 7 in-scope rows pending an HCLoader-read
   citation ([issue B17](../docs/issues.md) calls out `MoMorphSynAnalysis.Components`/`GlossBundle`
-  specifically). About 300 of the 473 in-scope rows were classified by a field-name heuristic rather
-  than an explicit citation — defensible but individually unverified; `Rationale` distinguishes cited
-  rows from generic ones so the confidence gap is machine-visible ([issue B18](../docs/issues.md)).
+  specifically). Most rows carry no citation — **but this stopped being a risk on 2026-08-05.** The
+  generator no longer trusts these columns: `Verbs` and `ComparisonClass` are **derived** from LibLCM's own
+  structural declarations with five cited exceptions, and the build fails on any unexplained departure
+  ([ADR 0022](../docs/adr/0022-structure-is-derived-policy-is-five-rows.md)); the operation name is derived
+  from the declaring class ([ADR 0023](../docs/adr/0023-derived-kind-names-required-descriptions.md)). A
+  missing citation on a computed value is not a defect. What still rests on human judgement, and where a
+  citation therefore earns its place: `Scope`, `Construct` (what ships together), `Group` (who reviews), and
+  the five order-carries-meaning rows.

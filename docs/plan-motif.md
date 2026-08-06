@@ -161,7 +161,8 @@ checkout. Neither blocks scope 1: a single-machine CLI never triggers a Chorus m
 not evidence** — `E19` stays open.
 
 **What already exists and is not re-planned.** `manifest/liblcm-inventory.tsv` — 898 rows, 19 columns,
-473 in-scope rows across 95 in-scope classes, 100% classified for every in-scope row. The
+**494 in-scope rows across 100 in-scope classes** (473 + the 21 analysis rows brought in by
+[ADR 0025](adr/0025-parser-first-build-order.md)), 100% classified for every in-scope row. The
 HCLoader-derived grammar map and the coverage research are done. `SIL.Motif.{Contract,Model,Runner}`
 build, `Runner` multi-targets `netstandard2.0;net10.0`, and 82/82 tests pass — including a working
 `open` / `new` / `add-set-gloss` / `finalize` / `dry-run` / `apply` / `log` CLI loop for one operation
@@ -266,7 +267,7 @@ model).
 
 **Acceptance:** every generated kind for the family round-trips author → DryRun → Apply → Receipt
 against a real project, with effects read back rather than replayed. The one hand-written kind
-(`lexical/sense/setGloss`) is regenerated and its existing tests pass **unmodified** — correctness is
+(`lexical/lexSense/setGloss`) is regenerated and its existing tests pass **unmodified** — correctness is
 established by regenerating code that already passes, not by the design being elegant.
 
 **What passing does not license.** The slice is lexical and almost entirely `unordered`: it exercises

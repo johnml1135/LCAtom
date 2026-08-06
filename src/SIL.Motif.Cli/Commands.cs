@@ -40,7 +40,7 @@ public static class Commands
 {
     static Commands()
     {
-        // SIL.Motif.Runner.Operations.LexicalSenseOperationKinds registers "lexical/sense/setGloss"
+        // SIL.Motif.Runner.Operations.LexicalSenseOperationKinds registers "lexical/lexSense/setGloss"
         // with the Contract kernel's OperationKindRegistry via a [ModuleInitializer] (see that
         // type's remarks) — but a module initializer only runs once the CLR actually loads the
         // Runner assembly, and every call site in this class that names SetGloss uses the *const*

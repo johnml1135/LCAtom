@@ -50,7 +50,7 @@ exactly one. Zero straddle.**
 ### The consequence that matters: this is not a new vocabulary
 
 ADR 0009's kind namespace is already `group / construct / verb` — for example
-`lexical/sense/setGloss`. So:
+`lexical/lexSense/setGloss`. So:
 
 - **domain = the kind's first segment**, which is the manifest's `Group` column;
 - **shape = derived from the kind's verb segment.**

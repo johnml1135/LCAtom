@@ -72,7 +72,7 @@ Small, and each item is a decision rather than a transcription:
 | Input | Why it cannot be derived |
 | --- | --- |
 | `Scope` / `ScopeReason` | Which of the 898 fields we expose is a product decision. |
-| `Construct` | The middle segment of `lexical/sense/setGloss`. Only 26% of names match their class; 41% — `featureStructure` spans 16 classes, `ruleContext` 11 — have no mechanical relationship to any class. `B19`/`B20` stand unchanged. |
+| `Construct` | The middle segment of `lexical/lexSense/setGloss`. Only 26% of names match their class; 41% — `featureStructure` spans 16 classes, `ruleContext` 11 — have no mechanical relationship to any class. `B19`/`B20` stand unchanged. |
 | Creation validity | A `create` must build a *valid* entity, and the model file does not encode validity. |
 | Error and integrity handling | Per-family, hand-written, and expected to stay that way. |
 

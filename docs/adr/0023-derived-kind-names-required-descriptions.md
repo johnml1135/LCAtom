@@ -9,7 +9,7 @@ Evidence:
 
 ## Context
 
-An operation is named `group/construct/verb` — `lexical/sense/setGloss`. The middle segment was
+An operation is named `group/construct/verb` — `lexical/lexSense/setGloss`. The middle segment was
 hand-authored, 53 distinct values, and it is hashed into every Proposal's intent digest, so renaming it is
 a breaking change. Two problems had been open for months:
 
@@ -140,11 +140,21 @@ That need survives regardless of who calls the API.
 - **A word that had two jobs now has one.** `Construct` grouped work *and* named operations; the naming job
   is gone. `CONTEXT.md` gains **class segment** as a separate term, because a glossary that lets one word
   mean two things is how this ambiguity got in.
-- **The one shipped kind is wrong and should be renamed now.** `lexical/sense/setGloss` becomes
-  `lexical/lexSense/setGloss` under the rule. That moves its intent digest, so the fixed conformance vectors
-  must be regenerated — real work, small, and exactly what the churn window
-  ([ADR 0021](0021-cli-is-the-full-surface-layer-1-churns.md), `B9b`) is for. Doing it later costs a major
-  version bump; doing it now costs a fixture update.
+- **The one shipped kind was renamed on 2026-08-05**: `lexical/sense/setGloss` → `lexical/lexSense/setGloss`,
+  in code, tests and live docs. Suite green at 88/88.
+  **Correction to this ADR's original claim:** it said the frozen conformance vectors would need regenerating.
+  They did not — they never referenced `setGloss`. They use `lexical/entry/create` and `sequence/move`, and
+  neither was touched (see the next two bullets).
+- **The conformance vectors keep their non-conformant kind names, deliberately.** They use
+  `lexical/entry/create`, which the rule would make `lexical/lexEntry/create`. But those vectors exist to pin
+  **canonicalization and digest determinism across languages**
+  ([ADR 0007](0007-cross-language-digest-determinism.md)) — the kind string is opaque payload to that job.
+  Renaming them would churn two frozen digests, oblige every non-.NET runner to re-sync, and test nothing new.
+  They are regenerated when the generator emits real kinds, not for naming hygiene.
+- **`sequence/move` does not fit `group/construct/verb` at all**, and that is a contract question rather than a
+  naming slip: two segments, a `group` (`sequence`) that is not one of the four domains, and a payload of
+  `target` + `placement` rather than a field. Whether field-agnostic placement primitives exist alongside
+  per-field kinds is unresolved — recorded as `J45`.
 - **`MOT-2` gains a third check** (derived name matches, abstract classes rejected for non-create verbs) and
   **`MOT-4` gains an input** (descriptions, required). A harvest step is added to `MOT-3`.
 - **Ugly names are accepted deliberately.** `lists/cmPossibility/setName` reads worse than

@@ -25,7 +25,7 @@ public sealed class DraftDocument
     public List<DraftOperation> Operations { get; set; } = new();
 }
 
-/// <summary>One authored operation inside a draft. Stage E supports exactly <c>lexical/sense/setGloss</c>.</summary>
+/// <summary>One authored operation inside a draft. Stage E supports exactly <c>lexical/lexSense/setGloss</c>.</summary>
 public sealed class DraftOperation
 {
     public string OperationId { get; set; } = "";

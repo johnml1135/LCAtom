@@ -163,7 +163,7 @@ a touched field moves.
 
 ## Phase 4 — minimal vertical operation slice — **status: partial — one of nine families**
 
-Only `lexical/sense/setGloss` exists, exercising item 2/3's territory (a multilingual alternative set —
+Only `lexical/lexSense/setGloss` exists, exercising item 2/3's territory (a multilingual alternative set —
 there is no explicit clear yet) plus items 8 and 9 fully: whole-change-set atomic apply/rollback is
 real (`Apply/ChangeSetApplierTests`) and read-back + `Receipt` are shipped. Items 1 (create with
 canonical ID), 4 (reference attach/detach), 5 (collection add/remove), 6 (sequence insert/move/remove),
