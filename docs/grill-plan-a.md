@@ -719,6 +719,22 @@ judgement. Who may overrule it, and is that itself a reviewable change?
 
 ## J — Authoring, editing, portability
 
+**J41. [D→DECIDED 2026-08-06 — agents address Layer 1 only]**
+[ADR 0029](adr/0029-agents-address-layer-1-only.md) makes the split concrete rather than confirming it as a
+rationale. The agent's vocabulary is Layer 1 composers, with **no generic field-level escape hatch**, so the
+tool surface is the number of composers rather than the ~480 fields.
+
+The owner's framing is what makes that a design rather than a restriction: *"when we can't reach a specific
+field we need, it exposes a need to expand Layer 1."* An escape hatch would let the agent route around a
+missing composer invisibly, and the surface would look complete while the semantic vocabulary never
+materialised. Without one, hitting the wall **is the requirement being discovered** — which is why decision 3
+requires logging refused requests, or the signal is thrown away.
+
+Consequence for descriptions: Layer 0 kind descriptions are read by **the reviewer**, Layer 1 composer
+descriptions by **the agent**. Both required, neither a substitute.
+
+*Original framing:*
+
 **J41. [D — and now load-bearing rather than tidy]**
 The proposal says the semantic layer is unnecessary for human diff-based authoring and meaningful only
 for AI and CLI. That matches ADR 0009's split and supplies its missing rationale: **Layer 0 is the

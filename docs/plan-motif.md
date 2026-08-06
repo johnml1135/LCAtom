@@ -358,6 +358,12 @@ FieldWorks must rebuild, and it will not be rebuilt identically.
 **Definition of done includes JSON.** Structured emission is part of each report, not a later `--json`
 flag. A summary that can be printed but not emitted is the tell that the projection layer was skipped.
 
+**Log refused requests too** ([ADR 0029](adr/0029-agents-address-layer-1-only.md) decision 3). When an agent
+reaches for something no composer covers, record what it wanted: under ADR 0029 an unreachable field *is* a
+Layer 1 requirement being discovered, and a refusal that only errors throws that away. Same instrument as
+below, two questions — what the agent uses, and what it reaches for and cannot find. The second is worth more,
+because it is evidence rather than preference.
+
 **Log the surface's own usage** (ADR 0021 decision 4). The churn is not just faster iteration — it is
 **evidence for which FieldWorks screens are worth building.** Which reports the agent calls, how often, and
 which ones run back-to-back is the closest thing to a requirements document scope 2 will get, and it is
@@ -376,7 +382,9 @@ reproducible from that data alone; nothing a reviewer would need is computable o
 ## `MOT-17` — Layer-1 semantic and batch authoring for agents — M4
 
 [ADR 0009](adr/0009-layered-api-primitives-and-composers.md)'s Layer 1, which scope 1 makes urgent
-because the agent is the first author. Layer 0 primitives are the diff's *output* vocabulary; Layer 1 is
+because the agent is the first author. **And under [ADR 0029](adr/0029-agents-address-layer-1-only.md) this is
+the agent's *entire* surface** — there is no generic field-level escape hatch, so a composer that does not
+exist is a capability the agent does not have. Layer 0 primitives are the diff's *output* vocabulary; Layer 1 is
 the agent's *input* vocabulary (`J41`), and building Layer 1 first is exactly when that split is
 easiest to blur.
 

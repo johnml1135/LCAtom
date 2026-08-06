@@ -8,7 +8,7 @@ of what looked like a decision was a fact nobody had gone and read.*
 | | Count | Meaning |
 | --- | --- | --- |
 | ✅ **Closed** | 20 | Answered from source. Do not grill; read the answer. |
-| ✅ **Decided** | 22 | `H30`, `G28`, `G27`, `G29`, `F26`/`F22`, `J43`, `J44`, `B5`, `B7a`, `B18`, `B19`, `B20`, `Group`, `F23a`, `B9a`, `B9b`, `J42a`, `I35a`, `I35b` — ADRs 0017–0027. |
+| ✅ **Decided** | 23 | `H30`, `G28`, `G27`, `G29`, `F26`/`F22`, `J43`, `J44`, `B5`, `B7a`, `B18`, `B19`, `B20`, `Group`, `F23a`, `B9a`, `B9b`, `J42a`, `I35a`, `I35b` — ADRs 0017–0027. |
 
 **The contract is now fully mechanical.** No hand-authored value feeds a hashed identifier: verbs, comparison
 behaviour (five cited exceptions), construct and group are all derived and build-checked. The manifest's
@@ -172,13 +172,13 @@ gates only the FieldWorks integration.
 | ~~`B8a`~~ / ~~`B21`~~ | | **Answered 2026-08-05** by [ADR 0025](adr/0025-parser-first-build-order.md): the L0 query is retired rather than corrected. Build order is now **parser-first in one slice** — 150 parser-read fields (113 grammar) plus the analysis fields carrying a human judgement; the 323 fields no parser reads are slice 2. |
 | ~~re-scope the analysis rows~~ | | **Done 2026-08-05** — 21 rows in, manifest now 494 in-scope across 100 classes; the four parser-output fields classified `derived-read-only`, which liblcm's own "currently unused" comment corroborates. |
 | ~~`I35a`/`I35b`~~ | | **Resolved** by [ADR 0027](adr/0027-what-counts-as-the-same-word-analysis.md): the gate is morphology; sense and word category are reported, not gating. |
-| **Next up** | descriptions for `MOT-4`'s family **[1]** | ADR 0023 makes descriptions mandatory and the build fails without one. The harvest covers 39% of rows overall — so the question is what happens to the family's uncovered fields before it can emit. |
+| ~~descriptions for `MOT-4`'s family~~ | | **Done 2026-08-06** — 14 drafted in `manifest/kind-descriptions.tsv`, and the check now fails on a description that merely restates its label, which is the bar presence alone was missing. |
 | ~~Bidirectional~~ | ~~`F22`~~, ~~`F26`~~ | **Decided** — [ADR 0019](adr/0019-observed-intent-and-proposal-edit-mode.md). Observe intent in a constrained proposal-edit mode; diff refuses loudly on the unrecoverable set. |
 | | `F24` **[1]** | Three provenance classes now, not two: **observed**, **diffed**, **authored**. Should a reviewer see which? Scope 1 produces *authored* only, which is exactly when the field is cheapest to add. |
 | ~~Classes~~ | ~~`G29`~~ | **Resolved** by [ADR 0018](adr/0018-change-class-is-two-axes-not-one.md) — ordering is a shape, and `ComparisonClass` already separates display order (56 `positional`) from meaning (2 `feeding`). |
 | **Text** *(gated on `H30`)* | `H34` | Text *edits* in scope, or only analyses attached to existing text? Editing is what breaks anchors. |
-| | `I35a` | Accept PanGloss's allomorph- and sense-blindness as a declared limitation, or build a richer identity? It causes **false agreement**, the unsafe direction. |
-| | `I35b` | FieldWorks ships two disagreeing equality definitions. Which wins? |
+| | ~~`I35a`~~ | **Resolved** — [ADR 0027](adr/0027-what-counts-as-the-same-word-analysis.md). Correctly scoped: false agreement only about *sense*, which is not under test. A sense-sensitive gate is unimplementable anyway. |
+| | ~~`I35b`~~ | **Resolved** — neither; they answer different questions. The gate is `MatchesIWfiAnalysis`'s shape; sense and word category are reported, not gating. |
 | | `I36` | Is "one authoritative analysis per occurrence" linguistically defensible? The model already distinguishes disapproved from no-opinion. |
 | | `I37` | What is the coverage ramp? Absolute, per-text, or delta-only? |
 | | `I39` / `I39a` | Are donated tests reviewed, trusted, or quarantined — noting a donation sets a *global* flag? Do machine guesses count as assertions? |
@@ -190,17 +190,17 @@ gates only the FieldWorks integration.
 | ~~`D18`~~ | | **Retired** — it asked who keeps two change vocabularies aligned, which only mattered while operations were routed through a second model. They are not. |
 | ~~`C12`~~ | | **Decided** — a `feeding` reorder requires a Grammar Delta before approval ([ADR 0028](adr/0028-feeding-reorders-require-a-grammar-delta.md)); the anchor machinery already covered staleness, but not comprehension when nothing drifted. |
 | **Engine** | `C11` | Raise the liblcm `Rollback`/`Undo` hook fix upstream now, or accept ADR 0016's workaround permanently? |
-| | `C12` | Does a reviewer actually see that a phonological reorder changed meaning? |
-| **Contract** | `J41` **[1]** | Confirm Layer 0 = diff's output vocabulary, Layer 1 = agent's input vocabulary. **Now the guard on ADR 0021's deliberate Layer 1 churn**, not a stylistic preference — the mechanical test is whether a change alters hashed bytes. |
-| | `B9b` **[1]** | When does the churn window end and the intent surface declare itself stable? Recommended trigger: the first human approval recorded against a stored Proposal. Until then, say *unstable by declaration* rather than implying stability by omission. |
+| | ~~`C12`~~ | **Decided** — [ADR 0028](adr/0028-feeding-reorders-require-a-grammar-delta.md): a `feeding` reorder requires a Grammar Delta before approval. |
+| **Contract** | ~~`J41`~~ | **Decided** — [ADR 0029](adr/0029-agents-address-layer-1-only.md): agents address Layer 1 only, no field-level escape hatch, and an unreachable field is a Layer 1 requirement to be logged rather than routed around. |
+| | ~~`B9b`~~ | **Decided** — it ends when the owner declares a version. My objection (nothing forces it) is recorded as overruled, with two mitigations: declare instability explicitly, and report the count of stored artifacts authored against the unstable vocabulary. |
 | ~~`J43`~~ | | **Decided** — [ADR 0021](adr/0021-cli-is-the-full-surface-layer-1-churns.md) §6: warn and enumerate, force to proceed, refuse when consequences are unenumerable. |
 | ~~`J44`~~ | | **Answered** — the individual operation, subject to `requires`; atomic groups stay indivisible. |
 | ~~Ratify~~ | ~~`F23a`~~ | **Decided** — rule 1 replaced: order is *declared*, not positional ([ADR 0026](adr/0026-order-is-declared-not-positional.md)). It contradicted `AGENTS.md` rule 5, which is now amended. |
 | | ~~`B9a`~~ | **Decided** — adopt the digest-meaning rule; defer the support window, since nothing lags. |
 | | ~~`J42a`~~ | **Decided** — refuse on drift, *and* record what the query matched, because drift protects the operations and not the query's intent. |
-| **Manifest** *(all now bounded — the counts exist)* | `B7a` | Review all **61** non-default rows before the generator ships, and spot-audit the other 412? One sitting, not a re-audit. |
-| | `B8a` | ADR 0012's L0 query yields **13 phantom fields** and understates the grammar dependency. Re-scope L0 to the confirmed 24, or fix `HcReachable` first? |
-| | `C10a` | **4 rows.** Keep, retire, or repoint `AssessPoisonsCache`? |
+| **Manifest** | ~~`B7a`~~ | **Dissolved** — [ADR 0022](adr/0022-structure-is-derived-policy-is-five-rows.md) derives the columns instead of auditing them. |
+| | ~~`B8a`~~ | **Answered** — [ADR 0025](adr/0025-parser-first-build-order.md) retires the L0 query rather than patching it; build order is parser-first in one slice. |
+| | `C10a` | **4 rows, and no consumer left.** `MOT-11` retires `DerivedCachePoisoningOperationKinds`, and a throwaway file-loaded scratch means poisoning cannot matter. Keep, retire, or repoint? Trivial, and it lands with `MOT-11`. |
 
 ---
 
