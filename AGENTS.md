@@ -42,6 +42,13 @@ records, not counter-examples.
     Unicode and NFSC for rich strings.
 15. The runner is storage-agnostic. Do not add Git, database, review, permission, or hosting logic.
 16. Do not vendor or submodule LibLCM. Use pinned packages with a documented local-package override.
+17. **Every ADR and every plan section opens with one or two sentences a non-specialist can read**,
+    before any internal detail. Say what changes for someone using the product and why it matters;
+    then use the internal vocabulary freely for the rest. The identifiers, cross-references, and
+    class names below that opener are the point of these documents and must stay. This is a
+    two-register rule, not a simplification pass: the opener is for the owner deciding whether to
+    read on, the body is for whoever implements or audits it. A status line like "Slice A built;
+    the poisoning guard now fires for real" fails the rule — it names machinery only.
 
 ## Compatibility targets
 
