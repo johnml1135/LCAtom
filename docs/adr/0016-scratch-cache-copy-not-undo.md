@@ -144,6 +144,63 @@ the live cache may hold uncommitted edits the copy lacks — it doubles the cost
 Dry-Run anchor already performs the state check. A rare failure is better handled by a reload than by permanent
 overhead.
 
+### Save first, and recovery is reload — which is stronger than rollback
+
+The owner's follow-up closed the remaining hole: *"Wouldn't we mandatorily apply the proposal on a LibLCM copy
+to validate it, and then use the fingerprint to make sure nothing that affects it changed? Also, before we
+apply, don't we save? Could we just reload? Because we cannot always unapply a change."*
+
+Three things follow, and the third is the important one.
+
+**The save belongs before the Dry Run, not before the apply.** The scratch is a copy of the *saved file*, so
+uncommitted edits in the live cache are invisible to it: the Dry Run would validate a world the apply will not
+meet, and the footprint digests would not match, so apply refuses — failing closed, but reporting "drift" when
+nothing drifted. Saving first makes the file equal the live cache, so validation and apply see one world. It
+also **buys back the only advantage the in-memory copy had** — seeing uncommitted edits — without the
+writing-system loss that disqualified it.
+
+**Saving is what makes reload free.** Reload is only frightening because of unsaved work. After a save there is
+none, so reloading returns exactly the pre-apply state.
+
+**And reload is sound where rollback is only usually sufficient.** [ADR 0005](0005-schema-operations-non-undoable-uow.md)
+establishes that a custom-field definition runs in a **non-undoable** unit of work and that a failed data phase
+leaves the field *defined but empty* — a leftover explicitly "not automatically idempotent". So rollback cannot
+restore the prior state in all cases. Reload can:
+
+| | Rollback | Reload from the saved file |
+| --- | --- | --- |
+| Undoable data changes | reversed | discarded |
+| Non-undoable schema phase (ADR 0005) | **survives** | discarded — apply never calls `Save`, so it never reached disk |
+| Stale derived caches | **left stale** | gone with the cache |
+
+That resolves ADR 0005's known wart as a side effect rather than as its own problem.
+
+### The full sequence
+
+```
+ 1  SAVE                  file == live cache; nothing else works without this
+ 2  copy the file         ~50 ms
+ 3  open the copy         ~550 ms                    -- the scratch
+ 4  apply the Proposal    to the scratch, plus any DAG prerequisites
+ 5  read effects back     from the scratch (ADR 0006 decision 1)
+ 6  DISCARD the scratch   never reverted
+ 7  bind the anchor       footprint digest + engine version
+    -- time passes --
+ 8  apply to live         re-check the anchor; refuse on drift
+ 9  on failure: RELOAD    from the file saved at step 1; lossless
+```
+
+Rollback still occurs at step 8 because atomicity demands it, but **nothing depends on it being complete.**
+Recovery is step 9.
+
+**Two costs, stated rather than buried.** Saving is a real side effect — in FieldWorks it commits the linguist's
+in-flight edits at a moment Motif chose, which is defensible (FieldWorks saves routinely, and the alternative is
+validating against a stale world) but must be **visible to the user, not silent**. And a reload is ~1.8 s on
+Sena 3, paid only on a failed apply, which after a validated Dry Run and a matching anchor should be rare.
+
+Build cost is nearly nil: `ProposalApplier` already never saves — documented as the host's job — so "save first"
+is a **host precondition**, not new Runner code.
+
 ### What `MOT-11` becomes
 
 Smaller than written: point the Dry Run at `ScratchCacheFactory.CreateFromFileCopy` (which already exists, built

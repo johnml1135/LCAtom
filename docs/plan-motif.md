@@ -305,6 +305,19 @@ vernacular lost its collation rules and all four writing systems lost their vali
 when the copy was taken from a file-loaded scratch whose writing systems were intact. One path, no
 per-operation judgement call about whether collation matters.
 
+**The sequence, and the host's part in it** ([ADR 0016](adr/0016-scratch-cache-copy-not-undo.md) as amended
+2026-08-06): **save, copy the file, open the copy, apply to the scratch, read effects back, discard the scratch,
+bind the anchor**; then at apply time re-check the anchor, and **on failure reload from the saved file** rather
+than relying on the rollback.
+
+The save must precede the *Dry Run*, not the apply, because the scratch is a copy of the saved file — otherwise
+uncommitted edits are invisible to validation and apply reports drift that did not happen. Reload is also
+*stronger* than rollback: it discards the non-undoable schema phase that
+[ADR 0005](adr/0005-schema-operations-non-undoable-uow.md) leaves behind, which rollback cannot.
+
+`ProposalApplier` already never saves, so "save first" is a **host precondition** rather than Runner code. The
+one thing it needs is to be **visible to the user** — a save commits in-flight edits at a moment Motif chose.
+
 **Deliverables**
 
 1. The scratch lifecycle, including a prerequisite-DAG mode that applies a topologically-sorted
