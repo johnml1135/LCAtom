@@ -288,7 +288,26 @@ and intent prove it is the same deletion, not an unresolved target.
 the lexeme form" edit, and the resolution for all 69 in-scope `owning/atomic` fields
 ([API surface, layer 1](api-surface-layer1.md#totality-owningatomic-replacement-resolved)):
 
-- **Implicit detach, not cascade delete.** LibLCM's own overwrite of an owning/atomic slot is a
+> **Corrected 2026-08-06 — measured against a real project, and the premise below is wrong.**
+> Overwriting an `owning/atomic` slot **destroys the displaced occupant**; it does not detach it. Verified with
+> LibLCM's own factory and no Motif machinery involved: after `entry.LexemeFormOA = replacement`, the previous
+> form's GUID is no longer a valid object id
+> (`tests/SIL.Motif.Tests/Runner/DisplacedOccupantFactTests.cs`). **There is no orphan to disclose and nothing
+> for the runner to refuse.**
+>
+> That follows from LibLCM's ownership model being exclusive and total — an owned object dropped by its owner
+> has nowhere to live. Scope of the evidence, stated honestly: **verified for `LexEntry.LexemeForm`**, and
+> expected to generalise across the 69 `owning/atomic` fields for that reason, but not verified for all of them.
+>
+> **The bullets below conflate two different cases.** De-referencing a *reference* (`rel`) genuinely leaves the
+> target alive, and the orphan risk there — the `SetPartOfSpeech`/MSA bug class — is real. Overwriting an
+> *owning* slot is not that case. The refuse-unless-disposed rule was written for the reference hazard and then
+> applied to ownership, where it guards nothing and would be pure friction.
+>
+> `MOT-4` slice 2 therefore ships `create`-into-occupied with no orphan disclosure, correctly. Retained below as
+> the original reasoning, because the *rejection* of `delete`-then-`create` still stands on its own grounds.
+
+- ~~**Implicit detach, not cascade delete.**~~ LibLCM's own overwrite of an owning/atomic slot is a
   detach, so `create`-into-occupied mirrors the engine rather than destroying more than it does. No
   other verb can express this: `set` is barred from owning slots; a whole-object `replace`-the-slot
   verb is the Kubernetes `managedFields` anti-pattern this contract already rejects

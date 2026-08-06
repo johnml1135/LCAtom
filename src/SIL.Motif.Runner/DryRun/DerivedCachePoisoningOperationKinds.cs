@@ -51,7 +51,7 @@ public static class DerivedCachePoisoningOperationKinds
     // left in place anyway rather than removed, since a dead entry here is harmless and this set is
     // documented as hand-maintained, not derived.
     //
-    // MOT-4 additions, both with real, live handlers and manifest/liblcm-inventory.tsv's
+    // MOT-4 slice 1 additions, both with real, live handlers and manifest/liblcm-inventory.tsv's
     // AssessPoisonsCache=yes: LexEntry.CitationForm (OverridesLing_Lex.cs
     // ITsStringAltChangedSideEffectsInternal: a default-vernacular-WS edit calls UpdateHomographs +
     // MLHeadwordChanged) and MoForm.Form (OverridesLing_MoClasses.cs: a LexEntry-owned MoForm.Form
@@ -59,6 +59,13 @@ public static class DerivedCachePoisoningOperationKinds
     // additionally clears the monomorphemic-morph-data cache). Both verbs (set and clear) are
     // listed: clearing a MultiUnicode alternative is the same "alt changed" side effect as setting
     // one to a new value.
+    //
+    // MOT-4 slice 2 additions, same AssessPoisonsCache=yes signal, both real and live:
+    // MoForm.MorphType (OverridesLing_MoClasses.cs MorphTypeRASideEffects: clears monomorphemic morph
+    // data and, when the entry's primary morph type changes, calls UpdateHomographs) and
+    // LexEntry.LexemeForm (OverridesLing_Lex.cs LexemeFormOASideEffects -> LexemeFormChanged ->
+    // UpdateHomographs when CitationForm is empty). create/delete are LexemeForm's whole verb set
+    // (owning/atomic), matching "list every verb this field has" for the other two poisoning fields.
     private static readonly HashSet<string> PoisoningKinds = new(StringComparer.Ordinal)
     {
         "lexical/entry/setLexemeForm",
@@ -67,6 +74,10 @@ public static class DerivedCachePoisoningOperationKinds
         "lexical/lexEntry/clearCitationForm",
         "grammar/moForm/setForm",
         "grammar/moForm/clearForm",
+        "grammar/moForm/setMorphType",
+        "grammar/moForm/clearMorphType",
+        "lexical/lexEntry/createLexemeForm",
+        "lexical/lexEntry/deleteLexemeForm",
     };
 
     /// <summary>

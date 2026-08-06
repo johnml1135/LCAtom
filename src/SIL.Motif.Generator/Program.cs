@@ -55,7 +55,16 @@ public static class Program
     {
         var model = MotifModelLoader.Load();
         var repoRoot = RepoPaths.FindRepoRoot();
-        var written = GeneratedCatalogWriter.WriteAll(model, repoRoot);
+
+        // Two writers, not one: GeneratedCatalogWriter is slice 1 (basic set|clear), frozen at exactly
+        // 14 files by GeneratedCatalogWriterTests/GeneratedFilesAreUpToDateTests, both of which predate
+        // MOT-4 slice 2 and must not change. Slice2CatalogWriter adds the remaining verbs of the
+        // lexical-entry family (LexEntry.LexemeForm, .DialectLabels, .DoNotPublishIn,
+        // .DoNotShowMainEntryIn; MoForm.MorphType) as its own writer with its own analogous tests, so
+        // one `emit` command still regenerates everything.
+        var written = GeneratedCatalogWriter.WriteAll(model, repoRoot)
+            .Concat(Emit.Slice2CatalogWriter.WriteAll(model, repoRoot))
+            .ToList();
 
         Console.WriteLine($"Wrote {written.Count} generated file(s):");
         foreach (var file in written.OrderBy(f => f.RelativePath, StringComparer.Ordinal))

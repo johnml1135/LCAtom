@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Text.Json;
+using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Parsing;
 
 namespace SIL.Motif.Runner.Operations;
@@ -50,5 +51,23 @@ internal static class ClosedPayloadParsing
         }
 
         return element.GetBoolean();
+    }
+
+    /// <summary>
+    /// MOT-4 slice 2: every reference-shaped payload (a <c>rel/atomic</c> <c>set</c>, an
+    /// <c>addRef</c>/<c>removeRef</c> member, <c>LexEntry.LexemeForm</c>'s <c>morphType</c>) names a
+    /// target by <see cref="CanonicalId"/> rather than a raw string, so this generalizes
+    /// <see cref="GetRequiredString"/> with the one extra "does this parse as a canonical id" check.
+    /// </summary>
+    public static CanonicalId GetRequiredCanonicalId(JsonElement after, string propertyName, string kind)
+    {
+        var text = GetRequiredString(after, propertyName, kind);
+        if (!CanonicalId.TryParse(text, out var id))
+        {
+            throw new ContractParseException(
+                $"'{kind}' operation 'after.{propertyName}' ('{text}') is not a valid canonical id.");
+        }
+
+        return id;
     }
 }
