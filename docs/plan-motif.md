@@ -20,16 +20,27 @@ and `SIL.Motif.Contract` is a published contract that other runners consume — 
 ship. There is no Motif web app, no Motif service, no Motif mobile surface, and no Motif presence inside
 any other product.
 
-**v1 scope: lexical and grammar. Text and analysis are staged, not excluded** — see
-[ADR 0017](adr/0017-text-and-analysis-destination-scope.md). They are **in the destination**: coverage
-gaps are the feeding ground for new and refined rules, which makes them raw material rather than a
-reporting metric. They are not in v1, because a manual analysis is two independent facts and only one
-of them is buildable today — human approval of a `WfiAnalysis` has a durable GUID, while *which
-occurrence uses it* has no durable identity at all (`H31`). Tests before coverage.
+**Everything scoped gets built. The first slice is what the parser touches** —
+[ADR 0025](adr/0025-parser-first-build-order.md): the 150 parser-read fields (113 grammar, 32 lexical, 5
+other) plus the analysis fields that carry a human judgement. The 323 fields no parser reads — bibliographies,
+pictures, pronunciations, publication settings — are slice 2. **Grammar is not deferred**; it is 113 of the
+150 and it is where the value is.
 
-The manifest still marks `Segment`, `WfiAnalysis`, `WfiWordform`, `WfiMorphBundle`, `Text`, `CmAgent`,
-and `StTxtPara` as `out` / `not-domain-reachable`, leaving eight text-adjacent rows in scope. **Treat
-that as provisional pending re-scoping, not as a boundary.**
+**Analysis comes in; occurrence assignment does not** (ADR 0025 decision 3). A wordform, its analyses and who
+approved them hang off GUID-bearing objects in unordered collections, so they are durable and addressable.
+*Which word position in which sentence* uses an analysis is a sequence index into a `Segment` and breaks when
+the text is edited — so "this analysis is human-approved" is available now (the test suite) and "every word has
+an analysis" is not (the coverage metric, still a research track). Earlier framing in
+[ADR 0017](adr/0017-text-and-analysis-destination-scope.md) should be read through ADR 0025: its reasoning
+holds — coverage gaps are the feeding ground for new and refined rules, which makes them raw material rather
+than a reporting metric — but it staged *all* of analysis out of v1, and the approval half turned out to be
+durable. Tests before coverage, and the tests are available now.
+
+**Re-scoping is the first real work this creates.** The manifest still marks `Segment`, `WfiAnalysis`,
+`WfiWordform`, `WfiMorphBundle`, `Text`, `CmAgent` and `StTxtPara` as `out` / `not-domain-reachable` — 48 rows.
+Flipping `Scope` on the analysis half is mechanical; deciding `Construct` for them and classifying
+`WfiAnalysis.Stems`/`.Derivation`/`.CompoundRuleApps`/`.InflTemplateApps` (expected to be read-only parser
+output) is judgement.
 
 > **No longer time-sensitive.** An earlier note here said ADR 0017 decisions 3 and 4 had to be taken
 > before the canonical JSON form froze. **Both were withdrawn on 2026-08-05.** Motif never addresses an
@@ -492,15 +503,17 @@ artifact upload, no publish job. See [plan-cross-repo.md](plan-cross-repo.md).
 30 constructs, 75 reference fields, 38 classes. The point of the generator is that this is **30
 reviewed diffs rather than 30 hand-built constructs.**
 
-Sequencing is decided by [ADR 0012](adr/0012-build-order-hc-spine-first-kinds-generated.md): of 150
-HermitCrab-reachable in-scope fields, **113 are grammar and only 32 lexical**, so grammar leads. L0
-(the ~37 non-grammar fields HCLoader actually reads), then G0–G2, then the lexical backfill driven by
-non-HermitCrab consumers rather than by the parser.
+Sequencing is **[ADR 0025](adr/0025-parser-first-build-order.md)**, which replaced ADR 0012's
+L0 → G0–G2 → backfill order. Of 150 parser-read in-scope fields, **113 are grammar and only 32 lexical**, so
+grammar leads — not as a later stage but as the bulk of slice 1. ADR 0012's "non-grammar first" boundary was
+unachievable: 13 of its 37 fields are never read by `HCLoader`, and populating the surviving 24 requires
+creating objects of five grammar classes anyway.
 
-**Known blockers that are not generator work:** L0's object-creation closure is uncomputed (B21), and
-roughly 300 of 473 in-scope rows were classified by heuristic rather than by citation (B17, B18) —
-which matters more under generation, because the generator reads those classifications directly.
-Verify-lazily versus dedicated-audit is undecided.
+**Known blockers that are not generator work:** the 48 text and analysis rows need `Scope` flipped and
+`Construct` decided, and `WfiAnalysis.Stems`/`.Derivation`/`.CompoundRuleApps`/`.InflTemplateApps` must be
+classified — several are expected to be read-only, being parser output rather than human intent. The old
+classification worry (B17, B18) is retired: nothing the generator trusts is hand-authored any more
+([ADR 0022](adr/0022-structure-is-derived-policy-is-five-rows.md)).
 
 ## `MOT-8` — ordered-grammar review proof — M6
 
