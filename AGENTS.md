@@ -17,11 +17,12 @@ records, not counter-examples.
 3. The caller supplies an already-loaded `LcmCache` and owns project lifecycle and persistence.
 4. One complete Change Set is one atomic LibLCM unit of work. Individual operation methods never
    commit or open independent transactions.
-5. **Order is authoritative where it is declared or where two operations share a target.** The runner
-   honours declared dependencies (`requires`, `dependsOn`) and same-target authored order, and never infers
-   a dependency from array position. Amended by
-   [ADR 0026](docs/adr/0026-order-is-declared-not-positional.md); previously read "operation array order is
-   authoritative, never silently reorder."
+5. **Order is authoritative only where it is declared.** The runner honours declared dependencies
+   (`requires`, `dependsOn`) and never infers one from array position. **No two operations in a finalized
+   Proposal may address the same slot** — `(target, field, discriminator)`, where the discriminator is the
+   writing system for `Multi*` fields and the member id for collections — so there is nothing else for
+   position to mean. Amended by [ADR 0026](docs/adr/0026-order-is-declared-not-positional.md); previously
+   read "operation array order is authoritative, never silently reorder."
 6. Rebase may refresh baseline-relative evidence or unambiguous placement anchors. It may not
    alter target, verb, value, identity, create/delete intent, or operation order.
 7. Unknown operation kinds and semantic properties are rejected. Tool metadata belongs only in

@@ -34,20 +34,53 @@ If operation B must follow operation A, B declares `dependsOn: [A]`. **The runne
 dependencies and does not infer any from array position.** Create-then-link and unlink-then-delete are
 declared, not implied.
 
-### 2. Operations on the same target keep their authored relative order
+### 2. There is no second ordering rule: same-slot operations are a normalisation defect
 
-**This is the case the framing did not cover, and it is not optional.** Two `set` operations on the same
-field are order-sensitive with no dependency between them — last one wins. Sorting them would change the
-outcome silently, which is the worst available failure.
+*Revised 2026-08-05, before implementation.* This decision originally said that operations sharing a target
+keep their authored relative order, because two `set`s on one field are order-sensitive. The owner's
+counter-argument is stronger and is adopted:
 
-So: among operations whose target is the same canonical ID, **authored relative order is preserved and is
-authoritative.** Across operations on different targets, order carries no meaning beyond declared
-dependencies.
+> *If two changes change the same field, that is a conflict. Changes are always added in order, so the last
+> one would win, and the first one would be removed. So there is no ordering beyond dependency, because the
+> first change is superseded by the second in the same proposal, meaning the first can be completely removed.*
+
+That is right, and it generalises past `set`:
+
+| Pair on the same slot | Collapse |
+| --- | --- |
+| `set` then `set` | keep the last — the first was never a separate fact |
+| `set` then `clear` | keep the `clear` |
+| `addRef(X)` then `removeRef(X)` | **remove both** — they cancel |
+| several `move`s on one sequence field | one minimal set achieving the final arrangement — which is what the contract's LIS-minimal sequence diff already promises |
+
+So **order is purely dependency**, and a Proposal containing two operations on the same slot is not an
+ordering question — it is a Proposal that was never normalised.
+
+**The slot is `(target, field, discriminator)`, not `(target, field)`.** This is the part that would break an
+ordinary edit if it were got wrong, because some fields hold several independent values:
+
+```
+setGloss(sense, en, "run")  +  setGloss(sense, en, "sprint")   -> same slot, collapse
+setGloss(sense, en, "run")  +  setGloss(sense, fr, "courir")   -> different slots, both legitimate
+addRef(sense.domains, X)    +  addRef(sense.domains, Y)        -> different slots, both legitimate
+```
+
+The discriminator is the **writing system** for `Multi*` fields, the **member id** for collections and
+reference sets, and **nothing** for scalars and atomic references. `SetGlossPayload` already parses
+`(writingSystemTag, text)`, so the multilingual case is live with the single operation that exists today.
+
+**Collapse automatically, and report it.** Unlike removing an operation — which changes authored intent and
+therefore warns and requires force (`J43`) — collapsing two operations on one slot is provably
+semantics-preserving: the applied outcome is identical either way. So normalisation happens at authoring or
+finalize time, the stored Proposal is already canonical, and what collapsed is reported rather than silently
+swallowed. A diff that emits same-slot duplicates has a **bug**, and should assert rather than rely on the
+normaliser.
 
 ### 3. Canonical order is a stable topological sort, used for hashing and for diff output
 
-The order is: honour the dependency DAG; within that, preserve authored relative order per target; break
-remaining ties byte-ordinally by canonical ID, then by manifest field order.
+The order is: honour the dependency DAG; break remaining ties byte-ordinally by canonical ID, then by
+manifest field order. **No per-target clause is needed**, because after normalisation no two operations share
+a slot (decision 2).
 
 - **A diff emits operations in this order**, so comparing the same two projects twice produces the same
   Proposal. That is the consistency the owner asked for.
@@ -69,12 +102,14 @@ this?" — keys on the **effect** digest, which the contract already makes stabl
 
 From *"Operation array order is authoritative. Never silently reorder."* to:
 
-> **Order is authoritative where it is declared or where two operations share a target. The runner honours
-> declared dependencies and same-target authored order, and never infers a dependency from array position.**
+> **Order is authoritative only where it is declared. The runner honours declared dependencies and never
+> infers one from array position. No two operations in a finalized Proposal may address the same slot —
+> `(target, field, discriminator)` — so there is nothing else for position to mean.**
 
 The safety the original rule protected is intact: the runner still cannot reorder anything whose order
-carries meaning. What changes is that meaning is now carried explicitly rather than by position, so the
-positions that mean nothing can be normalised.
+carries meaning. What changed is that meaning is carried explicitly — as a declared dependency — rather than
+by position, and the one case where position *looked* meaningful turned out to be a Proposal that needed
+normalising rather than ordering.
 
 ## Consequences
 
@@ -87,7 +122,14 @@ positions that mean nothing can be normalised.
 - **A cycle in the DAG is now a parse error**, since the canonical order is a topological sort and cannot be
   computed at all for a cyclic graph. Worth an explicit diagnostic.
 - **`change-set-contract.md` needs its ordering section rewritten** to match; until it is, this ADR governs.
-- **Risk accepted:** authors who previously relied on position to sequence two operations on *different*
-  targets now have to declare it. That is a real behaviour change, and it is the intended one — the reliance
-  was invisible and unverifiable. It is cheap today because there is one operation kind and the vocabulary is
-  declared unstable (`B9b`).
+- **Risk accepted:** authors who previously relied on position to sequence two operations now have to declare
+  the dependency. That is a real behaviour change and the intended one — the reliance was invisible and
+  unverifiable. Cheap today: one operation kind, and the vocabulary is declared unstable (`B9b`).
+- **A validation rule is added, and it is cheap to check:** no two operations in a finalized Proposal may
+  share a slot. It is a single grouping over the operation list, and it makes the canonical order fully
+  determined by the DAG.
+- **What this does *not* cover:** two operations whose relative order matters through the *engine* rather than
+  through a slot or a declared dependency — for example a `delete` whose ownership cascade removes the target
+  of a later operation. Those are genuine dependencies and must be declared; the discovered-footprint
+  machinery is what surfaces them, and a Proposal that omits the declaration fails at Dry Run rather than
+  silently misapplying.
