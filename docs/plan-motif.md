@@ -209,7 +209,10 @@ duplicates in either**. A matching count alone would not have shown that.
   ([ADR 0024](adr/0024-group-is-derived-domain-is-editorial.md)), and a class whose prefix is not in the
   closed table fails the build. The hand-authored **`domain`** column is *not* checked against it — the two
   answer different questions and disagree on 53 rows by design.
-- A kind with no description fails the build.
+- A kind with no description fails the build — **and so does one whose description merely restates its
+  label** ([ADR 0023](adr/0023-derived-kind-names-required-descriptions.md) decision 5, as amended). Labels
+  live in `manifest/fieldworks-labels.tsv` (harvested, 39% covered); descriptions live in
+  `manifest/kind-descriptions.tsv` (hand-written per family, `Reviewed` column tracks linguist sign-off).
 - **Both exception categories are asserted explicitly**, so silently losing one is a test failure rather than
   a quieter grammar — and an injected eighth exception belonging to neither category is rejected, because the
   point of the table is that it is closed.

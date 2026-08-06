@@ -122,6 +122,22 @@ identity, so nothing new is required.
 Separate field. **Never hashed**, so it is free to improve forever. Mandatory, following AIP-192 and
 OpenTelemetry's `brief`.
 
+> **Amended 2026-08-05, after the harvest ran: a label is not a description, and they are two fields.**
+> The harvest produced **768 rows of labels but only 20 with any prose at all** — everything else is a
+> two-word label like "Form" or "IsAbstract", which satisfies a presence check and helps nobody. So:
+>
+> - **`label`** — short human name, harvested, cheap, 39% covered.
+> - **`description`** — one sentence on *when an agent should reach for this operation*, hand-written per
+>   family as it ships, and **the build fails if it is missing or if it merely restates the label.** That
+>   second half is the bar the original presence check was missing.
+>
+> Written per family, this is small: the lexical-entry family is **14 sentences**, now drafted in
+> `manifest/kind-descriptions.tsv` and marked `draft` pending a linguist's review. Not 400 up front.
+>
+> Where FieldWorks *does* write prose it is excellent — the one good tooltip in the whole harvest resolves
+> the very ambiguity its two labels created, explaining that the citation form "is used to override the
+> Lexeme Form as the headword in the printed dictionary." There are just twenty of them.
+
 **Seeded by harvesting FieldWorks' own vocabulary** — `strings-en.xml` and the slice labels — for the third
 to half of rows where it exists. Those are words linguists already reviewed and translators already
 translated. Where FieldWorks has several labels for one field, the harvest records all of them for a human

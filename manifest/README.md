@@ -1,5 +1,22 @@
 # Coverage manifest
 
+## Companion files
+
+Two files sit alongside `liblcm-inventory.tsv`, in the same dialect (tab-separated, double-quoted, CRLF).
+
+**`fieldworks-labels.tsv` — harvested, not authored.** What FieldWorks already shows a linguist for a given
+`(class, field)`, scraped from `strings-en.xml`, the `.fwlayout` slice system and the Lists tool config by
+`spikes/SIL.Motif.Spikes.LabelHarvest`. One row per *distinct* label, because the same field carries different
+labels in different layouts — `MoInflAffixSlot.Name` is "Name" in one and "Slot Name" in another — and picking
+one silently would bake a view-specific label into a contract. 768 rows covering 193 of 494 in-scope fields
+(39.1%); 212 rows flagged `ambiguous`. **These are labels, not descriptions: only 20 rows carry any prose.**
+
+**`kind-descriptions.tsv` — hand-written.** One sentence per authorable field saying *when an agent should
+reach for this operation*, which is the job a two-word label cannot do. Required by
+[ADR 0023](../docs/adr/0023-derived-kind-names-required-descriptions.md) decision 5 as amended: the build
+fails if a description is missing **or if it merely restates the label**. Written per family as it ships —
+currently the 14 fields of `MOT-4`'s lexical-entry family, all marked `draft` pending a linguist's review.
+
 ## `liblcm-inventory.tsv` — the raw inventory (generated, checked in)
 
 Every property of every LibLCM class, generated mechanically from
