@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using SIL.Motif.Contract.Model;
 using SIL.Motif.Model.Effects;
@@ -17,8 +16,9 @@ namespace SIL.Motif.Runner.Apply;
 /// </summary>
 /// <remarks>
 /// Mirrors the dispatch in <see cref="SIL.Motif.Runner.DryRun.ProposalDryRunner"/> and
-/// <see cref="ProposalApplier"/> (one case per in-scope operation kind), but calls each handler's
-/// non-mutating <c>ReadCurrentFootprint</c> rather than its resolve/snapshot/lower/snapshot sequence.
+/// <see cref="ProposalApplier"/> (an <see cref="OperationHandlerRegistry"/> lookup per operation), but
+/// calls each handler's non-mutating <c>ReadCurrentFootprint</c> rather than its
+/// resolve/snapshot/lower/snapshot sequence.
 /// </remarks>
 public static class FootprintProbe
 {
@@ -28,16 +28,8 @@ public static class FootprintProbe
 
         foreach (var operation in proposal.Operations)
         {
-            switch (operation.Kind)
-            {
-                case LexicalSenseOperationKinds.SetGloss:
-                    entries.Add(SetGlossOperationHandler.ReadCurrentFootprint(cache, operation));
-                    break;
-
-                default:
-                    throw new NotSupportedException(
-                        $"Apply's footprint pre-flight does not support operation kind '{operation.Kind}'.");
-            }
+            var handler = OperationHandlerRegistry.Resolve(operation.Kind, "Apply's footprint pre-flight");
+            entries.Add(handler.ReadCurrentFootprint(cache, operation));
         }
 
         return FootprintDigest.Compute(entries);

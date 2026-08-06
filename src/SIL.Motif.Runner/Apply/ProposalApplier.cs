@@ -22,7 +22,7 @@ namespace SIL.Motif.Runner.Apply;
 /// "Application Receipt", and docs/applied-log.md.
 /// </summary>
 /// <remarks>
-/// Scope is exactly one operation kind (<see cref="LexicalSenseOperationKinds.SetGloss"/>), matching
+/// Dispatch is by <see cref="OperationHandlerRegistry"/> lookup (MOT-4), matching
 /// <see cref="SIL.Motif.Runner.DryRun.ProposalDryRunner"/>. Apply never calls
 /// <c>LcmCache.ActionHandlerAccessor.Commit()</c>/saves the project itself — the core does not save
 /// projects (docs/change-set-contract.md, "Application Receipt"); that is
@@ -127,16 +127,8 @@ public static class ProposalApplier
             {
                 foreach (var operation in proposal.Operations)
                 {
-                    switch (operation.Kind)
-                    {
-                        case LexicalSenseOperationKinds.SetGloss:
-                            effects.Add(SetGlossOperationHandler.ApplyAndCaptureEffect(cache, operation, touchedTargets));
-                            break;
-
-                        default:
-                            throw new NotSupportedException(
-                                $"Stage D apply does not support operation kind '{operation.Kind}'.");
-                    }
+                    var handler = OperationHandlerRegistry.Resolve(operation.Kind, "Stage D apply");
+                    effects.Add(handler.ApplyAndCaptureEffect(cache, operation, touchedTargets));
                 }
 
                 // Exactly one applied-log entry, written inside this same unit of work

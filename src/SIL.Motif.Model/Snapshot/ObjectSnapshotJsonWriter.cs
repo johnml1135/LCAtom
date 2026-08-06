@@ -59,7 +59,7 @@ public static class ObjectSnapshotJsonWriter
     private static void WriteFields(Utf8JsonWriter writer, ObjectSnapshot snapshot)
     {
         writer.WriteStartObject();
-        foreach (var field in snapshot.MultiUnicodeFields)
+        foreach (var field in snapshot.AlternativesFields)
         {
             writer.WriteStartObject(field.Key);
             foreach (var alternative in field.Value)

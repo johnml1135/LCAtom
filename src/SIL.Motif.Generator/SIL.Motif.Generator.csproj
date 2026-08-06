@@ -3,6 +3,14 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <!--
+      Exe, not the implicit Library default: MOT-4 gives this project its first real command,
+      `emit` (src/SIL.Motif.Generator/Program.cs), the console-command half of the "checked-in
+      files, produced by running a console command" emission mechanism (see that file's own doc
+      comment for the alternatives considered and why). Still referenced as a library by
+      tests/SIL.Motif.Tests, which is unaffected by OutputType.
+    -->
+    <OutputType>Exe</OutputType>
+    <!--
       Single source of truth for the pinned SIL.LCModel version, reused below by both the
       PackageReference and the AssemblyMetadata attribute that lets ModelSource/ModelPathResolver.cs
       read the version back at runtime without a second hardcoded copy of the string. MOT-2

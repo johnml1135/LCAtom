@@ -41,10 +41,32 @@ public static class DerivedCachePoisoningOperationKinds
 {
     // Not implemented by any operation handler yet (Stage C/D support only setGloss) — named here so
     // the guard already exists before lexeme-form/citation-form authoring ships. See remarks above.
+    //
+    // The two entries below predate ADR 0023's derived-kind-name rule and use its superseded
+    // "entry" construct segment rather than the derived "lexEntry" — "lexical/entry/setLexemeForm"
+    // still names nothing dispatchable (LexemeForm is owning/atomic, out of MOT-4's set|clear
+    // slice), matching ProposalDryRunnerTests' own literal string, so it is left as-is rather than
+    // silently fixed underneath a pinned test. "lexical/entry/setCitationForm" is genuinely stale
+    // now that citationForm ships (real name: lexical/lexEntry/setCitationForm, added below) —
+    // left in place anyway rather than removed, since a dead entry here is harmless and this set is
+    // documented as hand-maintained, not derived.
+    //
+    // MOT-4 additions, both with real, live handlers and manifest/liblcm-inventory.tsv's
+    // AssessPoisonsCache=yes: LexEntry.CitationForm (OverridesLing_Lex.cs
+    // ITsStringAltChangedSideEffectsInternal: a default-vernacular-WS edit calls UpdateHomographs +
+    // MLHeadwordChanged) and MoForm.Form (OverridesLing_MoClasses.cs: a LexEntry-owned MoForm.Form
+    // edit fires MLHeadwordChanged/MoFormFormChanged -> UpdateHomographs, and MoStemAllomorph.Form
+    // additionally clears the monomorphemic-morph-data cache). Both verbs (set and clear) are
+    // listed: clearing a MultiUnicode alternative is the same "alt changed" side effect as setting
+    // one to a new value.
     private static readonly HashSet<string> PoisoningKinds = new(StringComparer.Ordinal)
     {
         "lexical/entry/setLexemeForm",
         "lexical/entry/setCitationForm",
+        "lexical/lexEntry/setCitationForm",
+        "lexical/lexEntry/clearCitationForm",
+        "grammar/moForm/setForm",
+        "grammar/moForm/clearForm",
     };
 
     /// <summary>

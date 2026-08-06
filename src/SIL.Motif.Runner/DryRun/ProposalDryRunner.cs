@@ -25,12 +25,13 @@ namespace SIL.Motif.Runner.DryRun;
 /// decision 1 (read-back inside the open task sees true, synchronously-applied engine state).
 /// </summary>
 /// <remarks>
-/// Scope is exactly one operation kind (<see cref="LexicalSenseOperationKinds.SetGloss"/>); the
-/// dispatch below is a single case deliberately, not a plugin registry, until a second kind exists
-/// to justify one. This type never commits a unit of work — it is the non-mutating counterpart to
+/// Dispatch is by <see cref="OperationHandlerRegistry"/> lookup, one <see cref="IOperationHandler"/>
+/// per registered kind (MOT-4) — before a second kind existed this was "a single case deliberately,
+/// not a plugin registry"; the generated catalog is that second kind, many times over. This type
+/// never commits a unit of work — it is the non-mutating counterpart to
 /// <see cref="SIL.Motif.Runner.Apply.ProposalApplier"/> (Stage D), which shares the same
-/// resolve/snapshot/lower/snapshot sequence via <see cref="SIL.Motif.Runner.Operations.SetGlossOperationHandler"/>
-/// but commits instead of rolling back, and writes the applied-change log.
+/// resolve/snapshot/lower/snapshot sequence via the same handlers but commits instead of rolling
+/// back, and writes the applied-change log.
 /// </remarks>
 public static class ProposalDryRunner
 {
@@ -51,8 +52,10 @@ public static class ProposalDryRunner
         // Defect-4 guard: mark the cache poisoned BEFORE running the mutate-then-rollback sequence
         // below when any operation's kind is flagged as possibly touching a forward-only derived
         // cache — it is the rollback itself (not the mutation) that leaves such a cache stale (see
-        // DerivedCachePoisoningOperationKinds and docs/adr/0006, decision 3). Dormant today: no
-        // operation kind Run actually dispatches (only setGloss) is flagged.
+        // DerivedCachePoisoningOperationKinds and docs/adr/0006, decision 3). Live (no longer
+        // dormant) as of MOT-4 for lexical/lexEntry/{set,clear}CitationForm and
+        // grammar/moForm/{set,clear}Form, per manifest/liblcm-inventory.tsv's AssessPoisonsCache
+        // column for those two fields.
         foreach (var operation in proposal.Operations)
         {
             if (DerivedCachePoisoningOperationKinds.MayPoisonDerivedCache(operation.Kind))
@@ -79,16 +82,8 @@ public static class ProposalDryRunner
         {
             foreach (var operation in proposal.Operations)
             {
-                switch (operation.Kind)
-                {
-                    case LexicalSenseOperationKinds.SetGloss:
-                        effects.Add(SetGlossOperationHandler.ApplyAndCaptureEffect(cache, operation, touchedTargets));
-                        break;
-
-                    default:
-                        throw new NotSupportedException(
-                            $"Stage C dryRun does not support operation kind '{operation.Kind}'.");
-                }
+                var handler = OperationHandlerRegistry.Resolve(operation.Kind, "Stage C dryRun");
+                effects.Add(handler.ApplyAndCaptureEffect(cache, operation, touchedTargets));
             }
 
             // No undoHelper.RollBack = false: Dispose() rolls the unit of work back unconditionally,
