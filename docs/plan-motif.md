@@ -107,7 +107,7 @@ Ids are **not** renumbered; the order changed.
 
 | | Gate | Items | Scope |
 | --- | --- | --- | --- |
-| **M1** | The generator reads and joins the model without a liblcm checkout | `MOT-2`, `MOT-3` | 1 |
+| **M1** ✅ | The generator reads and joins the model without a liblcm checkout | `MOT-2`, `MOT-3` | 1 — **met 2026-08-05** |
 | **M2** | One generated operation family applies end to end, driven from the CLI, and its effects are read back | `MOT-4`, `MOT-11`, `MOT-16`, `MOT-19` | 1 |
 | **M4** | A Proposal is authored by an agent, reviewed, approved, applied, and its Receipt is durable | `MOT-9`, `MOT-10`, `MOT-17`, `MOT-18` | 1 |
 | **M5** | One grammar construct authored, reviewed, applied, and parsed | `MOT-6`, `MOT-15` | 1 |
@@ -124,8 +124,8 @@ the first author, not the last. M5 is the first thing a linguist would recognise
 
 | Item | M | Size | Status |
 | --- | --- | --- | --- |
-| `MOT-2` — the `(Class, Field)` join, failing the build on any unmatched key | M1 | Small | Not started |
-| `MOT-3` — generator skeleton: read `MasterLCModel.xml`, emit nothing yet | M1 | Medium | Not started |
+| `MOT-2` — the `(Class, Field)` join, failing the build on any unmatched key | M1 | Small | ✅ **Built 2026-08-05** — `src/SIL.Motif.Generator`, 898=898, zero orphans; found two exceptions the spec denied |
+| `MOT-3` — generator skeleton: read `MasterLCModel.xml`, emit nothing yet | M1 | Medium | ✅ **Built 2026-08-05** — model 7000072 from the NuGet cache, no liblcm checkout; label harvest done |
 | `MOT-4` — emit the operation catalog for one family | M2 | Medium | Not started — family decided (`B5`): the lexical entry. Includes renaming the one shipped kind to `lexical/lexSense/setGloss` and regenerating its conformance vectors (ADR 0023) |
 | `MOT-11` — scratch-cache DryRun, replacing mutate-then-rollback | M2 | Medium | Not started — **ADR 0016**, gated on the `A1` spike |
 | `MOT-16` — long-lived CLI session over a warm cache | M2 | Small–medium | Not started |
@@ -493,6 +493,12 @@ whose `hc_grammar_load` accepts HC XML bytes in memory.
    be correlated with a Proposal's effect set. Write the producer in **C#** — Rust cannot read a
    managed `LcmCache`; `pg-fwdata` is a file reader — and add one FFI entry,
    `hc_grammar_load_snapshot`, calling `pg_grammar::compile_project`.
+
+**The comparison this feeds is settled** ([ADR 0027](adr/0027-what-counts-as-the-same-word-analysis.md)): the
+pass/fail gate is morphology only — morph count, and per morpheme the allomorph, category record and
+inflection type. Sense and word-level part of speech are **reported, not gating**, because the parser cannot
+populate them and PanGloss cannot express them. A green result claims *"the parser agrees about the
+morphology"*, and whatever surfaces it must say so.
 
 **Acceptance:** a byte-equality conformance test proving the C# producer and `pg-fwdata` emit
 identical snapshots for the same project. The format is deterministic by construction, so this is a

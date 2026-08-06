@@ -190,7 +190,10 @@ are evidence rather than plans.
 ## Present implementation
 
 The repository currently contains `SIL.Motif.Contract`, `SIL.Motif.Model`, `SIL.Motif.Runner`,
-`SIL.Motif.Host`, `SIL.Motif.Cli`, and tests. The implemented control slice can:
+`SIL.Motif.Host`, `SIL.Motif.Cli`, `SIL.Motif.Generator`, and tests — 214 passing. **Milestone M1 is met:**
+the generator reads `MasterLCModel.xml` from the NuGet package cache with no liblcm checkout, joins it to the
+Manifest fail-closed (898 = 898, zero orphans), derives verbs, comparison behaviour, construct and group, and
+reports coverage. It emits no operations yet — that is `MOT-4`. The implemented control slice can:
 
 - parse and canonicalize a Proposal containing `lexical/lexSense/setGloss`;
 - compute stable intent and effect digests;

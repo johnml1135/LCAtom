@@ -8,7 +8,7 @@ of what looked like a decision was a fact nobody had gone and read.*
 | | Count | Meaning |
 | --- | --- | --- |
 | ✅ **Closed** | 20 | Answered from source. Do not grill; read the answer. |
-| ✅ **Decided** | 19 | `H30`, `G28`, `G27`, `G29`, `F26`/`F22`, `J43`, `J44`, `B5`, `B7a`, `B18`, `B19`, `B20`, `Group`, `F23a`, `B9a`, `B9b`, `J42a` — ADRs 0017–0026. |
+| ✅ **Decided** | 21 | `H30`, `G28`, `G27`, `G29`, `F26`/`F22`, `J43`, `J44`, `B5`, `B7a`, `B18`, `B19`, `B20`, `Group`, `F23a`, `B9a`, `B9b`, `J42a`, `I35a`, `I35b` — ADRs 0017–0027. |
 
 **The contract is now fully mechanical.** No hand-authored value feeds a hashed identifier: verbs, comparison
 behaviour (five cited exceptions), construct and group are all derived and build-checked. The manifest's
@@ -170,7 +170,9 @@ gates only the FieldWorks integration.
 | ~~`B7a`~~ | | **Dissolved** by [ADR 0022](adr/0022-structure-is-derived-policy-is-five-rows.md) — derived, not audited. |
 | ~~`B6`/`B19`/`B20`~~ | | **Resolved 2026-08-05** by [ADR 0023](adr/0023-derived-kind-names-required-descriptions.md): the identifier is `lowerFirst(DeclaringClass)`, meaning moves to a required description, and B20's ask was impossible — 11 of 20 possibility lists have no concrete subclass to name. |
 | ~~`B8a`~~ / ~~`B21`~~ | | **Answered 2026-08-05** by [ADR 0025](adr/0025-parser-first-build-order.md): the L0 query is retired rather than corrected. Build order is now **parser-first in one slice** — 150 parser-read fields (113 grammar) plus the analysis fields carrying a human judgement; the 323 fields no parser reads are slice 2. |
-| **Next up** | re-scope the 48 text/analysis rows **[1]** | Mechanical for `Scope`; `Construct` and the read-only calls on `WfiAnalysis.Stems`/`.Derivation`/`.CompoundRuleApps`/`.InflTemplateApps` are judgement. First real work ADR 0025 creates. |
+| ~~re-scope the analysis rows~~ | | **Done 2026-08-05** — 21 rows in, manifest now 494 in-scope across 100 classes; the four parser-output fields classified `derived-read-only`, which liblcm's own "currently unused" comment corroborates. |
+| ~~`I35a`/`I35b`~~ | | **Resolved** by [ADR 0027](adr/0027-what-counts-as-the-same-word-analysis.md): the gate is morphology; sense and word category are reported, not gating. |
+| **Next up** | descriptions for `MOT-4`'s family **[1]** | ADR 0023 makes descriptions mandatory and the build fails without one. The harvest covers 39% of rows overall — so the question is what happens to the family's uncovered fields before it can emit. |
 | ~~Bidirectional~~ | ~~`F22`~~, ~~`F26`~~ | **Decided** — [ADR 0019](adr/0019-observed-intent-and-proposal-edit-mode.md). Observe intent in a constrained proposal-edit mode; diff refuses loudly on the unrecoverable set. |
 | | `F24` **[1]** | Three provenance classes now, not two: **observed**, **diffed**, **authored**. Should a reviewer see which? Scope 1 produces *authored* only, which is exactly when the field is cheapest to add. |
 | ~~Classes~~ | ~~`G29`~~ | **Resolved** by [ADR 0018](adr/0018-change-class-is-two-axes-not-one.md) — ordering is a shape, and `ComparisonClass` already separates display order (56 `positional`) from meaning (2 `feeding`). |
