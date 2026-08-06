@@ -453,6 +453,10 @@ semantic owner routing, stale-binding rules.
   policy revision invalidates the former Check Runs and Decision;
 - static-analysis Check Runs are first-class immutable facts with the same exact-input and stale
   binding as Dry Run, conformance, and policy checks;
+- **a change class may *require* a particular Check Run**, rather than every Proposal carrying the same set
+  ([ADR 0028](adr/0028-feeding-reorders-require-a-grammar-delta.md)). The first case is a `feeding` reorder
+  requiring a Grammar Delta; the precedent matters more than the instance, since it is what keeps review
+  proportionate instead of demanding a parser run for a spelling fix;
 - AI actors are labeled, may recommend or abstain, and cannot satisfy a human or native-speaker role
   by implication; permitted AI roles are declared per operation family, and any autonomous approval
   policy is versioned, independently checked, provenance-bound, least-privileged, expiring, audited;
@@ -545,9 +549,16 @@ What survives is a review problem, and it is still the highest-risk item here:
   load**. A pre-apply check must simulate the exact traversal rather than counting distinct
   constraints.
 
-**Acceptance:** a reorder of real phonological rules from a real project produces a review a linguist
-can judge, and an alpha-variable edit that would exceed 24 is refused before apply, not discovered at
-parse time.
+**The two halves need different checks** ([ADR 0028](adr/0028-feeding-reorders-require-a-grammar-delta.md)),
+because they fail differently. A `feeding` reorder fails *silently* — the grammar quietly accepts different
+words — so it **requires a Grammar Delta** before approval: an Assessment before and after, against one
+baseline, naming the analyses that changed. An `index-as-identity` edit fails *loudly* — the 24-per-rule
+ceiling throws and kills the grammar load — so it needs a cheap pre-apply traversal check, which per `C13`
+means calling `IPhRegularRule.FeatureConstraints` rather than reimplementing the walk.
+
+**Acceptance:** a reorder of real phonological rules produces a Grammar Delta bound to one baseline that names
+which analyses changed — an empty delta being the useful "this reorder was safe" result — and an
+alpha-variable edit that would exceed 24 is refused before apply, not discovered at parse time.
 
 ---
 

@@ -299,6 +299,25 @@ Not blocking — ADR 0016 routes around it by never reverting. It is still the c
 C10 resolve cleanly, and the Avalonia/`net10.0` migration already has people in that codebase. Raise
 it now or accept the workaround permanently?
 
+**C12. [D→DECIDED 2026-08-05 — no, and a Grammar Delta is required]**
+[ADR 0028](adr/0028-feeding-reorders-require-a-grammar-delta.md). The staleness half was already solved, and I
+had framed this as though it were not: `move` records identity-relative anchors — the adjacent items — refreshes
+only when exactly one gap satisfies them, and a pre-flight effect delta stops rather than applies
+(`change-set-contract.md:342-360`, `:702-719`). A reorder cannot be silently applied into a world that moved.
+
+What that does not cover is **comprehension when nothing has drifted**: baseline unchanged, anchors satisfied,
+pre-flight clean, move applies — and the grammar accepts different words. The reviewer saw *"rule 7 now after
+rule 3"*, which is true, complete, and silent about consequence.
+
+So for the 2 `feeding` fields a **Grammar Delta is mandatory** before approval: an Assessment before and after,
+against one baseline, naming which analyses changed. No new machinery — Assessment and Grammar Delta are
+existing vocabulary, [ADR 0016](adr/0016-scratch-cache-copy-not-undo.md) supplies the evaluation path, and
+[ADR 0027](adr/0027-what-counts-as-the-same-word-analysis.md) settled which comparison is valid. The 3
+`index-as-identity` rows get a cheap pre-apply traversal check instead, because they fail loudly rather than
+silently.
+
+*Original framing:*
+
 **C12. Does a reviewer actually see that a phonological reorder changed the grammar's meaning?**
 *(`MOT-8`, re-scoped)* Effects carry identity-keyed moves rather than positional rewrites, which is
 necessary but may not be sufficient. This is the surviving half of the old ordered-grammar question,

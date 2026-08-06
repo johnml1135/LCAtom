@@ -8,7 +8,7 @@ of what looked like a decision was a fact nobody had gone and read.*
 | | Count | Meaning |
 | --- | --- | --- |
 | ✅ **Closed** | 20 | Answered from source. Do not grill; read the answer. |
-| ✅ **Decided** | 21 | `H30`, `G28`, `G27`, `G29`, `F26`/`F22`, `J43`, `J44`, `B5`, `B7a`, `B18`, `B19`, `B20`, `Group`, `F23a`, `B9a`, `B9b`, `J42a`, `I35a`, `I35b` — ADRs 0017–0027. |
+| ✅ **Decided** | 22 | `H30`, `G28`, `G27`, `G29`, `F26`/`F22`, `J43`, `J44`, `B5`, `B7a`, `B18`, `B19`, `B20`, `Group`, `F23a`, `B9a`, `B9b`, `J42a`, `I35a`, `I35b` — ADRs 0017–0027. |
 
 **The contract is now fully mechanical.** No hand-authored value feeds a hashed identifier: verbs, comparison
 behaviour (five cited exceptions), construct and group are all derived and build-checked. The manifest's
@@ -188,6 +188,7 @@ gates only the FieldWorks integration.
 | | `D15` | Must review state work offline? This is the one place a replicated store would earn its cost. |
 | | `D16` | What does "optional per project" mean operationally? |
 | ~~`D18`~~ | | **Retired** — it asked who keeps two change vocabularies aligned, which only mattered while operations were routed through a second model. They are not. |
+| ~~`C12`~~ | | **Decided** — a `feeding` reorder requires a Grammar Delta before approval ([ADR 0028](adr/0028-feeding-reorders-require-a-grammar-delta.md)); the anchor machinery already covered staleness, but not comprehension when nothing drifted. |
 | **Engine** | `C11` | Raise the liblcm `Rollback`/`Undo` hook fix upstream now, or accept ADR 0016's workaround permanently? |
 | | `C12` | Does a reviewer actually see that a phonological reorder changed meaning? |
 | **Contract** | `J41` **[1]** | Confirm Layer 0 = diff's output vocabulary, Layer 1 = agent's input vocabulary. **Now the guard on ADR 0021's deliberate Layer 1 churn**, not a stylistic preference — the mechanical test is whether a change alters hashed bytes. |
