@@ -317,9 +317,16 @@ per-operation judgement call about whether collation matters.
    **The fan-out holds (140 ms vs 4,445 ms, 31.8×), but build the pristine scratch from the XML path by
    default** — a memory-only copy loses every writing system's collation and valid-character settings, and
    the file path is cheaper once more than ~9% of the live cache is fluffed.
-3. Retirement of `CacheReusability`, `RollbackCacheInvalidator`, and
-   `DerivedCachePoisoningOperationKinds` once the scratch path is the only dry-run path.
-4. A guard so a dry run that depends on collation, valid characters, or sort order cannot silently run on a
+3. **Deletion, not retirement** ([ADR 0016](adr/0016-scratch-cache-copy-not-undo.md) as amended 2026-08-06):
+   `DerivedCachePoisoningOperationKinds`, `RollbackCacheInvalidator`, `CacheReusability`, and the manifest's
+   `AssessPoisonsCache` column all go. Because the only surviving rollback is the failure path of an atomic
+   apply, **nothing needs to know which fields poison** — the rule is unconditional: if an apply throws, the
+   live cache is suspect, discard it. That removes the hand-maintained field list whose upkeep would otherwise
+   recur for every new field in the catalog. This answers `C10a`.
+4. The scratch is **single-use — discarded, never reverted.** Rolling back inside a reused scratch would
+   recreate the same staleness inside the scratch and the next Dry Run would read back wrong: a smaller copy of
+   the original bug.
+5. A guard so a dry run that depends on collation, valid characters, or sort order cannot silently run on a
    memory-only scratch. Inert for `setGloss`; live from the first collation-sensitive operation.
 
 **Acceptance:** a dry run never mutates the live cache; a poisoned scratch costs a rebuild, not a

@@ -1,7 +1,8 @@
 # ADR 0016 — Dry runs use a scratch cache copy, never Undo or Rollback
 
-Status: accepted (2026-08-01). **Amended 2026-08-05** — see *Verified, and two hazards this ADR did not
-anticipate* below.
+Status: accepted (2026-08-01). **Amended twice** — 2026-08-05 (*Verified, and two hazards this ADR did not
+anticipate*) and 2026-08-06 (*there is exactly one rollback, and the apparatus is deleted rather than kept*),
+which is the one to read first: it shrinks this ADR's consequences to a deletion.
 
 Supersedes the mutate-then-rollback mechanism that
 [ADR 0006](0006-engine-reality-apply-readback-preflight.md) decision 3 works around. ADR 0006's other
@@ -91,6 +92,66 @@ disagree.** So, added to this ADR's decisions:
 The remaining spike is therefore narrower and sharper than "how long does it take": it must also
 round-trip a project with ≥2 custom fields on one class and a customized writing system, and compare. A
 correctness failure there would invalidate this ADR's *design*, not merely its parameters.
+
+## Amended 2026-08-06 — there is exactly one rollback, and the apparatus is deleted rather than kept
+
+The owner's challenge: *"Why would we ever apply and then roll back? Once we create the XML from the live data,
+we just duplicate it for every proposal we want to check. We always go from a fresh state, and if there is a
+DAG, we just apply them on a fresh copy. I see no instance in which we would revert, ever."*
+
+Almost exactly right. Walking every workflow:
+
+| Workflow | Mutates | Reverts | Poisons |
+| --- | --- | --- | --- |
+| Dry Run — copy, mutate, read back, **discard** | yes | **no** | no |
+| DAG closure — apply prerequisites then the dependent to one fresh copy, discard | yes | **no** | no |
+| Reads, reports, diff | no | no | no |
+| Apply, succeeds — commits, forward hooks run normally | yes | **no** | no |
+| **Apply, fails** | yes | **yes** | yes |
+
+**The single survivor is forced by atomicity, not chosen.** `AGENTS.md` rule 4 — *one complete Change Set is
+one atomic LibLCM unit of work* — means a mid-proposal failure on the live cache must unwind, because the
+alternative is a half-applied Proposal, which is worse than a stale derived cache. `ProposalApplier.cs:144-155`
+already does exactly this.
+
+### The consequence: no classification is needed anywhere
+
+Because the only rollback is *"an apply just failed"*, **nothing needs to know which fields poison.** The rule
+is unconditional:
+
+> If an apply throws, the live cache is suspect. Discard it and reload.
+
+So the entire apparatus is deleted rather than maintained:
+
+- **`DerivedCachePoisoningOperationKinds`** — the hand-maintained field list has no remaining purpose. This is
+  the real saving: `MOT-4` slice A had to read `OverridesLing_Lex.cs` to establish *why* two fields poison, and
+  that cost would have recurred for every new field in the catalog, forever.
+- **`AssessPoisonsCache`** (manifest column) — retired. This answers `C10a`.
+- **`RollbackCacheInvalidator`** — deleted.
+- **`CacheReusability`** — reduces to nothing; the thrown exception already tells the host to reload.
+
+**"Poisoning" leaves the vocabulary.** Not a hazard managed well — a concept removed, which is the stronger
+outcome and the one the owner asked for.
+
+### Why the survivor is acceptable rather than a gap
+
+A failed apply is exactly the moment to stop, inspect, and restart from a known state. The cost coincides with
+a pause you would want regardless. Contrast the routine case, where a Dry Run leaving the working cache unusable
+was intolerable precisely because Dry Runs are constant.
+
+**Rejected: pre-flighting the apply on a copy** to make live failures nearly impossible. It cannot reach zero —
+the live cache may hold uncommitted edits the copy lacks — it doubles the cost of every apply, and the bound
+Dry-Run anchor already performs the state check. A rare failure is better handled by a reload than by permanent
+overhead.
+
+### What `MOT-11` becomes
+
+Smaller than written: point the Dry Run at `ScratchCacheFactory.CreateFromFileCopy` (which already exists, built
+during the `A1` spike), make the scratch single-use, and delete the four items above. Net negative code.
+
+**One subtlety that keeps it simple:** the scratch must be *discarded*, never reverted. Rolling back inside a
+reused scratch would recreate the same staleness inside the scratch, and the next Dry Run would read back
+wrong — a smaller copy of the original bug. "Discard" is what makes this a deletion rather than a relocation.
 
 ## Measured, 2026-08-05 — and one decision changes
 

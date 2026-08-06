@@ -8,7 +8,7 @@ of what looked like a decision was a fact nobody had gone and read.*
 | | Count | Meaning |
 | --- | --- | --- |
 | ✅ **Closed** | 20 | Answered from source. Do not grill; read the answer. |
-| ✅ **Decided** | 23 | `H30`, `G28`, `G27`, `G29`, `F26`/`F22`, `J43`, `J44`, `B5`, `B7a`, `B18`, `B19`, `B20`, `Group`, `F23a`, `B9a`, `B9b`, `J42a`, `I35a`, `I35b` — ADRs 0017–0027. |
+| ✅ **Decided** | 24 | `H30`, `G28`, `G27`, `G29`, `F26`/`F22`, `J43`, `J44`, `B5`, `B7a`, `B18`, `B19`, `B20`, `Group`, `F23a`, `B9a`, `B9b`, `J42a`, `I35a`, `I35b` — ADRs 0017–0027. |
 
 **The contract is now fully mechanical.** No hand-authored value feeds a hashed identifier: verbs, comparison
 behaviour (five cited exceptions), construct and group are all derived and build-checked. The manifest's
@@ -200,7 +200,7 @@ gates only the FieldWorks integration.
 | | ~~`J42a`~~ | **Decided** — refuse on drift, *and* record what the query matched, because drift protects the operations and not the query's intent. |
 | **Manifest** | ~~`B7a`~~ | **Dissolved** — [ADR 0022](adr/0022-structure-is-derived-policy-is-five-rows.md) derives the columns instead of auditing them. |
 | | ~~`B8a`~~ | **Answered** — [ADR 0025](adr/0025-parser-first-build-order.md) retires the L0 query rather than patching it; build order is parser-first in one slice. |
-| | `C10a` | **4 rows, and no consumer left.** `MOT-11` retires `DerivedCachePoisoningOperationKinds`, and a throwaway file-loaded scratch means poisoning cannot matter. Keep, retire, or repoint? Trivial, and it lands with `MOT-11`. |
+| | ~~`C10a`~~ | **Retired 2026-08-06** — [ADR 0016](adr/0016-scratch-cache-copy-not-undo.md) as amended: the only rollback left is a failed atomic apply, so nothing needs to know which fields poison. The column, the field list, `RollbackCacheInvalidator` and `CacheReusability` are all deleted rather than repointed. |
 
 ---
 
