@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Spike for grill item ADR 0023, decision 5 — not a product deliverable.
+
+    It exists to scrape FieldWorks' own linguist-facing vocabulary (class names, per-view slice labels,
+    tool/area config labels) into manifest/fieldworks-labels.tsv, a seed for hand-written kind descriptions.
+    See docs/research/2026-08-05-fieldworks-user-facing-names.md for the source investigation this builds on.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>SIL.Motif.Spikes.LabelHarvest</RootNamespace>
+  </PropertyGroup>
+
+</Project>
