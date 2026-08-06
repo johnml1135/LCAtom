@@ -531,6 +531,14 @@ reconciliation is out. In scope, and now the centre of the item:
 - **No server, no review database, no replicated store.** Review happens where the Proposal is, and the
   CLI and FieldWorks are two surfaces over one record. This is what makes it work offline: it never needed
   a network.
+- **The expensive checks are grammar-only, and derived rather than judged.** A new stem or text cannot
+  invalidate a compiled parser, so a lexical or text Proposal can never require a parser run: it gets
+  validate, apply, receipt and nothing else. Parser compilation, timing, coverage deltas and Grammar Deltas
+  attach to grammar operations, decided from the manifest rather than per Proposal — which is
+  [ADR 0028](adr/0028-feeding-reorders-require-a-grammar-delta.md)'s proportionality principle made
+  structural.
+- **There is no human-facing review surface for dictionary or text Proposals** — not deferred, not wanted.
+  A human adding a word uses FLEx, which already synchronises that work.
 
 **Acceptance**
 

@@ -96,9 +96,10 @@ is invisible until something reads the file.
 
 **Scoped 2026-08-06 by [ADR 0031](adr/0031-collaboration-follows-the-data-not-the-surface.md): none of this
 is for grammar work.** A grammar is ~220 hand-authored objects written almost entirely by one person, and
-its rules are interdependent, so there is nothing to distribute and no merge that would be safe. What is
-worth sharing is the part that is naturally parallel — dictionary entries, spelling reports, text analyses
-— where two contributions rarely collide. Review itself needs no server at all.
+its rules are interdependent, so there is nothing to distribute and no merge that would be safe. And the naturally
+parallel part — dictionary entries, spelling reports, text analyses — **already has a sync story that is not
+ours**: the dictionary through FLEx Lite's CRDT layer, texts through Chorus. Motif should not offer a second
+one. Review itself needs no server at all.
 
 Proposals and Receipts are immutable, content-addressed documents with frozen identities. Sharing them
 needs **an object store and an HTTP API — not a merge engine**. Lexbox already has organisations, projects,
@@ -110,6 +111,6 @@ Sharing must be **optional per project**: a linguist working alone is never obli
 unless offline review becomes a requirement.~~ **Answered 2026-08-06 (ADR 0031), and the answer is that
 none of it is server-side.** Review lives with the project, so it works offline because it never needed a
 network; we build neither a second comment system nor a dependency on another team's roadmap (`D14`,
-`D15`, `D16` all resolved). What remains for lexbox is the narrow, genuinely useful part: somewhere to
-*publish* an immutable Proposal or Receipt so that a forum, an email, or another project can reference it
-by digest.
+`D15`, `D16` all resolved). What remains for lexbox is one narrow, genuinely useful thing: somewhere to
+*publish* an immutable grammar Proposal or Receipt so that a forum, an email, or another project can
+reference it by digest. Not dictionary or text proposals — those sync elsewhere already.

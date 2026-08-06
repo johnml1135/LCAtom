@@ -8,8 +8,10 @@ whole surface) and [ADR 0029](0029-agents-address-layer-1-only.md) (the agent is
 rules depend on each other so heavily that two people editing it separately would produce a grammar
 neither of them meant. So Motif will not build machinery for several people to edit a grammar at once.
 What it builds instead is a durable record of *why* each change was made, because the person who wrote
-the grammar will eventually leave and the reasoning must not leave with them. Dictionary and text work
-is the opposite — large, and safely parallel — and keeps the collaborative surface.
+the grammar will eventually leave and the reasoning must not leave with them. Dictionary and text work is
+the opposite — large, safely parallel, and **already handled by other tools**, so Motif touches it only to
+give a machine a validated path. A human adding a word should use FLEx. See the amendment below, which
+narrows this further than the original analysis did.
 
 ## Context
 
@@ -88,6 +90,11 @@ Grouping by *who acts* hides the pattern. Grouping by *what is being changed* ex
 | **Lexicon** — entries, senses, examples | ~4,500 objects | Rarely — two new words are independent | Safely parallel; many contributors |
 | **Text analysis** — wordforms, analyses, glosses | ~34,000 objects | Rarely — each occurrence stands alone | Safely parallel, and the bulk of the volume |
 
+> **The last column is superseded for the bottom two rows** by the amendment below. "Safely parallel" is
+> still true of the data, but it is not an argument for Motif providing the surface: the dictionary already
+> syncs through FLEx Lite and texts through Chorus. Motif's involvement there is for machine authorship
+> only.
+
 Read this way, **modality 3 is not a different kind of thing.** It is the same system pointed at the part
 of the data that happens to be safely parallel. That is a much cheaper answer than treating it as a
 separate product to build: word proposals and spelling reports are ordinary Proposals over lexical
@@ -161,6 +168,64 @@ server to be meaningful.**
 `MOT-10` already requires that AI actors are labelled and cannot satisfy a human or native-speaker role
 by implication. That stands, and modality 1 makes it load-bearing rather than theoretical: an unattended
 run can approve and apply, so the record must always show which of those it was.
+
+## Amended 2026-08-06, later the same day — Motif exists for the grammar; words and texts ride along for the machines
+
+The owner narrowed this further, and the narrowing is sharper than the section above:
+
+> *Texts and new stems don't change the compilation of the FST in PanGloss. They can be done in parallel,
+> but that synchronization is handled by Chorus and FLEx Lite. We don't need proposals and compilation
+> reports and timing analysis. Motif can handle texts and words because it needs to, especially with
+> AI-centric workflows, but humans updating texts and words don't need Motif.*
+
+**What this corrects above.** The table said dictionary and text work "keeps the collaborative surface."
+Wrong emphasis: there is no Motif surface for them to keep, because they already have one somewhere else.
+Motif is not the tool for humans doing dictionary or text work, and offering to be would be duplicating a
+shipped product.
+
+### The parser-compilation point turns a principle into a structural rule
+
+A new stem or a new text cannot invalidate a compiled parser, so **a lexical or text proposal can never
+require a parser run.** [ADR 0028](0028-feeding-reorders-require-a-grammar-delta.md) already said review
+should stay proportionate rather than "demanding a parser run for a spelling fix" — that was a principle
+someone had to apply with judgement. It is now derivable: the expensive checks attach to grammar changes,
+and which changes those are is already a column in the manifest. Nobody decides it per proposal.
+
+### One thing a new stem *does* change, and it is cheap
+
+A new stem is not behaviourally neutral even though it is compilation-neutral: it can make a wordform that
+previously had one analysis ambiguous, so an existing analysis can become contested without any rule
+changing. That is a lookup, not a compile, so it is cheap to detect — **report it, never gate on it.** With
+8 human evaluations across the two sampled projects it is close to theoretical today.
+
+### One correction to the premise, which does not change the conclusion
+
+"Handled by Chorus and FLEx Lite" is solid for the dictionary and thinner for texts. This repository already
+records that FLEx Lite's model — `MiniLcm`, `LcmCrdt`, `FwLiteProjectSync` — **"has no text/segment/wordform/
+analysis surface"** ([component ownership research](../component-repository-ownership-research.md), against a
+pinned commit). So the dictionary has a modern sync story and **texts and analyses have Chorus alone**, which
+this repo separately flags as [not merging the applied log](../harmony-adoption-report.md#standing-risk--chorus-does-not-merge-the-applied-log)
+and which the owner has already assessed as weak (`E19`, deliberately deferred).
+
+That is not Motif's problem to solve and it does not change any decision here. It is recorded so that
+"parallel text work is handled" is not read later as "handled well."
+
+### Added decisions
+
+**8. Motif exists for the grammar.** Dictionary and text support exists so that a *machine* has a validated,
+recorded path to change them — not because collaboration over them needs one. When a human wants to add a
+word, the answer is "use FLEx", and that is a feature.
+
+**9. Expensive checks are grammar-only, and derived rather than judged.** Parser compilation, timing,
+coverage deltas and Grammar Deltas attach to grammar operations. A lexical or text proposal gets the cheap
+path: validate, apply, receipt.
+
+**10. No human-facing review surface for dictionary or text proposals.** Not deferred — not wanted. Building
+one would put Motif in competition with FLEx Lite over work FLEx Lite already synchronises, and would be a
+second comment system in the same organisation, which decision 5 declined for the grammar case too.
+
+**What this leaves M4 as:** the rationale record for grammar changes, and a machine-usable path for
+everything else.
 
 ## Consequences
 
