@@ -3,6 +3,12 @@
 **Status:** accepted, 2026-08-05. Answers `G28`, the second gate of
 [grill-plan-a.md](../grill-plan-a.md), and resolves `G27` and `G29` as consequences.
 
+> **Amended 2026-08-05 by [ADR 0024](0024-group-is-derived-domain-is-editorial.md).** This ADR says both
+> axes are already segments of ADR 0009's kind name. **The domain half of that is no longer true.** The
+> kind's first segment is now *derived* from the declaring class, and the linguistic domain — the axis this
+> ADR actually means — is a separate, never-hashed `domain` column. The finding below is unaffected: the 21
+> populated cells and zero straddle were computed from the column that is now called `domain`.
+
 ## Context
 
 The [2026-08-03 proposal](../proposal-2026-08-03-bidirectional-and-test-coverage.md) §2 offered six

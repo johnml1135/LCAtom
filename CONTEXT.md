@@ -95,6 +95,20 @@ LibLCM's own structural declarations and checked against the manifest, not taken
 ([ADR 0022](docs/adr/0022-structure-is-derived-policy-is-five-rows.md)).
 _Avoid_: inventory, schema, spec
 
+**Group**:
+The first segment of an operation kind — **`lexical`**`/lexSense/setGloss`. **Derived** from the declaring
+class's LibLCM prefix family ([ADR 0024](docs/adr/0024-group-is-derived-domain-is-editorial.md)). Its job is
+namespacing and versioning granularity: what changes together when LibLCM changes. **Not** a statement about
+who should review something.
+_Avoid_: domain, namespace, area
+
+**Domain**:
+Which linguistic area a field belongs to for **review purposes** — who should look at a change. Hand-authored,
+never hashed, and deliberately allowed to disagree with the kind's `group`: `MoForm.Form` is named
+`grammar/moForm/setForm` and reviewed as `lexical`, because a lexeme form is lexicon even though its class is
+morphology.
+_Avoid_: group, category, class
+
 **Class segment**:
 The middle segment of an operation kind — `lexical/`**`lexSense`**`/setGloss`. **Derived**, as the LibLCM
 class where the field is declared with its first letter lowercased

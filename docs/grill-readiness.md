@@ -8,7 +8,11 @@ of what looked like a decision was a fact nobody had gone and read.*
 | | Count | Meaning |
 | --- | --- | --- |
 | ✅ **Closed** | 20 | Answered from source. Do not grill; read the answer. |
-| ✅ **Decided** | 13 | `H30`, `G28`, `G27`, `G29`, `F26`/`F22`, `J43`, `J44`, `B5`, `B7a`, `B18`, `B19`, `B20` — ADRs 0017–0023. |
+| ✅ **Decided** | 14 | `H30`, `G28`, `G27`, `G29`, `F26`/`F22`, `J43`, `J44`, `B5`, `B7a`, `B18`, `B19`, `B20`, plus the `Group` question — ADRs 0017–0024. |
+
+**The contract is now fully mechanical.** No hand-authored value feeds a hashed identifier: verbs, comparison
+behaviour (five cited exceptions), construct and group are all derived and build-checked. The manifest's
+remaining authorities are `Scope`, `Construct` (what ships together) and `domain` (who reviews) — none hashed.
 | 📐 **Spike** | 1 active, 2 deferred | `A1` is in this repo and on the path. `E19` and `F26a` are other-repo and scope 2. |
 | ❓ **Yours** | ~29 | Genuinely a decision. This is the grill. |
 

@@ -191,6 +191,10 @@ duplicates in either**. A matching count alone would not have shown that.
 - The kind name is `lowerFirst(DeclaringClass)` and is checked the same way
   ([ADR 0023](adr/0023-derived-kind-names-required-descriptions.md)); a `create` or `delete` naming an
   `abstract` class fails the build, since no such object can exist.
+- The kind's **group** is derived from the declaring class's prefix family
+  ([ADR 0024](adr/0024-group-is-derived-domain-is-editorial.md)), and a class whose prefix is not in the
+  closed table fails the build. The hand-authored **`domain`** column is *not* checked against it — the two
+  answer different questions and disagree on 53 rows by design.
 - A kind with no description fails the build.
 - The five exceptions are asserted explicitly, so silently losing one is a test failure rather than a
   quieter grammar.
