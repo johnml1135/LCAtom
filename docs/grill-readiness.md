@@ -8,7 +8,7 @@ of what looked like a decision was a fact nobody had gone and read.*
 | | Count | Meaning |
 | --- | --- | --- |
 | ✅ **Closed** | 20 | Answered from source. Do not grill; read the answer. |
-| ✅ **Decided** | 14 | `H30`, `G28`, `G27`, `G29`, `F26`/`F22`, `J43`, `J44`, `B5`, `B7a`, `B18`, `B19`, `B20`, plus the `Group` question — ADRs 0017–0024. |
+| ✅ **Decided** | 19 | `H30`, `G28`, `G27`, `G29`, `F26`/`F22`, `J43`, `J44`, `B5`, `B7a`, `B18`, `B19`, `B20`, `Group`, `F23a`, `B9a`, `B9b`, `J42a` — ADRs 0017–0026. |
 
 **The contract is now fully mechanical.** No hand-authored value feeds a hashed identifier: verbs, comparison
 behaviour (five cited exceptions), construct and group are all derived and build-checked. The manifest's
@@ -192,9 +192,9 @@ gates only the FieldWorks integration.
 | | `B9b` **[1]** | When does the churn window end and the intent surface declare itself stable? Recommended trigger: the first human approval recorded against a stored Proposal. Until then, say *unstable by declaration* rather than implying stability by omission. |
 | ~~`J43`~~ | | **Decided** — [ADR 0021](adr/0021-cli-is-the-full-surface-layer-1-churns.md) §6: warn and enumerate, force to proceed, refuse when consequences are unenumerable. |
 | ~~`J44`~~ | | **Answered** — the individual operation, subject to `requires`; atomic groups stay indivisible. |
-| **Ratify** *(cheap — pick one of two written positions)* | `F23a` | Adopt the four canonical-diff freezing rules as drafted, or contest one? |
-| | `B9a` | Adopt the k8s-shaped versioning policy, calibrating the dual floor when a real cadence exists? |
-| | `J42a` | Force a resolved batch re-applied against a moved baseline through the existing pre-flight drift path, Terraform-style? *(Recommend yes.)* |
+| ~~Ratify~~ | ~~`F23a`~~ | **Decided** — rule 1 replaced: order is *declared*, not positional ([ADR 0026](adr/0026-order-is-declared-not-positional.md)). It contradicted `AGENTS.md` rule 5, which is now amended. |
+| | ~~`B9a`~~ | **Decided** — adopt the digest-meaning rule; defer the support window, since nothing lags. |
+| | ~~`J42a`~~ | **Decided** — refuse on drift, *and* record what the query matched, because drift protects the operations and not the query's intent. |
 | **Manifest** *(all now bounded — the counts exist)* | `B7a` | Review all **61** non-default rows before the generator ships, and spot-audit the other 412? One sitting, not a re-audit. |
 | | `B8a` | ADR 0012's L0 query yields **13 phantom fields** and understates the grammar dependency. Re-scope L0 to the confirmed 24, or fix `HcReachable` first? |
 | | `C10a` | **4 rows.** Keep, retire, or repoint `AssessPoisonsCache`? |

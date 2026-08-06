@@ -237,9 +237,35 @@ anything that silently changes what a **previously hashed intent digest** means;
 motif has three runtimes on independent cadences plus agent callers who never read release notes;
 **refusal** = a structured `{group, requiredVersion, carriedVersion}` payload, not prose.
 
-**Decision (`B9a`) [D]:** adopt this, and calibrate N and M when a real release cadence exists?
+**`B9a` [D→DECIDED 2026-08-05 — adopt the digest-meaning rule, defer the support window]**
+Adopted now: additive changes (a new `kind`, a new *optional* field) are minor; **anything that silently
+changes what a previously hashed digest means is major**; a version refusal carries structured
+`{group, requiredVersion, carriedVersion}` rather than prose.
 
-**New: `B9b` [D] — when does the intent surface declare itself stable, and what ends the churn window?**
+**Deferred: the N-releases-or-M-months support window.** A support window protects consumers who *lag*, and
+none exists — the agent re-reads the vocabulary on every API call, the CLI ships in the same build as the
+contract, and the Python/Rust runners do not exist. With the churn window ending by declaration (`B9b`) there
+is no cadence to calibrate against either. Revisit when something can actually lag. The digest-meaning rule is
+kept because it protects **stored artifacts**, which do exist.
+
+**`B9b` [D→DECIDED 2026-08-05 — it ends when the owner declares a version]**
+Not at the first human approval, and not when FieldWorks arrives: stability is an explicit act, taken when the
+surface has visibly settled.
+
+**The objection, recorded because it was raised and overruled rather than missed:** nothing forces that
+declaration, so the window can quietly never close while stored artifacts accumulate against an unstable
+vocabulary. Two cheap mitigations make the bill visible instead of silent, and both are adopted as part of the
+decision:
+
+1. **The contract declares itself unstable explicitly** in its own version metadata, rather than implying
+   stability by omission. Every surveyed precedent does this.
+2. **Report the accumulating cost**: how many stored Proposals and Receipts exist that were authored against
+   the unstable vocabulary. That number is what a version cut would have to honour or invalidate, so it is the
+   number that should be on screen when the decision is made.
+
+*Original framing:*
+
+**`B9b` [D] — when does the intent surface declare itself stable, and what ends the churn window?**
 [ADR 0021](adr/0021-cli-is-the-full-surface-layer-1-churns.md) decisions 3 and 5 accept deliberate churn
 in Layer 1 while FieldWorks is not yet depending on it, and accept its one real cost: **a Proposal
 authored during the window may not replay later.** That is tolerable while the author is an agent that can
@@ -414,7 +440,17 @@ RFC 6902 and 7386 both specify *application* only, never *generation*. But the q
   dispatch for discovered-footprint operations (the contract already forecloses this — *never
   delete-plus-create*); and normalize **before** diffing, not after.
 
-**Residual decision (`F23a`) [D]:** adopt those four rules as written, or contest one?
+**`F23a` [D→DECIDED 2026-08-05 — rule 1 replaced; the other three stand]**
+[ADR 0026](adr/0026-order-is-declared-not-positional.md). Rule 1 as drafted contradicted `AGENTS.md` rule 5
+and `change-set-contract.md:46`, both of which made array order authoritative. Resolution: **order is
+declared, not positional** — causal sequencing lives in `requires`/`dependsOn`, operations sharing a target
+keep authored order, and everything else is canonically ordered so a diff is reproducible. The digest is
+computed over that canonical view; the stored array keeps the authored order.
+
+Owner framing that broke the deadlock: *"the order matters in some places but not others — adding something
+and then linking it, or deleting a link and an item."* Both are dependencies, and dependencies were always
+meant to be declared. Also accepted: duplicate detection is **not** the goal, so intent digests need not
+collide across independently authored Proposals — that is the effect digest's job.
 
 **F24. [D — sharpened by [ADR 0019](adr/0019-observed-intent-and-proposal-edit-mode.md)]**
 There are now **three** provenance classes, not two: **observed** (drafted in proposal-edit mode, intent
@@ -664,10 +700,17 @@ Kubernetes server-side-apply pattern, which **motif already rejected one layer d
 `managedFields`) for the same reason: a reviewer cannot approve effects for an unresolved query.
 **No new machinery — this is an instance of a decision already taken.**
 
-**Residual (`J42a`) [D]:** Terraform hard-errors when a saved plan's state lineage has moved. Motif has
-the identical mechanism already — the pre-flight footprint-digest-plus-engine-version check. **Should
-re-reviewing or applying a resolved batch against a moved baseline be forced through that same drift
-path**, rather than silently re-resolving? (Recommend yes.)
+**`J42a` [D→DECIDED 2026-08-05 — refuse on drift, and record what the query matched]**
+Yes to the Terraform-style refusal: a resolved batch re-applied against a moved baseline goes through the
+existing pre-flight footprint-digest-plus-engine-version check, never a silent re-resolve.
+
+**And one addition, because refusal alone is insufficient.** The drift check protects the *operations* — it
+asks whether the things being touched still look as expected. It says nothing about whether the *query* still
+means the same thing. A batch from "every sense lacking a gloss" that resolved to 40 operations stays
+perfectly valid when a 41st match appears: drift passes, and the author's intent is silently unsatisfied. So a
+stored batch also records **what the query matched when it resolved** (the count and the matched ids), and
+re-running it at review time makes "1 new match since authoring" visible instead of invisible. Two staleness
+signals, answering two different questions.
 
 **J43. [D→DECIDED 2026-08-05 — warn, enumerate, force; refuse only when consequences are unenumerable]**
 [ADR 0021](adr/0021-cli-is-the-full-surface-layer-1-churns.md) decision 6. The owner's requirement was
