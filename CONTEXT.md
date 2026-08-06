@@ -24,7 +24,10 @@ _Avoid_: PR, change set, change group, patch, branch
 
 **Construct**:
 One of the ~30 grammar things a Proposal can be about — a stratum, a natural class, an affix template,
-a phonological rule. The unit in which grammar support is staged and delivered.
+a phonological rule. **The unit in which grammar support is staged and delivered**, and hand-authored
+because the grouping is linguistic judgement. It used to double as the middle segment of an operation's
+name; it no longer does ([ADR 0023](docs/adr/0023-derived-kind-names-required-descriptions.md)) — that
+segment is derived from the declaring class. Construct is now purely about *what work ships together*.
 _Avoid_: entity, class, feature
 
 ## Evaluating a Proposal
@@ -92,11 +95,19 @@ LibLCM's own structural declarations and checked against the manifest, not taken
 ([ADR 0022](docs/adr/0022-structure-is-derived-policy-is-five-rows.md)).
 _Avoid_: inventory, schema, spec
 
-**Construct**:
-The middle segment of an operation kind — `lexical/`**`sense`**`/setGloss`. Hand-authored and genuinely
-not derivable: only about a quarter of construct names match their LibLCM class, and some
-(`featureStructure`, `ruleContext`) group many classes under one linguistic idea.
-_Avoid_: name map, mapping table, alias list
+**Class segment**:
+The middle segment of an operation kind — `lexical/`**`lexSense`**`/setGloss`. **Derived**, as the LibLCM
+class where the field is declared with its first letter lowercased
+([ADR 0023](docs/adr/0023-derived-kind-names-required-descriptions.md)). Deliberately ugly and never
+curated: what a human needs in order to understand an operation lives in its **description**, which nothing
+hashes. **Not the same thing as a Construct** — that word means a staging unit and nothing else now.
+_Avoid_: construct, name map, mapping table, alias list
+
+**Description**:
+The required, never-hashed sentence explaining what an operation does, seeded from the labels FieldWorks
+already shows linguists. Free to improve at any time, because no digest depends on it. It exists for the
+human reviewing a Proposal, not for the agent authoring one.
+_Avoid_: comment, doc, label
 
 **Ordered grammar**:
 The grammar whose meaning depends on sequence — phonological rule order encoding feeding and

@@ -115,7 +115,7 @@ the first author, not the last. M5 is the first thing a linguist would recognise
 | --- | --- | --- | --- |
 | `MOT-2` — the `(Class, Field)` join, failing the build on any unmatched key | M1 | Small | Not started |
 | `MOT-3` — generator skeleton: read `MasterLCModel.xml`, emit nothing yet | M1 | Medium | Not started |
-| `MOT-4` — emit the operation catalog for one family | M2 | Medium | Not started — family decided (`B5`): the lexical entry |
+| `MOT-4` — emit the operation catalog for one family | M2 | Medium | Not started — family decided (`B5`): the lexical entry. Includes renaming the one shipped kind to `lexical/lexSense/setGloss` and regenerating its conformance vectors (ADR 0023) |
 | `MOT-11` — scratch-cache DryRun, replacing mutate-then-rollback | M2 | Medium | Not started — **ADR 0016**, gated on the `A1` spike |
 | `MOT-16` — long-lived CLI session over a warm cache | M2 | Small–medium | Not started |
 | `MOT-19` — the CLI as the full product surface, text and JSON | M2/M4 | Large, and grows with every other item | Not started — **ADR 0021** |
@@ -188,6 +188,10 @@ duplicates in either**. A matching count alone would not have shown that.
   beats minimal churn** — that is the intent, not a side effect.
 - An injected row whose `Verbs` or `ComparisonClass` disagrees with the derivation, and which is not one of
   the five cited exceptions, fails the build naming the row.
+- The kind name is `lowerFirst(DeclaringClass)` and is checked the same way
+  ([ADR 0023](adr/0023-derived-kind-names-required-descriptions.md)); a `create` or `delete` naming an
+  `abstract` class fails the build, since no such object can exist.
+- A kind with no description fails the build.
 - The five exceptions are asserted explicitly, so silently losing one is a test failure rather than a
   quieter grammar.
 - `MasterLCModel.xml` is obtained without a liblcm source checkout. `SIL.LCModel.csproj:125` packs
@@ -207,6 +211,12 @@ file** — 33 NVelocity templates in `LcmGenerate/*.vm.cs`, `<Compile Remove>`'d
 `Inputs="MasterLCModel.xml"`. Output: ~154,000 generated lines against ~149,000 hand-written lines in
 the same project.
 
+**Also here: harvest FieldWorks' own label vocabulary** to seed descriptions
+([ADR 0023](adr/0023-derived-kind-names-required-descriptions.md) decision 4) — `strings-en.xml`, the
+`.fwlayout` slice labels, and the tool config keyed by `(ownerClass, ownerField)`. Coverage is roughly a
+third to under half of in-scope rows and labels are per-view rather than canonical, so where a field has
+several labels the harvest **records them all for a human to choose from** rather than picking silently.
+
 **Acceptance:** the generator loads all 898 joined rows, reports its own coverage, and runs in CI
 without a liblcm source tree.
 
@@ -225,7 +235,10 @@ Dry Run runs on a throwaway scratch and Apply never rolls back.
 Emit, per in-scope field of that family:
 
 - the enumerated `kind` string, `{group}/{construct}/{verb}{Noun}`, one per field — never a runtime
-  field-name parameter;
+  field-name parameter, with `{construct}` **derived** as `lowerFirst(DeclaringClass)`
+  ([ADR 0023](adr/0023-derived-kind-names-required-descriptions.md));
+- a **required description** for that kind, seeded from FieldWorks' harvested labels where one exists and
+  hand-written otherwise. Never hashed, so it can improve forever;
 - the closed payload schema for that kind;
 - the LibLCM lowering;
 - the read-back snapshotter that produces the effect for that field;
