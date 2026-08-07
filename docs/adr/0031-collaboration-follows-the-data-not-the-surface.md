@@ -39,8 +39,8 @@ Object counts from two real projects, by class, straight from the `.fwdata`:
 | Text and analysis | 34,308 | 2,522 |
 | Lexicon | 4,530 | 274 |
 | Hand-authored grammar | **~220** | **~620** |
-| Phonological rules (`PhRegularRule`, `PhMetathesisRule`) | **0** | **0** |
-| Compound rules (`MoCompoundRule`) | **0** | **0** |
+| Phonological rules (`PhRegularRule`, `PhMetathesisRule`) | **0** | ~~**0**~~ **8** |
+| Compound rules (`MoCompoundRule`) | ~~**0**~~ **4** | ~~**0**~~ **1** |
 | Human evaluations of an analysis (`CmAgentEvaluation`) | 8 | 8 |
 
 **Why "hand-authored grammar" is smaller than a naive count.** Grouping by class name suggests ~4,900
@@ -54,6 +54,21 @@ the affix inventory as grammar (145 affix allomorphs, 115 inflectional affix MSA
 of the project** and two orders of magnitude smaller than the text and analysis data. Neither sample
 project contains a single phonological or compound rule. A grammar of this size fits in one head, and the
 integration cost of a second editor would exceed the cost of writing the whole thing once.
+
+**Two cells above were wrong, corrected 2026-08-06 (see `E8`, `E9`).** Amharic has **8** `PhRegularRule`
+objects, not zero, and both projects have compound rules: Sena 3 has 4 `MoExoCompound`, Amharic 1
+`MoEndoCompound`. Two separate counting mistakes, both mine: the script printed only the twelve largest
+classes per group, so I read a missing line as a zero; and `MoCompoundRule` is the **abstract parent**, so
+querying it returns zero however many compound rules exist — the instances are always `MoEndoCompound` or
+`MoExoCompound`. The same hierarchy trap I had just caught for `MoStemMsa`, missed one paragraph later.
+
+**The conclusion is unaffected and the arithmetic barely moves.** Sena 3 gains 4 objects (~220 → ~224) and
+Amharic gains 18 (~620 → ~638); the grammar is still ~0.15% of the project and still fits in one head. What
+does not survive is the rhetorical flourish — *"neither sample project contains a single phonological or
+compound rule"* is simply false, and it was doing real work below, where I used zero compound rules as
+evidence that a compounding concern had no surface area. It has some. See
+[ADR 0032](0032-stem-assessment-is-pangloss-supplied-lexicon.md), where that concern turned out to be
+misplaced for an unrelated reason.
 
 **One finding worth flagging separately:** only 8 human evaluations of a word analysis exist in a project
 with 6,973 wordforms and 760 analyses. Approval of analyses is a feature FieldWorks has and projects

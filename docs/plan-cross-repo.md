@@ -70,10 +70,11 @@ establish whether pattern compilation is eager at load or lazy during parse (`pg
 rebuild, not the stem loop. And time a full-corpus reanalysis (6,973 wordforms in Sena 3). Together they set
 how many rule variants a grammar author can try in an afternoon, which is that loop's real constraint.
 
-**One conformance question worth answering before trusting overlay coverage.** PanGloss's FST plan notes that
-candidates needing base-trie interaction — compounds of a user stem with a base stem — are the hard case for
-a delta overlay. In a language where compounding is productive, overlay coverage may under-report against a
-full rebuild. Measurable, and unmeasured.
+~~**One conformance question worth answering before trusting overlay coverage**, about compounds of a
+supplied stem with a base stem.~~ **Withdrawn** — see
+[ADR 0032](adr/0032-stem-assessment-is-pangloss-supplied-lexicon.md), "The compounding worry, withdrawn". The
+caveat came from an unbuilt on-device research track rather than the API we call, and the built design states
+that the overlay recognises compound forms because morphology is unapplied before trie lookup.
 
 Two asks, and the second is larger than it sounds.
 

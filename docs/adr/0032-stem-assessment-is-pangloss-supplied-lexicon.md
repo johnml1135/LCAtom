@@ -125,12 +125,54 @@ PanGloss's surface, and a second implementation in Motif would be a second thing
   measures.
 - **`MOT-15`'s interface list grows** by the supplied-lexicon and classification operations, and its "measure
   `hc_grammar_load` first" note narrows to the grammar-editing loop only.
-- **A known limitation to watch:** PanGloss's FST plan notes that candidates requiring base-trie interaction
-  — compounds of a user stem with a base stem — are the hard case for a delta-FST overlay. A language where
-  compounding is productive may see the overlay under-report coverage relative to a full rebuild. Worth a
-  conformance check before trusting overlay coverage in a compounding language.
+- ~~**A known limitation to watch:** compounds of a user stem with a base stem are the hard case for a
+  delta-FST overlay, so a compounding language may see under-reported coverage.~~ **Withdrawn the same day —
+  this was wrong twice over.** See "The compounding worry, withdrawn" below.
 - **Stability is unproven.** The supplied-lexicon design states the feature it replaced had no production
   users, so this API is young. Pin a version and expect churn — which ADR 0021 already licenses on Motif's
   side.
 - **What would reopen this:** overlay coverage disagreeing materially with full-rebuild coverage on a real
   grammar. That is a measurable claim and nobody has measured it.
+
+## The compounding worry, withdrawn
+
+An earlier version of this ADR recorded a "known limitation to watch": that compounds of a supplied stem with
+a base stem might make overlay coverage under-report. **That was wrong in two independent ways, and the
+grounding is worth keeping because the failure mode is instructive.**
+
+**Wrong component.** The passage I drew it from is item 7 of `docs/fst-plan/HYBRID_FST_RUST_PLAN.md` — a
+**research track** for adding stems on *deployed devices* (a handset keyboard, an office extension) via a
+delta FST. That is not the mechanism this ADR relies on. The built thing is
+`pg_lexicon::SuppliedLexiconRuntime`, specified in
+`docs/superpowers/specs/2026-07-22-runtime-supplied-lexicon-design.md`. I attached a caveat from an unbuilt
+future mechanism to the API we are actually going to call.
+
+**Wrong reading, even of that passage.** It does not describe a limitation. It lists four competing mechanisms
+to spike, and names compounding as **the test case that would distinguish them** — mechanism (c), hook arcs,
+is *"only worth trying if (a)'s composite-level union misses candidates that require base-trie interaction
+(compounds of user stem + base stem are the test case; **(a) should handle them via the engine-side lexicon
+during verify**, but measure)."* The plan's own expectation is that its preferred mechanism handles compounds.
+I converted "the experiment that would tell these apart" into "the thing that is broken."
+
+**And the built design addresses it directly.** *"The overlay path recognizes inflected and compound forms
+because morphology is unapplied before trie lookup"* — analysis runs the morphology backwards to a stem and
+*then* consults the trie, so a compound reduces to stem lookups the overlay can serve. Compounding through
+the overlay trie is also a required test in that design's test list. There is no gap here to watch.
+
+### What is worth keeping: the linguistic argument for stems-only
+
+The scope guard — *"users add stems, never rules or categories"* — has a real justification, and it is the
+reason decision 2 above is a **good** classifier rather than merely a mechanical one:
+
+> *This is linguistically safe by Zipf's law of irregularity: rare words are more regular than common ones,
+> so novel stems overwhelmingly fit existing paradigms — the irregulars are already in the shipped lexicon.*
+
+Frequent words are the ones that carry irregular morphology, and a mature project has already entered them by
+hand. What arrives later in bulk is the long tail, which is overwhelmingly regular. So a batch of 200 new
+stems should almost all fit an existing signature, and **a refusal is rare — which is exactly what makes it
+informative.** A signal that fires constantly tells you nothing; this one fires when something genuinely
+needs a linguist.
+
+It also predicts the failure mode to watch for, which is the opposite of the one I invented: if PanGloss
+starts refusing a *large fraction* of a batch, the likely cause is not compounding but that the batch is not
+the long tail at all — wrong language, wrong orthography, or word forms rather than stems.
