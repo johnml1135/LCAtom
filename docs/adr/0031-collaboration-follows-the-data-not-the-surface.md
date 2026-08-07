@@ -287,6 +287,78 @@ and still does not need Motif (decisions 8 and 10 stand). What Motif adds is the
 evidence bound to a Proposal** — "these 200 stems moved coverage from 71% to 78%, and 14 produced no
 analysis" — recorded rather than glanced at on screen.
 
+### Read against the PanGloss source, 2026-08-06 — the two conditions resolve unevenly
+
+I recorded the two conditions above as requirements on another repository. They were checkable here, so I
+checked them.
+
+**Condition 1 is satisfied by construction, and that is the one that mattered.** The worry was that a stem
+added at runtime might skip rule application and make a report optimistically wrong. It cannot, because
+there is no runtime-addition path to diverge from: `Grammar` owns the lexicon outright
+(`entries: Vec<LexEntryDef>`, `pg-grammar/src/model.rs`), and nothing in `pg-grammar`, `pg-lexicon` or the
+FFI adds an entry to a loaded grammar — no `add_entry`, no `insert_entry`, no `extend_lexicon`. New stems
+arrive by rebuilding the grammar and loading it again, so a "new" stem *is* a compiled-in stem. **The risk
+of a silently optimistic coverage report does not exist in this architecture.**
+
+**Condition 2 changes shape.** "Without recompiling" is true of the expensive step and false of the literal
+mechanism. The FFI exposes exactly seven entry points — `hc_grammar_load`, `hc_grammar_free`,
+`hc_parse_word`, `hc_parse_batch`, `hc_parse_word_opts`, `hc_parse_batch_opts`, `hc_buf_free` — so adding
+stems means a **full reload**, not an increment. But `hc_grammar_load` calls `pg_grammar::load(xml)`, which
+is an XML-to-structs parse and **not** an FST build. So each iteration costs one grammar reload rather than
+a compilation, which is the property the workflow actually needs.
+
+**What is still unknown is a number, not a design.** Nobody has measured `hc_grammar_load` on a real
+grammar, or established whether pattern compilation happens eagerly at load or lazily during parse
+(`pg-parse` depends on `pg-fst`). **Measure before proposing an incremental-add API:** a reload costing
+40 ms needs no new interface, and one costing four seconds needs one badly.
+
+**And the assessment layer already exists.** [ADR 0028](0028-feeding-reorders-require-a-grammar-delta.md)
+asserted that a Grammar Delta "needs no new machinery" because it is existing vocabulary. Confirmed, with an
+implementation: `pg-assess` ships `assess`, `compare`, `golden-diff` and `investigate`, exporting
+`GrammarDelta`, `CaseDelta`, `DeltaCategory`, `AnnotationChange` and a versioned `DELTA_SCHEMA`. Its founding
+principle is the one Motif reached independently — *"an analysis identity is a value, not a reference"*,
+carrying stable source keys rather than compiler-assigned ordinals, precisely so a grammar edit yields
+ordinary added/removed evidence instead of a comparison failure. **Motif consumes this; it does not build a
+second one.**
+
+### Amended again — the check class is derived per revision, and never declared
+
+> *We should also assume that a new set of texts or a new set of words may also carry with it a grammar
+> change, that becomes visible because of the new texts and words, as it is being refined. We need to assess
+> each item live, as a proposal can change categories during its lifetime.*
+
+This corrects the wording above. "Derivable from the operation rather than judged per Proposal" reads as
+computed once. It is not: **a Proposal's check class is a function of its current revision, recomputed on
+every revision.** A Proposal that begins as 200 stems and grows a rule change becomes a grammar Proposal and
+inherits the expensive checks, and the cheap results it already had go stale — which `MOT-10`'s existing
+stale-binding rules already cover, so this needs no new machinery.
+
+**The stronger form: class is never declared, only derived.** If an author had to label a Proposal "lexical"
+at creation, the system would fight the very workflow being described, where adding words is what *reveals*
+the grammar problem. A declared class would need correcting by hand, and that correction is exactly the step
+people forget.
+
+### The workflow this is all for, stated plainly
+
+> *A non-grammar-authoring linguist may analyse a large text, then sync it by Chorus, where the
+> grammar-authoring linguist will then create a Proposal and see the coverage increase and change as he tries
+> out different grammar rules to better align with the text analysis.*
+
+Three things follow, and the third is a gap.
+
+**It confirms sequential, not concurrent.** Two people, one hand-off through Chorus, no merge of grammar
+edits — which is what decision 1 assumed, now with a named division of labour instead of an assumption.
+
+**The text analysis is the target; the grammar is fitted to it.** Coverage is the objective function, and the
+grammar author iterates: try a rule, reanalyse, read the number. Per-iteration cost therefore sets how many
+variants a person can try in an afternoon, which is why the measurement above is worth taking before
+anything else in this area is built.
+
+**And it exposes a class of drift Motif does not guard.** A grammar Proposal's justification is a coverage
+number computed against texts the Proposal never touches. Sync in new texts and that number is stale while
+the footprint digest is untouched and reports everything as fine. Motif's drift machinery protects the
+objects a Proposal *changes*; nothing yet protects the evidence it *rests on*. Recorded as `B24`.
+
 ## Consequences
 
 - **`MOT-10` shrinks and changes shape.** Its centre is the rationale record, the revision loop, and

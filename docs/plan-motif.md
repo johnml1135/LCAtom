@@ -535,9 +535,16 @@ reconciliation is out. In scope, and now the centre of the item:
   and expensive. A **parser run with no recompile** is cheap and applies to stems and texts as well — and
   for a Proposal adding stems it is the whole point: did they get the right category and allomorphs, and do
   previously-unparsed occurrences now parse correctly. A new text earns fresh coverage numbers the same
-  way. Everything else needs neither. This is derivable from the operation rather than judged per Proposal,
-  which makes [ADR 0028](adr/0028-feeding-reorders-require-a-grammar-delta.md)'s proportionality principle
-  structural. See [ADR 0031](adr/0031-collaboration-follows-the-data-not-the-surface.md).
+  way. Everything else needs neither. This makes
+  [ADR 0028](adr/0028-feeding-reorders-require-a-grammar-delta.md)'s proportionality principle structural.
+- **The class is derived from the current revision, and never declared.** A Proposal that starts as 200 stems
+  and grows a rule change becomes a grammar Proposal, inherits the expensive checks, and staleness
+  invalidates the cheap results it already had. Adding words is often what *reveals* the grammar problem, so
+  a class declared at authoring time would fight the workflow and would have to be corrected by hand.
+- **The Grammar Delta is PanGloss's, not ours.** `pg-assess` already exports `GrammarDelta`, `CaseDelta`,
+  `DeltaCategory` and a versioned `DELTA_SCHEMA`, built on the same value-not-reference analysis identity
+  Motif arrived at. Consume it; do not build a second one.
+  See [ADR 0031](adr/0031-collaboration-follows-the-data-not-the-surface.md).
 - **There is no human-facing review surface for dictionary or text Proposals** — not deferred, not wanted.
   A human adding a word uses FLEx, which already synchronises that work.
 

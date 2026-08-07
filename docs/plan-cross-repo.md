@@ -38,22 +38,32 @@ acceptance.
 
 ## PanGloss
 
-**Two interface requirements, from [ADR 0031](adr/0031-collaboration-follows-the-data-not-the-surface.md).**
-The cheap analysis loop — add stems, reanalyse the corpus, report coverage and mis-categorisation, all
-without recompiling — is what makes an AI-centric workflow affordable, and it needs two things from
-PanGloss that the interface recorded in `MOT-15` does not yet show:
+**Read against the source 2026-08-06**, replacing two requirements an earlier draft of this section
+speculated about ([ADR 0031](adr/0031-collaboration-follows-the-data-not-the-surface.md)). The cheap analysis
+loop — add stems, reanalyse the corpus, report coverage and mis-categorisation, without recompiling — is what
+makes an AI-centric workflow affordable. Where it actually stands:
 
-1. **Analyse a batch against the currently loaded lexicon without recompiling.** As recorded, `hc_grammar_load`
-   takes the whole grammar as one XML payload, so there is no "add these stems to the loaded grammar" entry
-   point in what we have written down. Either one exists and we have not recorded it, or one is needed.
-2. **A stem added at runtime must go through the same rule machinery as a compiled-in stem.** If the runtime
-   path short-circuits any rule application, a coverage report is optimistically wrong — a stem looks
-   correctly categorised when it is not — which is worse than having no report. **Confirm this before
-   building anything on the loop.**
+- **No incremental stem addition exists, and it may not need to.** The FFI has exactly seven entry points
+  (`hc_grammar_load`, `hc_grammar_free`, `hc_parse_word`, `hc_parse_batch`, `hc_parse_word_opts`,
+  `hc_parse_batch_opts`, `hc_buf_free`), `Grammar` owns the lexicon (`entries: Vec<LexEntryDef>`), and
+  nothing in `pg-grammar`/`pg-lexicon` adds an entry to a loaded grammar. New stems mean a **full reload**.
+  But `hc_grammar_load` runs `pg_grammar::load(xml)`, an XML-to-structs parse rather than an FST build, so a
+  reload is not a recompile.
+- **The trust condition is closed, not open.** Because there is no runtime-addition path, a new stem *is* a
+  compiled-in stem and traverses identical machinery. The optimistically-wrong coverage report an earlier
+  draft worried about cannot occur here.
+- **The assessment layer is already built.** `pg-assess` ships `assess`, `compare`, `golden-diff`,
+  `investigate`, and exports `GrammarDelta`, `CaseDelta`, `DeltaCategory` and a versioned `DELTA_SCHEMA` — on
+  the same value-not-reference analysis identity Motif uses, chosen for the same reason. This confirms
+  [ADR 0028](adr/0028-feeding-reorders-require-a-grammar-delta.md)'s claim that a Grammar Delta needs no new
+  machinery. **Motif consumes it.**
 
-Also unmeasured: what a full-corpus reanalysis costs (6,973 wordforms in Sena 3). Expected to be cheap
-since it scales with corpus size rather than grammar size, but a four-minute report would change how often
-it can run.
+**The one thing to do next here is a measurement, not an interface.** Time `hc_grammar_load` on a real
+grammar, and establish whether pattern compilation is eager at load or lazy during parse (`pg-parse` depends
+on `pg-fst`). Also unmeasured: a full-corpus reanalysis (6,973 wordforms in Sena 3), expected cheap because
+it scales with corpus size rather than grammar size. Together these set how many rule variants a grammar
+author can try in an afternoon, which is the loop's real constraint — and they decide whether an
+incremental-add API is worth asking for at all. **Do not propose one before measuring.**
 
 Two asks, and the second is larger than it sounds.
 
