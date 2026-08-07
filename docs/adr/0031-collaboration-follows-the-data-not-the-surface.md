@@ -300,7 +300,11 @@ FFI adds an entry to a loaded grammar — no `add_entry`, no `insert_entry`, no 
 arrive by rebuilding the grammar and loading it again, so a "new" stem *is* a compiled-in stem. **The risk
 of a silently optimistic coverage report does not exist in this architecture.**
 
-**Condition 2 changes shape.** "Without recompiling" is true of the expensive step and false of the literal
+**Condition 2 changes shape.** *(Superseded 2026-08-06 by
+[ADR 0032](0032-stem-assessment-is-pangloss-supplied-lexicon.md): an incremental path does exist — a
+supplied-lexicon overlay beside the grammar, which I missed by grepping for the verbs I expected on the type
+I expected. The paragraph below is accurate about `Grammar` and wrong about the system.)*
+"Without recompiling" is true of the expensive step and false of the literal
 mechanism. The FFI exposes exactly seven entry points — `hc_grammar_load`, `hc_grammar_free`,
 `hc_parse_word`, `hc_parse_batch`, `hc_parse_word_opts`, `hc_parse_batch_opts`, `hc_buf_free` — so adding
 stems means a **full reload**, not an increment. But `hc_grammar_load` calls `pg_grammar::load(xml)`, which
@@ -357,7 +361,9 @@ anything else in this area is built.
 **And it exposes a class of drift Motif does not guard.** A grammar Proposal's justification is a coverage
 number computed against texts the Proposal never touches. Sync in new texts and that number is stale while
 the footprint digest is untouched and reports everything as fine. Motif's drift machinery protects the
-objects a Proposal *changes*; nothing yet protects the evidence it *rests on*. Recorded as `B24`.
+objects a Proposal *changes*; nothing yet protects the evidence it *rests on*. Recorded as `B24`, and
+**decided the same day** by [ADR 0032](0032-stem-assessment-is-pangloss-supplied-lexicon.md) §4: a coverage
+number always cites its corpus, that corpus's hash, the lexicon overlay revision, and the grammar identity.
 
 ## Consequences
 

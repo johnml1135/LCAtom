@@ -43,27 +43,37 @@ speculated about ([ADR 0031](adr/0031-collaboration-follows-the-data-not-the-sur
 loop — add stems, reanalyse the corpus, report coverage and mis-categorisation, without recompiling — is what
 makes an AI-centric workflow affordable. Where it actually stands:
 
-- **No incremental stem addition exists, and it may not need to.** The FFI has exactly seven entry points
-  (`hc_grammar_load`, `hc_grammar_free`, `hc_parse_word`, `hc_parse_batch`, `hc_parse_word_opts`,
-  `hc_parse_batch_opts`, `hc_buf_free`), `Grammar` owns the lexicon (`entries: Vec<LexEntryDef>`), and
-  nothing in `pg-grammar`/`pg-lexicon` adds an entry to a loaded grammar. New stems mean a **full reload**.
-  But `hc_grammar_load` runs `pg_grammar::load(xml)`, an XML-to-structs parse rather than an FST build, so a
-  reload is not a recompile.
-- **The trust condition is closed, not open.** Because there is no runtime-addition path, a new stem *is* a
-  compiled-in stem and traverses identical machinery. The optimistically-wrong coverage report an earlier
-  draft worried about cannot occur here.
+- **Incremental stem addition exists and Motif should use it** — see
+  [ADR 0032](adr/0032-stem-assessment-is-pangloss-supplied-lexicon.md). The supplied-lexicon overlay
+  (`pg_lexicon::SuppliedLexiconRuntime`, on the FFI grammar handle) accepts a batch of stems against
+  signatures already present in the official lexicon, with **no grammar reload and no foma recompilation** —
+  the implementation plan deletes both deliberately. About thirteen JSON operations
+  (`hc_lexicon_add_json`, `_update_json`, `_export_json`, `_import_json`, `_search_json`, `_catalog_json`, …)
+  plus a classification matrix and an adaptive guide (`hc_classification_matrix_json`,
+  `hc_classification_guide_*_json`) that works out which signature a word belongs to.
+  *An earlier draft of this section said no such path existed; that was a grep for the verbs I expected on
+  the type I expected, and the mechanism sits beside the grammar rather than in it.*
+- **The trust condition is closed** — for a different reason than the earlier draft gave. The overlay does
+  not mutate a loaded grammar (an explicit non-goal), and entries are only accepted against existing
+  signatures, so there is no divergent fast path to make a coverage report optimistically wrong.
+- **The refusal is the classifier.** A stem PanGloss will not accept as a supplied entry is a stem that needs
+  grammar work — so lexical-versus-grammar classification is discovered by trying, not by inspection.
 - **The assessment layer is already built.** `pg-assess` ships `assess`, `compare`, `golden-diff`,
   `investigate`, and exports `GrammarDelta`, `CaseDelta`, `DeltaCategory` and a versioned `DELTA_SCHEMA` — on
   the same value-not-reference analysis identity Motif uses, chosen for the same reason. This confirms
   [ADR 0028](adr/0028-feeding-reorders-require-a-grammar-delta.md)'s claim that a Grammar Delta needs no new
   machinery. **Motif consumes it.**
 
-**The one thing to do next here is a measurement, not an interface.** Time `hc_grammar_load` on a real
-grammar, and establish whether pattern compilation is eager at load or lazy during parse (`pg-parse` depends
-on `pg-fst`). Also unmeasured: a full-corpus reanalysis (6,973 wordforms in Sena 3), expected cheap because
-it scales with corpus size rather than grammar size. Together these set how many rule variants a grammar
-author can try in an afternoon, which is the loop's real constraint — and they decide whether an
-incremental-add API is worth asking for at all. **Do not propose one before measuring.**
+**Two measurements remain, both narrower than before.** Time `hc_grammar_load` on a real grammar and
+establish whether pattern compilation is eager at load or lazy during parse (`pg-parse` depends on
+`pg-fst`) — this now bounds only the **grammar**-editing loop, where a rule change genuinely does need a
+rebuild, not the stem loop. And time a full-corpus reanalysis (6,973 wordforms in Sena 3). Together they set
+how many rule variants a grammar author can try in an afternoon, which is that loop's real constraint.
+
+**One conformance question worth answering before trusting overlay coverage.** PanGloss's FST plan notes that
+candidates needing base-trie interaction — compounds of a user stem with a base stem — are the hard case for
+a delta overlay. In a language where compounding is productive, overlay coverage may under-report against a
+full rebuild. Measurable, and unmeasured.
 
 Two asks, and the second is larger than it sounds.
 
