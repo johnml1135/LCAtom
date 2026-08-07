@@ -133,7 +133,7 @@ the first author, not the last. M5 is the first thing a linguist would recognise
 | `MOT-9` — Baseline Token, Dry Run binding, apply authorization, Receipt | M4 | Medium, correctness-critical | **Partly built** |
 | `MOT-10` — Proposal revisions, Check Runs, Reviews, Decisions | M4 | Medium, the PR-like product core | Not started — **rescoped 2026-08-06** by [ADR 0031](adr/0031-collaboration-follows-the-data-not-the-surface.md): the centre is the durable rationale record and the revision loop, not concurrent review |
 | `MOT-17` — Layer-1 semantic and batch authoring for agents | M4 | Medium, and **expected to churn** | Not started |
-| `MOT-18` — selective Proposal editing: duplicate, remove, split | M4 | Small, and required by the agent loop | Not started — `J43` decided |
+| `MOT-18` — selective Proposal editing: duplicate, remove, split | M4 | Small, and required by the agent loop | **Built 2026-08-06** — `duplicate`, `remove-operations`, `split`; declared-dependency closure names every orphaned operation at any depth; every editing path clears the bound anchor. 309 tests pass. One semantic question left open for the owner: `B25` |
 | `MOT-6` — semantic + lowering layer for grammar construct 1 | M5 | Medium — **the first product family** | Not started |
 | `MOT-15` — PanGloss snapshot producer and FFI | M5 | Medium | Not started |
 | `MOT-7` — the remaining 29 constructs | M6 | Large | Not started |
