@@ -181,3 +181,45 @@ That need survives regardless of who calls the API.
   description fields are maintained or rot. Mandatory descriptions are well-precedented and their long-run
   record is undocumented. The mitigation is that the build enforces presence, and the seed makes the first
   version cheap; nothing enforces that a description stays *good*.
+
+## Amended 2026-08-06 — the check tests form, not truth, and 8% of a batch was wrong
+
+The description check does what it was built to do: it fails when a description is absent, empty, or
+merely restates the label or field name. **It cannot tell whether the prose is true**, and the first
+large batch of descriptions proved that matters.
+
+A subagent wrote 78 new descriptions in one pass. All of them passed the check. **Seven were wrong, and
+four of those inverted the meaning of the field** — the worst kind of error here, because a reviewer
+approving a Proposal would be reading a confident sentence that says the opposite of what the operation
+does.
+
+The failure was systematic rather than random. Every one of the five exception-class fields
+(`ProdRestrict` and its `From`/`To` variants) was described as though an exception feature *blocks* an
+affix from attaching. It does the reverse: `MasterLCModel.xml`'s own comment on
+`MoDerivAffMsa.FromProdRestrict` says the classes are ones *"which the stem to which this affix attaches
+**must bear** ... the stem must have at least all of these restriction classes ... in order for this affix
+to attach"*, and the comment on `MoStemMsa.ProdRestrict` gives the textbook case: English `-ity` attaches
+only to `[+Latinate]` stems, so *felicity* and *vivacity* but not *\*widity*. The agent modelled an
+exception feature as a prohibition; it is a class label that choosy affixes *require*. Two more
+descriptions attached invented rule-interaction rationale ("a bleeding relationship between rules") to
+fields the model describes plainly as positive and negative rule-feature requirements — conjugation class
+or gender.
+
+**The fix is already sitting in the input.** Measured across the 92 described kinds: **60 of them (65%)
+have a substantive comment in `MasterLCModel.xml`, median 398 characters** — often with worked examples,
+as the `-ity`/`[+Latinate]` case shows. The generator already parses that file. Descriptions were being
+paraphrased from the *field name* while authoritative prose sat one element away.
+
+So the mechanism ADR 0023 established needs a third leg beside "required" and "not a restatement":
+
+1. **Seed from the model comment where one exists**, and record which comment it came from, so a reviewer
+   can check the paraphrase against its source instead of trusting it.
+2. **Where no comment exists (35%), the description is a claim someone is making** and should be marked
+   as such — the `Reviewed` column already exists for exactly this, and `draft` should mean "nobody has
+   checked this against a source yet."
+3. **Polarity is the thing to review first.** Every field expressing a condition can be stated backwards
+   while reading perfectly well, and the check will never catch it. Recorded as `D8`.
+
+This does not change decision 1 (descriptions are required) or decision 2 (label and description are
+different fields). It adds the observation that a required field with a passing mechanical check still
+carries an 8% error rate, and says where the remedy is.
