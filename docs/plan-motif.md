@@ -126,7 +126,7 @@ the first author, not the last. M5 is the first thing a linguist would recognise
 | --- | --- | --- | --- |
 | `MOT-2` — the `(Class, Field)` join, failing the build on any unmatched key | M1 | Small | ✅ **Built 2026-08-05** — `src/SIL.Motif.Generator`, 898=898, zero orphans; found two exceptions the spec denied |
 | `MOT-3` — generator skeleton: read `MasterLCModel.xml`, emit nothing yet | M1 | Medium | ✅ **Built 2026-08-05** — model 7000072 from the NuGet cache, no liblcm checkout; label harvest done |
-| `MOT-4` — emit the operation catalog for one family | M2 | Medium | **Slice A built 2026-08-06** — 10 `set\|clear` kinds emitted, `setGloss` regenerated, its tests pass unmodified. Round-trips against a real project; the full-project-reload-per-operation the poisoning guard used to force was removed with the guard on 2026-08-06 (`MOT-11`). Slice B (`create\|delete`, `addRef\|removeRef`) in progress |
+| `MOT-4` — emit the operation catalog for one family | M2 | Medium | **Slices A and B built 2026-08-06**, plus a third slice the same day that carries the same three shapes past the lexical-entry family into ADR 0025's parser-first slice — 93 kinds emitted in total (15 lexEntry/moForm + 78 grammar/lexical rows), every one round-tripping against a real project. Owning/atomic beyond the one hand-written `LexemeForm` field, and every owning/col and owning/seq row, still needs its own creation-validity logic and is not emitted |
 | `MOT-11` — scratch-cache DryRun, replacing mutate-then-rollback | M2 | Medium | **Built 2026-08-06.** Run takes a single-use `DryRunScratch` and never rolls back; the four poisoning items and the manifest column are deleted; the CLI saves, copies, and holds the project lock. Two real defects surfaced on the way: LibLCM's save is asynchronous, and `classify.ps1` has fallen behind the manifest (`D7`). Remaining: the DAG-closure mode and the collation guard |
 | `MOT-16` — long-lived CLI session over a warm cache | M2 | Small–medium | Not started |
 | `MOT-19` — the CLI as the full product surface, text and JSON | M2/M4 | Large, and grows with every other item | Not started — **ADR 0021** |
@@ -281,6 +281,41 @@ established by regenerating code that already passes, not by the design being el
 It licenses the mechanical majority and says nothing about ordered grammar — which is `MOT-8`, deliberately.
 Only 4 of the `lexSense` rows and none of the `lexEntry` rows are HermitCrab-reachable, so it also says
 nothing about whether a generated kind can change a parse; that is `MOT-6` and `MOT-15`.
+
+### Built 2026-08-06 — a third slice widens the same shapes past lexEntry/moForm
+
+An agent can now edit far more of the grammar than one entry's headword and lexeme form: parts of
+speech, inflection classes, inflectional affix templates and slots, natural classes, phonological
+rule contexts, feature structures, and more of the lexical-entry family besides — 78 more kinds, on
+top of the 15 the family above already had, for a total of 93.
+
+**Nothing new was built to get there — the same three templates slices A and B already proved
+(basic `set|clear` over `MultiUnicode`/`MultiString`/`Boolean`, `rel/atomic` `set|clear`, `rel/col`/
+`rel/seq` `addRef|removeRef`) were pointed at more rows.** Those templates were never
+`LexEntry`/`MoForm`-specific — they read `DeclaringClass`/`FieldName`/`Sig` off the manifest row and
+build LibLCM's own interface and accessor names from it — so the only change was which rows a new
+selector (`Slice3FieldSelector`) hands them. Every row it selects satisfies two tests, not one:
+`Scope=in` (the manifest says this field is in scope) and `HcReachable=yes` (ADR 0025's own authority
+for "the parser touches this"), which is what makes this slice count as *the parser-first slice*
+rather than an arbitrary 78 rows. Before generating anything, every `(interface, accessor, referenced
+interface)` triple these 78 rows would produce was checked by reflection against the real pinned
+`SIL.LCModel` assembly — not assumed — so the widening carried the same "verified, not assumed"
+discipline ADR 0023 used for the first family.
+
+**What is still missing, named rather than silently dropped.** Owning/atomic beyond `LexEntry.LexemeForm`
+needs the same per-field, hand-written entity-construction-validity logic that field itself needed (ADR
+0022: "the model file does not encode validity"); it does not fit an existing template, so none of the
+remaining owning/atomic rows are emitted. Owning/col and owning/seq (`create|delete|move|reparent`) are
+untouched shapes entirely — `MOT-8`'s territory, since several of the fields they would cover are the
+`feeding`/`index-as-identity` rows this family has always excluded. And 147 further rows share this
+slice's three shapes but sit outside `HcReachable=yes`; they are deferred by priority, not by a missing
+capability, and the same three selectors would pick them up unchanged if a later slice asks for them.
+
+Ninety-three sentences now live in `manifest/kind-descriptions.tsv`, all marked `draft` pending a
+linguist's review, and all of them pass `Checks/DescriptionCheck.cs`'s bar against restating a label or
+field name. Five of the new kinds — one per shape, including the `rel/seq` shape this family had never
+exercised before — round-trip author → DryRun → Apply → read-back against a real project in
+`tests/SIL.Motif.Tests/Runner/GeneratedSlice3OperationsTests.cs`.
 
 ## `MOT-11` — scratch-cache DryRun — M2
 
