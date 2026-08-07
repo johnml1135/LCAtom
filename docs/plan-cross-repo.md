@@ -80,11 +80,21 @@ Sena-profile grammar and **~29 s** on an Amharic-profile one, against 7.5 and 29
 the engine, not a smaller corpus**, and the compile is the loop's floor rather than its ceiling since every
 rule change invalidates the FST anyway.
 
-**The open question is agreement, not speed.** `foma` finished 36 of 40 Amharic words where HermitCrab
-finished 29 and abandoned 7 — consistent with simply finishing, but counts do not establish that the two
-engines produce the *same* analyses. `pangloss compare` over two `assess` reports is the tool for it, and
-**nothing should be designed around these numbers until that has been run**: a faster engine that disagrees
-is worse than a slow one that agrees.
+~~**The open question is agreement, not speed.**~~ **Answered the same day: they agree exactly.**
+`pangloss compare` over two `assess` runs on Sena's first 40 words reports `outcomeDigestsAgree: true` and 40
+of 40 cases unchanged, with the pipeline name the only difference recorded. The speed-up costs nothing in
+agreement on that sample — though agreement on a harder grammar, and specifically on the 7 Amharic words
+HermitCrab abandoned, is still unestablished.
+
+**The operational rule that fell out of it.** For 40 words HermitCrab beat the FST pipeline (2.3 s against
+12.3 s) because the compile had nothing to amortise. Compile divided by per-word saving gives the crossover:
+the FST engine wins above **~87 words on Sena** and above **~4 on Amharic**. So a corpus run uses the FST
+engine and a single-word check while authoring uses the default one — and on a hard grammar the FST engine is
+right for nearly everything.
+
+**One confirmation worth noting:** `compare` emits schema `pangloss.grammar-delta`, so the Grammar Delta
+[ADR 0028](adr/0028-feeding-reorders-require-a-grammar-delta.md) requires exists as a versioned artifact, not
+merely as shared vocabulary.
 
 ~~**One conformance question worth answering before trusting overlay coverage**, about compounds of a
 supplied stem with a base stem.~~ **Withdrawn** — see

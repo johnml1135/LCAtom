@@ -1,12 +1,16 @@
 # Measured 2026-08-06 — what a grammar reload costs, and what a corpus reanalysis costs
 
 **In plain terms:** reloading a grammar after an edit takes about a tenth of a second, so that is a
-non-issue and needs no new interface. Re-analysing a whole corpus is a different story: it took 8 seconds
-per thousand words on one language, 4 seconds on another, and **33 seconds on a third — a thousandfold
-spread**, driven by how hard the language's morphology is rather than by anything we control. On the hardest
-of the three, one word in six could not be analysed within five seconds at all. That last fact matters more
-than the speed: a coverage figure that counts "we gave up waiting" the same way it counts "the grammar
-cannot analyse this" is not measuring the grammar.
+non-issue and needs no new interface. Re-analysing a whole corpus looked alarming on the default engine —
+half an hour for seven thousand words on a hard language, with one word in six abandoned — but the **second
+engine settles it: 12 to 19 times faster, no words abandoned, and a full corpus in well under a minute** at
+the cost of a one-off compile of a few seconds per grammar version. Read the addendum at the end before
+acting on the middle of this note; the sections in between record the wrong conclusion and why.
+
+**And they agree.** `pangloss compare` over two `assess` runs reports `outcomeDigestsAgree: true`, 40 of 40
+cases unchanged — identical outcome digests, with the pipeline name as the only recorded difference. There is
+also a crossover: the FST compile means the default engine is faster for a handful of words and the FST engine
+wins from about 90 words on Sena and about 4 on Amharic.
 
 ## Why this was measured
 
@@ -143,11 +147,38 @@ rule is cheap to honour and the reasoning does not depend on how often it fires:
 "we stopped waiting" as "the grammar cannot analyse this", coverage stops being usable as a target. Keep it;
 stop treating it as urgent.
 
-### Still unverified, and it is the thing to check next
+### Verified the same day — the engines agree exactly
 
-**Whether the two engines agree on the analyses**, not merely on how many words they finish. `foma`
-completing 36 where HermitCrab completed 29 is consistent with it simply finishing, but agreement is not
-established by counts. PanGloss already ships the tool for this — `pangloss compare` over two `assess`
-reports, on `pg-assess`'s value-based analysis identity. **Nothing should be designed around the `foma`
-numbers until one such comparison has been run**, because a faster engine that disagrees is worse than a
-slow one that does not.
+The blocking question above is answered. Two `pangloss assess` runs over Sena's first 40 words, one per
+pipeline, then `pangloss compare`:
+
+```
+outcomeDigestsAgree : true
+summary             : { totalCases: 40, changedCases: 0, byCategory: { unchanged: 40 } }
+contextDifferences  : [ execution.pipeline: hermitcrab -> foma-confirm ]
+schema              : pangloss.grammar-delta / 1
+```
+
+Both runs produced the **same outcome digest** (`sha256:15fb8e40…`), and the only difference the comparison
+records is the name of the pipeline that produced it. So the speed-up costs nothing in agreement on this
+sample, and the `foma` numbers are safe to design around.
+
+Two things worth keeping from the exercise. The comparison's schema is `pangloss.grammar-delta` — this *is*
+the Grammar Delta [ADR 0028](../adr/0028-feeding-reorders-require-a-grammar-delta.md) requires, confirmed as
+an artifact rather than as vocabulary. And the coverage is 40 Sena words: agreement on a harder grammar, and
+specifically on the 7 Amharic words HermitCrab abandoned, is **not** established by this run.
+
+### The crossover, which is the operational rule
+
+The `assess` runs exposed something the per-word figures hide. For 40 words, HermitCrab finished in 2.3 s and
+the FST pipeline took 12.3 s — **the default engine is faster on small batches**, because the compile has
+nothing to amortise against. Dividing each compile by the per-word saving:
+
+| grammar | compile | saved per word | **FST wins above** |
+| --- | --- | --- | --- |
+| Sena | 12.1 s | 139 ms | **~87 words** |
+| Amharic | 4.9 s | 1,258 ms | **~4 words** |
+| Indonesian | 0.13 s | ~1 ms | ~130 words (both trivial) |
+
+So: **a corpus run uses the FST engine; a single-word check while authoring uses the default one.** On a hard
+grammar the crossover is so low that the FST engine is right for almost everything.
