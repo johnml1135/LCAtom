@@ -64,11 +64,18 @@ makes an AI-centric workflow affordable. Where it actually stands:
   [ADR 0028](adr/0028-feeding-reorders-require-a-grammar-delta.md)'s claim that a Grammar Delta needs no new
   machinery. **Motif consumes it.**
 
-**Two measurements remain, both narrower than before.** Time `hc_grammar_load` on a real grammar and
-establish whether pattern compilation is eager at load or lazy during parse (`pg-parse` depends on
-`pg-fst`) — this now bounds only the **grammar**-editing loop, where a rule change genuinely does need a
-rebuild, not the stem loop. And time a full-corpus reanalysis (6,973 wordforms in Sena 3). Together they set
-how many rule variants a grammar author can try in an afternoon, which is that loop's real constraint.
+~~**Two measurements remain.**~~ **Both taken, 2026-08-06** —
+[research note](research/2026-08-06-parser-timing-measured.md). Grammar load on a 1 MB grammar is
+**~0.1 s including process startup**, so no incremental-add API is warranted on load-cost grounds, for
+either loop. Corpus reanalysis is the opposite of what this section expected: **1 ms per word on Indonesian,
+151 ms on Sena, 1,327 ms on Amharic** — a thousandfold spread set by the language's morphology, not by
+anything we control. For Sena 3's 6,973 wordforms that is roughly **7.5 minutes** of wall time on 20 cores;
+an Amharic-profile grammar would be **~29 minutes with about a sixth of words abandoned at a 5-second cap.**
+
+So "cheap because it scales with corpus size rather than grammar size" was right about the shape and wrong
+about the constant. A grammar author can iterate against a full corpus on a Sena-profile language and cannot
+on an Amharic-profile one; **sampling is the answer there, not a faster interface.** The `foma` engine is
+still unmeasured and could change the hard end.
 
 ~~**One conformance question worth answering before trusting overlay coverage**, about compounds of a
 supplied stem with a base stem.~~ **Withdrawn** — see

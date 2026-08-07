@@ -114,6 +114,15 @@ Pleasingly, PanGloss reached the same conclusion for its own caching — its FST
 cache by user-lexicon hash. Two systems, same instinct: **a derived number is only meaningful beside a
 digest of what it was derived from.**
 
+**Extended 2026-08-06 after measuring** ([research note](../research/2026-08-06-parser-timing-measured.md)):
+a coverage figure must also cite **the per-word timeout it ran under and how many words hit it.** On the
+Amharic sample, 7 of 40 words exceeded a 5-second cap, and a report that counts those as failures is mixing
+"the grammar cannot analyse this" with "we stopped waiting" — a fact about the machine and the thread count.
+Conflating them corrupts coverage as an objective function in both directions: a rule change that merely
+made analysis faster would read as improved coverage, and a busy machine would read as a regression.
+**Timeouts are their own category, never failures, and a figure with a non-zero timeout count is a lower
+bound that must say so.**
+
 ### 5. Motif consumes the classification guide; it does not build one
 
 An AI reads the matrix and reasons over it. A human gets the adaptive question sequence. Either way this is
