@@ -47,9 +47,22 @@ try
                 !flags.TryGetValue("text", out var addText))
             {
                 return Usage(
-                    "Usage: motif add-set-gloss --draft <name> --target <canonicalId> --ws <wsTag> --text <text>");
+                    "Usage: motif add-set-gloss --draft <name> --target <canonicalId> --ws <wsTag> --text <text> " +
+                    "[--depends-on <opId>[,<opId>...]]");
             }
-            result = Commands.AddSetGloss(storeDir, addDraftName, addTarget, addWs, addText);
+            var addDependsOn = flags.TryGetValue("depends-on", out var addDependsOnRaw)
+                ? addDependsOnRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                : null;
+            result = Commands.AddSetGloss(storeDir, addDraftName, addTarget, addWs, addText, addDependsOn);
+            break;
+
+        case "add-delete-lexeme-form":
+            if (!flags.TryGetValue("draft", out var addDelDraftName) ||
+                !flags.TryGetValue("target", out var addDelTarget))
+            {
+                return Usage("Usage: motif add-delete-lexeme-form --draft <name> --target <canonicalId>");
+            }
+            result = Commands.AddDeleteLexemeForm(storeDir, addDelDraftName, addDelTarget);
             break;
 
         case "label":
@@ -74,6 +87,44 @@ try
             if (!flags.TryGetValue("draft", out var reopenDraftName) || positionals.Count != 1)
                 return Usage("Usage: motif reopen --draft <name> <proposalId>");
             result = Commands.Reopen(storeDir, reopenDraftName, positionals[0]);
+            break;
+
+        case "duplicate":
+            if (!flags.TryGetValue("draft", out var dupDraftName) || positionals.Count != 1)
+                return Usage("Usage: motif duplicate --draft <newName> <proposalId>");
+            result = Commands.Duplicate(storeDir, positionals[0], dupDraftName);
+            break;
+
+        case "remove-operations":
+            if (!flags.TryGetValue("draft", out var removeDraftName) || positionals.Count == 0)
+                return Usage("Usage: motif remove-operations --draft <name> <operationId> [<operationId>...] [--force]");
+            var removeForce = flags.TryGetValue("force", out var removeForceRaw) && IsTruthyFlag(removeForceRaw);
+            result = Commands.RemoveOperations(storeDir, removeDraftName, positionals, removeForce);
+            break;
+
+        case "split":
+            if (positionals.Count < 2)
+            {
+                return Usage(
+                    "Usage: motif split <proposalId> <draftName>=<opId>[,<opId>...] " +
+                    "[<draftName>=<opId>[,<opId>...] ...] [--force]");
+            }
+            var splitForce = flags.TryGetValue("force", out var splitForceRaw) && IsTruthyFlag(splitForceRaw);
+            var splitGroups = new List<Commands.SplitGroup>();
+            foreach (var spec in positionals.Skip(1))
+            {
+                var eq = spec.IndexOf('=');
+                if (eq <= 0 || eq == spec.Length - 1)
+                {
+                    return Usage(
+                        $"Invalid split group '{spec}'. Expected '<draftName>=<opId>[,<opId>...]'.");
+                }
+                var groupDraftName = spec[..eq];
+                var groupOpIds = spec[(eq + 1)..]
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                splitGroups.Add(new Commands.SplitGroup(groupDraftName, groupOpIds));
+            }
+            result = Commands.Split(storeDir, positionals[0], splitGroups, splitForce);
             break;
 
         case "list":
@@ -137,11 +188,18 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine("Commands:");
     writer.WriteLine("  open <fwdata>");
     writer.WriteLine("  new --draft <name> [--label <text>]");
-    writer.WriteLine("  add-set-gloss --draft <name> --target <canonicalId> --ws <wsTag> --text <text>");
+    writer.WriteLine(
+        "  add-set-gloss --draft <name> --target <canonicalId> --ws <wsTag> --text <text> " +
+        "[--depends-on <opId>[,<opId>...]]");
+    writer.WriteLine("  add-delete-lexeme-form --draft <name> --target <canonicalId>");
     writer.WriteLine("  label --draft <name> <text>");
     writer.WriteLine("  comment --draft <name> <text>");
     writer.WriteLine("  finalize --draft <name>");
     writer.WriteLine("  reopen --draft <name> <proposalId>");
+    writer.WriteLine("  duplicate --draft <newName> <proposalId>");
+    writer.WriteLine("  remove-operations --draft <name> <operationId> [<operationId>...] [--force]");
+    writer.WriteLine(
+        "  split <proposalId> <draftName>=<opId>[,<opId>...] [<draftName>=<opId>[,<opId>...] ...] [--force]");
     writer.WriteLine("  list");
     writer.WriteLine("  show <proposalId>");
     writer.WriteLine("  dry-run <proposalId> --project <fwdata>");
@@ -162,9 +220,13 @@ static (Dictionary<string, string> Flags, List<string> Positionals) ParseArgs(st
         if (token.StartsWith("--", StringComparison.Ordinal))
         {
             var name = token[2..];
-            if (i + 1 >= tokens.Length)
-                throw new ArgumentException($"Flag '--{name}' requires a value.");
-            flags[name] = tokens[++i];
+            // A flag with no following value, or one immediately followed by another flag, is a
+            // bare boolean switch (e.g. --force) rather than a value-taking flag — none of this
+            // CLI's value-taking flags ever need a value that itself starts with "--".
+            if (i + 1 >= tokens.Length || tokens[i + 1].StartsWith("--", StringComparison.Ordinal))
+                flags[name] = "true";
+            else
+                flags[name] = tokens[++i];
         }
         else
         {
@@ -174,3 +236,5 @@ static (Dictionary<string, string> Flags, List<string> Positionals) ParseArgs(st
 
     return (flags, positionals);
 }
+
+static bool IsTruthyFlag(string value) => !string.Equals(value, "false", StringComparison.OrdinalIgnoreCase);

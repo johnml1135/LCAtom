@@ -25,13 +25,30 @@ public sealed class DraftDocument
     public List<DraftOperation> Operations { get; set; } = new();
 }
 
-/// <summary>One authored operation inside a draft. Stage E supports exactly <c>lexical/lexSense/setGloss</c>.</summary>
+/// <summary>One authored operation inside a draft.</summary>
 public sealed class DraftOperation
 {
     public string OperationId { get; set; } = "";
     public string Kind { get; set; } = "";
     public string? Target { get; set; }
 
-    /// <summary>The <c>after</c> payload. For <c>setGloss</c> this is <c>{"ws": "...", "text": "..."}</c>.</summary>
+    /// <summary>
+    /// The canonical id of a newly proposed entity, for creating operations (e.g.
+    /// <c>createLexemeForm</c>). <c>null</c> for operations that do not mint a new entity.
+    /// Round-tripped through <c>reopen</c>/<c>finalize</c> so a later operation that <c>target</c>s
+    /// this id keeps resolving to "created earlier in this Proposal" — and so MOT-18's removal
+    /// analysis (<see cref="SIL.Motif.Cli.OperationDependencyGraph"/>) can find it.
+    /// </summary>
+    public string? EntityId { get; set; }
+
+    /// <summary>
+    /// Explicit intra-Proposal ordering dependencies: operation ids (within this same draft) this
+    /// operation requires to have already run. See <see cref="SIL.Motif.Contract.Model.OperationDependency"/>
+    /// and MOT-18's removal/split consequence enumeration.
+    /// </summary>
+    public List<string> DependsOn { get; set; } = new();
+
+    /// <summary>The <c>after</c> payload. For <c>setGloss</c> this is <c>{"ws": "...", "text": "..."}</c>; for
+    /// <c>deleteLexemeForm</c> this is the empty object.</summary>
     public Dictionary<string, string> After { get; set; } = new();
 }
