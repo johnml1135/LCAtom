@@ -72,10 +72,19 @@ either loop. Corpus reanalysis is the opposite of what this section expected: **
 anything we control. For Sena 3's 6,973 wordforms that is roughly **7.5 minutes** of wall time on 20 cores;
 an Amharic-profile grammar would be **~29 minutes with about a sixth of words abandoned at a 5-second cap.**
 
-So "cheap because it scales with corpus size rather than grammar size" was right about the shape and wrong
-about the constant. A grammar author can iterate against a full corpus on a Sena-profile language and cannot
-on an Amharic-profile one; **sampling is the answer there, not a faster interface.** The `foma` engine is
-still unmeasured and could change the hard end.
+~~So a grammar author can iterate against a full corpus on a Sena-profile language and cannot on an
+Amharic-profile one; sampling is the answer there.~~ **Corrected within the hour by measuring the other
+engine.** `--engine=foma` costs a one-off FST compile (0.13 s Indonesian, 4.9 s Amharic, 12.1 s Sena) and
+then analyses **12–19× faster with no timeouts at all**: a full 6,973-wordform corpus is **~16 s** on a
+Sena-profile grammar and **~29 s** on an Amharic-profile one, against 7.5 and 29 minutes. **The answer is
+the engine, not a smaller corpus**, and the compile is the loop's floor rather than its ceiling since every
+rule change invalidates the FST anyway.
+
+**The open question is agreement, not speed.** `foma` finished 36 of 40 Amharic words where HermitCrab
+finished 29 and abandoned 7 — consistent with simply finishing, but counts do not establish that the two
+engines produce the *same* analyses. `pangloss compare` over two `assess` reports is the tool for it, and
+**nothing should be designed around these numbers until that has been run**: a faster engine that disagrees
+is worse than a slow one that agrees.
 
 ~~**One conformance question worth answering before trusting overlay coverage**, about compounds of a
 supplied stem with a base stem.~~ **Withdrawn** — see

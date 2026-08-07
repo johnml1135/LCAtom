@@ -96,11 +96,58 @@ measurement.
 
 ## What this leaves open
 
-- **The `foma` engine is unmeasured** and may change the picture entirely on the hard end. Worth one run
-  before anyone designs around the HermitCrab numbers.
-- **Sampling instead of full-corpus** is the obvious answer for a hard grammar, and it interacts with the
-  coverage-ramp question (`I37`): a delta against the previous run over a *fixed sample* is cheap and
-  comparable, where a delta over the whole corpus is neither on Amharic.
+- ~~**The `foma` engine is unmeasured**~~ — **measured within the hour; see the addendum below, which
+  reverses this note's main conclusion.**
+- ~~**Sampling instead of full-corpus** is the obvious answer for a hard grammar~~ — **withdrawn.** The
+  answer is the other engine, not a smaller corpus.
 - **These are 40-word prefixes**, chosen to be reproducible rather than representative. The extrapolations
   assume the prefix's difficulty profile holds across the list, which for Amharic is the assumption most
   likely to be wrong in either direction.
+
+## Addendum, same day — the `foma` engine reverses the conclusion
+
+The caveat above said the second engine "may change the picture entirely on the hard end." It does, and it
+also removes the timeout problem that the section above called the more important finding.
+
+Same protocol, `--engine=foma`, and compile cost isolated the same way (one word, three grammars):
+
+| grammar | FST compile, once | per word: HermitCrab | per word: **foma** | speed-up | timeouts at 5 s (HC → foma) |
+| --- | --- | --- | --- | --- | --- |
+| Indonesian | **0.13 s** | 1 ms | ~0 ms | — | 0 → 0 |
+| Sena | **12.1 s** | 151 ms | **12 ms** | **12.6×** | 0 → 0 |
+| Amharic | **4.9 s** | 1,327 ms | **69 ms** | **19.2×** | **7 of 40 → 0** |
+
+Full corpus for the 6,973 wordforms counted in Sena 3, 20 cores, compile included:
+
+| | HermitCrab | **foma** |
+| --- | --- | --- |
+| Sena-profile | ~7.5 minutes | **~16 seconds** |
+| Amharic-profile | ~29 minutes, ~1 word in 6 abandoned | **~29 seconds**, none abandoned |
+
+**So the hard case improves about sixtyfold and stops abandoning words.** An Amharic-profile grammar is
+iterable after all: `foma` finished 36 of 40 words where HermitCrab finished 29 and gave up on 7.
+
+**The trade is a one-off compile per grammar version**, which is exactly the cost the iterate-on-rules loop
+pays — every rule change invalidates the FST. At 5–12 seconds that is comfortably below the rate at which a
+person can think of the next variant, so it does not bound the loop; it *is* the loop's floor.
+
+**One counterintuitive detail worth keeping.** Sena's compile (12.1 s) is two and a half times Amharic's
+(4.9 s), even though Sena analyses words 5.7× faster. **Compile cost does not track analysis cost**, so it
+has to be measured per grammar rather than predicted from one number or the other.
+
+### What this does to the timeout finding
+
+`D9` stands as a rule — a coverage figure computed under a per-word cap is a lower bound and must say so —
+but its practical exposure is now close to nil, because `foma` hit no cap on any of the three grammars. The
+rule is cheap to honour and the reasoning does not depend on how often it fires: the moment a figure counts
+"we stopped waiting" as "the grammar cannot analyse this", coverage stops being usable as a target. Keep it;
+stop treating it as urgent.
+
+### Still unverified, and it is the thing to check next
+
+**Whether the two engines agree on the analyses**, not merely on how many words they finish. `foma`
+completing 36 where HermitCrab completed 29 is consistent with it simply finishing, but agreement is not
+established by counts. PanGloss already ships the tool for this — `pangloss compare` over two `assess`
+reports, on `pg-assess`'s value-based analysis identity. **Nothing should be designed around the `foma`
+numbers until one such comparison has been run**, because a faster engine that disagrees is worse than a
+slow one that does not.
