@@ -182,3 +182,33 @@ nothing to amortise against. Dividing each compile by the per-word saving:
 
 So: **a corpus run uses the FST engine; a single-word check while authoring uses the default one.** On a hard
 grammar the crossover is so low that the FST engine is right for almost everything.
+
+## Which mode these numbers describe, and why it matters more than the numbers
+
+Recorded after the owner corrected a gap in how this note talks about "engines". **PanGloss has three
+analysis modes, not two:**
+
+| mode | what it does | equivalent to HC? |
+| --- | --- | --- |
+| **HC only** | HermitCrab, rule-interpreting; slow and correct | — |
+| **FST only** | fast; says whether a word is valid, but **over-generates** — it can call a non-word a word | **no** |
+| **FST pruned with HC** | the FST proposes, HermitCrab confirms | **yes, by design** |
+
+**The distinction decides whether a number is usable by Motif at all.** Checking that the FST engine has not
+regressed against itself is legitimate work *inside PanGloss* as that engine evolves. It is not legitimate
+here: Motif's question is whether the grammar rules are being applied properly, and an over-generating
+answer cannot settle that. **Motif uses FST-pruned-by-HC**, falling back to HC only for odd cases — including
+a grammar that will not compile to an FST at all.
+
+**These numbers are the pruned mode**, which was luck rather than judgement — I did not know there were three
+modes when I ran them. Verified afterwards in the source: `FomaAnalyzer` is a propose-then-confirm composite
+(`analyze_word` = `propose_candidates` then `confirm_batch`) whose own module doc states *"over-generation is
+pruned silently by `confirm_all`"*. So `batch --engine=foma` and `assess --pipeline foma-confirm` are **the
+same mode reached through two commands**, and the agreement result above — identical outcome digests against
+HermitCrab — is exactly the equivalence this mode is designed to have, confirmed rather than discovered.
+
+**FST-only is not exposed as a CLI analysis mode.** It is the internal proposal stage, visible as
+`FomaAnalyzer`'s `candidates_generated` versus `confirmed` counters — described there as "the OTHER half of
+the same headline number". **That pair is a direct measure of over-generation**, and it is worth surfacing in
+a Motif coverage report rather than leaving inside the analyzer: a word where the FST proposed fifty
+candidates and one confirmed is telling you something about the grammar that a bare pass/fail does not.

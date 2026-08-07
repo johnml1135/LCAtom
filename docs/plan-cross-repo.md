@@ -96,6 +96,15 @@ right for nearly everything.
 [ADR 0028](adr/0028-feeding-reorders-require-a-grammar-delta.md) requires exists as a versioned artifact, not
 merely as shared vocabulary.
 
+**And a constraint on which mode Motif may use at all.** PanGloss has three analysis modes: HC only, FST
+only, and FST pruned with HC. **FST only over-generates** — it can report a non-word as a word — so it can
+never answer Motif's question, which is whether the grammar rules are being applied properly. Checking the
+FST engine against itself for regressions is legitimate inside PanGloss; it is not a substitute here.
+**Motif uses FST-pruned-by-HC** (`--engine=foma` / `--pipeline foma-confirm`, the same mode through two
+commands), with a fallback to HC only for odd cases including a grammar that will not compile to an FST. The
+figures above are the pruned mode. See the [timing note](research/2026-08-06-parser-timing-measured.md) for
+the source citations and for the over-generation counters worth surfacing in a coverage report.
+
 ~~**One conformance question worth answering before trusting overlay coverage**, about compounds of a
 supplied stem with a base stem.~~ **Withdrawn** — see
 [ADR 0032](adr/0032-stem-assessment-is-pangloss-supplied-lexicon.md), "The compounding worry, withdrawn". The
