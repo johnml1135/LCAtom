@@ -135,7 +135,7 @@ the first author, not the last. M5 is the first thing a linguist would recognise
 | `MOT-17` — Layer-1 semantic and batch authoring for agents | M4 | Medium, and **expected to churn** | Not started |
 | `MOT-18` — selective Proposal editing: duplicate, remove, split | M4 | Small, and required by the agent loop | **Built 2026-08-06** — `duplicate`, `remove-operations`, `split`; declared-dependency closure names every orphaned operation at any depth; every editing path clears the bound anchor. 309 tests pass. One semantic question left open for the owner: `B25` |
 | `MOT-6` — semantic + lowering layer for grammar construct 1 | M5 | Medium — **the first product family** | Not started |
-| `MOT-15` — PanGloss snapshot producer and FFI | M5 | Medium | Not started |
+| `MOT-15` — the parser seam | M5 | Medium | **Built 2026-08-07** — Motif hands PanGloss a project file and gets GUID-keyed analyses back; no FieldWorks assemblies, no HC XML step. 10 tests including a real-project correlation proof. Remaining: one FFI entry point, which only scope 2 needs |
 | `MOT-7` — the remaining 29 constructs | M6 | Large | Not started |
 | `MOT-8` — ordered-grammar review proof | M6 | Medium | Not started |
 | `MOT-12` — FieldWorks in-process adapter | M3 | Medium | **Scope 2** — gated on the `F26a` spike |
@@ -619,23 +619,64 @@ Two inherited constraints:
 Chorus Send/Receive without the applied log being corrupted — see
 [the standing Chorus risk](harmony-adoption-report.md#standing-risk--chorus-does-not-merge-the-applied-log).
 
-## `MOT-15` — PanGloss snapshot producer and FFI — M5
+## `MOT-15` — the parser seam — M5
 
-Two halves already exist and have never been connected. `HCLoader.Load(cache, logger)` takes a live
-cache and returns a HermitCrab `Language`; `pg-ffi` is a `cdylib` annotated "for P/Invoke from net48"
-whose `hc_grammar_load` accepts HC XML bytes in memory.
+**What this is for:** so that a grammar change can be judged by what it did to parsing, rather than only
+recorded. Without it the rationale record that
+[ADR 0031](adr/0031-collaboration-follows-the-data-not-the-surface.md) makes the point of review has nothing
+to record: a grammar change's justification *is* "coverage moved from here to there, and these forms stopped
+parsing."
 
-**Do both, in this order.**
+**Built 2026-08-07, and the plan below was wrong in a useful way.** See
+[the seam measurement](research/2026-08-07-parser-seam-goes-through-the-project-file.md).
 
-1. **HC XML now.** `HCLoader.Load` → `XmlLanguageWriter` → `hc_grammar_load` → `hc_parse_batch`. No
-   `.fwdata`, no copy, no save, no lock. Zero new code on either side beyond a possible
-   stream overload. This is what makes reparse-after-apply feel real in the UI.
-2. **pg-snapshot next.** HC XML uses session-scoped `Hvo` integers that "drift across FieldWorks
-   sessions and are therefore unusable as a durable interchange key", where the snapshot format uses
-   FieldWorks GUIDs. Motif's effects are keyed by canonical ID, so an `Hvo`-keyed parser result cannot
-   be correlated with a Proposal's effect set. Write the producer in **C#** — Rust cannot read a
-   managed `LcmCache`; `pg-fwdata` is a file reader — and add one FFI entry,
-   `hc_grammar_load_snapshot`, calling `pg_grammar::compile_project`.
+### What shipped
+
+`src/SIL.Motif.Host/Parser/` — Motif hands PanGloss a **project file path** and gets back typed analyses
+whose identities are **FieldWorks GUIDs**. `PanGlossParser.AnalyseBatch` answers "did it parse, and how
+fast"; `.Assess` answers "what did it parse it *as*". Outcomes distinguish analysed / no-analysis /
+**timed-out** / skipped, and a batch containing any timeout reports itself as a lower bound (`D9`). An FST
+build refusal is recognised as a *grammar fact* and returned for the caller to fall back on, never conflated
+with a missing or broken parser.
+
+Tested at both levels: eight unit tests over **captured real parser output** rather than invented fixtures,
+and two integration tests against the real 56 MB Sena 3 project, of which the load-bearing one asserts that
+**every morpheme GUID the parser names resolves to an object that project actually contains.** That is the
+assertion the whole route was chosen for, and without it correlation could fail silently while coverage
+numbers kept working.
+
+### Why the two-step plan below was inverted
+
+~~1. **HC XML now** … 2. **pg-snapshot next.**~~ The cheap first step produces answers Motif cannot use, and
+the second step turned out not to need writing.
+
+- **No FieldWorks dependency is required.** `HCLoader.Load(cache, logger)` is `public static` but lives in
+  **FieldWorks**, not liblcm (`Src/LexText/ParserCore/HCLoader.cs`), and drags in
+  `SIL.Machine.Morphology.HermitCrab`. Taking that route means depending on application code from scope 1, or
+  porting and maintaining a fork. **PanGloss reads `.fwdata` directly instead** — 253 ms to compile a grammar
+  out of the 56 MB Sena 3 project.
+- **HC XML's identities are unusable here, as this plan already suspected — and it is worse than "Hvo drift".**
+  Measured: the two routes produce *structurally identical* analyses under different names, HC XML in synthetic
+  keys (`mrule128`, `entry1083`) and the project route in GUIDs. So the cheap step yields correct linguistics
+  that cannot be tied to any entry a Proposal edited.
+- **The C# snapshot producer is unnecessary.** `pg_fwdata::import_file` already does it, in Rust, from the file.
+
+### What remains
+
+- **One FFI entry point, and it is scope 2's blocker rather than scope 1's.** The C ABI takes HC XML only, so
+  the GUID-keyed route is reachable today only by running the executable. Scope 1 shells out, contained to
+  `PanGlossExecutable`/`PanGlossParser` so an in-process implementation can replace it without touching
+  callers. FieldWorks hosting the parser on `net48` needs `hc_grammar_load_snapshot`.
+- **A real project that neither engine could handle**, recorded as a risk rather than solved: `aweti.fwdata`
+  overflowed the FST enumeration budget *and* its fallback did not finish one word of fifteen in ten minutes.
+  Whether that is a class of project or a curiosity is unknown and worth knowing, because it decides whether
+  "fall back to HermitCrab" is an answer or just the next thing to try.
+
+**The comparison this feeds is settled** ([ADR 0027](adr/0027-what-counts-as-the-same-word-analysis.md)): the
+pass/fail gate is morphology only — morph count, and per morpheme the allomorph, category record and
+inflection type. Sense and word-level part of speech are **reported, not gating**, because the parser cannot
+populate them and PanGloss cannot express them. A green result claims *"the parser agrees about the
+morphology"*, and whatever surfaces it must say so.
 
 **The comparison this feeds is settled** ([ADR 0027](adr/0027-what-counts-as-the-same-word-analysis.md)): the
 pass/fail gate is morphology only — morph count, and per morpheme the allomorph, category record and

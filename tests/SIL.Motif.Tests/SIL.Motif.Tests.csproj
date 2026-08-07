@@ -32,4 +32,9 @@
     <ProjectReference Include="..\..\spikes\SIL.Motif.Spikes.LabelHarvest\SIL.Motif.Spikes.LabelHarvest.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Captured real parser output. Copied so ParserOutputTests reads the same bytes a real run produced. -->
+    <None Include="Parser\Fixtures\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

@@ -1,0 +1,1 @@
+pangloss batch: foma compile failed for ../samples/data/aweti.fwdata: grammar exceeds the foma-engine's eager-enumeration budget: composite lexc entries (fusion + interdigitation + structural) = 200500 (limit 200000)

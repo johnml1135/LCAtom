@@ -1,0 +1,10 @@
+0	pibubu	4	ok	-
+1	piratu	0	ok	-
+2	mbali	37	ok	++|[mn]+?bal+?i;++|[mn]+?bal+?i;++|[mn]+?bal+?i;++|[mn]+?bal+?i;++|[mn]+?bal+?i;+|[mn]+?bali;+|[mn]+?bali;+|[mn]+?bali
+3	n'nyumba	0	SKIPPED	-
+4	ya	1	ok	+|y+?a
+5	kutongera	43	ok	++++|ku+?[(^0)(*0)(&0)∅]?+?to[mn]g+?er+?a;+++|ku+?to[mn]g+?er+?a
+6	miseru	1	ok	+|[mn]i+?seru
+7	nkazi	8	ok	+|[mn]+?kazi;+|[mn]+?kazi;+|[mn]+?kazi;+|[mn]+?kazi;+|[mn]+?kazi;+|[mn]+?kazi;+|[mn]+?kazi
+3	ሁለተኛ	5021	TIMEOUT	-
+10	ሄዳችሁ	5021	TIMEOUT	-
