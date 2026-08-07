@@ -66,6 +66,10 @@ public static class Commands
     private static readonly JsonSerializerOptions ProposalJsonOptions = new()
     {
         WriteIndented = true,
+        // entityId is absent on most operations and DraftOperation models that as null; omit it
+        // entirely rather than writing a JSON null, since ProposalJsonParser.ParseOptionalId treats
+        // a present-but-null property as a type error ("must be a string"), not "absent".
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
     };
 
     public static CommandResult Open(string fwDataPath)
@@ -129,7 +133,9 @@ public static class Commands
         }
     }
 
-    public static CommandResult AddSetGloss(string storeDir, string draftName, string target, string ws, string text)
+    public static CommandResult AddSetGloss(
+        string storeDir, string draftName, string target, string ws, string text,
+        IReadOnlyList<string>? dependsOn = null)
     {
         try
         {
@@ -145,6 +151,10 @@ public static class Commands
                 return Fail("--ws must not be empty.");
 
             var draft = ReadDraft(draftPath);
+
+            if (!TryResolveDependsOn(draft, dependsOn, out var resolvedDependsOn, out var dependsOnError))
+                return Fail(dependsOnError!);
+
             var operationId = CanonicalId.Mint();
 
             draft.Operations.Add(new DraftOperation
@@ -152,6 +162,7 @@ public static class Commands
                 OperationId = operationId.Value,
                 Kind = LexicalSenseOperationKinds.SetGloss,
                 Target = targetId.Value,
+                DependsOn = resolvedDependsOn,
                 After = new Dictionary<string, string> { ["ws"] = ws, ["text"] = text },
             });
 
@@ -162,6 +173,8 @@ public static class Commands
                 $"Added operation '{operationId.Value}' ({LexicalSenseOperationKinds.SetGloss}) to draft '{draftName}'.");
             sb.AppendLine($"  target: {targetId.Value}");
             sb.AppendLine($"  after:  ws={ws} text=\"{text}\"");
+            if (resolvedDependsOn.Count > 0)
+                sb.AppendLine($"  dependsOn: {string.Join(", ", resolvedDependsOn)}");
             sb.AppendLine($"Draft now has {draft.Operations.Count} operation(s).");
             return Ok(sb);
         }
@@ -169,6 +182,86 @@ public static class Commands
         {
             return Fail(ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Adds a <c>lexical/lexEntry/deleteLexemeForm</c> operation: a real, already-lowered
+    /// cascading-delete operation kind (<see cref="LexEntryLexemeFormOperationKinds.DeleteLexemeForm"/>),
+    /// exposed here so MOT-18's removal analysis has a genuine cascading-delete operation to test
+    /// against, not a synthetic one. Its <c>after</c> payload is the empty object — an entry has at
+    /// most one lexeme form, so nothing is left to disambiguate once the target entry is known.
+    /// </summary>
+    public static CommandResult AddDeleteLexemeForm(string storeDir, string draftName, string target)
+    {
+        try
+        {
+            var store = new ProposalStore(storeDir);
+            var draftPath = store.DraftPath(draftName);
+            if (!File.Exists(draftPath))
+                return Fail(DraftNotFoundMessage(store, draftName));
+
+            if (!CanonicalId.TryParse(target, out var targetId, out var idError))
+                return Fail($"--target '{target}' is not a valid canonical id: {idError}");
+
+            var draft = ReadDraft(draftPath);
+            var operationId = CanonicalId.Mint();
+
+            draft.Operations.Add(new DraftOperation
+            {
+                OperationId = operationId.Value,
+                Kind = LexEntryLexemeFormOperationKinds.DeleteLexemeForm,
+                Target = targetId.Value,
+                After = new Dictionary<string, string>(),
+            });
+
+            WriteDraft(draftPath, draft);
+
+            var sb = new StringBuilder();
+            sb.AppendLine(
+                $"Added operation '{operationId.Value}' ({LexEntryLexemeFormOperationKinds.DeleteLexemeForm}) " +
+                $"to draft '{draftName}'.");
+            sb.AppendLine($"  target: {targetId.Value}");
+            sb.AppendLine($"Draft now has {draft.Operations.Count} operation(s).");
+            return Ok(sb);
+        }
+        catch (Exception ex)
+        {
+            return Fail(ex.Message);
+        }
+    }
+
+    /// <summary>Validates that every id in <paramref name="dependsOn"/> is a canonical id already
+    /// present as an operation in <paramref name="draft"/> — the natural authoring order (the
+    /// dependency must already exist to be depended on).</summary>
+    private static bool TryResolveDependsOn(
+        DraftDocument draft, IReadOnlyList<string>? dependsOn, out List<string> resolved, out string? error)
+    {
+        resolved = new List<string>();
+        error = null;
+
+        if (dependsOn is null)
+            return true;
+
+        var existingIds = new HashSet<string>(draft.Operations.Select(o => o.OperationId), StringComparer.Ordinal);
+
+        foreach (var raw in dependsOn)
+        {
+            if (!CanonicalId.TryParse(raw, out var id, out var idError))
+            {
+                error = $"--depends-on '{raw}' is not a valid canonical operation id: {idError}";
+                return false;
+            }
+
+            if (!existingIds.Contains(id.Value))
+            {
+                error = $"--depends-on '{id.Value}' does not name an operation already in this draft.";
+                return false;
+            }
+
+            resolved.Add(id.Value);
+        }
+
+        return true;
     }
 
     public static CommandResult Label(string storeDir, string draftName, string text) =>
@@ -377,9 +470,348 @@ public static class Commands
             OperationId = operation.OperationId.Value,
             Kind = operation.Kind,
             Target = target.Value,
+            EntityId = operation.EntityId?.Value,
+            DependsOn = operation.DependsOn.Select(d => d.OperationId.Value).ToList(),
             After = afterDict,
         };
     }
+
+    /// <summary>
+    /// Duplicates a committed Proposal's current content into a brand-new draft under a freshly
+    /// minted <c>proposalId</c> — a distinct Proposal, not a revision of the source (contrast
+    /// <see cref="Reopen"/>, which keeps the source id and produces an amend). See MOT-18
+    /// ("duplicate, remove, split").
+    /// </summary>
+    public static CommandResult Duplicate(string storeDir, string sourceProposalId, string newDraftName)
+    {
+        try
+        {
+            var store = new ProposalStore(storeDir);
+            var draftPath = store.DraftPath(newDraftName);
+            if (File.Exists(draftPath))
+            {
+                return Fail(
+                    $"Draft '{newDraftName}' already exists at '{draftPath}'. Finalize or delete it " +
+                    "before duplicating a Proposal into a draft with this name.");
+            }
+
+            var sourceId = NormalizeId(sourceProposalId);
+            var manifestPath = store.ManifestPath(sourceId);
+            if (!File.Exists(manifestPath))
+                return Fail(ProposalNotFoundMessage(store, sourceId));
+
+            var manifest = ReadManifest(manifestPath);
+            var objectPath = store.ObjectPath(manifest.CurrentIntentDigest);
+            if (!File.Exists(objectPath))
+                return Fail(StoreInconsistencyMessage(sourceId, manifest.CurrentIntentDigest, objectPath));
+
+            var envelope = ProposalJsonParser.Parse(File.ReadAllText(objectPath));
+
+            var newProposalId = CanonicalId.Mint();
+            var draft = new DraftDocument
+            {
+                ProposalId = newProposalId.Value,
+                ContractVersions = new Dictionary<string, string>(envelope.ContractVersions),
+                Requires = envelope.Requires.Select(r => r.Value).ToList(),
+                Label = manifest.Label,
+                Comment = manifest.Comment,
+                Operations = envelope.Operations.Select(ToDraftOperation).ToList(),
+            };
+
+            store.EnsureDirectoriesExist();
+            WriteDraft(draftPath, draft);
+
+            var sb = new StringBuilder();
+            sb.AppendLine($"Duplicated Proposal {sourceId} into new draft '{newDraftName}'.");
+            sb.AppendLine($"  proposalId: {draft.ProposalId}  (a new Proposal; the source is untouched)");
+            sb.AppendLine($"  operations: {draft.Operations.Count}");
+            sb.AppendLine("Finalizing this draft will commit it as a brand-new Proposal.");
+            return Ok(sb);
+        }
+        catch (Exception ex)
+        {
+            return Fail(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Removes one or more operations from a draft (created by <see cref="New"/> or reopened by
+    /// <see cref="Reopen"/>), applying ADR 0021 decision 6 (<c>J43</c>): a removal with no dependents
+    /// just happens; a removal that would orphan a dependent operation warns and names every
+    /// consequence, then requires <paramref name="force"/>; a removal whose consequences cannot be
+    /// honestly enumerated (a cascading <c>delete</c> operation — see
+    /// <see cref="OperationDependencyGraph.IsCascadingDelete"/>) is refused outright, never forced.
+    /// The caller still runs <c>finalize</c> afterwards (an amend, if this draft came from
+    /// <c>reopen</c>) — this composes with the existing reopen/amend loop rather than bypassing it,
+    /// which is also what clears a stale bound-DryRun anchor: <c>Finalize</c>'s amend path already
+    /// sets <c>manifest.Anchor = null</c> on any content change, and a removal is exactly that.
+    /// </summary>
+    public static CommandResult RemoveOperations(
+        string storeDir, string draftName, IReadOnlyList<string> operationIds, bool force)
+    {
+        try
+        {
+            var store = new ProposalStore(storeDir);
+            var draftPath = store.DraftPath(draftName);
+            if (!File.Exists(draftPath))
+                return Fail(DraftNotFoundMessage(store, draftName));
+
+            if (operationIds.Count == 0)
+                return Fail("Specify at least one operation id to remove.");
+
+            var draft = ReadDraft(draftPath);
+
+            var requestedIds = new List<string>();
+            foreach (var raw in operationIds)
+            {
+                if (!CanonicalId.TryParse(raw, out var id, out var error))
+                    return Fail($"'{raw}' is not a valid canonical operation id: {error}");
+                requestedIds.Add(id.Value);
+            }
+
+            var byId = draft.Operations.ToDictionary(o => o.OperationId, StringComparer.Ordinal);
+            var missing = requestedIds.Where(id => !byId.ContainsKey(id)).ToList();
+            if (missing.Count > 0)
+            {
+                return Fail(
+                    $"Draft '{draftName}' has no operation(s) {string.Join(", ", missing.Select(m => $"'{m}'"))}. " +
+                    "Run 'show' on the source Proposal, or inspect the draft file, to find valid operation ids.");
+            }
+
+            var requestedOps = requestedIds.Select(id => byId[id]).ToList();
+
+            // Decision 6, point 4: force never means "guess". A cascading delete's true reach is
+            // discovered-only (LibLCM's ownership cascade), never declared in the Proposal, so no
+            // consequence set for removing it can be honestly stated — refuse outright.
+            var unenumerable = requestedOps.FirstOrDefault(op => OperationDependencyGraph.IsCascadingDelete(op.Kind));
+            if (unenumerable is not null)
+            {
+                return Fail(
+                    $"Cannot remove operation '{unenumerable.OperationId}' ({unenumerable.Kind}): it is a " +
+                    "cascading delete. LibLCM's ownership cascade reaches objects this Proposal never " +
+                    "names, and that reach is only known by inspecting the live project — this store has " +
+                    "no way to enumerate what removing it would affect. This removal is refused, not " +
+                    "forced; --force cannot help, because there is no enumerated consequence set for it " +
+                    "to accept.");
+            }
+
+            var requestedSet = new HashSet<string>(requestedIds, StringComparer.Ordinal);
+            var consequences = OperationDependencyGraph.TransitiveDependents(draft.Operations, requestedSet);
+
+            if (consequences.Count > 0 && !force)
+            {
+                var sb = new StringBuilder();
+                sb.AppendLine(
+                    $"Removing {DescribeOperationIds(requestedIds)} from draft '{draftName}' would orphan " +
+                    $"{consequences.Count} dependent operation(s):");
+                foreach (var edge in consequences)
+                    sb.AppendLine($"  - {edge.Reason}");
+                sb.AppendLine(
+                    "Re-run with --force to remove the requested operation(s) together with every " +
+                    "enumerated dependent above (force accepts the whole named consequence set, never a " +
+                    "guess).");
+                return new CommandResult(1, sb.ToString());
+            }
+
+            // Force accepts the full enumerated set: the requested operations AND every transitive
+            // dependent named above. Leaving a dependent behind with a dangling dependsOn/target
+            // would silently produce an inconsistent Proposal; removing it too is the honest reading
+            // of "the caller accepted this consequence set."
+            var toRemove = new HashSet<string>(requestedSet, StringComparer.Ordinal);
+            foreach (var edge in consequences)
+                toRemove.Add(edge.DependentOperationId);
+
+            draft.Operations = draft.Operations.Where(o => !toRemove.Contains(o.OperationId)).ToList();
+            WriteDraft(draftPath, draft);
+
+            var outSb = new StringBuilder();
+            outSb.AppendLine($"Removed {DescribeOperationIds(requestedIds)} from draft '{draftName}'.");
+            if (consequences.Count > 0)
+            {
+                outSb.AppendLine(
+                    $"  --force also removed {consequences.Count} dependent operation(s) named above:");
+                foreach (var edge in consequences)
+                    outSb.AppendLine($"  - {edge.DependentOperationId} ({edge.DependentKind})");
+            }
+            outSb.AppendLine($"Draft now has {draft.Operations.Count} operation(s).");
+            outSb.AppendLine(
+                "Run 'finalize' to commit this as a new revision (an amend, clearing any bound-DryRun " +
+                "anchor, if this draft came from 'reopen').");
+            return Ok(outSb);
+        }
+        catch (Exception ex)
+        {
+            return Fail(ex.Message);
+        }
+    }
+
+    /// <summary>One output group for <see cref="Split"/>: a new draft name and the operation ids
+    /// (from the source Proposal) it receives.</summary>
+    public sealed record SplitGroup(string DraftName, IReadOnlyList<string> OperationIds);
+
+    /// <summary>
+    /// Splits a committed Proposal's current operations into several brand-new drafts, each under
+    /// its own freshly minted <c>proposalId</c> (<c>J44</c>: the unit of splitting is the individual
+    /// operation, subject to <c>requires</c>/<c>dependsOn</c>). <paramref name="groups"/> must
+    /// partition every operation in the source exactly once. If a declared dependency (<c>dependsOn</c>
+    /// or a <c>target</c> naming another operation's <c>entityId</c>) would be severed by landing its
+    /// two ends in different groups, that is named as a consequence and requires
+    /// <paramref name="force"/> — the same warn/enumerate/force rule as <see cref="RemoveOperations"/>
+    /// (decision 6), because nothing here is discovered-only: every edge is declared in the source
+    /// Proposal, so this never hits the "cannot be enumerated" refusal.
+    /// </summary>
+    /// <remarks>
+    /// The source Proposal is left exactly as it was — split does not supersede or discard it. MOT-10
+    /// (not yet built) is what would define a "superseded" status transition; deciding that here would
+    /// be silently picking an answer the plan does not commit to, so this intentionally does not.
+    /// </remarks>
+    public static CommandResult Split(
+        string storeDir, string sourceProposalId, IReadOnlyList<SplitGroup> groups, bool force)
+    {
+        try
+        {
+            if (groups.Count == 0)
+                return Fail("Specify at least one group to split into.");
+
+            var store = new ProposalStore(storeDir);
+            var sourceId = NormalizeId(sourceProposalId);
+            var manifestPath = store.ManifestPath(sourceId);
+            if (!File.Exists(manifestPath))
+                return Fail(ProposalNotFoundMessage(store, sourceId));
+
+            var manifest = ReadManifest(manifestPath);
+            var objectPath = store.ObjectPath(manifest.CurrentIntentDigest);
+            if (!File.Exists(objectPath))
+                return Fail(StoreInconsistencyMessage(sourceId, manifest.CurrentIntentDigest, objectPath));
+
+            var envelope = ProposalJsonParser.Parse(File.ReadAllText(objectPath));
+            var sourceOperations = envelope.Operations.Select(ToDraftOperation).ToList();
+            var allIds = sourceOperations.Select(o => o.OperationId).ToList();
+
+            foreach (var draftName in groups.Select(g => g.DraftName))
+            {
+                if (File.Exists(store.DraftPath(draftName)))
+                {
+                    return Fail(
+                        $"Draft '{draftName}' already exists at '{store.DraftPath(draftName)}'. Finalize or " +
+                        "delete it before splitting into a draft with this name.");
+                }
+            }
+            if (groups.Select(g => g.DraftName).Distinct(StringComparer.Ordinal).Count() != groups.Count)
+                return Fail("Each split group must target a distinct draft name.");
+
+            // Validate the groups partition every source operation exactly once.
+            var groupOfId = new Dictionary<string, string>(StringComparer.Ordinal);
+            var duplicates = new List<string>();
+            var unknown = new List<string>();
+            foreach (var group in groups)
+            {
+                foreach (var rawId in group.OperationIds)
+                {
+                    if (!CanonicalId.TryParse(rawId, out var id, out var idError))
+                        return Fail($"'{rawId}' is not a valid canonical operation id: {idError}");
+
+                    if (!allIds.Contains(id.Value))
+                    {
+                        unknown.Add(id.Value);
+                        continue;
+                    }
+
+                    if (!groupOfId.TryAdd(id.Value, group.DraftName))
+                        duplicates.Add(id.Value);
+                }
+            }
+
+            if (unknown.Count > 0)
+            {
+                return Fail(
+                    $"Proposal {sourceId} has no operation(s) {string.Join(", ", unknown.Select(u => $"'{u}'"))}.");
+            }
+            if (duplicates.Count > 0)
+            {
+                return Fail(
+                    $"Operation(s) {string.Join(", ", duplicates.Select(d => $"'{d}'"))} were assigned to " +
+                    "more than one split group; each operation must go to exactly one.");
+            }
+            var unassigned = allIds.Where(id => !groupOfId.ContainsKey(id)).ToList();
+            if (unassigned.Count > 0)
+            {
+                return Fail(
+                    $"Operation(s) {string.Join(", ", unassigned.Select(u => $"'{u}'"))} from Proposal " +
+                    $"{sourceId} were not assigned to any split group. A split must place every operation " +
+                    "in exactly one resulting Proposal.");
+            }
+
+            var allEdges = OperationDependencyGraph.AllEdges(sourceOperations);
+            var severed = allEdges
+                .Where(e => groupOfId[e.DependentOperationId] != groupOfId[e.RequiredOperationId])
+                .ToList();
+
+            if (severed.Count > 0 && !force)
+            {
+                var sb = new StringBuilder();
+                sb.AppendLine(
+                    $"Splitting Proposal {sourceId} this way would sever {severed.Count} declared " +
+                    "dependency edge(s) across the resulting Proposals:");
+                foreach (var edge in severed)
+                {
+                    sb.AppendLine(
+                        $"  - {edge.Reason} ('{edge.DependentOperationId}' -> draft " +
+                        $"'{groupOfId[edge.DependentOperationId]}'; '{edge.RequiredOperationId}' -> draft " +
+                        $"'{groupOfId[edge.RequiredOperationId]}').");
+                }
+                sb.AppendLine(
+                    "Re-run with --force to proceed anyway. The dependency reference is kept exactly as " +
+                    "authored in the receiving Proposal, which will then name an operation id outside its " +
+                    "own operations array.");
+                return new CommandResult(1, sb.ToString());
+            }
+
+            store.EnsureDirectoriesExist();
+            var sb2 = new StringBuilder();
+            sb2.AppendLine($"Split Proposal {sourceId} into {groups.Count} new draft(s).");
+            if (severed.Count > 0)
+            {
+                sb2.AppendLine($"  --force accepted {severed.Count} severed dependency edge(s) named above.");
+            }
+
+            foreach (var group in groups)
+            {
+                var groupOperations = sourceOperations.Where(o => groupOfId[o.OperationId] == group.DraftName).ToList();
+                var usedGroups = new HashSet<string>(
+                    groupOperations.Select(o => SIL.Motif.Contract.Model.OperationKind.GetGroup(o.Kind)),
+                    StringComparer.Ordinal);
+                var contractVersions = envelope.ContractVersions
+                    .Where(kv => usedGroups.Contains(kv.Key))
+                    .ToDictionary(kv => kv.Key, kv => kv.Value);
+
+                var newProposalId = CanonicalId.Mint();
+                var draft = new DraftDocument
+                {
+                    ProposalId = newProposalId.Value,
+                    ContractVersions = contractVersions,
+                    Requires = envelope.Requires.Select(r => r.Value).ToList(),
+                    Label = manifest.Label is null ? null : $"{manifest.Label} (split: {group.DraftName})",
+                    Comment = manifest.Comment,
+                    Operations = groupOperations,
+                };
+                WriteDraft(store.DraftPath(group.DraftName), draft);
+
+                sb2.AppendLine($"  draft '{group.DraftName}': proposalId={draft.ProposalId} operations={draft.Operations.Count}");
+            }
+
+            sb2.AppendLine($"  (the source Proposal {sourceId} is unchanged)");
+            sb2.AppendLine("Finalize each draft to commit it as a brand-new Proposal.");
+            return Ok(sb2);
+        }
+        catch (Exception ex)
+        {
+            return Fail(ex.Message);
+        }
+    }
+
+    private static string DescribeOperationIds(IReadOnlyList<string> ids) =>
+        ids.Count == 1 ? $"operation '{ids[0]}'" : $"operations {string.Join(", ", ids.Select(i => $"'{i}'"))}";
 
     public static CommandResult List(string storeDir)
     {
@@ -730,7 +1162,9 @@ public static class Commands
             {
                 operationId = op.OperationId,
                 kind = op.Kind,
+                entityId = op.EntityId,
                 target = op.Target,
+                dependsOn = op.DependsOn,
                 after = op.After,
             }).ToList(),
         };
