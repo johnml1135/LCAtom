@@ -90,6 +90,13 @@ Both sides are FieldWorks GUIDs, so the join needs no heuristics. **This is the 
 rather than a new capability**, and it produces the report a linguist can act on directly: *you declared 25
 affix slots and the corpus exercised 19; here are the six with no attestation.*
 
+**And it is interactions, not a checklist.** The owner's refinement: *"really, it's multiple grammar features
+and their interactions. I want reports, stats and 'holes' that may point to over broad rules or missing analysis
+words."* Black's canonical over-generation case is a slot *pair* — Orizaba Nahuatl licensing `ti-` without the
+`-h` that 1pl requires — where every individual feature is exercised and correct. So the level that finds the
+defect is the combination, and a hole is deliberately ambiguous between an over-broad rule and a missing word.
+The design is [grammar-coverage-design.md](../grammar-coverage-design.md).
+
 **Why it belongs here and not in PanGloss.** PanGloss holds the compiled grammar but not the notion of a
 reviewable declared inventory, and its coverage vocabulary already means something else — capability coverage
 and plan-interaction coverage, both about its own compiler. Putting a third meaning of "coverage" in that
