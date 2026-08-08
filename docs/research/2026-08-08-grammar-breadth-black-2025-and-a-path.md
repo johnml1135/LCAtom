@@ -165,3 +165,17 @@ likely to drown a reviewer in plausible-looking noise.
 
 **What none of this settles**, and it is the owner's call rather than a measurement: whether a coverage rise
 with no breadth signal beside it may ever count as evidence that a grammar change was good.
+
+## Superseded in part, same week — FieldWorks already had the measure
+
+The path above proposed "agreement with the analyses a project already holds" as signal 2, and an ad hoc
+census as signal 3. **Checking FieldWorks first, as the owner suggested, found the measure already built** —
+`Src/LexText/ParserCore/ParserReport.cs` computes `TotalUserApprovedAnalysesMissing` and
+`TotalUserDisapprovedAnalyses` using `MatchesIWfiAnalysis`, the same equality gate ADR 0027 settled on, with a
+JSON format and a run-to-run diff.
+
+An analysis a human actively **rejected** is stronger evidence than one that merely differs from what was
+recorded, so the existing metric is better than the one proposed here. The three-way ownership split, and what
+Motif adds on top, is [ADR 0033](../adr/0033-three-systems-and-who-owns-which-measure.md). The reading of Black
+above stands unchanged; signal 4 also gains a cheaper form than generation — a curated **known-bad word list**,
+which PanGloss suites already know how to score.
