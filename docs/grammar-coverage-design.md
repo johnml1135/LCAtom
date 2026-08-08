@@ -43,11 +43,30 @@ All of these are already in Motif's emitted catalog, so both sides of the compar
 
 The full cross-product is astronomical and enumerating it would be useless. Two standard reductions:
 
-**1. Pairwise, not exhaustive.** Combinatorial testing's established result is that most defects involve one
-or two factors, so 2-way coverage buys most of the value at a tiny fraction of the size. PanGloss reached the
-same place independently for its own compiler and adds a refinement worth copying: **prune by independence** —
-combinations provably orthogonal are *retired*, not tested. A slot pair in different templates cannot
-interact; do not report it as a hole.
+**1. Pairwise as a floor, not a ceiling.** *Corrected 2026-08-09 against the primary source; an earlier
+draft of this section said 2-way coverage "buys most of the value", which is more confident than the research
+supports.* Kuhn, Wallace & Gallo (IEEE TSE 30(6), 2004) measure the **failure-triggering fault interaction**
+number across nine datasets and report 2-way cumulative coverage ranging **70% (server software) to 97%
+(medical devices)** — and their own conclusion is the *upper* bound, "no dataset required more than 4–6
+parameters", with 3–6-way named as the practical pseudo-exhaustive range. They also caution that the power-law
+shape "would require many more data sets" to generalise.
+
+So 2-way is the cheapest large fraction of the value and a sound starting floor, **with a residual between 3%
+and 30% that is real**. Two consequences: report the order a figure was computed at, never a bare "coverage";
+and keep the design able to escalate specific combinations to 3-way — the obvious candidates being the ones
+[ADR 0028](adr/0028-feeding-reorders-require-a-grammar-delta.md) already flags for rule-order interaction,
+where third-factor effects are exactly what `feeding` means.
+
+**And the transfer to morphology is unverified.** No study of a natural-language grammar's feature-interaction
+space was found; these are software-configuration numbers. Worth measuring against Sena 3's attested
+combinations rather than assumed.
+
+PanGloss reached pairwise independently for its own compiler and adds a refinement worth copying: **prune by
+independence** — combinations provably orthogonal are *retired*, not tested. A slot pair in different templates
+cannot interact; do not report it as a hole. NIST's constraint work confirms there is **no established
+algorithm for discovering** which combinations are infeasible — the tester supplies them, and the tooling only
+checks validity efficiently. So the ad hoc prohibitions and category restrictions are not a shortcut around a
+known method; they are the method.
 
 **2. Only what the grammar licenses.** Never enumerate combinations the grammar already forbids. Ad hoc
 prohibitions, category restrictions and exception classes all *reduce* the declared space.
@@ -61,7 +80,11 @@ prescribes. A metric that punished constraint-adding would be worse than none.
 A licensed combination that no analysed word uses means one of:
 
 - **the rule is too broad** — the combination should not be licensed, and a constraint is missing;
-- **the word list is short a word** — the combination is real but unattested.
+- **the word list is short a word** — the combination is real but unattested;
+- **or the combination is structurally unreachable** — licensed on paper but blocked by some other constraint,
+  so no word could exercise it however hard anyone tried. This third reading came out of the mutation-testing
+  comparison (the equivalent-mutant analogue) and the literature is clear that separating it is **always manual
+  triage**, with no automated test. It is rarer than the other two and must not be silently folded into them.
 
 **Motif cannot distinguish these and must not appear to.** What does distinguish them is cheap and available:
 **generation**. Render the hole as a concrete candidate word form and ask a person — or an AI — *"is this a
@@ -71,6 +94,20 @@ blanket nor noisy**, because the candidate list is already small and already int
 
 That turns the report into a worklist with a one-question decision per row, which is the form Black's method
 actually needs: he tells a linguist what to reach for once they have seen a wrong form.
+
+**Prior art for exactly this exists and should be borrowed.** GiellaLT's `morph-test`, which drives ~100
+language projects on HFST and foma, pairs an analysis with its expected surface forms and passes only when
+**"all and only"** the listed forms appear — checking under-generation and over-generation as two separately
+failing conditions on the same line, with an explicit escape hatch for legitimate homonymy. That is the shape
+this report wants. It also ships **four verbosity levels** (full detail, per-test counts, one character per
+test, summary only), which answers a question this design had left open: the human and the machine want the
+same report at different verbosities, not two different reports.
+
+**Vocabulary: borrow rather than invent, on both sides of the merge.** Apertium and GiellaLT both say
+**overgeneration** for the too-broad half; NIST says **uncovered combination** for the never-observed half.
+Motif's "hole" deliberately merges the two into one undecided category, which no other community does — so
+keep "hole" as the term for the merged case, and gloss reports with the borrowed terms so a reader arriving
+from either community knows which half they are looking at.
 
 ## The conservatism requirement, and why it is not optional
 
