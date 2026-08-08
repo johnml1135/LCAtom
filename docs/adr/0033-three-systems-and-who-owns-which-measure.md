@@ -68,6 +68,12 @@ But two sampled projects hold **8 `CmAgentEvaluation` objects between them** aga
 ([ADR 0031](0031-collaboration-follows-the-data-not-the-surface.md)). The mechanism exists throughout — model,
 report, and UI — and projects barely use it.
 
+**Narrowed 2026-08-08 by [ADR 0034](0034-the-boundary-with-fieldworks-state-versus-change.md) decision 3:**
+thin judgement data limits *precision* only. **Gap-finding may use every analysis whatever produced it**, so
+its denominator in Sena 3 is ~760 rather than 8 — absence is absence regardless of who wrote the analyses. The
+strict asymmetry is that a machine analysis is evidence a combination *occurs* and never evidence it is
+*correct*, since a rule cannot vindicate itself through the analyses it generated.
+
 **So the number is right and the data is thin, which changes what Motif should do about it.** Not invent a
 different metric, but make disapproving cheap and make its value visible: a report that says *"this grammar
 produces 340 analyses nobody has judged"* is actionable, where a precision figure computed over 8 judgements

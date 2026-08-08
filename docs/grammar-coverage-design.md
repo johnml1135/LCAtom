@@ -83,6 +83,19 @@ must not list them.** A phantom hole spends the reviewer's attention, which is t
 a report that cries wolf gets ignored wholesale, taking the true holes with it. Under-reporting is recoverable;
 over-reporting is not.
 
+## Which evidence counts, and the asymmetry that must be enforced
+
+Added 2026-08-08 ([ADR 0034](adr/0034-the-boundary-with-fieldworks-state-versus-change.md) decision 3). The
+exercised side may be built from **every analysis in the project, whatever produced it** — machine or hand.
+Absence is absence. That puts Sena 3's denominator at ~760 analyses rather than the 8 carrying a human
+evaluation, so this design is far better supplied than first recorded.
+
+**But the asymmetry is strict.** All analyses may establish that a combination is *unused*; only human
+judgement may establish that a used combination is *wrong*. A machine analysis produced by the suspect rule
+cannot vindicate that rule — a grammar marking its own homework. Every figure must therefore say which evidence
+class it rests on, because a reader who cannot tell will draw the wrong conclusion from whichever sounds
+stronger.
+
 ## The three outputs
 
 **Stats** — per dimension: how many combinations are licensed, how many exercised, how many holes, and the
