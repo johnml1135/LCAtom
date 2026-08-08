@@ -28,10 +28,16 @@ namespace SIL.Motif.Host.Corpus;
 /// it covers a whole project when it does not.
 /// </param>
 /// <param name="Words">
-/// The corpus's word forms, sorted ordinally. Sorting here (rather than trusting the order words arrived
-/// in) is what makes <see cref="Sha256"/> depend only on content — two extractions of the same wordforms
-/// that merely enumerated them in a different order must hash identically, or the hash would flag drift
-/// that never happened.
+/// The corpus's word forms, sorted ordinally and <b>distinct</b>. Sorting makes <see cref="Sha256"/> depend
+/// only on content — two extractions that merely enumerated the same wordforms in a different order must
+/// hash identically, or the hash would flag drift that never happened.
+/// <para>
+/// Deduplicating is the same argument one step further, and it was missed on the first pass. A corpus is a
+/// <i>set</i> of word forms: <see cref="Parser.CoverageFigure.Compute"/> compares it to what was analysed with
+/// set semantics, and a word form analysed twice is analysed once. If this list kept duplicates, two corpora
+/// covering identically the same words would carry different hashes and a figure would report drift against
+/// itself. Identity and comparison have to agree about what a corpus is.
+/// </para>
 /// </param>
 /// <param name="Sha256">
 /// <c>sha256:</c> followed by 64 lowercase hex characters, computed over <see cref="Words"/> joined by
@@ -41,16 +47,20 @@ namespace SIL.Motif.Host.Corpus;
 public sealed record CorpusDescriptor(string CorpusId, IReadOnlyList<string> Words, string Sha256)
 {
     /// <summary>
-    /// The only supported way to build a <see cref="CorpusDescriptor"/>: sorts <paramref name="words"/> and
-    /// hashes the result, so <see cref="Words"/> and <see cref="Sha256"/> can never disagree with each
-    /// other the way they could if a caller were allowed to hand both in independently.
+    /// The only supported way to build a <see cref="CorpusDescriptor"/>: deduplicates and sorts
+    /// <paramref name="words"/>, then hashes the result, so <see cref="Words"/> and <see cref="Sha256"/> can
+    /// never disagree with each other the way they could if a caller were allowed to hand both in
+    /// independently.
     /// </summary>
     public static CorpusDescriptor Create(string corpusId, IEnumerable<string> words)
     {
         if (string.IsNullOrWhiteSpace(corpusId)) throw new ArgumentException("Required.", nameof(corpusId));
         if (words is null) throw new ArgumentNullException(nameof(words));
 
-        var ordered = words.OrderBy(w => w, StringComparer.Ordinal).ToList();
+        var ordered = words
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(w => w, StringComparer.Ordinal)
+            .ToList();
         return new CorpusDescriptor(corpusId, ordered, ComputeSha256(ordered));
     }
 

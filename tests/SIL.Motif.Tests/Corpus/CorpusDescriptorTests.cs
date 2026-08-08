@@ -99,4 +99,19 @@ public class CorpusDescriptorTests
         Assert.Empty(descriptor.Words);
         Assert.StartsWith("sha256:", descriptor.Sha256);
     }
+
+    [Fact]
+    public void ACorpusIsASet_SoDuplicatesDoNotChangeItsIdentity()
+    {
+        // Found reviewing the first implementation, which sorted but did not deduplicate. CoverageFigure
+        // compares a corpus against what was analysed with set semantics, and a word form analysed twice is
+        // analysed once — so if the hash counted duplicates, two corpora covering identically the same words
+        // would carry different hashes and a figure would report drift against itself.
+        var once = CorpusDescriptor.Create("sena", new[] { "mbali", "ya", "miseru" });
+        var twice = CorpusDescriptor.Create("sena", new[] { "mbali", "ya", "mbali", "miseru", "ya" });
+
+        Assert.Equal(once.Sha256, twice.Sha256);
+        Assert.Equal(once.Words, twice.Words);
+        Assert.Equal(3, twice.Words.Count);
+    }
 }
