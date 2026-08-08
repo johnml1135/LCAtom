@@ -62,6 +62,26 @@ The record that one Proposal was applied to one project, naming the before and a
 durable edge in a project's history.
 _Avoid_: application receipt, success result, audit log
 
+**Report**:
+A query over an Assessment and the project's own data, producing statistics and findings. **Advisory
+always** — a Report never gates anything.
+_Avoid_: score, verdict, metric, dashboard, health check
+
+**Check Run**:
+A Report cited as evidence on a Proposal, which freezes its inputs and binds it to the state it was
+computed against.
+_Avoid_: check, test, gate, validation, CI run
+
+**Selection**:
+The subset of word forms a Report was computed over — defined by a query, and pinned as an exact hashed
+list each time it runs. Naming one is how a reader states which words matter.
+_Avoid_: sample, filter, scope, subset, test set
+
+**Hole**:
+A combination the grammar licenses that no analysis exercises. Undecided by construction: it means an
+over-broad rule, a missing word, or an unreachable combination, and Motif does not guess which.
+_Avoid_: gap, miss, failure, uncovered case
+
 ## Where state lives
 
 **Canonical data**:
@@ -87,6 +107,12 @@ FieldWorks' `HCLoader` implements and PanGloss ports. An authority on meaning, n
 _Avoid_: HC XML, export, projection
 
 ## Coverage and generation
+
+> **"Coverage" is ambiguous in this project and must always be qualified.** The terms below concern
+> **model coverage** — whether the generator accounts for every field in LibLCM's model. Two other senses
+> exist and belong to other systems: **parse coverage** (what share of a word list parsed) is PanGloss's,
+> and **grammar coverage** (which declared grammar features and combinations the analysed words exercise)
+> is Motif's. An unqualified "coverage" is never acceptable in prose, a report, or an API name.
 
 **Manifest**:
 One row per field in LibLCM's model, recording what is in scope and which Construct it belongs to. Those

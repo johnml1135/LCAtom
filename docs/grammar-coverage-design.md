@@ -86,11 +86,15 @@ A licensed combination that no analysed word uses means one of:
   comparison (the equivalent-mutant analogue) and the literature is clear that separating it is **always manual
   triage**, with no automated test. It is rarer than the other two and must not be silently folded into them.
 
-**Motif cannot distinguish these and must not appear to.** What does distinguish them is cheap and available:
-**generation**. Render the hole as a concrete candidate word form and ask a person — or an AI — *"is this a
-word?"* An earlier note deferred generation as too noisy to run blanket; **targeted at holes it is neither
-blanket nor noisy**, because the candidate list is already small and already interesting. PanGloss ships
-`pangloss generate <grammar> <root-morpheme-id> …`.
+**Motif cannot distinguish these and must not appear to.** What does distinguish them is **generation**:
+render the hole as a concrete candidate word form and ask a person — or an AI — *"is this a word?"* PanGloss
+ships `pangloss generate <grammar> <root-morpheme-id> …`.
+
+**But generation is not part of the report, and an earlier draft of this section had it inside one.** A Report
+is a query that must be *exceptionally cheap* — a few searches and some statistics over an Assessment that
+already exists. Generation is combinatorial. So generation is a **follow-on action a reader triggers on one
+hole**, never a column the report fills in for every row. The report's job is to produce the worklist; deciding
+to spend generation on a row is the reader's.
 
 That turns the report into a worklist with a one-question decision per row, which is the form Black's method
 actually needs: he tells a linguist what to reach for once they have seen a wrong form.
