@@ -1,0 +1,125 @@
+using SIL.Motif.Host.LcmUtils;
+using SIL.Motif.Host.WritingSystems;
+using SIL.Motif.Tests.TestFixtures;
+using SIL.LCModel;
+using Xunit;
+
+namespace SIL.Motif.Tests.WritingSystems;
+
+/// <summary>
+/// The vernacular writing systems are read <b>in order</b>, and the order is recorded, because the order
+/// decides the grammar.
+/// </summary>
+/// <remarks>
+/// <para>
+/// This is not a formatting concern. `DefaultVernacularWritingSystem` is
+/// <c>m_currentVernacularWritingSystems.FirstOrDefault()</c> (liblcm <c>OverridesLangProj.cs:844-849</c>), and
+/// <c>HCLoader</c> reads every phoneme's grapheme and every lexical form through it — dropping any entry whose
+/// form is empty in that writing system. So promoting a different writing system to first changes the phoneme
+/// inventory and can silently shrink the grammar.
+/// </para>
+/// <para>
+/// The failure this guards against is specific: a report that says <i>"grammar unchanged"</i> after exactly
+/// that edit. If <see cref="WritingSystemInventoryReader"/> ever sorts, dedupes or otherwise normalises the
+/// vernacular list, the digest stops distinguishing two arrangements that produce different grammars, and the
+/// report starts lying in the one direction that matters.
+/// </para>
+/// </remarks>
+[Collection(TestFixtures.LcmCacheTestCollection.Name)]
+public sealed class WritingSystemInventoryTests : IDisposable
+{
+    private readonly string _tempRoot;
+    private readonly LcmCache _cache;
+
+    public WritingSystemInventoryTests()
+    {
+        _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests.Ws", Guid.NewGuid().ToString("N"));
+        var fwDataPath = TestLangProjFixture.CopyToTempAndGetFwDataPath(_tempRoot);
+        _cache = new FwDataProjectLoader().LoadCache(fwDataPath);
+    }
+
+    [Fact]
+    public void TheFirstVernacularWritingSystem_IsTheOneMarkedDefault_AndMatchesTheCache()
+    {
+        var inventory = WritingSystemInventoryReader.Read(_cache);
+
+        Assert.NotEmpty(inventory.Vernacular);
+        Assert.NotNull(inventory.DefaultVernacular);
+
+        // Exactly one is flagged, and it is the first — not merely "one of them is".
+        Assert.Single(inventory.Vernacular.Where(ws => ws.IsDefaultVernacular));
+        Assert.True(inventory.Vernacular[0].IsDefaultVernacular);
+
+        // And it agrees with what the parser would actually use, asked of LibLCM directly rather than
+        // re-derived from the same list this type built.
+        var cacheDefault = _cache.ServiceLocator.WritingSystems.DefaultVernacularWritingSystem;
+        Assert.Equal(cacheDefault.Id, inventory.DefaultVernacular!.Id);
+    }
+
+    [Fact]
+    public void TheDigest_ChangesWhenTheOrderChanges_AndIsStableWhenNothingDoes()
+    {
+        var first = WritingSystemInventoryReader.Read(_cache);
+        var second = WritingSystemInventoryReader.Read(_cache);
+
+        Assert.Equal(first.Digest, second.Digest);
+        Assert.StartsWith("sha256:", first.Digest);
+
+        // Reordering must move the digest. Computed over the same ids in a different order rather than by
+        // mutating the project, because this asserts a property of the digest, not of LibLCM.
+        var reversed = first.Vernacular.Reverse().ToList();
+        if (reversed.Count > 1)
+        {
+            var reorderedDigest = DigestOf(reversed.Select(ws => ws.Id));
+            Assert.NotEqual(DigestOf(first.Vernacular.Select(ws => ws.Id)), reorderedDigest);
+        }
+    }
+
+    [Fact]
+    public void AnalysisWritingSystemsAreReported_ButDoNotEnterTheDigest()
+    {
+        var inventory = WritingSystemInventoryReader.Read(_cache);
+
+        // They are worth showing a reader: glosses live in them.
+        Assert.NotEmpty(inventory.Analysis);
+
+        // But HCLoader reads them for naming only, so they cannot change what the parser matches — and a
+        // digest that moved when a gloss language was added would invalidate Assessments for no reason.
+        Assert.Equal(DigestOf(inventory.Vernacular.Select(ws => ws.Id)), inventory.Digest);
+    }
+
+    [Fact]
+    public void TheInventoryOffersNoWayToChangeAnything_AndSaysWhereToGoInstead()
+    {
+        // Enforced by reflection rather than by convention: the moment someone adds a setter or a mutating
+        // method here, Motif has quietly taken over project-wide configuration to solve a reporting problem.
+        var mutators = typeof(WritingSystemInventory).GetMethods()
+            .Where(m => m.Name.StartsWith("Set", StringComparison.Ordinal)
+                        || m.Name.StartsWith("Add", StringComparison.Ordinal)
+                        || m.Name.StartsWith("Reorder", StringComparison.Ordinal)
+                        || m.Name.StartsWith("Remove", StringComparison.Ordinal))
+            .ToList();
+
+        Assert.True(
+            mutators.Count == 0,
+            "WritingSystemInventory has gained a mutating method: " +
+            string.Join(", ", mutators.Select(m => m.Name)) +
+            ". Writing systems are edited in FieldWorks (ADR 0034's state/change boundary).");
+
+        Assert.Contains("FieldWorks", WritingSystemInventory.EditingIsAFieldWorksJob);
+    }
+
+    private static string DigestOf(IEnumerable<string> ids)
+    {
+        var joined = string.Join("\n", ids);
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(joined));
+        return "sha256:" + Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    public void Dispose()
+    {
+        if (!_cache.IsDisposed) _cache.Dispose();
+        try { Directory.Delete(_tempRoot, recursive: true); }
+        catch { /* best effort */ }
+    }
+}
