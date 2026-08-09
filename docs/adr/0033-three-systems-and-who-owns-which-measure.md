@@ -83,6 +83,11 @@ grammar.
 
 ### Decision 3: Motif owns grammar coverage, because the join is the thing Motif already built
 
+> *Renamed 2026-08-09: the measure this decision assigns to Motif — **did our words exercise what we
+> declared** — is now called **feature coverage**. "Grammar coverage" was reassigned to the measure people
+> reach for it to mean, how much of a language the grammar reaches. The decision is unchanged; only the name
+> moved. See `CONTEXT.md`, Coverage and generation.*
+
 Did our words exercise what we declared? Neither other system can answer it well, and Motif can answer it
 cheaply, because it is a set difference over GUIDs Motif now holds on both sides:
 

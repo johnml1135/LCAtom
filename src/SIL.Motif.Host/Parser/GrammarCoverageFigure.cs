@@ -17,7 +17,7 @@ namespace SIL.Motif.Host.Parser;
 /// <param name="GrammarSourceSha256">
 /// The grammar's identity. Always taken from an <see cref="AssessReport"/>'s own field — this type never
 /// hashes a grammar itself, because <see cref="AssessReport.GrammarSourceSha256"/> already carries the
-/// parser's own hash of exactly what it read (<see cref="CoverageFigure"/>'s remarks on <c>Compute</c>).
+/// parser's own hash of exactly what it read (<see cref="GrammarCoverageFigure"/>'s remarks on <c>Compute</c>).
 /// </param>
 /// <param name="Engine">Which of PanGloss's two Motif-usable modes produced this — see <see cref="ParserEngine"/>.</param>
 /// <param name="PerWordTimeoutMs">
@@ -36,7 +36,7 @@ namespace SIL.Motif.Host.Parser;
 /// and skipped words are excluded because they carry no verdict either way, so including them would let a
 /// figure move for reasons that have nothing to do with the grammar.
 /// </param>
-public sealed record CoverageFigure(
+public sealed record GrammarCoverageFigure(
     string CorpusId,
     string CorpusSha256,
     string GrammarSourceSha256,
@@ -82,7 +82,7 @@ public sealed record CoverageFigure(
     /// surface immediately, not a mismatch to paper over with whichever count happens to be smaller.
     /// </para>
     /// </remarks>
-    public static CoverageFigure Compute(BatchAnalysis analysis, CorpusDescriptor corpus, string grammarSourceSha256)
+    public static GrammarCoverageFigure Compute(BatchAnalysis analysis, CorpusDescriptor corpus, string grammarSourceSha256)
     {
         if (analysis is null) throw new ArgumentNullException(nameof(analysis));
         if (corpus is null) throw new ArgumentNullException(nameof(corpus));
@@ -99,7 +99,7 @@ public sealed record CoverageFigure(
                 "false.",
                 nameof(analysis));
 
-        return new CoverageFigure(
+        return new GrammarCoverageFigure(
             CorpusId: corpus.CorpusId,
             CorpusSha256: corpus.Sha256,
             GrammarSourceSha256: grammarSourceSha256,
@@ -114,7 +114,7 @@ public sealed record CoverageFigure(
     /// Convenience overload taking the whole <see cref="AssessReport"/> the grammar hash came free with,
     /// rather than making every caller spell out <c>report.GrammarSourceSha256</c>.
     /// </summary>
-    public static CoverageFigure Compute(BatchAnalysis analysis, CorpusDescriptor corpus, AssessReport grammarSource)
+    public static GrammarCoverageFigure Compute(BatchAnalysis analysis, CorpusDescriptor corpus, AssessReport grammarSource)
     {
         if (grammarSource is null) throw new ArgumentNullException(nameof(grammarSource));
         return Compute(analysis, corpus, grammarSource.GrammarSourceSha256);

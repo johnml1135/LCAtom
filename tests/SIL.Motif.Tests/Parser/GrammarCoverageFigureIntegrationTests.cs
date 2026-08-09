@@ -8,12 +8,12 @@ namespace SIL.Motif.Tests.Parser;
 
 /// <summary>
 /// The end-to-end path: a real project's wordforms go in, a real <c>pangloss</c> run comes back, and a
-/// <see cref="CoverageFigure"/> comes out citing exactly what produced it. Every other test in this feature
+/// <see cref="GrammarCoverageFigure"/> comes out citing exactly what produced it. Every other test in this feature
 /// exercises one seam at a time against synthetic or captured data; this one proves the seams actually fit
 /// together against the real Sena 3 project.
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
-public sealed class CoverageFigureIntegrationTests
+public sealed class GrammarCoverageFigureIntegrationTests
 {
     [RealParserFact]
     public void ExtractingAnalysingAndComputing_ProducesAFigureThatCitesItsOwnRun()
@@ -39,7 +39,7 @@ public sealed class CoverageFigureIntegrationTests
         Assert.Null(refusal);
         Assert.NotNull(report);
 
-        var figure = CoverageFigure.Compute(batchResult.Analysis!, corpus, report!);
+        var figure = GrammarCoverageFigure.Compute(batchResult.Analysis!, corpus, report!);
 
         // Every field ADR 0032 §4 requires is present and traceable back to what actually ran.
         Assert.Equal(corpus.CorpusId, figure.CorpusId);

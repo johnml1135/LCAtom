@@ -6,14 +6,14 @@ using Xunit.Abstractions;
 namespace SIL.Motif.Tests.Generator;
 
 /// <summary>
-/// MOT-3's acceptance: "the generator loads all 898 joined rows, reports its own coverage, and runs
+/// MOT-3's acceptance: "the generator loads all 898 joined rows, reports its own model coverage, and runs
 /// in CI without a liblcm source tree." End to end against the real model and manifest.
 /// </summary>
-public class CoverageReportTests
+public class ModelCoverageReportTests
 {
     private readonly ITestOutputHelper _output;
 
-    public CoverageReportTests(ITestOutputHelper output) => _output = output;
+    public ModelCoverageReportTests(ITestOutputHelper output) => _output = output;
 
     [Fact]
     public void Load_RealModelAndManifest_ReportsDocumentedCoverageNumbers()

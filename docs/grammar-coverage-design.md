@@ -1,4 +1,9 @@
-# Grammar coverage: features, their interactions, and holes
+> *Terminology, 2026-08-09: the measure this document designs is now called **feature coverage** — which
+> declared grammar features and combinations the analysed words exercise. **Grammar coverage** now means
+> something else: how much of a language the grammar reaches. The filename is left as it is because other
+> documents cite it by name. See `CONTEXT.md`, Coverage and generation.*
+
+# Feature coverage: features, their interactions, and holes
 
 **In plain terms:** a grammar is a set of features that combine — slots in a template, affixes that attach to
 categories, classes that license affixes. Most defects live in the *combinations*, not the parts. This report

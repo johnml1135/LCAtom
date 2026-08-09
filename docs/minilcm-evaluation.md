@@ -175,7 +175,7 @@ carrying grammar — which the next sections show is not MiniLcm.
 Concrete, sized, drawn from the coverage manifest rather than vibes:
 
 1. **A grammar domain model, from zero.** MiniLcm's `Models/` directory has no phonology or morphology
-   classes at all. Building HC-reachable grammar coverage (Motif's own completeness bar, ADR 0010) means
+   classes at all. Building HC-reachable **grammar-domain model coverage** (Motif's own completeness bar, ADR 0010) means
    new model types, validators, sync-helpers, and CRDT `Change` classes for roughly **30 new constructs**
    covering **230 fields** (`manifest/liblcm-inventory.tsv`, `Group=grammar`, `Scope=in`): natural classes
    (`PhNCSegments`/`PhNCFeatures`), phonological rules with structural RHS plus the separate metathesis

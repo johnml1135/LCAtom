@@ -15,7 +15,7 @@ namespace SIL.Motif.Tests.Parser;
 /// fixtures would test this code against my assumptions about the parser rather than against the parser.
 /// </para>
 /// <para>
-/// What these tests defend is the distinction the whole coverage story rests on: <b>timed out is not
+/// What these tests defend is the distinction the whole grammar coverage story rests on: <b>timed out is not
 /// failed</b>. See <c>docs/issues.md</c> <c>D9</c> — the moment a figure counts "we stopped waiting" as "the
 /// grammar cannot analyse this", coverage stops being usable as a target, because it then moves when the
 /// machine is busy.

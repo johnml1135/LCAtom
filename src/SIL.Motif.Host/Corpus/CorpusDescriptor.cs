@@ -4,11 +4,11 @@ using System.Text;
 namespace SIL.Motif.Host.Corpus;
 
 /// <summary>
-/// A deterministic, hashable description of the words a coverage figure was measured over.
+/// A deterministic, hashable description of the words a grammar coverage figure was measured over.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Why this has to exist at all.</b> A coverage percentage is meaningless without saying which words it
+/// <b>Why this has to exist at all.</b> A grammar coverage percentage is meaningless without saying which words it
 /// was measured over — the same grammar can score anywhere from 0% to 100% depending on the sample, and a
 /// number that silently changes because someone else's Chorus sync added or removed a wordform is worse
 /// than no number (<c>docs/adr/0032-stem-assessment-is-pangloss-supplied-lexicon.md</c> §4, closing `B24`).
@@ -33,7 +33,7 @@ namespace SIL.Motif.Host.Corpus;
 /// hash identically, or the hash would flag drift that never happened.
 /// <para>
 /// Deduplicating is the same argument one step further, and it was missed on the first pass. A corpus is a
-/// <i>set</i> of word forms: <see cref="Parser.CoverageFigure.Compute"/> compares it to what was analysed with
+/// <i>set</i> of word forms: <see cref="Parser.GrammarCoverageFigure.Compute"/> compares it to what was analysed with
 /// set semantics, and a word form analysed twice is analysed once. If this list kept duplicates, two corpora
 /// covering identically the same words would carry different hashes and a figure would report drift against
 /// itself. Identity and comparison have to agree about what a corpus is.
@@ -41,7 +41,7 @@ namespace SIL.Motif.Host.Corpus;
 /// </param>
 /// <param name="Sha256">
 /// <c>sha256:</c> followed by 64 lowercase hex characters, computed over <see cref="Words"/> joined by
-/// newlines. A coverage figure citing a <see cref="CorpusId"/> whose current hash no longer matches this
+/// newlines. A grammar coverage figure citing a <see cref="CorpusId"/> whose current hash no longer matches this
 /// one is stale and must say so rather than presenting itself as current.
 /// </param>
 /// <param name="Provenance">

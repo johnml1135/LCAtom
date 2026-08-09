@@ -73,9 +73,10 @@ computed against.
 _Avoid_: check, test, gate, validation, CI run
 
 **Selection**:
-The subset of word forms a Report was computed over — defined by a query, and pinned as an exact hashed
-list each time it runs. Naming one is how a reader states which words matter.
-_Avoid_: sample, filter, scope, subset, test set
+A named set of word forms to be parsed, listed out in full, with a note of where they came from. Not a query
+and not a sample — a person may pick fourteen words with nothing in common, and why they matter is theirs.
+A list can be exported from an Assessment, but what is kept is the words, so nothing has to be re-derived.
+_Avoid_: query, sample, filter, scope, subset, test set, corpus descriptor
 
 **Hole**:
 A combination the grammar licenses that no analysis exercises. Undecided by construction: it means an
@@ -131,11 +132,26 @@ _Avoid_: HC XML, export, projection
 
 ## Coverage and generation
 
-> **"Coverage" is ambiguous in this project and must always be qualified.** The terms below concern
-> **model coverage** — whether the generator accounts for every field in LibLCM's model. Two other senses
-> exist and belong to other systems: **parse coverage** (what share of a word list parsed) is PanGloss's,
-> and **grammar coverage** (which declared grammar features and combinations the analysed words exercise)
-> is Motif's. An unqualified "coverage" is never acceptable in prose, a report, or an API name.
+> **"Coverage" is ambiguous in this project and must always be qualified.** An unqualified "coverage" is
+> never acceptable in prose, a report, or an API name. There are five senses:
+>
+> | Term | What it measures | Whose |
+> | --- | --- | --- |
+> | **parse coverage** | What share of a word list parsed. The raw figure | PanGloss |
+> | **grammar coverage** | How much of a language the grammar reaches — parse coverage reported over a named Corpus, with provenance | Motif |
+> | **feature coverage** | Which declared grammar features, and which combinations of them, the analysed words actually exercise. What a Hole is an absence in | Motif |
+> | **test coverage** | What the manual analyses assert. Always qualified in prose and API names — this repo has literal unit tests | Motif |
+> | **model coverage** | Whether the generator accounts for every field in LibLCM's model. The terms in this section concern this one | Motif |
+>
+> *Renamed 2026-08-09.* **Feature coverage** was called *grammar coverage* until the two were being used in
+> one sentence. The name moved to the measure people reach for it to mean — *how much of the language does
+> this grammar handle* — and the feature-combination measure took the name that says what it counts.
+> Documents written before that date use the old sense; `docs/grammar-coverage-design.md` is about **feature
+> coverage** despite its filename, which is left alone because it is cited by name elsewhere.
+>
+> **Grammar coverage and feature coverage answer opposite questions** and a grammar can score well on one and
+> badly on the other: *how much text can the grammar touch* versus *how much of the grammar does the text
+> reach*. That is why both exist.
 
 **Manifest**:
 One row per field in LibLCM's model, recording what is in scope and which Construct it belongs to. Those

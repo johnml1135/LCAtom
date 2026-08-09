@@ -48,7 +48,7 @@ public static class LcmWordformCorpus
     /// <param name="corpusId">
     /// The label the resulting descriptor carries — see <see cref="CorpusDescriptor.CorpusId"/>. Not
     /// derived from the cache automatically; a caller extracting a capped sample should say so here (for
-    /// example <c>"Sena 3 (first 1000)"</c>) rather than let the label imply full coverage.
+    /// example <c>"Sena 3 (first 1000)"</c>) rather than let the label imply the whole project.
     /// </param>
     /// <param name="limit">
     /// Caps how many forms are pulled from the live enumeration before sorting and hashing. Omit for the

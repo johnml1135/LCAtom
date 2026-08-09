@@ -109,7 +109,7 @@ public class SliceLabelHarvesterTests
     public void PartsXml_tolerates_the_real_stray_angle_bracket_bug_in_CellarParts_xml()
     {
         // CellarParts.xml genuinely has <bin class="CmSemanticDomain>"> — a stray '>' baked into the
-        // attribute value. The harvester must not silently lose this class's coverage over a typo upstream.
+        // attribute value. The harvester must not silently lose this class's model coverage over a typo upstream.
         const string fixture = """
             <PartInventory>
               <bin class="CmSemanticDomain>">

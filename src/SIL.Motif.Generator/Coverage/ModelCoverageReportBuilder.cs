@@ -5,10 +5,10 @@ using SIL.Motif.Generator.ModelSource;
 
 namespace SIL.Motif.Generator.Coverage;
 
-/// <summary>Builds a <see cref="CoverageReport"/> from an already-joined model.</summary>
-public static class CoverageReportBuilder
+/// <summary>Builds a <see cref="ModelCoverageReport"/> from an already-joined model.</summary>
+public static class ModelCoverageReportBuilder
 {
-    public static CoverageReport Build(ModelPathResult pathResult, ParsedModel model, IReadOnlyList<JoinedRow> rows)
+    public static ModelCoverageReport Build(ModelPathResult pathResult, ParsedModel model, IReadOnlyList<JoinedRow> rows)
     {
         var countsByKindAndCard = new Dictionary<string, int>();
         foreach (var row in rows)
@@ -34,7 +34,7 @@ public static class CoverageReportBuilder
             kindsPerGroup[group] = kindsPerGroup.GetValueOrDefault(group) + verbCount;
         }
 
-        return new CoverageReport(
+        return new ModelCoverageReport(
             pathResult.Path,
             pathResult.Source,
             model.Version,

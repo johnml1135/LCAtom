@@ -182,7 +182,7 @@ public class PanGlossParser
 
     /// <summary>
     /// Keeps the parser's warnings rather than discarding them. Sena 3 produces 137 through this route, and a
-    /// coverage figure computed while those were ignored is not a figure about the grammar.
+    /// grammar coverage figure computed while those were ignored is not a figure about the grammar.
     /// </summary>
     private static IReadOnlyList<string> ExtractWarnings(string stdErr) =>
         stdErr.Split('\n')

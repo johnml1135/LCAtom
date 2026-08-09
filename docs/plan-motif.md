@@ -143,6 +143,8 @@ the first author, not the last. M5 is the first thing a linguist would recognise
 | `MOT-14` — Receipt store and sync in Lexbox | M4b | Medium | **Scope 2** |
 | `MOT-20` — the Motif store | M2 | Medium, and newly load-bearing | **Ingestion built** 2026-08-09 — `add-corpus` / `add-document` / `add-corpus-bundle`, behind `ICorpusStore` ([ADR 0037](adr/0037-fetching-lives-outside-motif.md)). **Storage still files**: the embedded database for Corpora and Assessments in [ADR 0036](adr/0036-motif-has-its-own-data-store.md) decision 6 is not built, and pruning rules are undecided |
 | `MOT-21` — promotion: pulling a curated subset into FieldWorks | M4 | Medium | **Not started** — the only sanctioned route from the Motif store into the language project ([ADR 0036](adr/0036-motif-has-its-own-data-store.md) decision 2). Which words, which analyses, and what record the crossing leaves |
+| `MOT-22` — mark a word form as not correctly spelled | M3 | Small | **Decided 2026-08-09, not started** — Motif reads and writes `WfiWordform.SpellingStatus`. The manifest row exists and is switched off; turning it on is one hand-authored row plus a regenerate. Writing it moves the Hunspell dictionary, so the dry run must say so |
+| `MOT-23` — the analysis aggregate read API | M3 | Medium | **Decided 2026-08-09, not started** — [ADR 0038](adr/0038-expectations-are-fieldworks-approved-analyses.md). Per word form: manual and automatic analyses, counts and instances, links through to the words, and an option to reparse and compare. "What changed" is the diff between two responses, so there is no separate change-tracking type |
 
 **Withdrawn:** `MOT-1` and `MOT-5`. Both existed only to serve a merge layer that is not on this path;
 operations target LibLCM directly, so neither a type crosswalk nor a mapping onto merge primitives has
@@ -431,6 +433,70 @@ are shared between projects of the same language or duplicated per project. What
 the project disagree about which project they belong to. And a `net48` proof for the chosen data-access
 library, owed for scope 2 in the same way `MOT-13` owes one for `System.Text.Json` — not a blocker now, since
 the store lives in `SIL.Motif.Host`, which targets `net10.0` only.
+
+**Explicitly deferred, decided 2026-08-09: spelling corrections are a separate data type and are not being
+designed now.** A mistyped form paired with its correction — *what someone typed* against *what they meant* —
+is not a wordform, not an analysis, and has no FieldWorks counterpart, so it will need a Motif type of its
+own. It is deliberately out of scope until spelling correction is actually being built, which may also bring
+its own interface. Recorded so that the absence reads as a decision rather than an oversight.
+
+Distinct from **misspelled words Motif wants to represent**, which is a nearer-term need and *does* have a
+FieldWorks home: `WfiWordform.SpellingStatus`, tracked as `MOT-22`.
+
+## `MOT-23` — the analysis aggregate read API — M3
+
+**What this is for:** so a person can ask one question — *what do we assert about this word, what does the
+parser say about it, and how many places does it appear* — and get an answer they can act on, for one word or
+for all of them.
+
+Established by [ADR 0038](adr/0038-expectations-are-fieldworks-approved-analyses.md) decision 5. Per word
+form: the aggregate of its **manual** analyses (what a human approved — the tests) and its **automatic** ones
+(what the parser produced), with counts and instances per manual analysis, links through to the words
+themselves, and an option to run the parser over all of them and compare against what is recorded.
+
+**Why this replaces a change-tracking design rather than adding to one.** *What changed* is the difference
+between two responses to this query. Differences in the automatic analyses are grammar coverage moving;
+differences in counts are text churn; what is left — differences in the manual analyses — is a test being
+established, updated or removed. There is nothing separate to build and nothing to keep in sync.
+
+**Two constraints it must honour.** Established, updated and removed are reported separately and never netted
+against passing, because removing the last approved analysis on a word form improves every number while
+reducing what is checked. And Motif does not attribute cause: when a proposal changes both the rules and the
+analyses, we know the analysis changed and we know it passes now, and which caused which is not visible.
+
+**The dependency that makes it possible at all:** FieldWorks deletes the previous approved analysis when a
+human edits a breakdown, so the before-state has to be in the change set's comparison footprint or the
+question is unanswerable after the fact ([ADR 0038](adr/0038-expectations-are-fieldworks-approved-analyses.md)
+decision 4).
+
+## `MOT-22` — Motif can mark a word form as not correctly spelled — M3
+
+**What this is for:** so a person working through a list of parse failures can say "that one isn't a word" and
+have it stick, in the same change that fixes the rules for the ones that are.
+
+**Decided 2026-08-09.** `WfiWordform.SpellingStatus` is a real, human-settable, durable three-state flag
+(`undecided` / `correct` / `incorrect`) with a live Bulk Edit Wordforms column, and FieldWorks protects it —
+`DeleteIfSpurious` refuses to delete a wordform whose status is not `undecided`, because *"we know something
+about it that we don't want to forget"*. Motif both **reads and writes** it.
+
+**Reading it is the free half.** A wordform a linguist already marked `incorrect` that the grammar cheerfully
+analyses is over-generation evidence, using judgement they recorded in the place they normally record it.
+
+**Writing it has a consequence that must be shown.** A `SpellingStatus` change routes through
+`MorphologyListener.PropChanged` into `SpellingHelper.SetSpellingStatus`, which adds or removes the word from
+the Hunspell dictionary — so a word Motif marks `incorrect` starts showing a red squiggle in the linguist's
+texts. That is a visible change to a different tool caused by an operation about grammar, and it belongs in
+the dry run's expected effects rather than as a surprise after apply.
+
+**The work.** The manifest row exists and is switched off — `Scope="out"`, no `Group`, no `Verbs`. Give it the
+same hand-authored [ADR 0025](adr/0025-parser-first-build-order.md) treatment `Analyses` and `Form` already
+carry on that class: a group, a `set` verb, and `EnumValues="0=Undecided;1=Correct;2=Incorrect"` following the
+`CmPicture.LayoutPos` precedent. Then regenerate the kind and extend `ManifestHandAuthoredRowsTests`, which
+pins those rows against a `classify.ps1` rerun.
+
+**What this does not cover, and it is a different claim:** a word that *is* correctly spelled but that the
+grammar should not analyse — a borrowed proper noun, a code-switch. FieldWorks has nothing for that, and
+neither does this task.
 
 **The property that must be maintained, and it is load-bearing:** everything in the store is either cached or
 re-fetchable, which is what makes losing it cost time rather than work. The first genuinely authored thing to

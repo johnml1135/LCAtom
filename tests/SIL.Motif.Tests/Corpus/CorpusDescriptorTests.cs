@@ -103,7 +103,7 @@ public class CorpusDescriptorTests
     [Fact]
     public void ACorpusIsASet_SoDuplicatesDoNotChangeItsIdentity()
     {
-        // Found reviewing the first implementation, which sorted but did not deduplicate. CoverageFigure
+        // Found reviewing the first implementation, which sorted but did not deduplicate. GrammarCoverageFigure
         // compares a corpus against what was analysed with set semantics, and a word form analysed twice is
         // analysed once — so if the hash counted duplicates, two corpora covering identically the same words
         // would carry different hashes and a figure would report drift against itself.

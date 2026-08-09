@@ -10,7 +10,7 @@ namespace SIL.Motif.Contract.Parsing;
 /// supported properties").
 /// </summary>
 /// <remarks>
-/// The exact v1 operation inventory is produced from use cases and the LibLCM coverage manifest in
+/// The exact v1 operation inventory is produced from use cases and the LibLCM model coverage manifest in
 /// a later phase (docs/implementation-plan.md, Phase 6) and is out of scope for the LibLCM-free
 /// contract kernel. This registry is seeded only with the two kinds the normative contract
 /// document itself uses as illustrations (<c>lexical/entry/create</c> in "Document shape",

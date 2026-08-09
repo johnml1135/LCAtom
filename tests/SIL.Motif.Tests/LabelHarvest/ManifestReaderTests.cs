@@ -4,7 +4,7 @@ using Xunit;
 namespace SIL.Motif.Tests.LabelHarvest;
 
 /// <summary>
-/// Covers reading <c>manifest/liblcm-inventory.tsv</c>'s own dialect back in, read-only, for coverage
+/// Covers reading <c>manifest/liblcm-inventory.tsv</c>'s own dialect back in, read-only, for model coverage
 /// computation — this tool must never write to that file.
 /// </summary>
 public class ManifestReaderTests

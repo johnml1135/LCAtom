@@ -72,11 +72,11 @@ public sealed record LicenceCapabilities(
 
         return MayDerive is false
             ? $"No derived work may be built from '{corpusDescription}': its licence forbids derivatives " +
-              $"(basis: {Basis}). Reach and coverage figures over it remain permitted, because reading is not " +
+              $"(basis: {Basis}). Reach and grammar coverage figures over it remain permitted, because reading is not " +
               "deriving."
             : $"No derived work may be built from '{corpusDescription}': nobody has established what its " +
               $"licence permits (basis: {Basis}). Establish the licence, or use a corpus that has one. Reach " +
-              "and coverage figures over it remain permitted, because reading is not deriving.";
+              "and grammar coverage figures over it remain permitted, because reading is not deriving.";
     }
 
     /// <summary>Throws unless a derived artefact may be built. For the call sites that must not proceed.</summary>

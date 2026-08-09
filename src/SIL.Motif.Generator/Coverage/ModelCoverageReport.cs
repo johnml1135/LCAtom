@@ -4,11 +4,11 @@ using SIL.Motif.Generator.ModelSource;
 namespace SIL.Motif.Generator.Coverage;
 
 /// <summary>
-/// MOT-3's acceptance: "the generator loads all 898 joined rows, reports its own coverage, and runs
+/// MOT-3's acceptance: "the generator loads all 898 joined rows, reports its own model coverage, and runs
 /// in CI without a liblcm source tree." This is that report — a plain data record plus a printable
 /// form, not a side effect, so a test can assert on the numbers directly instead of scraping text.
 /// </summary>
-public sealed record CoverageReport(
+public sealed record ModelCoverageReport(
     string ModelFilePath,
     ModelPathSource ModelFilePathSource,
     string ModelVersion,
@@ -23,7 +23,7 @@ public sealed record CoverageReport(
     public override string ToString()
     {
         var sb = new StringBuilder();
-        sb.AppendLine("Motif generator coverage report");
+        sb.AppendLine("Motif generator model coverage report");
         sb.AppendLine($"  MasterLCModel.xml path : {ModelFilePath}");
         sb.AppendLine($"  path source            : {ModelFilePathSource}");
         sb.AppendLine($"  model version          : {ModelVersion}");

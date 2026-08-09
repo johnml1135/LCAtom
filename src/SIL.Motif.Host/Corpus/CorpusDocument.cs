@@ -115,7 +115,7 @@ public sealed record StoredCorpus(
     /// The documents a derived artefact — an n-gram model, a published word list — may lawfully be built from.
     /// </summary>
     /// <remarks>
-    /// <b>A subset, and usually a small one.</b> The whole corpus is available for reach and coverage figures,
+    /// <b>A subset, and usually a small one.</b> The whole corpus is available for reach and grammar coverage figures,
     /// because reading is not deriving. Callers building anything publishable must go through here rather than
     /// through <see cref="Documents"/>, and the two being different lengths is the normal case, not a fault.
     /// </remarks>

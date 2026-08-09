@@ -2,7 +2,7 @@ using System.Globalization;
 
 namespace SIL.Motif.Host.Parser;
 
-/// <summary>What happened to one word. Kept distinct because a coverage figure that merges them is not a
+/// <summary>What happened to one word. Kept distinct because a grammar coverage figure that merges them is not a
 /// figure about the grammar.</summary>
 public enum WordOutcome
 {
@@ -27,11 +27,11 @@ public enum WordOutcome
 public sealed record WordAnalysis(int Index, string Word, int ElapsedMs, WordOutcome Outcome, string Signature);
 
 /// <summary>
-/// A completed batch run, with the provenance a coverage figure is required to carry
+/// A completed batch run, with the provenance a grammar coverage figure is required to carry
 /// (<c>docs/adr/0032-stem-assessment-is-pangloss-supplied-lexicon.md</c> §4).
 /// </summary>
 /// <remarks>
-/// <see cref="TimedOut"/> is surfaced beside the counts on purpose: a caller computing coverage must be able
+/// <see cref="TimedOut"/> is surfaced beside the counts on purpose: a caller computing grammar coverage must be able
 /// to see that its number is a lower bound without inspecting every row, and a caller that ignores it produces
 /// a figure that moves when the machine is busy.
 /// </remarks>
@@ -48,13 +48,13 @@ public sealed record BatchAnalysis(
     public int Skipped => Words.Count(w => w.Outcome == WordOutcome.Skipped);
 
     /// <summary>
-    /// Words the parser actually reached a verdict on — the only honest denominator for coverage, since a
+    /// Words the parser actually reached a verdict on — the only honest denominator for grammar coverage, since a
     /// timed-out or skipped word has no verdict either way.
     /// </summary>
     public int Adjudicated => Analysed + NoAnalysis;
 
     /// <summary>
-    /// <c>true</c> when any word timed out, so any coverage figure derived from this run is a **lower bound**
+    /// <c>true</c> when any word timed out, so any grammar coverage figure derived from this run is a **lower bound**
     /// and must say so rather than presenting itself as a measurement.
     /// </summary>
     public bool IsLowerBound => TimedOut > 0;
@@ -71,7 +71,7 @@ public static class BatchTsvParser
     /// Reads <c>idx\tword\tms\tstatus\tsignature</c> rows. Unknown statuses throw rather than defaulting:
     /// a status this code does not understand, silently bucketed as a failure, is precisely the
     /// timeouts-as-failures error <c>D9</c> records — so a new parser status must break the build loudly
-    /// instead of quietly shifting a coverage number.
+    /// instead of quietly shifting a grammar coverage number.
     /// </summary>
     public static IReadOnlyList<WordAnalysis> Parse(string tsv)
     {
@@ -112,6 +112,6 @@ public static class BatchTsvParser
         _ => throw new InvalidOperationException(
             $"Unrecognised parser status '{status}' (signature '{signature}'). Add it to " +
             $"{nameof(BatchTsvParser)} deliberately: bucketing an unknown status as a failure would move " +
-            "coverage numbers silently, which is the defect docs/issues.md D9 records."),
+            "grammar coverage numbers silently, which is the defect docs/issues.md D9 records."),
     };
 }

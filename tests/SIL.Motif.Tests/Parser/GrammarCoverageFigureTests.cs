@@ -5,13 +5,13 @@ using Xunit;
 namespace SIL.Motif.Tests.Parser;
 
 /// <summary>
-/// Unit tests for assembling a <see cref="CoverageFigure"/> from a <see cref="BatchAnalysis"/> and a
+/// Unit tests for assembling a <see cref="GrammarCoverageFigure"/> from a <see cref="BatchAnalysis"/> and a
 /// <see cref="CorpusDescriptor"/>. Built on synthetic rows rather than captured fixtures — the mapping from
 /// raw parser text to <see cref="WordAnalysis"/> is already covered by <see cref="ParserOutputTests"/>
 /// against real captured output; what is new and untested here is purely the arithmetic and provenance
 /// assembly on top of already-typed results.
 /// </summary>
-public class CoverageFigureTests
+public class GrammarCoverageFigureTests
 {
     private static BatchAnalysis Batch(params (string Word, WordOutcome Outcome)[] words) =>
         new(
@@ -32,7 +32,7 @@ public class CoverageFigureTests
             ("anthu", WordOutcome.Skipped));
         var corpus = CorpusDescriptor.Create("test-corpus", batch.Words.Select(w => w.Word));
 
-        var figure = CoverageFigure.Compute(batch, corpus, "sha256:" + new string('a', 64));
+        var figure = GrammarCoverageFigure.Compute(batch, corpus, "sha256:" + new string('a', 64));
 
         // Denominator is analysed (2) + no-analysis (1) = 3, not the 5 rows in the batch.
         Assert.Equal(3, figure.Adjudicated);
@@ -47,7 +47,7 @@ public class CoverageFigureTests
         var batch = Batch(("mbali", WordOutcome.Analysed), ("ya", WordOutcome.TimedOut));
         var corpus = CorpusDescriptor.Create("test-corpus", new[] { "mbali", "ya" });
 
-        var figure = CoverageFigure.Compute(batch, corpus, "sha256:" + new string('a', 64));
+        var figure = GrammarCoverageFigure.Compute(batch, corpus, "sha256:" + new string('a', 64));
 
         Assert.True(figure.IsLowerBound);
     }
@@ -58,7 +58,7 @@ public class CoverageFigureTests
         var batch = Batch(("mbali", WordOutcome.Analysed), ("ya", WordOutcome.NoAnalysis));
         var corpus = CorpusDescriptor.Create("test-corpus", new[] { "mbali", "ya" });
 
-        var figure = CoverageFigure.Compute(batch, corpus, "sha256:" + new string('a', 64));
+        var figure = GrammarCoverageFigure.Compute(batch, corpus, "sha256:" + new string('a', 64));
 
         Assert.False(figure.IsLowerBound);
         Assert.Equal(0, figure.TimedOutCount);
@@ -72,7 +72,7 @@ public class CoverageFigureTests
         var batch = Batch(("mbali", WordOutcome.TimedOut), ("ya", WordOutcome.Skipped));
         var corpus = CorpusDescriptor.Create("test-corpus", new[] { "mbali", "ya" });
 
-        var figure = CoverageFigure.Compute(batch, corpus, "sha256:" + new string('a', 64));
+        var figure = GrammarCoverageFigure.Compute(batch, corpus, "sha256:" + new string('a', 64));
 
         Assert.Equal(0, figure.Adjudicated);
         Assert.Null(figure.Fraction);
@@ -86,7 +86,7 @@ public class CoverageFigureTests
         var corpus = CorpusDescriptor.Create("Sena 3", new[] { "mbali" });
         var grammarHash = "sha256:" + new string('b', 64);
 
-        var figure = CoverageFigure.Compute(batch, corpus, grammarHash);
+        var figure = GrammarCoverageFigure.Compute(batch, corpus, grammarHash);
 
         Assert.Equal(corpus.CorpusId, figure.CorpusId);
         Assert.Equal(corpus.Sha256, figure.CorpusSha256);
@@ -103,7 +103,7 @@ public class CoverageFigureTests
         var corpus = CorpusDescriptor.Create("test-corpus", new[] { "mbali", "somethingElse" });
 
         var ex = Assert.Throws<ArgumentException>(
-            () => CoverageFigure.Compute(batch, corpus, "sha256:" + new string('a', 64)));
+            () => GrammarCoverageFigure.Compute(batch, corpus, "sha256:" + new string('a', 64)));
 
         Assert.Contains("test-corpus", ex.Message);
     }
@@ -122,7 +122,7 @@ public class CoverageFigureTests
             Pipeline: "foma-confirm",
             DiagnosticCount: 0);
 
-        var figure = CoverageFigure.Compute(batch, corpus, report);
+        var figure = GrammarCoverageFigure.Compute(batch, corpus, report);
 
         Assert.Equal(report.GrammarSourceSha256, figure.GrammarSourceSha256);
     }
