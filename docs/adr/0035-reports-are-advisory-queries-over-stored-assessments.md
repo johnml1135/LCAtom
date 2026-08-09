@@ -128,10 +128,13 @@ approvals.
   weights — deferred deliberately, and nothing here forecloses one.
 - **Bounded history needs a pruning rule** — an Assessment no live Proposal pins and that is not current is
   deletable. At 64 MB a run this is a real obligation, not housekeeping.
-- **Left open on purpose:** what a report does while no Assessment exists or one is mid-run. At half an hour
-  that is a state the system lives in regularly, and it should be designed against a real runtime rather than
-  an estimate — the same reasoning as decision 3, applied to a question where the cheap and expensive cases
-  genuinely differ.
+- **Closed 2026-08-09, and it did not need a runtime after all: a Report waits for its Assessment to finish.**
+  No partial results, no lower bound computed from an incomplete run. An earlier draft proposed reporting over
+  the first 30% of a corpus, labelled — and that is wrong for a sharper reason than untidiness. A
+  `CorpusDescriptor` sorts its word forms ordinally, so a partial run is an **alphabetic prefix**, which makes
+  any statistic over it *biased* rather than merely imprecise: it is not a sample of the corpus, it is a sample
+  of the start of the alphabet. Reporting it as a lower bound would imply an unbiased estimate that the
+  processing order cannot support. A Report against an in-flight Assessment is simply not available yet.
 - **Risk accepted:** decision 1 means an unattended agent loop can breach a target the project explicitly set
   and carry on. That is the cost of not inventing a gate, and it is revisitable the moment someone wants the
   Check Run path from the declined option.
