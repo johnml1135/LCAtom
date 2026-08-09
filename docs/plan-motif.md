@@ -464,6 +464,13 @@ against passing, because removing the last approved analysis on a word form impr
 reducing what is checked. And Motif does not attribute cause: when a proposal changes both the rules and the
 analyses, we know the analysis changed and we know it passes now, and which caused which is not visible.
 
+**One counted figure for the unanalysed.** Of the correctly-spelled word forms with no manual analysis, how
+many does the grammar parse. It is deliberately the *only* thing reported about them — a word nobody has
+analysed carries no expectation. And it is weak evidence in a direction that matters: nobody checked these
+words, so a rising number is equally consistent with the grammar improving and with it getting looser. It
+supports a claim about reach and never about correctness, and the report says so
+([ADR 0038](adr/0038-expectations-are-fieldworks-approved-analyses.md) decision 7).
+
 **The dependency that makes it possible at all:** FieldWorks deletes the previous approved analysis when a
 human edits a breakdown, so the before-state has to be in the change set's comparison footprint or the
 question is unanswerable after the fact ([ADR 0038](adr/0038-expectations-are-fieldworks-approved-analyses.md)

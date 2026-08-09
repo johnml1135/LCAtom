@@ -110,15 +110,35 @@ helped the words whose analyses also changed.
 So Motif reports the facts side by side and declines to infer. This is the same rule that makes a **Hole**
 undecided by construction.
 
+### 7. A word with no analysis gets no expectation — only a counted, explicitly weak signal
+
+Added 2026-08-09, closing the gap decision 2 left open.
+
+Earlier drafts wanted a home for *this word is correctly spelled and should nevertheless not be analysed* — a
+borrowed proper noun, a code-switch — because FieldWorks cannot say it. **We are not building one.**
+
+**Wait until there is an analysis.** A word form that nobody has analysed carries no expectation, and Motif
+does nothing about it. The only thing reported is a count: **of the correctly-spelled word forms with no
+manual analysis, how many does the grammar parse.**
+
+**That number is weak evidence, and it is weak in a specific direction that matters here.** Nobody has checked
+these words, so a parse is not known to be a *correct* parse. A rising number is equally consistent with the
+grammar improving and with the grammar getting looser — and looseness is the failure mode this project exists
+to catch. So it can support a claim about **reach** — a floor under how much of the language is touched — and
+never a claim about correctness. Same asymmetry [ADR 0036](0036-motif-has-its-own-data-store.md) decision 5
+applies to unattested corpora, one layer down.
+
+It is therefore reported plainly and used for one thing: **assessing a claim of complete language coverage.**
+Outside that, it should not be quoted, and the report says so.
+
 ## Consequences
 
 - **`MOT-23`** — the aggregate read API above. Not built.
 - **`MOT-22`** — `WfiWordform.SpellingStatus` read and written by Motif, so "that one isn't a word" sticks.
-- **Negative expectations still have no home.** FieldWorks can say *this string is not correctly spelled*
-  (`SpellingStatus`), and the parser never reads it. It cannot say *this correctly-spelled word should not be
-  analysed* — a borrowed proper noun, a code-switch — which is common in the corpora being ingested.
-  `HumanAndParserAgree` exists in liblcm as `throw new NotImplementedException()`, so this ground was
-  surveyed once and abandoned; worth an upstream conversation, not worth blocking on.
+- **The only negative Motif records is "not correctly spelled"** (`MOT-22`). *Correctly spelled but should
+  not be analysed* is deliberately not modelled — decision 7. `HumanAndParserAgree` exists in liblcm as
+  `throw new NotImplementedException()`, so that ground was surveyed once and abandoned upstream too; worth a
+  conversation if the weak signal ever proves insufficient, and not worth blocking on.
 - **A useful interaction:** `DeleteIfSpurious` refuses to delete a word form whose `SpellingStatus` is not
   `undecided` — *"we know something about it that we don't want to forget"*. Marking junk as `incorrect` is
   therefore what stops it evaporating and taking the negative evidence with it.
