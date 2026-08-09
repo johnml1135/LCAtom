@@ -51,6 +51,10 @@ one*. A report may **advise**, including "this is going the wrong way". It may n
 
 ### 2. Stored Assessments live in the proposal store
 
+> *Renamed 2026-08-09 by [ADR 0036](0036-motif-has-its-own-data-store.md): the proposal store is now the
+> **Motif store**, because it holds Corpora and Assessments as well as Proposals. This decision is unchanged —
+> the store simply outgrew its name.*
+
 Not in the project. The one thing Motif already writes into a project — the applied log — is a standing
 unresolved risk precisely because **Chorus three-way-merges the `.fwdata` with no idea what any of it means**.
 That is a few kilobytes. An Assessment is tens of megabytes per run, and merging two of them would produce

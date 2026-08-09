@@ -95,11 +95,24 @@ are computed and Proposals applied. A Motif tool never opens or owns a project's
 handed one.
 _Avoid_: cache, session, connection
 
-**Proposal store**:
-The content-addressed object store holding Proposals and Receipts as immutable documents with frozen
-identities. There is no merge engine and no replication: a Proposal is either the same document or a new
-revision.
-_Avoid_: change store, database, repository, queue
+**Motif store**:
+Everything Motif keeps outside the language project: Proposals and Receipts as immutable content-addressed
+documents, plus Corpora and Assessments. There is no merge engine and no replication.
+_Avoid_: proposal store, change store, database, repository, queue
+
+**Text**:
+FieldWorks' term, kept for FieldWorks' meaning: an interlinearised document **in the language project**.
+Never used for a Corpus or a Document, which Motif holds and FieldWorks does not.
+_Avoid_: using this for corpus material
+
+**Corpus**:
+A body of running text Motif holds, with a record of where it came from, how it was tokenised, and what
+anyone attests about it. Never part of the language project.
+_Avoid_: text, texts, dataset, word list, sample
+
+**Document**:
+One unit within a Corpus — an article, a file. The boundary counts and n-gram models must not run across.
+_Avoid_: text, article, item, record
 
 **HC interpretation**:
 The rules by which grammar in a language project becomes a HermitCrab grammar — the semantics

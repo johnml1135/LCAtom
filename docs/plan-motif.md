@@ -141,6 +141,8 @@ the first author, not the last. M5 is the first thing a linguist would recognise
 | `MOT-12` — FieldWorks in-process adapter | M3 | Medium | **Scope 2** — gated on the `F26a` spike |
 | `MOT-13` — `System.Text.Json` on `net48` proof | M3 | Small | **Scope 2** — research says clean (`A4`); the proof itself remains |
 | `MOT-14` — Receipt store and sync in Lexbox | M4b | Medium | **Scope 2** |
+| `MOT-20` — the Motif store | M2 | Medium, and newly load-bearing | **Not started** — [ADR 0036](adr/0036-motif-has-its-own-data-store.md). Corpora, Assessments and n-gram models have different sizes, lifetimes and pruning rules; the current store holds JSON drafts and manifests and is not shaped for hundreds of megabytes |
+| `MOT-21` — promotion: pulling a curated subset into FieldWorks | M4 | Medium | **Not started** — the only sanctioned route from the Motif store into the language project ([ADR 0036](adr/0036-motif-has-its-own-data-store.md) decision 2). Which words, which analyses, and what record the crossing leaves |
 
 **Withdrawn:** `MOT-1` and `MOT-5`. Both existed only to serve a merge layer that is not on this path;
 operations target LibLCM directly, so neither a type crosswalk nor a mapping onto merge primitives has
@@ -405,6 +407,43 @@ because the anchor is only meaningful if nobody else can edit while it is being 
    liblcm PR exposing a synchronous save is an upstream ask.** Details in ADR 0016.
 2. **`classify.ps1` no longer reproduces the manifest** — rerunning it reverts 26 hand-authored ADR 0025
    rows. Recorded as `D7`; the README now calls it a first-pass tool rather than the producer.
+
+## `MOT-20` — the Motif store — M2
+
+**What this is for:** so the data Motif needs in order to say anything useful about a grammar has somewhere to
+live that is not the linguist's project file. Measuring how much of a language a grammar reaches means real
+running text — tens to hundreds of megabytes of it once spelling correction and word prediction are drawing on
+the same material — and none of that belongs in a `.fwdata` that people copy, back up and sync.
+
+Established by [ADR 0036](adr/0036-motif-has-its-own-data-store.md). What is *not* established is the shape.
+Today's store holds a handful of JSON drafts and manifests; it now has to hold **Corpora** (running text with
+provenance, order and frequency preserved), **Assessments** (~64 MB each at 100,000 word forms), and
+eventually n-gram models — three things with different sizes, lifetimes and pruning rules.
+
+**The open questions, none of them answered yet.** How an Assessment is pruned once no live Proposal pins it.
+Whether Corpora are shared between projects of the same language or duplicated per project. What happens when
+the store and the project disagree about which project they belong to. Whether any of it is worth putting in a
+real database rather than files, given [ADR 0031](adr/0031-collaboration-follows-the-data-not-the-surface.md)
+rules out a server but says nothing about a local one.
+
+**The property that must be maintained, and it is load-bearing:** everything in the store is either cached or
+re-fetchable, which is what makes losing it cost time rather than work. The first genuinely authored thing to
+land there breaks that, and it should be resisted or the decision revisited deliberately.
+
+## `MOT-21` — promotion into FieldWorks — M4
+
+**What this is for:** so a linguist can take the useful part of a hundred thousand analysed word forms and put
+it in their project, without the other ninety-nine thousand coming too.
+
+The only sanctioned route from the Motif store into the language project
+([ADR 0036](adr/0036-motif-has-its-own-data-store.md) decision 2). It is the same act
+[ADR 0032](adr/0032-stem-assessment-is-pangloss-supplied-lexicon.md) already assigns to Motif — PanGloss
+evaluates stems in a throwaway overlay and declares promotion a non-goal — with a different source.
+
+**Deliverables.** Choosing what crosses: word forms worth interlinearising, stems worth adding to the lexicon,
+analyses worth keeping. An ordinary Proposal for the crossing itself, so it is reviewable and leaves a Receipt
+like any other change. And the corpus provenance travelling with it, because a stem promoted from a CC-BY-SA
+source carries that obligation into the dictionary.
 
 ## `MOT-16` — long-lived CLI session over a warm cache — M2
 
