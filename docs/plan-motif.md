@@ -420,11 +420,17 @@ Today's store holds a handful of JSON drafts and manifests; it now has to hold *
 provenance, order and frequency preserved), **Assessments** (~64 MB each at 100,000 word forms), and
 eventually n-gram models — three things with different sizes, lifetimes and pruning rules.
 
-**The open questions, none of them answered yet.** How an Assessment is pruned once no live Proposal pins it.
-Whether Corpora are shared between projects of the same language or duplicated per project. What happens when
-the store and the project disagree about which project they belong to. Whether any of it is worth putting in a
-real database rather than files, given [ADR 0031](adr/0031-collaboration-follows-the-data-not-the-surface.md)
-rules out a server but says nothing about a local one.
+**The shape is now settled** ([ADR 0036](adr/0036-motif-has-its-own-data-store.md) decision 6): **files for
+Proposals and Receipts**, whose identity is their content hash and whose inspectability is worth keeping, and
+**an embedded database for Corpora and Assessments**, which are bulk, queried in aggregate, and pruned. SQLite
+is the expected engine because FwLite's `LcmCrdt` already uses it, making it the house choice rather than a
+new dependency.
+
+**The open questions that remain.** How an Assessment is pruned once no live Proposal pins it. Whether Corpora
+are shared between projects of the same language or duplicated per project. What happens when the store and
+the project disagree about which project they belong to. And a `net48` proof for the chosen data-access
+library, owed for scope 2 in the same way `MOT-13` owes one for `System.Text.Json` — not a blocker now, since
+the store lives in `SIL.Motif.Host`, which targets `net10.0` only.
 
 **The property that must be maintained, and it is load-bearing:** everything in the store is either cached or
 re-fetchable, which is what makes losing it cost time rather than work. The first genuinely authored thing to

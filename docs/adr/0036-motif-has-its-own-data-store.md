@@ -85,6 +85,32 @@ report states that accuracy is not computable and why, and says reach figures re
 look"* must never read as *"everything is fine"*, and a precision figure over unvetted text is that failure in
 its most persuasive form, because it looks like evidence.
 
+### 6. The store is split by kind: files for documents, an embedded database for bulk
+
+Decided 2026-08-09, closing the question this ADR first left open.
+
+| What | Where | Why |
+| --- | --- | --- |
+| **Proposals, Receipts** | **Files**, content-addressed | Small, immutable, and their identity *is* their content hash. A database would add nothing and take away the property that makes identity work. Being readable with a text editor has had real value throughout development |
+| **Corpora, Assessments** | **An embedded database** | Large, queried in aggregate, and pruned. "The hundred most frequent unparsed forms" over 100 MB is a scan on a filesystem, and Reports are required to be *exceptionally cheap* ([ADR 0035](0035-reports-are-advisory-queries-over-stored-assessments.md)) |
+
+**The two halves have opposite requirements, which is why one mechanism cannot serve both.** A filesystem gives
+bulk data no aggregate query and no pruning, so we would end up writing an index — a database with worse
+guarantees. A database gives immutable content-addressed documents nothing they do not already have, and costs
+them their inspectability.
+
+**SQLite is the expected engine**, and the argument is organisational rather than technical: FwLite's
+`LcmCrdt` already stores local data with `Microsoft.EntityFrameworkCore.Sqlite` and `SQLitePCLRaw`, so it is
+the house choice, the team knows it, and a second embedded database in the same organisation would need a
+reason. It is also a single file, so it keeps the property that a linguist can back the store up by copying —
+and it needs no server, which [ADR 0031](0031-collaboration-follows-the-data-not-the-surface.md) rules out.
+
+**One constraint to prove before committing to a specific package**, and it has a precedent here: scope 2
+hosts Motif inside FieldWorks on `net48`, where EF Core 6+ does not run. `MOT-13` already exists to prove
+`System.Text.Json` on `net48` for exactly this reason. The same proof is owed for whatever data-access
+library is chosen — and the store today lives in `SIL.Motif.Host`, which targets `net10.0` only, so this is a
+scope-2 question rather than a blocker now.
+
 ## Consequences
 
 - **The proposal store becomes the Motif store**, and its shape is now a real design question rather than a
