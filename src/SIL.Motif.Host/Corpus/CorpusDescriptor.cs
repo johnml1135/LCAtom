@@ -44,15 +44,44 @@ namespace SIL.Motif.Host.Corpus;
 /// newlines. A coverage figure citing a <see cref="CorpusId"/> whose current hash no longer matches this
 /// one is stale and must say so rather than presenting itself as current.
 /// </param>
-public sealed record CorpusDescriptor(string CorpusId, IReadOnlyList<string> Words, string Sha256)
+/// <param name="Provenance">
+/// Where the words came from, how text became word forms, and what — if anything — somebody attests about the
+/// result. Optional only so that a corpus extracted from the open project itself, whose origin is not in
+/// question, need not restate it; **any corpus from outside the project should carry one**, and a corpus
+/// without one can never support an accuracy figure.
+/// </param>
+public sealed record CorpusDescriptor(
+    string CorpusId,
+    IReadOnlyList<string> Words,
+    string Sha256,
+    CorpusProvenance? Provenance = null)
 {
+    /// <summary>
+    /// Whether a report over this corpus may state accuracy, as opposed to reach.
+    /// </summary>
+    /// <remarks>
+    /// A corpus with no provenance cannot: an unattested corpus is exactly the case where a failed analysis is
+    /// ambiguous between a grammar gap, a typo, and an out-of-scope token. Reach figures are unaffected —
+    /// they are what a large uncurated corpus is <i>for</i>.
+    /// </remarks>
+    public bool SupportsAccuracyClaims => Provenance?.SupportsAccuracyClaims ?? false;
+
     /// <summary>
     /// The only supported way to build a <see cref="CorpusDescriptor"/>: deduplicates and sorts
     /// <paramref name="words"/>, then hashes the result, so <see cref="Words"/> and <see cref="Sha256"/> can
     /// never disagree with each other the way they could if a caller were allowed to hand both in
     /// independently.
     /// </summary>
-    public static CorpusDescriptor Create(string corpusId, IEnumerable<string> words)
+    /// <remarks>
+    /// <b>Deduplicating and sorting here is right for a selection and wrong for a corpus, and the distinction
+    /// matters now that this data feeds more than the parser.</b> This type is the set of distinct forms handed
+    /// to PanGloss, where order and repetition are noise. The <i>corpus</i> — the running text it was derived
+    /// from — keeps both, because frequency is what ranks the unparsed-form worklist and sequence is what
+    /// n-gram models for spelling correction and word prediction are built from. Do not reach for this type
+    /// when you need either.
+    /// </remarks>
+    public static CorpusDescriptor Create(
+        string corpusId, IEnumerable<string> words, CorpusProvenance? provenance = null)
     {
         if (string.IsNullOrWhiteSpace(corpusId)) throw new ArgumentException("Required.", nameof(corpusId));
         if (words is null) throw new ArgumentNullException(nameof(words));
@@ -61,7 +90,7 @@ public sealed record CorpusDescriptor(string CorpusId, IReadOnlyList<string> Wor
             .Distinct(StringComparer.Ordinal)
             .OrderBy(w => w, StringComparer.Ordinal)
             .ToList();
-        return new CorpusDescriptor(corpusId, ordered, ComputeSha256(ordered));
+        return new CorpusDescriptor(corpusId, ordered, ComputeSha256(ordered), provenance);
     }
 
     /// <summary>
