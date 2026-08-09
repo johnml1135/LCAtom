@@ -159,6 +159,75 @@ try
             result = Commands.Log(logProject);
             break;
 
+        case "add-corpus":
+            if (!flags.TryGetValue("id", out var corpusId) ||
+                !flags.TryGetValue("description", out var corpusDescription) ||
+                !flags.TryGetValue("tokeniser", out var corpusTokeniser) ||
+                !flags.TryGetValue("tokeniser-version", out var corpusTokeniserVersion))
+            {
+                return Usage(
+                    "Usage: motif add-corpus --id <id> --description <text> --tokeniser <name> " +
+                    "--tokeniser-version <v> [--uri <url>] [--licence <text>] [--tokeniser-notes <text>] " +
+                    "[--may-derive true|false] [--may-redistribute true|false] " +
+                    "[--may-use-commercially true|false] [--requires-attribution true|false] " +
+                    "[--licence-basis <text>]");
+            }
+
+            result = CorpusCommands.AddCorpus(
+                storeDir,
+                corpusId,
+                corpusDescription,
+                flags.GetValueOrDefault("uri"),
+                flags.GetValueOrDefault("licence"),
+                CorpusCommands.CapabilitiesFromFlags(flags),
+                corpusTokeniser,
+                corpusTokeniserVersion,
+                flags.GetValueOrDefault("tokeniser-notes"));
+            break;
+
+        case "add-document":
+            if (!flags.TryGetValue("corpus", out var documentCorpus) ||
+                !flags.TryGetValue("doc", out var documentId) ||
+                !flags.TryGetValue("source", out var documentPathOrUrl))
+            {
+                return Usage(
+                    "Usage: motif add-document --corpus <id> --doc <id> --source <file-or-url> " +
+                    "[--title <text>] [--licence <text>] [--may-derive true|false] [--licence-basis <text>]");
+            }
+
+            // No capability flags on a document means "same as the corpus", which is different from
+            // "nothing established" — so pass null rather than Unknown, or every document would silently
+            // override a corpus licence that was properly recorded.
+            var documentCapabilities = HasAnyLicenceFlag(flags)
+                ? CorpusCommands.CapabilitiesFromFlags(flags)
+                : null;
+
+            result = CorpusCommands.AddDocument(
+                storeDir,
+                documentCorpus,
+                documentId,
+                documentPathOrUrl,
+                flags.GetValueOrDefault("title"),
+                flags.GetValueOrDefault("licence"),
+                documentCapabilities);
+            break;
+
+        case "add-corpus-bundle":
+            if (!flags.TryGetValue("bundle", out var bundlePath))
+                return Usage("Usage: motif add-corpus-bundle --bundle <path-to-bundle.json>");
+            result = CorpusCommands.AddBundle(storeDir, bundlePath);
+            break;
+
+        case "corpora":
+            result = CorpusCommands.ListCorpora(storeDir);
+            break;
+
+        case "show-corpus":
+            if (positionals.Count != 1)
+                return Usage("Usage: motif show-corpus <corpusId>");
+            result = CorpusCommands.ShowCorpus(storeDir, positionals[0]);
+            break;
+
         default:
             Console.Error.WriteLine($"Unknown command '{verb}'.");
             PrintUsage(Console.Error);
@@ -206,8 +275,28 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine("  apply <proposalId> --project <fwdata> --user <name>");
     writer.WriteLine("  log --project <fwdata>");
     writer.WriteLine();
+    writer.WriteLine("Corpus (text Motif measures against; never part of the FieldWorks project):");
+    writer.WriteLine(
+        "  add-corpus --id <id> --description <text> --tokeniser <name> --tokeniser-version <v> " +
+        "[--uri <url>] [--licence <text>] [--tokeniser-notes <text>] [--may-derive true|false] " +
+        "[--may-redistribute true|false] [--may-use-commercially true|false] [--licence-basis <text>]");
+    writer.WriteLine(
+        "  add-document --corpus <id> --doc <id> --source <file-or-url> [--title <text>] " +
+        "[--licence <text>] [--may-derive true|false] [--licence-basis <text>]");
+    writer.WriteLine("  add-corpus-bundle --bundle <path>   (the handoff a fetching tool writes)");
+    writer.WriteLine("  corpora");
+    writer.WriteLine("  show-corpus <corpusId>");
+    writer.WriteLine();
     writer.WriteLine("Global option: --store <dir>  (default: ./.motif)");
 }
+
+/// <summary>Whether the caller said anything at all about what a licence permits.</summary>
+static bool HasAnyLicenceFlag(Dictionary<string, string> flags) =>
+    flags.ContainsKey("may-derive")
+    || flags.ContainsKey("may-redistribute")
+    || flags.ContainsKey("may-use-commercially")
+    || flags.ContainsKey("requires-attribution")
+    || flags.ContainsKey("licence-basis");
 
 static (Dictionary<string, string> Flags, List<string> Positionals) ParseArgs(string[] tokens)
 {

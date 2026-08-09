@@ -10,11 +10,24 @@ namespace SIL.Motif.Host.Corpus;
 /// data carries an attribution obligation, and the moment to record that is when the text arrives, not when
 /// someone asks two years later.
 /// </param>
+/// <param name="Capabilities">
+/// What that licence <b>permits</b>, as opposed to what it is called. Optional here and defaulted to
+/// <see cref="LicenceCapabilities.Unknown"/>, because a corpus assembled inside the project from the project's
+/// own words has no external licence to establish. For anything ingested from outside it should be filled in —
+/// see <see cref="LicenceCapabilities"/> for why the name alone cannot answer "may I build an n-gram model
+/// from this".
+/// </param>
 public sealed record CorpusOrigin(
     string Description,
     string? Uri,
     DateTimeOffset RetrievedUtc,
-    string? Licence);
+    string? Licence,
+    LicenceCapabilities? Capabilities = null)
+{
+    /// <summary>The licence capabilities, with the honest default when none were established.</summary>
+    public LicenceCapabilities EffectiveCapabilities =>
+        Capabilities ?? LicenceCapabilities.Unknown();
+}
 
 /// <summary>How running text became word forms.</summary>
 /// <param name="Method">What split the text — the tokeniser's name.</param>

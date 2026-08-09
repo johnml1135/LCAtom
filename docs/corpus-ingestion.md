@@ -1,0 +1,172 @@
+# Getting text into Motif
+
+**In plain terms:** before Motif can say "this grammar reaches 62% of real Sena text", it needs the real Sena
+text. This is how that text arrives, where it comes from, and what stops Motif publishing something it is not
+allowed to.
+
+The division of labour, decided in [ADR 0037](adr/0037-fetching-lives-outside-motif.md): **an external tool
+fetches and cleans; Motif ingests and records.** In practice the external tool is linguistic-assistant, in
+Python, which already knows how to pull eBible.
+
+## The two sources
+
+| | [eBible](https://github.com/BibleNLP/ebible) | [OPUS](https://opus.nlpl.eu) |
+| --- | --- | --- |
+| **What it is** | 1,000+ Bible translations in 833 languages, already cleaned to verse-per-line | Sentence-aligned parallel corpora, 600+ languages, 40,000+ pairs |
+| **How to get it** | Its `code/python/ebible.py`, or the `bible-nlp/biblenlp-corpus` dataset | [`opustools`](https://pypi.org/project/opustools/) — `opus_get`, `opus_read`; or the [OPUS-API](https://github.com/Helsinki-NLP/OPUS-API) directly |
+| **Licences** | Per translation, in `licences.tsv`. **~805 of ~1,004 are No-Derivatives** | Varies; OPUS states it does not own the text and offers only what it believes it may redistribute |
+| **Best for** | Language coverage. For most languages here this is the widest net there is | Genuine non-biblical parallel text, where it exists |
+
+**A caution on OPUS's Wikipedia corpus:** it is sentence-aligned bitext, so it contains only the sentences
+that aligned — not the articles. For bulk monolingual text to build n-grams from, the Wikipedia dumps are the
+right source and OPUS is not.
+
+## The handoff: a corpus bundle
+
+The fetching tool writes one small JSON file beside the text it produced. Motif reads it.
+
+```json
+{
+  "corpusId": "ebible-seh",
+  "origin": {
+    "description": "eBible, Sena translations",
+    "uri": "https://github.com/BibleNLP/ebible",
+    "retrievedUtc": "2026-08-09T10:30:00Z",
+    "licence": "mixed; see per-document",
+    "capabilities": {
+      "mayRedistribute": true,
+      "mayDerive": false,
+      "requiresAttribution": true,
+      "basis": "eBible licences.tsv"
+    }
+  },
+  "tokenisation": {
+    "method": "SIL.Machine LatinWordTokenizer",
+    "version": "3.6.2",
+    "notes": "Verse-per-line input; punctuation split off; digits kept."
+  },
+  "qualification": null,
+  "documents": [
+    {
+      "documentId": "sehNT",
+      "title": "Sena New Testament",
+      "source": "sehNT.txt",
+      "licence": "CC-BY-NC-ND-4.0",
+      "attributes": { "copyrightHolder": "Wycliffe Bible Translators", "isoCode": "seh" }
+    },
+    {
+      "documentId": "sehPD",
+      "title": "Sena, public domain",
+      "source": "sehPD.txt",
+      "licence": "public domain",
+      "capabilities": {
+        "mayRedistribute": true, "mayDerive": true, "mayUseCommercially": true,
+        "requiresAttribution": false, "basis": "eBible licences.tsv"
+      }
+    }
+  ]
+}
+```
+
+Then:
+
+```
+motif add-corpus-bundle --bundle ./handoff/bundle.json
+```
+
+### What each part is for
+
+**`origin`** — required. Description, location, retrieval date, licence. A corpus whose source nobody
+recorded cannot be published from safely, and the moment to record it is when the text arrives.
+
+**`tokenisation`** — required, and it is not bookkeeping. At corpus scale **tokenisation decides most of what
+"unparsed" means**: a form invented by splitting on an apostrophe fails to parse and reads as a gap in the
+grammar. Two corpora tokenised differently are not comparable even when the source text is identical.
+
+**`capabilities`** — what the licence *permits*, as opposed to what it is called. See below.
+
+**`qualification`** — optional, usually absent, and **its absence is meaningful**. It is a named person's
+dated claim that the corpus is clean and in scope. Without it, Motif will compute reach figures over the
+corpus and will refuse to compute accuracy figures, saying so explicitly rather than footnoting a number.
+
+**`source`** — a path or a URL. Relative paths resolve **against the bundle file's own directory**, so the
+handoff folder can be copied between machines unedited.
+
+**`attributes`** — anything the fetching tool knows that Motif has no field for. Kept verbatim, so a fact
+discovered at fetch time is not lost merely because Motif had not modelled it yet.
+
+## Why licences get their own machinery
+
+Roughly **805 of eBible's ~1,004 translations are No-Derivatives**. That matters here specifically because:
+
+- Measuring how much of a corpus a grammar reaches is **reading**. Reading is fine.
+- Building a spelling-correction or word-prediction model is **deriving**. For most of eBible that is not
+  permitted.
+
+Those two run over identical bytes. Nothing in the data distinguishes them — only the licence record does.
+So `StoredCorpus.DocumentsPermittingDerivation()` returns a subset, usually a small one, and anything
+publishable must go through it rather than through `Documents`.
+
+**Licences are per document**, because one eBible pull mixes public domain, CC BY-SA and CC BY-NC-ND. A
+document's capabilities override the corpus's wholesale rather than merging field by field, so a corpus-level
+"may derive" can never fill a gap in a document whose own licence forbids it.
+
+**Unknown is not permission.** Each flag is yes, no, or nobody established it. Unknown blocks derivation
+exactly as `false` does, and the two say different things — *go and find the licence* versus *stop*.
+
+**Motif does not interpret licences.** It records what it was told, and `basis` says who told it. A
+capabilities block without a `basis` is rejected, because an unsourced permission claim is worse than no
+claim: it looks like somebody checked.
+
+## Doing it by hand
+
+For a single file, without a bundle:
+
+```
+motif add-corpus --id seh-wikipedia \
+  --description "Wikipedia, Sena edition" \
+  --uri https://seh.wikipedia.org/ \
+  --licence CC-BY-SA-4.0 \
+  --may-derive true --may-redistribute true --requires-attribution true \
+  --licence-basis "Wikipedia site-wide licence" \
+  --tokeniser "SIL.Machine LatinWordTokenizer" --tokeniser-version 3.6.2
+
+motif add-document --corpus seh-wikipedia --doc dump-2026-08 \
+  --source ./seh-wiki-2026-08.txt --title "Sena Wikipedia, August 2026 dump"
+
+motif show-corpus seh-wikipedia
+```
+
+Omitting every licence flag records "nothing established", which blocks derived works and says so. That is
+the correct state for text nobody has checked — not an error to be worked around.
+
+## What this does not do yet
+
+**Ingested text cannot yet be measured against.** Storing a corpus and computing a coverage figure over it are
+two different things, and only the first is built. `CoverageFigure.Compute` consumes a `CorpusDescriptor` —
+the sorted, distinct word forms handed to the parser — and the only thing that produces one today is
+`LcmWordformCorpus.Extract`, which reads the open FieldWorks project's own wordforms. **Nothing turns a
+Document into word forms.**
+
+So a 100 MB eBible pull can be fetched, stored, hashed and licence-checked, and then measured against
+nothing. The missing piece is a tokenisation step, tracked as `B26` in the [issues register](issues.md). The
+bundle format already carries a `tokenisation` block for it to fill in, and SIL.Machine's `LatinWordTokenizer`
+is the house candidate.
+
+One asymmetry that step has to respect: a Document keeps its order and repetition, a `CorpusDescriptor` is
+sorted and deduplicated, and **only that direction is derivable**. Frequency ranks the unparsed-form worklist
+and sequence is what n-gram models are built from; both are gone once the words are a set.
+
+## What linguistic-assistant still owes
+
+Its eBible pipeline (`research/corpus/ebible/{config,fetch,read,build}.py`) stops at parallel rows. What is
+missing is the step that emits a bundle: the per-translation licence rows it needs are already in eBible's
+`licences.tsv`. For OPUS there is nothing yet; `opustools` would supply the fetch.
+
+Nothing in Motif blocks on either — a bundle can be written by hand, and the tests do exactly that.
+
+## Related
+
+- [ADR 0036](adr/0036-motif-has-its-own-data-store.md) — why Motif has a store of its own, and why none of
+  this enters the FieldWorks project
+- [ADR 0037](adr/0037-fetching-lives-outside-motif.md) — why fetching is somebody else's job

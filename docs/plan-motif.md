@@ -141,7 +141,7 @@ the first author, not the last. M5 is the first thing a linguist would recognise
 | `MOT-12` — FieldWorks in-process adapter | M3 | Medium | **Scope 2** — gated on the `F26a` spike |
 | `MOT-13` — `System.Text.Json` on `net48` proof | M3 | Small | **Scope 2** — research says clean (`A4`); the proof itself remains |
 | `MOT-14` — Receipt store and sync in Lexbox | M4b | Medium | **Scope 2** |
-| `MOT-20` — the Motif store | M2 | Medium, and newly load-bearing | **Not started** — [ADR 0036](adr/0036-motif-has-its-own-data-store.md). Corpora, Assessments and n-gram models have different sizes, lifetimes and pruning rules; the current store holds JSON drafts and manifests and is not shaped for hundreds of megabytes |
+| `MOT-20` — the Motif store | M2 | Medium, and newly load-bearing | **Ingestion built** 2026-08-09 — `add-corpus` / `add-document` / `add-corpus-bundle`, behind `ICorpusStore` ([ADR 0037](adr/0037-fetching-lives-outside-motif.md)). **Storage still files**: the embedded database for Corpora and Assessments in [ADR 0036](adr/0036-motif-has-its-own-data-store.md) decision 6 is not built, and pruning rules are undecided |
 | `MOT-21` — promotion: pulling a curated subset into FieldWorks | M4 | Medium | **Not started** — the only sanctioned route from the Motif store into the language project ([ADR 0036](adr/0036-motif-has-its-own-data-store.md) decision 2). Which words, which analyses, and what record the crossing leaves |
 
 **Withdrawn:** `MOT-1` and `MOT-5`. Both existed only to serve a merge layer that is not on this path;
@@ -435,6 +435,20 @@ the store lives in `SIL.Motif.Host`, which targets `net10.0` only.
 **The property that must be maintained, and it is load-bearing:** everything in the store is either cached or
 re-fetchable, which is what makes losing it cost time rather than work. The first genuinely authored thing to
 land there breaks that, and it should be resisted or the decision revisited deliberately.
+
+**Built 2026-08-09 — ingestion.** Text can now get in. `add-corpus`, `add-document` (from a file or a URL) and
+`add-corpus-bundle` are live, and everything lands with its origin, its tokenisation record, a SHA-256 of the
+exact bytes, and what its licence permits. See [corpus ingestion](corpus-ingestion.md) and
+[ADR 0037](adr/0037-fetching-lives-outside-motif.md).
+
+Two things this settles that were open. **Fetching is not Motif's job** — an outside tool, in practice
+linguistic-assistant, pulls from OPUS and eBible and hands over a bundle; Motif ingests and records. And
+**licences are resolved per Document, not per Corpus**, because roughly 805 of eBible's ~1,004 translations
+are No-Derivatives while the rest are not: reach figures may be computed over all of it, and an n-gram model
+may be built from only part.
+
+It goes through `ICorpusStore`, so moving Corpora into the embedded database above does not reach ingestion.
+`FileCorpusStore` is what satisfies it today.
 
 ## `MOT-21` — promotion into FieldWorks — M4
 

@@ -114,6 +114,16 @@ _Avoid_: text, texts, dataset, word list, sample
 One unit within a Corpus — an article, a file. The boundary counts and n-gram models must not run across.
 _Avoid_: text, article, item, record
 
+**Corpus bundle**:
+The handoff an outside tool writes when it has fetched text for Motif: a small file describing one Corpus and
+naming its Documents, with each one's origin and licence. It names files; it does not contain them.
+_Avoid_: import, package, archive, manifest
+
+**Licence capabilities**:
+What a licence permits — redistribute, derive, use commercially — as distinct from what it is called. Three
+states: yes, no, and nobody established it. The last blocks derived work exactly as "no" does.
+_Avoid_: licence (that is the name), permissions, rights, flags
+
 **HC interpretation**:
 The rules by which grammar in a language project becomes a HermitCrab grammar — the semantics
 FieldWorks' `HCLoader` implements and PanGloss ports. An authority on meaning, not a stored format.
