@@ -1,4 +1,5 @@
 using SIL.Motif.Generator.Descriptions;
+using SIL.Motif.Generator.Descriptions.Harvest;
 using SIL.Motif.Generator.Join;
 
 namespace SIL.Motif.Generator.Checks;
@@ -26,13 +27,39 @@ namespace SIL.Motif.Generator.Checks;
 /// unreviewed prose is a documentation risk, not a data-corruption risk, and blocking emission on a linguist's
 /// availability would make the generator hostage to a review queue.
 /// </para>
+/// <para>
+/// <b>Amended for D8:</b> presence and non-restatement are not enough — the first large batch of "draft"
+/// descriptions was 8% wrong, four of those inverted, and the check that passed them could not see it because
+/// polarity is invisible to a mechanical text check. What <i>is</i> checkable is whether the description
+/// claims a source: <see cref="KindDescription.Reviewed"/> must now be one of three documented values
+/// (<c>sourced</c>, <c>hand-corrected</c>, <c>unsourced</c>, <c>no-source-exists</c> — manifest/README.md),
+/// and a row claiming any of those but <c>unsourced</c> must actually carry a <see cref="KindDescription.Source"/> and
+/// <see cref="KindDescription.SourceDetail"/> citation. This does not catch a wrong paraphrase of a real
+/// citation, but it does catch the weaker and cheaper-to-produce failure of claiming provenance that was never
+/// recorded — an unsourced description masquerading as sourced is the exact gap D8 exists to close.
+/// </para>
 /// </remarks>
 public static class DescriptionCheck
 {
+    private static readonly HashSet<string> KnownReviewedValues = new(StringComparer.Ordinal)
+    {
+        "sourced", "hand-corrected", "unsourced", DescriptionExemptions.ReviewedValue,
+    };
+
     /// <summary>
-    /// Requires a usable description for every row in <paramref name="rowsBeingEmitted"/>, reporting every
-    /// failure at once rather than the first — someone fixing a family's descriptions wants the whole list,
-    /// not one round trip per row.
+    /// <c>no-source-exists</c> is here too: its citation is of a search rather than of a source, but a row
+    /// claiming nothing exists still has to say where it looked. <see cref="DescriptionExemptionCheck"/>
+    /// then checks that claim against the exemption table and, for the derived one, re-derives it.
+    /// </summary>
+    private static readonly HashSet<string> ValuesRequiringACitation = new(StringComparer.Ordinal)
+    {
+        "sourced", "hand-corrected", DescriptionExemptions.ReviewedValue,
+    };
+
+    /// <summary>
+    /// Requires a usable, provenance-honest description for every row in <paramref name="rowsBeingEmitted"/>,
+    /// reporting every failure at once rather than the first — someone fixing a family's descriptions wants
+    /// the whole list, not one round trip per row.
     /// </summary>
     public static void CheckEmittedKinds(
         IReadOnlyList<JoinedRow> rowsBeingEmitted,
@@ -70,6 +97,21 @@ public static class DescriptionCheck
                 failures.Add(
                     $"{key}: description '{description.Description}' only restates the label or field name. " +
                     "Say when an agent should reach for this operation, not what it is called.");
+            }
+
+            if (!KnownReviewedValues.Contains(description.Reviewed))
+            {
+                failures.Add(
+                    $"{key}: Reviewed value '{description.Reviewed}' is not one of sourced / hand-corrected / " +
+                    "unsourced / no-source-exists (manifest/README.md).");
+            }
+            else if (ValuesRequiringACitation.Contains(description.Reviewed) &&
+                     (string.IsNullOrWhiteSpace(description.Source) || string.IsNullOrWhiteSpace(description.SourceDetail)))
+            {
+                failures.Add(
+                    $"{key}: Reviewed is '{description.Reviewed}' but Source/SourceDetail is empty. A " +
+                    "description claiming provenance must record where it came from (docs/issues.md D8) — " +
+                    "use 'unsourced' if there is no citation yet.");
             }
         }
 

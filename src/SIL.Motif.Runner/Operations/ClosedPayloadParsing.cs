@@ -54,6 +54,25 @@ internal static class ClosedPayloadParsing
     }
 
     /// <summary>
+    /// MOT-22: the first basic-Integer payload property. Requires a JSON number that parses as a
+    /// 32-bit integer — a caller reaching for an out-of-range or non-integral value fails here, at the
+    /// same "reject before touching LibLCM" point every other closed payload already fails at, rather
+    /// than reaching a lowering that could clamp or truncate it silently.
+    /// </summary>
+    public static int GetRequiredInteger(JsonElement after, string propertyName, string kind)
+    {
+        if (!after.TryGetProperty(propertyName, out var element) ||
+            element.ValueKind != JsonValueKind.Number ||
+            !element.TryGetInt32(out var value))
+        {
+            throw new ContractParseException(
+                $"'{kind}' operation 'after.{propertyName}' is required and must be an integer.");
+        }
+
+        return value;
+    }
+
+    /// <summary>
     /// MOT-4 slice 2: every reference-shaped payload (a <c>rel/atomic</c> <c>set</c>, an
     /// <c>addRef</c>/<c>removeRef</c> member, <c>LexEntry.LexemeForm</c>'s <c>morphType</c>) names a
     /// target by <see cref="CanonicalId"/> rather than a raw string, so this generalizes

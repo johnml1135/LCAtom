@@ -1,0 +1,3 @@
+"Source"	"Kind"	"Release"	"Commit"	"HarvestedUtc"
+"FieldWorks"	"git-checkout"	"build-1448-40-gfd08d8588"	"fd08d8588ee2a70eed559e470bbb41a00fb6c90f"	"2026-08-10T16:20:06Z"
+"liblcm"	"nuget-package"	"11.0.0-beta0150"	""	"2026-08-10T16:20:06Z"

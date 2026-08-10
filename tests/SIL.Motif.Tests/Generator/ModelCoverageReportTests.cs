@@ -27,8 +27,11 @@ public class ModelCoverageReportTests
         Assert.True(File.Exists(coverage.ModelFilePath));
         Assert.Equal("7000072", coverage.ModelVersion);
         Assert.Equal(898, coverage.TotalFieldCount);
-        Assert.Equal(494, coverage.InScopeCount); // docs/plan-motif.md: "expect 494 in-scope of 898"
-        Assert.Equal(898 - 494, coverage.OutOfScopeCount);
+        // 495, not the pre-MOT-22 494: WfiWordform.SpellingStatus was turned on by MOT-22
+        // (docs/plan-motif.md), the same hand-authored ADR 0025 treatment its WfiWordform siblings
+        // already carried.
+        Assert.Equal(495, coverage.InScopeCount);
+        Assert.Equal(898 - 495, coverage.OutOfScopeCount);
     }
 
     [Fact]

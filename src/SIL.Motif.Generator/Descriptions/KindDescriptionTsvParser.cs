@@ -1,20 +1,30 @@
 namespace SIL.Motif.Generator.Descriptions;
 
 /// <summary>
-/// Parses <c>manifest/kind-descriptions.tsv</c>: five columns, tab-separated, every value double-quoted,
+/// Parses <c>manifest/kind-descriptions.tsv</c>: seven columns, tab-separated, every value double-quoted,
 /// CRLF line endings — the same dialect as <c>liblcm-inventory.tsv</c> so one set of habits reads both
 /// (manifest/README.md, "Companion files").
 /// </summary>
 /// <remarks>
-/// Read-only, like every other manifest artifact the generator touches. Descriptions are hand-written per
-/// family as it ships ([ADR 0023](../../../docs/adr/0023-derived-kind-names-required-descriptions.md)
-/// decision 5, as amended), so this file grows over time and is expected to be incomplete — which is why
+/// <para>
+/// Read-only, like every other manifest artifact the generator touches. Descriptions are seeded per family as
+/// it ships ([ADR 0023](../../../docs/adr/0023-derived-kind-names-required-descriptions.md) decision 5, as
+/// amended), so this file grows over time and is expected to be incomplete — which is why
 /// <see cref="Checks.DescriptionCheck"/> checks the kinds actually being emitted rather than every row in
 /// the manifest.
+/// </para>
+/// <para>
+/// The trailing <c>Source</c>/<c>SourceDetail</c> columns were added for <c>docs/issues.md</c> D8: a
+/// description with no recorded provenance is exactly the failure mode that let four inverted
+/// <c>ProdRestrict</c>-family descriptions pass the original presence-only check. This file is Stage 2 of a
+/// two-stage pipeline — <c>Descriptions.Harvest.KindDescriptionRefresher</c> is Stage 1, the re-runnable
+/// producer that (re)writes this TSV from <c>MasterLCModel.xml</c> and FieldWorks' <c>ContextHelp.xml</c>.
+/// This parser only ever reads whatever is currently checked in.
+/// </para>
 /// </remarks>
 public static class KindDescriptionTsvParser
 {
-    private const int ColumnCount = 5;
+    private const int ColumnCount = 7;
 
     public static IReadOnlyList<KindDescription> Parse(string path)
     {
@@ -55,7 +65,9 @@ public static class KindDescriptionTsvParser
                 Field: columns[1],
                 Label: columns[2],
                 Description: columns[3],
-                Reviewed: columns[4]);
+                Reviewed: columns[4],
+                Source: columns[5],
+                SourceDetail: columns[6]);
 
             // One description per field, or the emitted text depends on read order — the same class of
             // defect ADR 0026 removed from operation ordering.

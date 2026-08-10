@@ -32,8 +32,13 @@ namespace SIL.Motif.Tests.Generator;
 /// </remarks>
 public class ManifestHandAuthoredRowsTests
 {
-    /// <summary>The count as of 2026-08-06: `CmAgent` 4, `WfiAnalysis` 9, `WfiMorphBundle` 5, `WfiWordform` 2, `WfiGloss` 1.</summary>
-    private const int ExpectedAdr0025RowCount = 21;
+    /// <summary>
+    /// The count as of 2026-08-09 (MOT-22): `CmAgent` 4, `WfiAnalysis` 9, `WfiMorphBundle` 5,
+    /// `WfiWordform` 3 (`Analyses`, `Form`, and now `SpellingStatus`), `WfiGloss` 1. `SpellingStatus`
+    /// was turned on by MOT-22 with the same hand-authored ADR 0025 `ScopeReason` its `WfiWordform`
+    /// siblings carry, so it is picked up by <see cref="Adr0025Rows"/> automatically.
+    /// </summary>
+    private const int ExpectedAdr0025RowCount = 22;
 
     private static IReadOnlyList<ManifestRow> Adr0025Rows() =>
         ManifestTsvParser.Parse(RepoPaths.DefaultManifestPath())
@@ -65,6 +70,64 @@ public class ManifestHandAuthoredRowsTests
             $"point of the ADR:{Environment.NewLine}  " +
             string.Join(Environment.NewLine + "  ",
                 wrongReachability.Select(r => $"{r.Class}.{r.Field} has HcReachable='{r.HcReachable}'")));
+    }
+
+    /// <summary>
+    /// MOT-22's own row, pinned individually rather than only counted: `WfiWordform.SpellingStatus`
+    /// carries the same hand-authored `Group='analysis'`/`HcReachable='no'` treatment its `Analyses`
+    /// and `Form` siblings do (asserted generically above), plus the one thing unique to it that
+    /// `classify.ps1` cannot derive either — the confirmed `EnumValues` mapping, which is what lets the
+    /// generated payload parser range-check a value instead of trusting LibLCM to fix it.
+    /// </summary>
+    [Fact]
+    public void WfiWordformSpellingStatus_CarriesTheMot22Treatment()
+    {
+        var row = ManifestTsvParser.Parse(RepoPaths.DefaultManifestPath())
+            .Single(r => r.Class == "WfiWordform" && r.Field == "SpellingStatus");
+
+        Assert.Equal("in", row.Scope);
+        Assert.Contains("ADR 0025", row.ScopeReason, StringComparison.Ordinal);
+        Assert.Equal("analysis", row.Group);
+        Assert.Equal("no", row.HcReachable);
+        Assert.Equal("set|clear", row.Verbs);
+        Assert.Equal("0=Undecided;1=Correct;2=Incorrect", row.EnumValues);
+    }
+
+    /// <summary>
+    /// The invariant MOT-22 briefly broke and this test now guards: <b>every</b> in-scope enum field —
+    /// a basic `Integer` whose `EnumValues` column names its legal values — carries the derived
+    /// `set|clear`, with no exception anywhere in the table (ADR 0022 decision 1).
+    /// </summary>
+    /// <remarks>
+    /// MOT-22 first shipped `WfiWordform.SpellingStatus` as `set`-only, on the argument that a `clear`
+    /// writing the zero member `Undecided` would be a synonym for `set 0`. The other ten rows here refute
+    /// it: their zero members are `CenterInColumn`, `Variant`, `LeftToRightIterative`, `kpntName`,
+    /// `Anywhere`, `ShowMinorEntry` — all substantive values, all keeping `clear`. `clear` in this
+    /// manifest has never meant "erase to nothing"; it means "write the zero member". A future row that
+    /// wants an exception has to break this test first, which is the point.
+    /// </remarks>
+    [Fact]
+    public void EveryInScopeEnumField_CarriesTheDerivedSetClear()
+    {
+        var enumRows = ManifestTsvParser.Parse(RepoPaths.DefaultManifestPath())
+            .Where(r => r.Scope == "in" && r.Kind == "basic" && r.Sig == "Integer")
+            .Where(r => r.Verbs != "n/a")
+            .Where(r => !string.IsNullOrWhiteSpace(r.EnumValues) && r.EnumValues != "unknown")
+            .ToList();
+
+        var departures = enumRows.Where(r => r.Verbs != "set|clear").ToList();
+
+        Assert.True(
+            departures.Count == 0,
+            $"{departures.Count} enum row(s) depart from the derived set|clear:{Environment.NewLine}  " +
+            string.Join(Environment.NewLine + "  ",
+                departures.Select(r => $"{r.Class}.{r.Field} has Verbs='{r.Verbs}'")));
+
+        // A guard on the guard: if the enum-row filter ever stops matching anything, the assertion above
+        // passes vacuously and stops meaning what it says. Eleven rows today — the ten named in the
+        // remarks plus SpellingStatus itself. (CmPossibility.UnderStyle is a twelfth enum field whose
+        // EnumValues column still reads `unknown`, so it is not one this filter can speak for.)
+        Assert.True(enumRows.Count >= 11, $"expected at least 11 enum rows, found {enumRows.Count}.");
     }
 
     [Fact]
