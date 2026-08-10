@@ -64,6 +64,22 @@ a text repoints the occurrence at a **different word form** and may delete the o
 changes. Watching `Form` therefore catches spelling edits made directly and misses the ordinary case
 entirely.
 
+**Decided 2026-08-09 — a vanished word form is reported as vanished, and Motif does not chase it.**
+`CmObject.MergeObject` transfers every reference to the destination and then deletes the source — *"the given
+object will be deleted in this method, so don't expect it to be valid, afterwards"* — leaving no forwarding
+record and no tombstone. So when a change set's word form disappears, Motif says exactly that and the person
+re-selects.
+
+**The premise that makes this cheap: a spelling mistake is actually a mistake.** A corrected typo is not one
+word becoming another; it is a wrong word being replaced by the right one. There is no identity to preserve
+across the correction, so there is nothing lost by declining to trace it.
+
+Deliberately *not* built: heuristic recovery — inferring that the vanished form became a similar-looking new
+one. It would be wrong in exactly the case that hurts, two genuinely different words that happen to resemble
+each other, and it is the same class of claim decision 6 refuses. A forwarding record for corrections Motif
+itself applied can be added later if the reported-and-stop behaviour proves too blunt; nothing here forecloses
+it.
+
 ### 4. The before-state must be captured, because FieldWorks destroys it
 
 Update and delete-then-create are the same operation in FieldWorks, and nothing retains what a test used to
