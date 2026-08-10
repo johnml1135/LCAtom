@@ -2,6 +2,13 @@ namespace SIL.Motif.Host.Corpus;
 
 /// <summary>
 /// A BCL-only <see cref="IWordTokeniser"/>: split on whitespace, trim edge punctuation, drop pure numerals.
+/// <para>
+/// <b>Prefer <see cref="WritingSystemWordTokeniser"/> for anything measured against a FieldWorks grammar.</b>
+/// That one asks the project's own writing system which characters are word-forming, which is what FieldWorks
+/// does; this one asks .NET's general Unicode classification, which is why it has the limitation described
+/// below. This class remains because a corpus declares the tokeniser it was actually tokenised with, and
+/// corpora already tokenised this way must keep working.
+/// </para>
 /// No dependency beyond the .NET base class library, so this project can bridge Documents into a
 /// <see cref="CorpusDescriptor"/> today without referencing SIL.Machine (<c>docs/issues.md</c> <c>B26</c>).
 /// A SIL.Machine tokeniser is expected to sit behind <see cref="IWordTokeniser"/> later; this one is the

@@ -28,9 +28,16 @@ namespace SIL.Motif.Host.Corpus;
 /// <param name="Source">Where the bytes came from, recorded whether they were fetched or handed over.</param>
 /// <param name="Text">The text itself, in order.</param>
 /// <param name="ContentSha256">
-/// The hash of the exact bytes ingested. This is what makes a corpus re-derivable rather than merely
-/// re-fetchable: a source that silently changes under us is detectable, and two corpora can be compared
-/// without shipping their contents.
+/// The hash of the exact bytes ingested — <b>identity, not surveillance</b>. It says precisely what a figure
+/// was computed over, so two corpora can be compared without shipping their contents and a figure citing a
+/// hash that no longer matches is recognisable as describing different text.
+/// <para>
+/// It is emphatically <b>not</b> a change detector pointed at the source. Motif never revisits a URL, never
+/// polls, and never asks whether eBible has news: text is grabbed when somebody decides to grab it, and a
+/// corpus stays exactly what it was until a person fetches again. Fetching again means a new corpus, which is
+/// the whole mechanism — see <c>docs/issues.md</c> <c>B28</c> and
+/// <c>docs/adr/0037-fetching-lives-outside-motif.md</c> decision 1.
+/// </para>
 /// </param>
 /// <param name="IngestedUtc">When Motif took it in — distinct from when the source published it.</param>
 /// <param name="Licence">This document's licence verbatim, when it differs from the corpus's.</param>

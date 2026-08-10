@@ -41,9 +41,9 @@ The fetching tool writes one small JSON file beside the text it produced. Motif 
     }
   },
   "tokenisation": {
-    "method": "SIL.Machine LatinWordTokenizer",
-    "version": "3.6.2",
-    "notes": "Verse-per-line input; punctuation split off; digits kept."
+    "method": "fieldworks-word-forming",
+    "version": "1",
+    "notes": "Verse-per-line input; segment by the project's declared word-forming characters."
   },
   "qualification": null,
   "documents": [
@@ -82,6 +82,12 @@ recorded cannot be published from safely, and the moment to record it is when th
 **`tokenisation`** — required, and it is not bookkeeping. At corpus scale **tokenisation decides most of what
 "unparsed" means**: a form invented by splitting on an apostrophe fails to parse and reads as a gap in the
 grammar. Two corpora tokenised differently are not comparable even when the source text is identical.
+
+`method` and `version` must name a tokeniser Motif actually has — see **Which tokeniser to declare** below.
+They are **binding, not descriptive**: `CorpusTokenisation` refuses to run a tokeniser that disagrees with
+them rather than re-stamping the corpus with whatever happened to run. A fetching tool declares the
+tokenisation it wants applied; it does not need the writing system itself, because Motif supplies that from
+the open project.
 
 **`capabilities`** — what the licence *permits*, as opposed to what it is called. See below.
 
@@ -129,7 +135,7 @@ motif add-corpus --id seh-wikipedia \
   --licence CC-BY-SA-4.0 \
   --may-derive true --may-redistribute true --requires-attribution true \
   --licence-basis "Wikipedia site-wide licence" \
-  --tokeniser "SIL.Machine LatinWordTokenizer" --tokeniser-version 3.6.2
+  --tokeniser fieldworks-word-forming --tokeniser-version 1
 
 motif add-document --corpus seh-wikipedia --doc dump-2026-08 \
   --source ./seh-wiki-2026-08.txt --title "Sena Wikipedia, August 2026 dump"
@@ -140,22 +146,43 @@ motif show-corpus seh-wikipedia
 Omitting every licence flag records "nothing established", which blocks derived works and says so. That is
 the correct state for text nobody has checked — not an error to be worked around.
 
+## Which tokeniser to declare
+
+Two exist, and a corpus declares the one it was actually tokenised with — `CorpusTokenisation` refuses a
+mismatch rather than silently re-stamping it.
+
+| `tokenisation.method` | What it does | Use it when |
+| --- | --- | --- |
+| `fieldworks-word-forming` | Segments as FieldWorks' `WordMaker` does: maximal runs of characters **the project's writing system** calls word-forming | **Default choice.** Anything measured against a FieldWorks grammar |
+| `whitespace-and-punctuation` | Splits on whitespace, trims edge punctuation using .NET's Unicode classification | Corpora already tokenised this way, and cases with no writing system to consult |
+
+**Why the writing system matters, concretely.** FieldWorks decides word boundaries by asking the writing
+system, not by asking Unicode. A project that has declared `'` among its word-forming characters keeps the
+glottal stop in `'mbali'`; one that has not gets it stripped — **and gets it stripped by FieldWorks too**.
+Since the lexicon a grammar is built from was segmented by FieldWorks, matching FieldWorks is what stops
+Motif reporting false gaps. Being independently cleverer would manufacture them.
+
+Two behaviours worth knowing before you pick:
+
+- **An undeclared writing system degrades quietly**, so `WhyTokenisationMayBeDegraded()` reports it and names
+  the only real fix — running FieldWorks' Valid Characters wizard, which repairs both tools at once.
+- **Digits are not word-forming**, so `fieldworks-word-forming` *splits* on them: `2nd` becomes `nd`, and an
+  orthography marking tone with digits is shredded (`ma1` becomes `ma`). Declaring the digits fixes it. The
+  other tokeniser keeps alphanumeric mixtures whole, so **the two disagree about far more than apostrophes.**
+
 ## What this does not do yet
 
-**Ingested text cannot yet be measured against.** Storing a corpus and computing a coverage figure over it are
-two different things, and only the first is built. `CoverageFigure.Compute` consumes a `CorpusDescriptor` —
-the sorted, distinct word forms handed to the parser — and the only thing that produces one today is
-`LcmWordformCorpus.Extract`, which reads the open FieldWorks project's own wordforms. **Nothing turns a
-Document into word forms.**
+**Nothing is watched.** Motif never revisits a source, never polls, and never tells you a corpus might be out
+of date. Text is grabbed when somebody decides to grab it, and a corpus stays what it was until a person
+fetches again — at which point a new corpus is the whole mechanism. The per-document SHA-256 is identity, not
+surveillance: it says what a figure was computed over. See `B28`.
 
-So a 100 MB eBible pull can be fetched, stored, hashed and licence-checked, and then measured against
-nothing. The missing piece is a tokenisation step, tracked as `B26` in the [issues register](issues.md). The
-bundle format already carries a `tokenisation` block for it to fill in, and SIL.Machine's `LatinWordTokenizer`
-is the house candidate.
+**Assessments are not stored yet.** Ingestion, tokenisation and a grammar coverage figure all work; keeping
+the parser's output between runs does not exist. That is `MOT-20`, and it is what makes a figure cheap to
+re-read rather than re-earn.
 
-One asymmetry that step has to respect: a Document keeps its order and repetition, a `CorpusDescriptor` is
-sorted and deduplicated, and **only that direction is derivable**. Frequency ranks the unparsed-form worklist
-and sequence is what n-gram models are built from; both are gone once the words are a set.
+**Storage is files.** [ADR 0036](adr/0036-motif-has-its-own-data-store.md) decision 6 puts Corpora in an
+embedded database; ingestion goes through `ICorpusStore` so that change will not reach it.
 
 ## What linguistic-assistant still owes
 

@@ -25,10 +25,18 @@ the tooling already is: [`opustools`](https://pypi.org/project/opustools/) and t
 [OPUS-API](https://github.com/Helsinki-NLP/OPUS-API) are Python, eBible's own downloader is Python, and
 linguistic-assistant is Python.
 
-**What we give up.** Motif cannot re-fetch a corpus by itself, so "the source changed under us" is detectable
-here — every document carries the SHA-256 of the exact bytes ingested — but not *fixable* here. That is the
-right way round: noticing is Motif's job because Motif is what reports the figure, and fixing is the fetching
-tool's job because it is what knows how.
+**What we give up, and it is deliberate: Motif does not watch the source.** No polling, no revisiting a URL
+to see whether it moved, no "your corpus may be out of date" nagging. Text is grabbed when somebody decides to
+grab it. A corpus is a thing that was fetched once, and it stays exactly what it was until a person chooses to
+fetch again.
+
+Every document still carries the SHA-256 of the bytes ingested, but **that hash is identity, not
+surveillance**: it says precisely what a figure was computed over, so two corpora can be compared and a stale
+figure can be recognised as describing different text. It is not a change detector pointed at eBible, and
+nothing in Motif ever asks a source whether it has news.
+
+*Amended 2026-08-09. As first written, this section claimed source change was "detectable here", which invited
+exactly the polling machinery the owner ruled out.*
 
 ### 2. The handoff is a bundle: a small JSON file that names files rather than containing them
 
@@ -86,15 +94,19 @@ and for the same reason: **"I could not look" must never read as "everything is 
 - **OPUS is the right door for parallel text and the wrong one for bulk.** Its Wikipedia corpus is
   sentence-aligned bitext, so it carries only the sentences that aligned. Bulk monolingual text for n-grams
   wants the Wikipedia dumps directly.
-- **Tokenisation has a house answer available.** SIL.Machine's `LatinWordTokenizer` and friends are in the
-  sibling `machine` repo, as is the Thot aligner that the gloss pipeline needs. Naming a SIL.Machine
-  tokeniser and version in the bundle's `tokenisation` block means the aligner and the word list see the same
-  segmentation.
+- **Tokenisation's house answer is the writing system, not SIL.Machine** — *corrected 2026-08-09 after
+  reading the source.* This bullet first named SIL.Machine's `LatinWordTokenizer` as the candidate. It is
+  hardcoded Latin-script with no writing-system awareness, and it folds a leading apostrophe *into* the word,
+  so it does not solve the problem it was named for (`B29`). FieldWorks segments by asking the writing system
+  which characters are word-forming, and Motif matches that. SIL.Machine remains worth adopting for Latin
+  edge cases — abbreviations, URLs, hyphenation variants — and is netstandard2.0 on NuGet, so net48-safe for
+  scope 2. The Thot aligner the gloss pipeline needs is a separate and still-valid reason to want that repo.
 - **The store is still files.** [ADR 0036](0036-motif-has-its-own-data-store.md) decision 6 puts Corpora in
   an embedded database; ingestion goes through `ICorpusStore` so that change does not reach it.
-- **Ingested text has no route to a coverage figure yet**, tracked as `B26`. A `CorpusDescriptor` — sorted,
-  distinct word forms — is what the parser path consumes, and the only producer reads the open FieldWorks
-  project. The tokenisation step that would bridge them is the next build, and this ADR's `tokenisation`
-  block exists to record what it did.
-- **Open, and not decided here:** whether an ingested corpus may be *replaced* rather than only created. It
-  is currently refused, because replacing it would orphan every Assessment computed over the old contents.
+- **Ingested text now reaches a grammar coverage figure** — `B26` fixed 2026-08-09. `CorpusTokenisation`
+  bridges Documents to a `CorpusDescriptor` behind an `IWordTokeniser` seam, and this ADR's `tokenisation`
+  block is what binds a corpus to the tokeniser it may be measured with: a mismatch is refused rather than
+  silently re-stamped.
+- **Settled 2026-08-09, and settled as "no":** an ingested corpus is not replaced. Creating a new corpus is
+  the whole mechanism for fetching again, and `B28` records the reasoning. This follows from decision 1 —
+  nothing here watches a source, so there is no event that would trigger a replacement.
