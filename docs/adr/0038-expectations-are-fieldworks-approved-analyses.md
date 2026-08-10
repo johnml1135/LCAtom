@@ -102,6 +102,25 @@ Rather than a change-tracking type, there is a query: **per word form, the aggre
 and automatic** — with links through to the words, counts and instances per manual analysis, and an option to
 run the parser over all of them and compare against what is recorded.
 
+**The aggregate never parses. Decided 2026-08-09, closing a contradiction between two earlier decisions.**
+An earlier draft of this decision offered "an option to run the parser over all of them and compare", which
+collides directly with [ADR 0035](0035-reports-are-advisory-queries-over-stored-assessments.md)'s requirement
+that a Report be *"a cheap query — a few searches and some statistics"*. Parsing 100,000 word forms is not that.
+
+So the boundary is drawn hard: **reading the aggregate never triggers a parse.** It reads whatever Assessment
+exists, and where one is missing or stale it *says so* rather than fixing it. Producing an Assessment is a
+separate, slow, explicitly-invoked verb.
+
+Two earlier rulings already required this. *"If it changes and we didn't do it, just say analysis is invalid —
+rerun"* is incompatible with a read that could silently start a ten-minute parse. And rerunning is *"as per
+the discretion of the user"* — a flag on a read call is not discretion, it is discretion the first time
+somebody reads the documentation and a surprise every time after. A single call whose cost varies by three
+orders of magnitude according to invisible state is a thing people learn to fear rather than use.
+
+**A consequence worth having:** this unblocks the aggregate from Assessment storage. With nothing stored it
+returns the manual analyses plus "no analysis on record" — already useful, because the manual side *is* the
+test suite and needs no parser at all. `MOT-23` therefore does not wait on `MOT-20`.
+
 **This is a Report, not a new concept.** `CONTEXT.md` already defines one as *"a query over an Assessment and
 the project's own data, producing statistics and findings — advisory always"*. That is precisely this, so it
 inherits the existing rules rather than needing its own: it gates nothing, and it renders no verdict.
@@ -146,6 +165,38 @@ applies to unattested corpora, one layer down.
 
 It is therefore reported plainly and used for one thing: **assessing a claim of complete language coverage.**
 Outside that, it should not be quoted, and the report says so.
+
+### 8. A stale figure is stated in the past tense, and every figure names the state it describes
+
+Added 2026-08-09.
+
+A stored Assessment can outlive the grammar it measured. When it has, the report **still gives the numbers** —
+in the past tense: *"As of the assessment over corpus 'seh-wikipedia' (aaaa…) under grammar cccc…, grammar
+coverage was 62.0%. Since then, the grammar has changed (now 8888…), so this describes a state that no longer
+exists."*
+
+**Why not refuse.** A stale coverage figure is unlike the two things Motif does refuse to state. An accuracy
+figure over unvetted text is a number about nothing, its uncertainty unbounded and undirected. A causal
+attribution across a proposal that moved both rules and expectations is a claim the evidence cannot support.
+A stale figure is neither: it is a **correct measurement of a state that has since changed**, and *"it was 62%
+under the old grammar"* is exactly what a reviewer needs in order to judge whether a change helped. Refusing
+would cost real evidence without making anyone safer.
+
+**Why tense rather than a caveat.** The hazard everywhere else in this design is a footnoted number, because
+the footnote is what gets dropped when somebody quotes it. **A present-tense number with an asterisk gets
+quoted as current; a past-tense sentence cannot be, because the date is inside the claim rather than beside
+it.** So the defence is grammar, not suppression.
+
+**This only works if it is unconditional**, which the owner asked to be held to. So it is enforced by the type
+rather than by discipline: `GrammarCoverageFigure.Describe(currentCorpusSha256, currentGrammarSourceSha256)`
+is the only way to render a figure and **has no parameterless overload**. A caller cannot produce a bare
+number without stating what current is, so a figure can never appear without the corpus and grammar that give
+it meaning. Adding a shorter overload would kill the rule, because every caller would use it —
+`EveryRenderingNamesTheCorpusAndTheGrammar` exists to make that regression fail.
+
+The existing refusals survive rendering too: a lower bound says so in either tense, and nothing-adjudicated
+never renders as a percentage. A caveat that lives in the record but not in the prose has not survived, because
+the prose is what people read.
 
 ## Consequences
 

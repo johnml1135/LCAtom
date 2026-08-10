@@ -471,6 +471,12 @@ words, so a rising number is equally consistent with the grammar improving and w
 supports a claim about reach and never about correctness, and the report says so
 ([ADR 0038](adr/0038-expectations-are-fieldworks-approved-analyses.md) decision 7).
 
+**It never parses, and that is what unblocks it.** Decided 2026-08-09
+([ADR 0038](adr/0038-expectations-are-fieldworks-approved-analyses.md) decision 5): reading the aggregate
+reads whatever Assessment exists and reports a missing or stale one rather than repairing it. Producing an
+Assessment is a separate, explicitly-invoked, slow verb. So **this task does not wait on `MOT-20`** — with no
+Assessment stored it still returns the manual analyses, which are the test suite and need no parser.
+
 **The dependency that makes it possible at all:** FieldWorks deletes the previous approved analysis when a
 human edits a breakdown, so the before-state has to be in the change set's comparison footprint or the
 question is unanswerable after the fact ([ADR 0038](adr/0038-expectations-are-fieldworks-approved-analyses.md)

@@ -63,6 +63,79 @@ public sealed record GrammarCoverageFigure(
     public bool IsLowerBound => TimedOutCount > 0;
 
     /// <summary>
+    /// Whether this figure still describes the current world.
+    /// </summary>
+    public bool IsCurrent(string currentCorpusSha256, string currentGrammarSourceSha256) =>
+        string.Equals(CorpusSha256, currentCorpusSha256, StringComparison.Ordinal)
+        && string.Equals(GrammarSourceSha256, currentGrammarSourceSha256, StringComparison.Ordinal);
+
+    /// <summary>
+    /// The sentence a report prints. <b>The only way to render this figure, and deliberately so.</b>
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>There is no parameterless overload, and that omission is the whole design.</b> A caller cannot
+    /// produce a bare number without saying what the current corpus and grammar are, so a figure can never be
+    /// stated without the identifiers that give it meaning. Decided 2026-08-09 — see
+    /// <c>docs/adr/0038-expectations-are-fieldworks-approved-analyses.md</c> decision 8.
+    /// </para>
+    /// <para>
+    /// <b>Staleness is handled by tense, not by a caveat.</b> A stale figure is not wrong — it is a correct
+    /// measurement of a state that has since changed, and it is genuine evidence about whether a change
+    /// helped. What makes a stale number dangerous is stating it in the <i>present</i> tense with an asterisk,
+    /// because the asterisk is what gets dropped when somebody quotes it. Putting the date inside the claim
+    /// instead of beside it cannot be paraphrased away.
+    /// </para>
+    /// <para>
+    /// This is deliberately unlike the two things Motif <i>refuses</i> to state. An accuracy figure over
+    /// unvetted text is a number about nothing, and a causal attribution across a proposal that moved both
+    /// rules and expectations is unsupported by the evidence. A stale coverage figure is neither: its meaning
+    /// is exact, provided the state it describes is named.
+    /// </para>
+    /// </remarks>
+    public string Describe(string currentCorpusSha256, string currentGrammarSourceSha256)
+    {
+        var subject = $"corpus '{CorpusId}' ({Short(CorpusSha256)}) under grammar {Short(GrammarSourceSha256)}";
+        var current = IsCurrent(currentCorpusSha256, currentGrammarSourceSha256);
+
+        // The tense is chosen once, here, and threaded through — not patched into finished prose afterwards.
+        var verb = current
+            ? (IsLowerBound ? "is at least" : "is")
+            : (IsLowerBound ? "was at least" : "was");
+
+        // Nothing adjudicated is not 0% — every word timed out or was skipped, so no verdict was ever reached.
+        var measure = Fraction is null
+            ? "no word reached a verdict, so grammar coverage is not computable"
+            : $"grammar coverage {verb} {Fraction.Value:P1} ({Analysed:N0} of {Adjudicated:N0} adjudicated)";
+
+        if (Fraction is not null && IsLowerBound)
+        {
+            measure += $" — a lower bound, because {TimedOutCount:N0} word(s) hit the " +
+                       $"{PerWordTimeoutMs:N0} ms cap and carry no verdict";
+        }
+
+        // Present tense is licensed only when both hashes still match.
+        if (current) return $"For {subject}, {measure}.";
+
+        var moved = new List<string>();
+        if (!string.Equals(CorpusSha256, currentCorpusSha256, StringComparison.Ordinal))
+            moved.Add($"the corpus has changed (now {Short(currentCorpusSha256)})");
+        if (!string.Equals(GrammarSourceSha256, currentGrammarSourceSha256, StringComparison.Ordinal))
+            moved.Add($"the grammar has changed (now {Short(currentGrammarSourceSha256)})");
+
+        return $"As of the assessment over {subject}, {measure}. Since then, {string.Join(" and ", moved)}, " +
+               "so this describes a state that no longer exists. Rerun to measure the current one.";
+    }
+
+    /// <summary>A hash short enough to read in a sentence. The full value stays on the record.</summary>
+    private static string Short(string sha256)
+    {
+        if (string.IsNullOrEmpty(sha256)) return "(unrecorded)";
+        var body = sha256.StartsWith("sha256:", StringComparison.Ordinal) ? sha256[7..] : sha256;
+        return body.Length <= 12 ? body : body[..12] + "...";
+    }
+
+    /// <summary>
     /// Computes a coverage figure from one parser run and the corpus it was declared to run over.
     /// </summary>
     /// <remarks>

@@ -126,4 +126,95 @@ public class GrammarCoverageFigureTests
 
         Assert.Equal(report.GrammarSourceSha256, figure.GrammarSourceSha256);
     }
+
+    // ------------------------------------------------------- rendering: tense carries staleness
+
+    private static GrammarCoverageFigure Figure(
+        string corpusSha = "sha256:aaaaaaaaaaaabbbb", string grammarSha = "sha256:ccccccccccccdddd",
+        int analysed = 620, int adjudicated = 1000, int timedOut = 0, int? cap = null) =>
+        new("seh-wikipedia", corpusSha, grammarSha, ParserEngine.FstPrunedByHermitCrab, cap, timedOut,
+            analysed, adjudicated);
+
+    /// <summary>
+    /// A figure cannot be rendered without saying what the current corpus and grammar are.
+    /// </summary>
+    /// <remarks>
+    /// There is no parameterless <c>Describe</c>, and that omission is the enforcement: the rule "a report
+    /// always names the state it describes" is not a convention someone has to remember, it is the only
+    /// available call. If a bare overload is ever added, the rule is dead — every caller will use the shorter
+    /// one.
+    /// </remarks>
+    [Fact]
+    public void EveryRenderingNamesTheCorpusAndTheGrammar()
+    {
+        var figure = Figure();
+
+        foreach (var sentence in new[]
+                 {
+                     figure.Describe("sha256:aaaaaaaaaaaabbbb", "sha256:ccccccccccccdddd"), // current
+                     figure.Describe("sha256:9999999999990000", "sha256:ccccccccccccdddd"), // corpus moved
+                     figure.Describe("sha256:aaaaaaaaaaaabbbb", "sha256:8888888888887777"), // grammar moved
+                 })
+        {
+            Assert.Contains("seh-wikipedia", sentence);
+            Assert.Contains("aaaaaaaaaaaa", sentence);   // the corpus this was measured over
+            Assert.Contains("cccccccccccc", sentence);   // the grammar this was measured under
+        }
+    }
+
+    /// <summary>
+    /// Present tense is licensed only while both hashes still match; otherwise the claim is past tense.
+    /// </summary>
+    /// <remarks>
+    /// A stale coverage figure is not wrong — it is a correct measurement of a state that has since changed,
+    /// and it is real evidence about whether a change helped, so suppressing it would cost the reviewer the
+    /// thing they most need. What makes a stale number dangerous is stating it in the <b>present</b> tense
+    /// with a caveat attached, because the caveat is what gets dropped when somebody quotes it. Putting the
+    /// date inside the claim cannot be paraphrased away. So the defence is grammar, not suppression.
+    /// </remarks>
+    [Fact]
+    public void AStaleFigureIsStatedInThePastTenseAndSaysWhatMoved()
+    {
+        var figure = Figure();
+
+        var current = figure.Describe("sha256:aaaaaaaaaaaabbbb", "sha256:ccccccccccccdddd");
+        Assert.Contains("coverage is 62.0", current);
+        Assert.DoesNotContain("was", current);
+        Assert.DoesNotContain("no longer exists", current);
+
+        var grammarMoved = figure.Describe("sha256:aaaaaaaaaaaabbbb", "sha256:8888888888887777");
+        Assert.StartsWith("As of the assessment", grammarMoved);
+        Assert.Contains("coverage was 62.0", grammarMoved);
+        Assert.Contains("the grammar has changed", grammarMoved);
+        Assert.Contains("888888888888", grammarMoved);          // names what it moved to
+        Assert.DoesNotContain("the corpus has changed", grammarMoved);
+
+        // Both moved: both are named, so a reader knows the figure is doubly detached.
+        var bothMoved = figure.Describe("sha256:9999999999990000", "sha256:8888888888887777");
+        Assert.Contains("the corpus has changed", bothMoved);
+        Assert.Contains("the grammar has changed", bothMoved);
+    }
+
+    /// <summary>
+    /// A lower bound says so in either tense, and nothing-adjudicated never renders as a percentage.
+    /// </summary>
+    /// <remarks>
+    /// These are the two existing refusals this type already enforces (<c>docs/issues.md</c> <c>D9</c>, and
+    /// the zero-adjudicated rule), and rendering must not be the place they leak. A sentence is what people
+    /// actually read, so a caveat that survives in the record but not in the prose has not survived.
+    /// </remarks>
+    [Fact]
+    public void RenderingPreservesTheLowerBoundAndTheNoVerdictRefusal()
+    {
+        var lowerBound = Figure(analysed: 620, adjudicated: 1000, timedOut: 7, cap: 5000);
+        Assert.Contains("is at least 62.0", lowerBound.Describe("sha256:aaaaaaaaaaaabbbb", "sha256:ccccccccccccdddd"));
+        Assert.Contains("was at least 62.0", lowerBound.Describe("sha256:aaaaaaaaaaaabbbb", "sha256:8888888888887777"));
+        Assert.Contains("lower bound", lowerBound.Describe("sha256:aaaaaaaaaaaabbbb", "sha256:ccccccccccccdddd"));
+
+        // Zero adjudicated is not 0% — no verdict was ever reached, so no percentage may appear at all.
+        var noVerdict = Figure(analysed: 0, adjudicated: 0, timedOut: 40, cap: 5000);
+        var sentence = noVerdict.Describe("sha256:aaaaaaaaaaaabbbb", "sha256:ccccccccccccdddd");
+        Assert.Contains("not computable", sentence);
+        Assert.DoesNotContain("%", sentence);
+    }
 }
