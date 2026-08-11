@@ -9,8 +9,9 @@ namespace SIL.Motif.Generator.Descriptions.Harvest;
 /// purpose: pulling the <c>&lt;comment&gt;</c> prose off each field declaration rather than its
 /// class/sig/card shape. Kept separate from <see cref="Model.MasterLcModelParser"/> deliberately — that
 /// parser feeds the operation-shape derivations (ADR 0022) and touching its output shape for a
-/// documentation concern would widen its blast radius for no reason. This one only ever feeds
-/// <see cref="KindDescriptionRefresher"/>.
+/// documentation concern would widen its blast radius for no reason. This one feeds
+/// <see cref="KindDescriptionRefresher"/> and <see cref="Ordering.OrderingEvidenceHarvester"/> — both
+/// documentation-shaped consumers of the same prose.
 /// </summary>
 /// <remarks>
 /// docs/issues.md D8: 60 of the 92 currently-described kinds have a substantive comment here, median 398
@@ -79,7 +80,9 @@ public static class LibLcmCommentHarvester
                     var lineInfo = (IXmlLineInfo)element;
                     var lineNumber = lineInfo.HasLineInfo() ? lineInfo.LineNumber : 0;
 
-                    result[key] = new LibLcmFieldComment(classId, fieldId, tag, paragraphs[0], paragraphs.Count, lineNumber);
+                    result[key] = new LibLcmFieldComment(
+                        classId, fieldId, tag, paragraphs[0], paragraphs.Count, lineNumber,
+                        string.Join(" ", paragraphs));
                 }
             }
         }

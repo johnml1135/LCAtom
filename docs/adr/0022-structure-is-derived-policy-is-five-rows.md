@@ -1,7 +1,13 @@
-# ADR 0022 — The generator derives structure; the only hand-authored policy is naming, scope, and five rows
+# ADR 0022 — The generator derives structure; the only hand-authored policy is naming, scope, and seven rows
 
 **Status:** accepted, 2026-08-05. Amends [ADR 0014](0014-generate-the-crdt-layer-from-masterlcmodel.md)
 decision 2. Answers `B7a`, and retires most of `B18`.
+
+> **The filename still says `five-rows`.** This ADR was written asserting exactly five exceptions and the
+> fail-closed check found two more on its first run against the real manifest — the episode decision 3 is
+> largely about. The heading and the body were corrected to seven; the filename is deliberately left alone,
+> because every inbound link in this repository uses it and a stale link is a worse failure than a stale
+> slug. There have been seven since 2026-08-05. Do not re-derive "five" from the path.
 
 ## Context
 

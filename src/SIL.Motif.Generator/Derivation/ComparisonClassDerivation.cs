@@ -45,8 +45,15 @@ public static class ComparisonClassDerivation
     /// </summary>
     private static readonly IReadOnlyDictionary<FieldKey, string> OrderCarriesMeaningExceptions = new Dictionary<FieldKey, string>
     {
-        // Allomorph order is disjunctive elsewhere-blocking: the parser tries alternates in the
-        // order they're listed and stops at the first that matches (manifest Rationale).
+        // Allomorph order is disjunctive elsewhere-blocking, verified against HermitCrab itself on
+        // 2026-08-11 rather than against the manifest's own prose. List position becomes HC's
+        // Allomorph.Index (LexEntry.cs:45-50 reassigns it from position on every mutation), and Index
+        // drives the elsewhere-block at Allomorph.cs:127-152: a candidate built from a later-indexed
+        // allomorph is rejected when an earlier-indexed one also matches, unless the two free-fluctuate.
+        // HC's own comment: allomorphs "are applied disjunctively within a morpheme" (Allomorph.cs:9-11).
+        // Mechanically it generates from all of them and then filters (Morpher.cs:361-369), rather than
+        // stopping at the first match -- the earliest match still wins, so the classification holds while
+        // the older "stops at the first that matches" wording described the effect, not the code.
         [new FieldKey("LexEntry", "AlternateForms")] = "feeding",
 
         // Phonological rule order encodes feeding and bleeding between rules — a neighbour's content

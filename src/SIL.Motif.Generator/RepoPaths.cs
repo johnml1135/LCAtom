@@ -39,6 +39,13 @@ public static class RepoPaths
         Path.Combine(FindRepoRoot(startDirectory), "manifest", "fieldworks-help-descriptions.tsv");
 
     /// <summary>
+    /// What the model says about ordering, for every in-scope row whose <c>ComparisonClass</c> claims order
+    /// carries meaning (<see cref="Ordering.OrderingEvidenceHarvester"/>).
+    /// </summary>
+    public static string DefaultOrderingEvidencePath(string? startDirectory = null) =>
+        Path.Combine(FindRepoRoot(startDirectory), "manifest", "ordering-evidence.tsv");
+
+    /// <summary>
     /// Which release of liblcm and FieldWorks the cited descriptions were copied from
     /// (<see cref="Descriptions.Harvest.SourcePins"/>).
     /// </summary>

@@ -53,6 +53,9 @@ public static class Program
         if (args.Length >= 1 && args[0] == "refresh-descriptions")
             return RunRefreshDescriptions(args.Contains("--accept-source-move"));
 
+        if (args.Length == 1 && args[0] == "harvest-ordering-evidence")
+            return RunHarvestOrderingEvidence();
+
         if (args.Length >= 1 && args[0] == "harvest-help")
             return RunHarvestHelp(args.Length > 1 ? args[1] : null);
 
@@ -60,7 +63,8 @@ public static class Program
             "Usage: dotnet run --project src/SIL.Motif.Generator -- <command>" + Environment.NewLine +
             "  emit                                        regenerate the checked-in operation/snapshot files" + Environment.NewLine +
             "  refresh-descriptions [--accept-source-move] re-attach provenance to manifest/kind-descriptions.tsv" + Environment.NewLine +
-            "  harvest-help [extracted-help-root]          re-read FieldWorks' compiled help (Windows-only)");
+            "  harvest-help [extracted-help-root]          re-read FieldWorks' compiled help (Windows-only)" + Environment.NewLine +
+            "  harvest-ordering-evidence                   re-read what the model says about field ordering");
         return 1;
     }
 
@@ -184,6 +188,37 @@ public static class Program
                 Console.WriteLine($"      now: {drift.CurrentSourceText}");
             }
         }
+
+        return 0;
+    }
+
+    /// <summary>
+    /// Rewrites <c>manifest/ordering-evidence.tsv</c>: for every in-scope row claiming order carries
+    /// meaning, whatever <c>MasterLCModel.xml</c> says about ordering, quoted and cited.
+    /// </summary>
+    /// <remarks>
+    /// Reads only the model, so it needs no FieldWorks checkout. It answers a review question, not a build
+    /// one — nothing derives from this file (ADR 0022 keeps <c>ComparisonClass</c> a function of
+    /// <c>Card</c>), and its value is that the 2026-08-03 audit's recommended row-by-row review arrives with
+    /// the evidence already gathered rather than needing to be re-found.
+    /// </remarks>
+    private static int RunHarvestOrderingEvidence()
+    {
+        var outputPath = RepoPaths.DefaultOrderingEvidencePath();
+        var model = MotifModelLoader.Load();
+        var comments = LibLcmCommentHarvester.Harvest(ModelPathResolver.Resolve().Path);
+
+        var harvested = Ordering.OrderingEvidenceHarvester.Harvest(model.Rows, comments);
+        Ordering.OrderingEvidenceTsv.Write(outputPath, harvested);
+
+        var withStatement = harvested.Count(e => e.HasStatement);
+        Console.WriteLine($"Harvested {harvested.Count} ordering claim(s) -> {outputPath}");
+        Console.WriteLine($"  the model says something about order : {withStatement}");
+        Console.WriteLine($"  the model says nothing               : {harvested.Count - withStatement}");
+        Console.WriteLine();
+        Console.WriteLine("  Rows resting on card=seq alone, needing a human (audit of 2026-08-03, §5):");
+        foreach (var row in harvested.Where(e => !e.HasStatement))
+            Console.WriteLine($"    {row.Key} ({row.ComparisonClass})");
 
         return 0;
     }

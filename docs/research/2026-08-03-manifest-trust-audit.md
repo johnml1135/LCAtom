@@ -77,7 +77,7 @@ Genuine problems:
 
 | Row | Manifest | Problem |
 | --- | --- | --- |
-| `LexEntry.AlternateForms` | `feeding` | Rationale claims order encodes disjunctive elsewhere-blocking, but `HCLoader.cs:744,1726` carry `// TODO: irregularly inflected forms should be handled by rule blocking in HC` — **the cited mechanism is not implemented.** Probably plain `positional`. |
+| `LexEntry.AlternateForms` | `feeding` | ~~Rationale claims order encodes disjunctive elsewhere-blocking, but `HCLoader.cs:744,1726` carry `// TODO: irregularly inflected forms should be handled by rule blocking in HC` — **the cited mechanism is not implemented.** Probably plain `positional`.~~ **This finding is withdrawn — see the addendum below.** The classification is correct; the TODO is a different mechanism. |
 | `MoAlloAdhocProhib.Allomorphs` | `positional` | `MasterLCModel.xml:4548-4552`: order matters *only when* the sibling `MoAdhocProhib.Adjacency ≠ "Anywhere"`. **A flat per-field label cannot express a condition on a sibling field**, so a generator will over-diff harmless reorderings. |
 | `MoAlloAdhocProhib.RestOfAllos` | `positional` | Presumed to inherit the same conditionality; no restated comment. |
 | `LexEntry.MainEntriesOrSenses` | `positional`, `Verbs: n/a` | A `derived-read-only` row carrying a `ComparisonClass` no verb can invoke. Dead metadata, or a missing schema rule. |
@@ -199,3 +199,42 @@ Three specific breaks:
   **B20's 17 reconciles**; **B19 is understated**.
 - **The proposed taxonomy does not partition the manifest** — 52% clean, and classes 3/4 have no data
   to test against at all.
+
+---
+
+## Addendum, 2026-08-11 — the `LexEntry.AlternateForms` finding in §3 is withdrawn
+
+§3 listed `LexEntry.AlternateForms` as a genuine problem: its `feeding` classification cites disjunctive
+elsewhere-blocking, and `HCLoader.cs:744` says `// TODO: irregularly inflected forms should be handled by
+rule blocking in HC`, so the cited mechanism looked unimplemented. **Checked against HermitCrab's own source
+this pass, the classification is right and the inference was wrong.**
+
+The two are different mechanisms. That TODO sits among the `MprFeatures` assembled for a `LexEntryInflType`
+(`HCLoader.cs:738-750`) and concerns `LexFamily`-level blocking of a whole irregular form — HC's
+`Word.CheckBlocking`, which asks whether some *other entry* in the same family should win. It says nothing
+about the order of allomorphs within one entry.
+
+Intra-entry allomorph disjunction **is** implemented, and it is positional:
+
+- `LexEntry.cs:45-50` (`SIL.Machine.Morphology.HermitCrab`) reassigns every `Allomorph.Index` from its
+  position in the list on each mutation, so list order *is* `Index`.
+- `Allomorph.cs:127-152` walks `Enumerable.Range(0, Index)` — every lower-indexed allomorph — and rejects
+  the current one if an earlier one also matches and the two do not free-fluctuate, raising
+  `FailureReason.DisjunctiveAllomorph`.
+- HC's own class comment is explicit (`Allomorph.cs:9-11`): allomorphs "are applied disjunctively within a
+  morpheme."
+- `HCLoader.cs:263` then `:716-722` carries `AlternateFormsOS` order straight into `hcEntry.Allomorphs`.
+
+One refinement to the manifest's wording rather than its classification: HC does **not** stop at the first
+match. It generates a candidate from every allomorph (`Morpher.cs:361-369`) and filters afterwards through
+`IsWordValid`. The earliest matching allomorph still wins, so `feeding` holds — but "tries them in order and
+stops at the first that matches" described the effect rather than the code, and has been corrected in the
+manifest.
+
+**And a detail nobody had recorded:** `HCLoader.cs:263` iterates
+`entry.AlternateFormsOS.Concat(entry.LexemeFormOA)`, appending the lexeme form *last*. It therefore receives
+the highest `Index` and the **lowest** blocking priority of an entry's forms — which is worth knowing before
+anyone reasons about an entry's lexeme form as though it were the primary candidate.
+
+*Verified by a subagent against `repos/machine` and `repos/FieldWorks`; every citation above was re-checked
+by hand before this addendum was written.*

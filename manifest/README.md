@@ -2,7 +2,7 @@
 
 ## Companion files
 
-Four files sit alongside `liblcm-inventory.tsv`, in the same dialect (tab-separated, double-quoted, CRLF).
+Five files sit alongside `liblcm-inventory.tsv`, in the same dialect (tab-separated, double-quoted, CRLF).
 
 **`fieldworks-labels.tsv` — harvested, not authored.** What FieldWorks already shows a linguist for a given
 `(class, field)`, scraped from `strings-en.xml`, the `.fwlayout` slice system and the Lists tool config by
@@ -50,6 +50,17 @@ Opening a `.chm` needs `hh.exe`, which is Windows-only, so the extraction is a d
 committed: **nothing in the build, the tests, or the runtime ever touches the help file.** Re-harvest with
 `dotnet run --project src/SIL.Motif.Generator -- harvest-help` (add a path to an already-extracted help tree
 to skip the Windows-only step), then `refresh-descriptions`, then commit both files.
+
+**`ordering-evidence.tsv` — what the model says about order, for every row that claims order matters.**
+One row per in-scope field whose `ComparisonClass` is not `unordered` (64 today), carrying the sentences of
+its `MasterLCModel.xml` comment that speak to ordering, the citation, which ordering words the selection
+matched, and a `sha256:` digest of the quote. **Evidence, not authority** — `ComparisonClass` stays derived
+from `Card` ([ADR 0022](../docs/adr/0022-structure-is-derived-policy-is-five-rows.md) decision 2), and
+nothing reads this file at build time. It answers the question the derivation cannot ask about itself:
+*is the rule right for this row?* 32 of the 64 have an explicit statement; 32 rest on `card=seq` alone and
+are named in [the census](../docs/research/2026-08-11-ordering-claims-census.md). Re-harvest with
+`dotnet run --project src/SIL.Motif.Generator -- harvest-ordering-evidence` (model only — no FieldWorks
+checkout needed).
 
 **`source-pins.tsv` — the three files the descriptions are copied out of, pinned by content.** One row per
 file: `MasterLCModel.xml`, `ContextHelp.xml`, and the compiled help file, each with a `sha256:` digest of
