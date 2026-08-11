@@ -8,6 +8,33 @@ CLI verbs, and prose. Then `README.md` and the documents in `docs/`.
 run and nothing else. Documents written before that date use the old words — they are historical
 records, not counter-examples.
 
+## Comments
+
+**Authoritative rules: `.claude/skills/code-comments/SKILL.md`. Enforced by
+`tools/comment-hygiene.ps1`.** Ported from PanGloss, where the same rot was measured and corrected;
+the intent is identical and the mechanics are adapted for C#.
+
+A comment explains what the code cannot: why this, why not the obvious alternative, what breaks if you
+change it. Code says what it does, git says when, and `docs/plan-motif.md` and `docs/issues.md` say
+where the project is — a comment duplicating any of those three will eventually contradict it.
+
+| Check | Standard |
+|---|---|
+| Implementation comment (`//`, or `///` on a `private` member) | **one line** |
+| API doc (`///` on a `public`/`internal` type or member) | long form as appropriate |
+| Plan and issue references — `MOT-22`, `docs/issues.md D8`, `issue B18` | **banned**; state the constraint instead |
+| ADR citations | **allowed** — an ADR number is immutable; cite it for a decision, never for a status |
+| Dates, slice/wiring status, history narrative, agent attribution | **banned** |
+| A claim about another entity's behaviour | cite the pinning test — ``pinned by `TestName` `` — or reword |
+| `<see cref="X"/>` | keep; the C# compiler resolves it (CS1574), unlike Rust's intra-doc links |
+
+Zero tolerance, no baseline: a baseline records the current count as acceptable, and re-baselining
+after a rule change relabels old debt as the new normal.
+
+Run `tools/verify-comment-only.ps1` after a comment sweep. It requires every line the diff **adds and
+removes** to be a comment — the symmetric check, because a pure deletion satisfies the obvious
+one-sided version while removing the `using` block along with the comment above it.
+
 ## Non-negotiable design rules
 
 1. The canonical input is semantic CRUD+ intent, never a low-level property script or reflection
