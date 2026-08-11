@@ -9,7 +9,7 @@ namespace SIL.Motif.Generator.Ordering;
 /// <b>Evidence, not authority.</b> <c>ComparisonClass</c> stays derived from <c>Card</c> with a closed
 /// exception table ([ADR 0022](../../../docs/adr/0022-structure-is-derived-policy-is-five-rows.md) decision
 /// 2); nothing here feeds that derivation. What this answers is the question the derivation cannot:
-/// <em>is the rule right for this particular row?</em> The 2026-08-03 manifest trust audit found that it is
+/// <em>is the rule right for this particular row?</em> The manifest trust audit found that it is
 /// not always — <c>MoAlloAdhocProhib.Allomorphs</c> is <c>positional</c> by the rule, but the model says
 /// order matters only when a <em>sibling</em> field is set — and that 63 of the 64 non-<c>unordered</c> rows
 /// carried no citation at all.

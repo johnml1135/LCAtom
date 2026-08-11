@@ -1,7 +1,7 @@
 namespace SIL.Motif.Generator.Emit;
 
 /// <summary>
-/// Orchestrates MOT-4 slice 1's emission: select the field list (<see cref="BasicFieldSelector"/>),
+/// Orchestrates the field-emission pipeline: select the field list (<see cref="BasicFieldSelector"/>),
 /// derive each field's facts (<see cref="BasicFieldSpecBuilder"/>), render every generated file, and
 /// write them to their checked-in locations under the repo root. This is the "console command"
 /// half of the emission mechanism (see <c>Program.cs</c>'s doc comment for why that mechanism was
@@ -55,8 +55,7 @@ public static class GeneratedCatalogWriter
     {
         var path = Path.Combine(directory, fileName);
 
-        // LF only, matching how this repo's other generated/checked-in text is written by this
-        // process (avoids a churny CRLF<->LF diff depending on which OS regenerates it).
+        // LF only: avoids a churny CRLF<->LF diff depending on which OS regenerates this file.
         File.WriteAllText(path, content.Replace("\r\n", "\n"));
 
         return new WrittenFile(Path.GetRelativePath(repoRoot, path).Replace('\\', '/'));

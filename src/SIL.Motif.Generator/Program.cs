@@ -6,8 +6,8 @@ using SIL.Motif.Generator.ModelSource;
 namespace SIL.Motif.Generator;
 
 /// <summary>
-/// The generator's console entry point. Today it has exactly one command, <c>emit</c>, which is
-/// MOT-4's chosen emission mechanism.
+/// The generator's console entry point. <c>emit</c> regenerates the checked-in operation/snapshot
+/// files; the remaining commands maintain the manifest's provenance and evidence data.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -30,12 +30,12 @@ namespace SIL.Motif.Generator;
 /// NuGet package for <c>MasterLCModel.xml</c>) succeeding first, in the right order, on every
 /// build — including whatever build FieldWorks' own <c>net48</c> solution eventually runs. A
 /// checked-in file has no such coupling: <c>dotnet build</c> on a clean clone compiles plain C#,
-/// exactly as <c>MOT-3</c> established for the Generator's own model-loading dependency.</item>
-/// <item><b>Precedent already in this repo.</b> <c>SIL.Motif.Generator</c> (MOT-2/MOT-3) is already
+/// exactly as already established for the Generator's own model-loading dependency.</item>
+/// <item><b>Precedent already in this repo.</b> <c>SIL.Motif.Generator</c> is already
 /// a plain console-shaped library invoked by tests/a human, not a source generator — this just adds
 /// its first thing to actually emit. And LibLCM itself generates the majority of its own model
 /// classes from <c>MasterLCModel.xml</c> via an MSBuild task/NVelocity templates whose *output* is
-/// also checked in (see docs/plan-motif.md, MOT-3) — the pattern this project mirrors is "generate,
+/// also checked in — the pattern this project mirrors is "generate,
 /// then check in," not "generate on every build."</item>
 /// </list>
 /// <para>
@@ -73,16 +73,7 @@ public static class Program
         var model = MotifModelLoader.Load();
         var repoRoot = RepoPaths.FindRepoRoot();
 
-        // Four writers, not one: GeneratedCatalogWriter is slice 1 (basic set|clear), frozen at
-        // exactly 14 files by GeneratedCatalogWriterTests/GeneratedFilesAreUpToDateTests, both of which
-        // predate MOT-4 slice 2 and must not change. Slice2CatalogWriter adds the remaining verbs of
-        // the lexical-entry family (LexEntry.LexemeForm, .DialectLabels, .DoNotPublishIn,
-        // .DoNotShowMainEntryIn; MoForm.MorphType), frozen at 8 files the same way. Slice3CatalogWriter
-        // widens the same three generic shapes (basic set|clear, rel/atomic set|clear, rel/col|seq
-        // addRef|removeRef) beyond LexEntry/MoForm to the rest of ADR 0025's parser-first slice.
-        // Slice4CatalogWriter (MOT-22) is the fourth shape: basic Integer standing in for a small closed
-        // enum, derived set|clear like every other basic field, but with a range check the other basic
-        // templates have no reason to emit. One `emit` command still regenerates everything.
+        // Four writers, not one: GeneratedCatalogWriter (basic set|clear, 14 files) and Slice2CatalogWriter (the lexical-entry family, 8 files) are frozen by GeneratedCatalogWriterTests/GeneratedFilesAreUpToDateTests and must not change; Slice3CatalogWriter widens the same three generic shapes beyond LexEntry/MoForm to the rest of ADR 0025's parser-first slice; Slice4CatalogWriter adds basic Integer, derived set|clear plus a range check the other basic templates have no reason to emit. One `emit` command still regenerates everything.
         var written = GeneratedCatalogWriter.WriteAll(model, repoRoot)
             .Concat(Emit.Slice2CatalogWriter.WriteAll(model, repoRoot))
             .Concat(Emit.Slice3CatalogWriter.WriteAll(model, repoRoot))
@@ -96,24 +87,7 @@ public static class Program
         return 0;
     }
 
-    /// <summary>
-    /// Stage 1 of the two-stage description pipeline docs/issues.md D8 asks for (Stage 2 is
-    /// <see cref="KindDescriptionTsvParser"/> plus <see cref="Checks.DescriptionCheck"/>, unchanged). Rewrites
-    /// <c>manifest/kind-descriptions.tsv</c> in place, attaching a citation to every row that has one and
-    /// preserving the hand-corrected <c>ProdRestrict</c> family untouched.
-    /// </summary>
-    /// <remarks>
-    /// Run it with <c>dotnet run --project src/SIL.Motif.Generator -- refresh-descriptions</c> after a
-    /// liblcm or FieldWorks bump, and check in whatever it rewrites — the same convention <c>emit</c> uses.
-    /// Needs a FieldWorks checkout (<c>MOTIF_FIELDWORKS_CHECKOUT</c>, or the conventional sibling-checkout
-    /// layout); the liblcm side resolves the same way <c>emit</c> already does, package cache first.
-    /// <para>
-    /// It refuses to run when a source has moved off its pin, exiting <c>2</c> with the two releases named.
-    /// <c>--accept-source-move</c> is how you say "yes, upgrade to that release": it re-pins and reports
-    /// every description whose upstream sentence changed. The compiled-help pages are not read here at all —
-    /// they come from the checked-in harvest, so this command needs no <c>.chm</c> and no Windows.
-    /// </para>
-    /// </remarks>
+    /// <summary>Stage 1 of a two-stage description pipeline (Stage 2 is <see cref="KindDescriptionTsvParser"/> plus <see cref="Checks.DescriptionCheck"/>): rewrites <c>manifest/kind-descriptions.tsv</c> in place, preserving the hand-corrected <c>ProdRestrict</c> family, needs a FieldWorks checkout but reads no compiled help, and exits <c>2</c> without writing when a source has moved off its pin unless <c>--accept-source-move</c> is passed.</summary>
     private static int RunRefreshDescriptions(bool acceptSourceMove)
     {
         var descriptionsPath = RepoPaths.DefaultDescriptionsPath();
@@ -142,8 +116,7 @@ public static class Program
             existingRows, libLcmComments, contextHelpEntries, helpPages);
         KindDescriptionTsvWriter.Write(descriptionsPath, result.Rows);
 
-        // A release that moved over byte-identical files is re-pinned silently-ish -- reported, not gated.
-        // Only a changed file needed the operator's consent, and that was taken above.
+        // A release that moved over byte-identical files is re-pinned silently-ish -- reported, not gated, since only a changed file needed the operator's consent taken above.
         if (moves.Count > 0)
         {
             SourcePins.Write(pinsPath, current);
@@ -171,8 +144,7 @@ public static class Program
         Console.WriteLine($"  unsourced (still open)             : {result.Unsourced.Count}");
         WriteKeys("unsourced keys", result.Unsourced);
 
-        // The drift report. This is the reason the sources are pinned at all: an upstream sentence that was
-        // reworded still reads fluently, so nothing downstream would notice it changed.
+        // The drift report — the reason the sources are pinned at all: an upstream sentence that was reworded still reads fluently, so nothing downstream would notice it changed.
         if (result.Drifted.Count > 0)
         {
             Console.WriteLine();
@@ -192,16 +164,7 @@ public static class Program
         return 0;
     }
 
-    /// <summary>
-    /// Rewrites <c>manifest/ordering-evidence.tsv</c>: for every in-scope row claiming order carries
-    /// meaning, whatever <c>MasterLCModel.xml</c> says about ordering, quoted and cited.
-    /// </summary>
-    /// <remarks>
-    /// Reads only the model, so it needs no FieldWorks checkout. It answers a review question, not a build
-    /// one — nothing derives from this file (ADR 0022 keeps <c>ComparisonClass</c> a function of
-    /// <c>Card</c>), and its value is that the 2026-08-03 audit's recommended row-by-row review arrives with
-    /// the evidence already gathered rather than needing to be re-found.
-    /// </remarks>
+    /// <summary>Rewrites <c>manifest/ordering-evidence.tsv</c>: for every in-scope row claiming order carries meaning, whatever <c>MasterLCModel.xml</c> says about ordering, quoted and cited. Needs no FieldWorks checkout, and nothing derives from this file (ADR 0022 keeps <c>ComparisonClass</c> a function of <c>Card</c>) — it answers a review question, not a build one.</summary>
     private static int RunHarvestOrderingEvidence()
     {
         var outputPath = RepoPaths.DefaultOrderingEvidencePath();
@@ -223,16 +186,7 @@ public static class Program
         return 0;
     }
 
-    /// <summary>
-    /// Re-reads FieldWorks' compiled help and rewrites <c>manifest/fieldworks-help-descriptions.tsv</c>.
-    /// Windows-only and run by hand, which is the whole point of the file existing: the <c>.chm</c> is a
-    /// personal-machine dependency, and the harvested TSV is what the build, the tests and
-    /// <c>refresh-descriptions</c> read.
-    /// </summary>
-    /// <param name="extractedHelpRoot">
-    /// A help tree already decompiled elsewhere. Omit it on Windows and this runs
-    /// <c>hh.exe -decompile</c> itself into a temp directory.
-    /// </param>
+    /// <summary>Re-reads FieldWorks' compiled help and rewrites <c>manifest/fieldworks-help-descriptions.tsv</c>; Windows-only and run by hand, since the <c>.chm</c> is a personal-machine dependency and the harvested TSV, not the <c>.chm</c>, is what the build/tests/<c>refresh-descriptions</c> read. <paramref name="extractedHelpRoot"/>: a help tree already decompiled elsewhere; omit it on Windows to decompile via <c>hh.exe</c> into a temp directory instead.</summary>
     private static int RunHarvestHelp(string? extractedHelpRoot)
     {
         var outputPath = RepoPaths.DefaultHelpDescriptionsPath();
@@ -263,12 +217,7 @@ public static class Program
         return 0;
     }
 
-    /// <summary>
-    /// The three files the descriptions are copied out of, each with its content digest. liblcm normally
-    /// resolves out of the NuGet package cache rather than a checkout, so its "release" is the pinned package
-    /// version — which <c>SIL.Motif.Generator.csproj</c> already owns — and only the checkout case has a
-    /// commit. The digest is what the check turns on either way.
-    /// </summary>
+    /// <summary>The three files the descriptions are copied out of, each with its content digest; liblcm normally resolves from the NuGet package cache, so its "release" is the pinned package version (<c>SIL.Motif.Generator.csproj</c>) rather than a commit — the digest is what the check turns on either way.</summary>
     private static IReadOnlyList<SourceArtifact> ReadCurrentSourceArtifacts(
         ModelSource.ModelPathResult model, string fieldWorksCheckout)
     {
@@ -297,8 +246,7 @@ public static class Program
                 contextHelp.Replace(Path.DirectorySeparatorChar, '/'),
                 SourceDigest.OfFile(Path.Combine(fieldWorksCheckout, contextHelp)), now),
 
-            // Pinned although refresh-descriptions never opens it: the checked-in help harvest is derived
-            // from this file, so a changed digest here is the only thing that can say "re-run harvest-help".
+            // Pinned although refresh-descriptions never opens it: the checked-in help harvest is derived from this file, so a changed digest here is the only thing that can say "re-run harvest-help".
             new SourceArtifact(
                 "FieldWorks", SourceArtifact.GitCheckoutKind, fwRelease, fwCommit,
                 compiledHelp.Replace(Path.DirectorySeparatorChar, '/'),
@@ -306,10 +254,7 @@ public static class Program
         ];
     }
 
-    /// <summary>
-    /// <c>{root}/src/SIL.LCModel/MasterLCModel.xml</c> back to <c>{root}</c> — the layout
-    /// <see cref="ModelPathResolver"/>'s checkout fallback already assumes.
-    /// </summary>
+    /// <summary><c>{root}/src/SIL.LCModel/MasterLCModel.xml</c> back to <c>{root}</c> — the layout <see cref="ModelPathResolver"/>'s checkout fallback already assumes.</summary>
     private static string LibLcmCheckoutRootOf(string modelFilePath) =>
         Path.GetFullPath(Path.Combine(Path.GetDirectoryName(modelFilePath)!, "..", ".."));
 

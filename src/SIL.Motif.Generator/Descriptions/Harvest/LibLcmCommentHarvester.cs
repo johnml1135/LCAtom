@@ -14,9 +14,8 @@ namespace SIL.Motif.Generator.Descriptions.Harvest;
 /// documentation-shaped consumers of the same prose.
 /// </summary>
 /// <remarks>
-/// docs/issues.md D8: 60 of the 92 currently-described kinds have a substantive comment here, median 398
-/// characters, and the generator "already parses" this file — it just never looked at the prose. This is
-/// that look.
+/// The generator already parses this file for its class/sig/card shape; this reads the same file for the
+/// prose it otherwise ignores.
 /// </remarks>
 public static class LibLcmCommentHarvester
 {
@@ -92,7 +91,6 @@ public static class LibLcmCommentHarvester
 
     private static readonly string[] FieldTags = ["basic", "owning", "rel"];
 
-    /// <summary>Collapses embedded newlines/tabs/runs of spaces to single spaces, since the harvested text
-    /// becomes one TSV cell and must not contain the delimiter's own whitespace characters.</summary>
+    /// <summary>Collapses embedded newlines/tabs/runs of spaces to single spaces, since the harvested text becomes one TSV cell.</summary>
     private static string NormalizeWhitespace(string value) => Regex.Replace(value, @"\s+", " ").Trim();
 }

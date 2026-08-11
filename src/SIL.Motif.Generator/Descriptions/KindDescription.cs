@@ -11,10 +11,10 @@ namespace SIL.Motif.Generator.Descriptions;
 /// "a description must not merely restate its label" bar can be checked without loading the harvest.
 /// </param>
 /// <param name="Description">
-/// The sentence. Never hashed, so it is free to improve forever. Per <c>docs/issues.md</c> D8, this is copied
-/// or closely adapted from <see cref="Source"/> when one exists rather than paraphrased freely — a paraphrase
-/// is exactly how the polarity bug (an exception feature described as blocking an affix, when the model says
-/// the stem must bear it) got through review undetected.
+/// The sentence. Never hashed, so it is free to improve forever. Copied or closely adapted from
+/// <see cref="Source"/> when one exists rather than paraphrased freely — a paraphrase is exactly how a
+/// polarity bug (an exception feature described as blocking an affix, when the model says the stem must
+/// bear it) got through review undetected.
 /// </param>
 /// <param name="Reviewed">
 /// One of four values (documented in manifest/README.md):

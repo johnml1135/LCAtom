@@ -5,7 +5,7 @@ namespace SIL.Motif.Generator.Descriptions.Harvest;
 /// <summary>
 /// The <c>&lt;comment&gt;</c> found on one <c>&lt;basic|owning|rel&gt;</c> declaration in
 /// <c>MasterLCModel.xml</c>, keyed by (<see cref="Class"/>, <see cref="Field"/>) the same way
-/// <see cref="Model.ModelField"/> is (docs/issues.md D8).
+/// <see cref="Model.ModelField"/> is.
 /// </summary>
 /// <param name="Class">The declaring class — the <c>&lt;class id=...&gt;</c> the field element sits inside.</param>
 /// <param name="Field">The field name.</param>

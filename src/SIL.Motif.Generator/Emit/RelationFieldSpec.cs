@@ -3,7 +3,7 @@ using SIL.Motif.Generator.Model;
 namespace SIL.Motif.Generator.Emit;
 
 /// <summary>
-/// Every derived fact MOT-4 slice 2's <c>rel/atomic</c> <c>set|clear</c> templates need for one field,
+/// Every derived fact the <c>rel/atomic</c> <c>set|clear</c> templates need for one field,
 /// mirroring <see cref="BasicFieldSpec"/>'s role for slice 1's basic fields but for a single-valued
 /// reference instead of a scalar/textual value.
 /// </summary>
@@ -33,13 +33,13 @@ public sealed record ReferenceAtomicFieldSpec(
     string SnapshotFieldConstant);
 
 /// <summary>
-/// Every derived fact MOT-4 slice 2's <c>addRef|removeRef</c> templates need for one <c>rel/col</c> or
+/// Every derived fact the <c>addRef|removeRef</c> templates need for one <c>rel/col</c> or
 /// <c>rel/seq</c> field. The two cardinalities share one emitter because both LibLCM accessor shapes
 /// (<c>ILcmReferenceCollection&lt;T&gt;</c>, <c>ILcmReferenceSequence&lt;T&gt;</c>) implement the
 /// ordinary <c>ICollection&lt;T&gt;</c> — verified by reflection against the pinned <c>SIL.LCModel</c>
 /// package — so <c>addRef</c>/<c>removeRef</c> lower identically regardless of which one a field uses.
-/// <c>move</c> is deliberately not represented here: MOT-4 slice 2 defers it for <c>rel/seq</c> fields
-/// (docs/plan-motif.md, MOT-4; see <c>LexEntryDialectLabelsEmitter</c>'s remarks for why).
+/// <c>move</c> is deliberately not represented here for <c>rel/seq</c> fields
+/// (see <see cref="ReferenceCollectionFieldEmitter"/>'s remarks for why).
 /// </summary>
 /// <param name="AccessorPropertyName">LibLCM's own suffix convention for a reference accessor property:
 /// <c>{FieldName}RC</c> for <c>rel/col</c>, <c>{FieldName}RS</c> for <c>rel/seq</c> — e.g.

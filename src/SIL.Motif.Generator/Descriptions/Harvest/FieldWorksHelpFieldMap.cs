@@ -25,7 +25,7 @@ namespace SIL.Motif.Generator.Descriptions.Harvest;
 /// <para>
 /// <b>One field the resx points at was deliberately not mapped.</b>
 /// <c>khtpField-lexiconEdit-MoInflAffMsa-CategoryInfo</c> resolves to <c>Category_Info_field.htm</c>, which
-/// the earlier research pass (docs/research/2026-08-09-kind-description-sources.md) proposed for
+/// <c>docs/research/2026-08-09-kind-description-sources.md</c> proposed this page for
 /// <c>MoInflAffMsa.PartOfSpeech</c>. Reading the page refutes it: it describes a prose summary area whose
 /// harvested label is <c>Category Info.</c> — which is <c>MoInflAffMsa.MainEdit</c>, a different field.
 /// <c>MoInflAffMsa.PartOfSpeech</c>'s label is <c>Category</c>, and no page describes it. It stays

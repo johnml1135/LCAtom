@@ -1,8 +1,8 @@
 namespace SIL.Motif.Generator.Derivation;
 
 /// <summary>
-/// Assembles the full kind string, <c>{group}/{construct}/{verb}{FieldName}</c>
-/// (docs/plan-motif.md MOT-2; ADR 0023 decision 1). One field with N verbs yields N kind names —
+/// Assembles the full kind string, <c>{group}/{construct}/{verb}{FieldName}</c> (ADR 0023 decision 1).
+/// One field with N verbs yields N kind names —
 /// e.g. <c>LexEntry.AlternateForms</c> (owning/seq) yields four:
 /// <c>lexical/lexEntry/createAlternateForms</c>, <c>...deleteAlternateForms</c>,
 /// <c>...moveAlternateForms</c>, <c>...reparentAlternateForms</c>.

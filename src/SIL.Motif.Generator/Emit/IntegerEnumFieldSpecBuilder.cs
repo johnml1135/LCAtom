@@ -35,13 +35,7 @@ public static class IntegerEnumFieldSpecBuilder
     public static IReadOnlyList<IntegerEnumFieldSpec> BuildAll(IReadOnlyList<JoinedRow> rows) =>
         rows.Select(Build).ToList();
 
-    /// <summary>
-    /// The name of the <c>0</c> member, which is what the generated <c>clear</c> writes. An enum with no
-    /// zero member (<c>MoGlossItem.Type</c> starts at 1; <c>CmPossibilityList.WsSelector</c> is entirely
-    /// negative) fails here rather than emitting a <c>clear</c> that writes a value the same file's range
-    /// check would reject — a field of that shape needs a decision about what clearing it means, not a
-    /// template.
-    /// </summary>
+    /// <summary>The name of the <c>0</c> member the generated <c>clear</c> writes; throws if the enum has none, since that shape needs a decision about what clearing it means, not a template.</summary>
     private static string ZeroMemberNameOf(JoinedRow row, IReadOnlyList<(int Value, string Name)> members)
     {
         foreach (var member in members)
@@ -55,12 +49,7 @@ public static class IntegerEnumFieldSpecBuilder
             $"('{row.Manifest.EnumValues}'), which does not include it.");
     }
 
-    /// <summary>
-    /// Parses <c>"0=Undecided;1=Correct;2=Incorrect"</c> into ordered <c>(value, name)</c> pairs.
-    /// Fails closed rather than emitting a template with no range check: this shape exists specifically
-    /// so an out-of-range payload value is rejected, so a field selected into this shape with no
-    /// confirmed <c>EnumValues</c> mapping is a manifest defect, not something to emit permissively.
-    /// </summary>
+    /// <summary>Parses <c>"0=Undecided;1=Correct;2=Incorrect"</c> into ordered <c>(value, name)</c> pairs; fails closed on a missing or malformed <c>EnumValues</c> mapping rather than emit a template with no range check.</summary>
     private static IReadOnlyList<(int Value, string Name)> ParseEnumValues(JoinedRow row)
     {
         var raw = row.Manifest.EnumValues;

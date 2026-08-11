@@ -19,10 +19,10 @@ namespace SIL.Motif.Generator.Checks;
 /// This rule is deliberately <b>not</b> wired into <see cref="ManifestConsistencyChecker"/>'s
 /// whole-manifest pass. Doing so today would fail the build on real, currently in-scope data
 /// (<c>LexEntry.LexemeForm</c> and <c>LexEntry.AlternateForms</c>, both <c>Sig = MoForm</c>) before
-/// MOT-4 has decided how those two fields resolve to concrete-subclass kinds instead — a decision
-/// this generator skeleton does not make (docs/plan-motif.md MOT-3: "emits no code yet"). It is
-/// exposed here, fully tested against the real <c>MoForm</c> fixture, for MOT-4 to call once it
-/// actually emits a kind per field.
+/// a decision has been made about how those two fields resolve to concrete-subclass kinds instead —
+/// a decision this generator, which emits no code yet, does not make. It is
+/// exposed here, fully tested against the real <c>MoForm</c> fixture, for future use once the
+/// generator actually emits a kind per field.
 /// </remarks>
 public static class AbstractClassRule
 {

@@ -5,7 +5,7 @@ using SIL.Motif.Generator.Join;
 namespace SIL.Motif.Generator.Checks;
 
 /// <summary>
-/// ADR 0023 decision 5, as amended 2026-08-05: every emitted kind must carry a hand-written description, and
+/// ADR 0023 decision 5: every emitted kind must carry a hand-written description, and
 /// <b>the build fails if one is missing or if it merely restates the label.</b>
 /// </summary>
 /// <remarks>
@@ -28,15 +28,15 @@ namespace SIL.Motif.Generator.Checks;
 /// availability would make the generator hostage to a review queue.
 /// </para>
 /// <para>
-/// <b>Amended for D8:</b> presence and non-restatement are not enough — the first large batch of "draft"
-/// descriptions was 8% wrong, four of those inverted, and the check that passed them could not see it because
-/// polarity is invisible to a mechanical text check. What <i>is</i> checkable is whether the description
-/// claims a source: <see cref="KindDescription.Reviewed"/> must now be one of five documented values
-/// (<c>sourced</c>, <c>hand-corrected</c>, <c>adapted</c>, <c>unsourced</c>, <c>no-source-exists</c> —
-/// manifest/README.md), and a row claiming any of those but <c>unsourced</c> must actually carry a
-/// <see cref="KindDescription.Source"/> and <see cref="KindDescription.SourceDetail"/> citation. This does not catch a wrong paraphrase of a real
-/// citation, but it does catch the weaker and cheaper-to-produce failure of claiming provenance that was never
-/// recorded — an unsourced description masquerading as sourced is the exact gap D8 exists to close.
+/// <b>Presence and non-restatement are not enough.</b> A batch of "draft" descriptions was 8% wrong, four of
+/// those inverted, and the check that passed them could not see it because polarity is invisible to a
+/// mechanical text check. What <i>is</i> checkable is whether the description claims a source:
+/// <see cref="KindDescription.Reviewed"/> must be one of five documented values (<c>sourced</c>,
+/// <c>hand-corrected</c>, <c>adapted</c>, <c>unsourced</c>, <c>no-source-exists</c> — manifest/README.md),
+/// and a row claiming any of those but <c>unsourced</c> must actually carry a
+/// <see cref="KindDescription.Source"/> and <see cref="KindDescription.SourceDetail"/> citation. This does not
+/// catch a wrong paraphrase of a real citation, but it does catch the weaker and cheaper-to-produce failure of
+/// claiming provenance that was never recorded.
 /// </para>
 /// </remarks>
 public static class DescriptionCheck
@@ -47,13 +47,7 @@ public static class DescriptionCheck
         DescriptionExemptions.ReviewedValue,
     };
 
-    /// <summary>
-    /// <c>no-source-exists</c> is here too: its citation is of a search rather than of a source, but a row
-    /// claiming nothing exists still has to say where it looked. <see cref="DescriptionExemptionCheck"/>
-    /// then checks that claim against the exemption table and, for the derived one, re-derives it.
-    /// <c>adapted</c> cites the sibling it was derived from, and carries that sibling's
-    /// <see cref="KindDescription.SourceHash"/> so the two cannot drift apart unnoticed.
-    /// </summary>
+    /// <summary><c>no-source-exists</c> cites a search rather than a source; <c>adapted</c> cites the sibling it was derived from and that sibling's <see cref="KindDescription.SourceHash"/> so the two cannot drift apart unnoticed.</summary>
     private static readonly HashSet<string> ValuesRequiringACitation = new(StringComparer.Ordinal)
     {
         "sourced", "hand-corrected", DescriptionAdaptations.ReviewedValue,
@@ -93,8 +87,7 @@ public static class DescriptionCheck
                 continue;
             }
 
-            // The bar: a description must say something the name and label do not. Compared on letters and
-            // digits only, so "Is Abstract." cannot pass as a description of "IsAbstract".
+            // The bar: a description must say something the name and label do not (letters/digits only, so "Is Abstract." cannot pass as a description of "IsAbstract").
             if (RestatesOnly(description.Description, description.Label) ||
                 RestatesOnly(description.Description, row.Manifest.Field))
             {

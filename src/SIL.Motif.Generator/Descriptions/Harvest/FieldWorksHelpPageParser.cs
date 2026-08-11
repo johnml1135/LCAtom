@@ -12,13 +12,13 @@ namespace SIL.Motif.Generator.Descriptions.Harvest;
 /// <remarks>
 /// <para>
 /// <b>Why not <c>XDocument</c>:</b> the pages open with an XML declaration <em>and</em> an HTML5 doctype,
-/// carry unescaped <c>&amp;nbsp;</c>, and are declared <c>windows-1252</c>. A strict XML reader rejects
-/// them; a lenient hand-rolled read of one known element shape does not, and this is dev-time harvesting
+/// carry unescaped <c>&amp;nbsp;</c>, and are declared <c>windows-1252</c> — none of which is valid XML.
+/// A lenient hand-rolled read of one known element shape tolerates this, and this is dev-time harvesting
 /// whose output is reviewed as a checked-in TSV before anything downstream sees it.
 /// </para>
 /// <para>
-/// <b>It fails rather than guesses.</b> A page with no <c>Description:</c> row throws — the whole point of
-/// D8 is that a missing source must look like a missing source, not like a sentence somebody wrote.
+/// <b>It fails rather than guesses.</b> A page with no <c>Description:</c> row throws — a missing source
+/// must look like a missing source, not like a sentence somebody wrote.
 /// </para>
 /// </remarks>
 public static class FieldWorksHelpPageParser
@@ -26,10 +26,7 @@ public static class FieldWorksHelpPageParser
     private static readonly Regex TitlePattern = new(
         @"<title>(?<title>.*?)</title>", RegexOptions.Singleline | RegexOptions.IgnoreCase);
 
-    /// <summary>
-    /// The label cell, then the content cell's first paragraph. <c>[\s\S]*?</c> rather than
-    /// <c>RegexOptions.Singleline</c> on the whole pattern so the laziness is visible where it matters.
-    /// </summary>
+    /// <summary>The label cell, then the content cell's first paragraph; <c>[\s\S]*?</c> rather than <c>RegexOptions.Singleline</c> on the whole pattern so the laziness is visible where it matters.</summary>
     private static readonly Regex DescriptionPattern = new(
         @"Description:[\s\S]{0,200}?</td>\s*<td[^>]*>\s*<p[^>]*>(?<body>[\s\S]*?)</p>",
         RegexOptions.IgnoreCase);
@@ -73,13 +70,10 @@ public static class FieldWorksHelpPageParser
 
     private static string CollapseToText(string markup)
     {
-        // Tags come out with nothing in their place, not a space. These paragraphs wrap individual words in
-        // <a>/<span> for cross-links and UI styling — "the headword (<a>lexeme</a> or <a>citation form</a>)"
-        // — and substituting a space would punctuate the harvested sentence as "( lexeme ... form )".
+        // Tags come out with nothing in their place, not a space — these paragraphs wrap individual words in <a>/<span>, and a space would punctuate the sentence as "( lexeme ... form )".
         var text = TagPattern.Replace(markup, "");
         text = WebUtility.HtmlDecode(text);
-        // A non-breaking space is still a space to a reader, and a manifest cell with U+00A0 in it silently
-        // breaks a later grep for the same sentence.
+        // A non-breaking space is still a space to a reader, and a manifest cell with U+00A0 in it silently breaks a later grep for the same sentence.
         text = text.Replace('\u00a0', ' ');
         return WhitespacePattern.Replace(text, " ").Trim();
     }
@@ -93,12 +87,7 @@ public static class FieldWorksHelpPageParser
 /// </summary>
 internal static class Windows1252
 {
-    /// <summary>
-    /// The <c>0x80</c>-<c>0x9F</c> block, in order. The five positions Microsoft left undefined
-    /// (<c>0x81</c>, <c>0x8D</c>, <c>0x8F</c>, <c>0x90</c>, <c>0x9D</c>) map to U+FFFD here rather than to
-    /// a plausible-looking character, so a page that somehow contains one shows up as damage in review
-    /// instead of as text.
-    /// </summary>
+    /// <summary>The <c>0x80</c>-<c>0x9F</c> block, in order; the five positions Microsoft left undefined map to U+FFFD rather than to a plausible-looking character, so one showing up in a page reads as damage in review instead of as text.</summary>
     private const string HighPunctuation =
         "\u20ac\ufffd\u201a\u0192\u201e\u2026\u2020\u2021" +
         "\u02c6\u2030\u0160\u2039\u0152\ufffd\u017d\ufffd" +

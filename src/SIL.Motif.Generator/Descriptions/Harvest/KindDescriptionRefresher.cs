@@ -1,7 +1,7 @@
 namespace SIL.Motif.Generator.Descriptions.Harvest;
 
 /// <summary>
-/// Stage 1 of the two-stage pipeline docs/issues.md D8 asks for. Stage 2 is the pipeline that already
+/// Stage 1 of a two-stage pipeline. Stage 2 is the pipeline that already
 /// existed: <see cref="KindDescriptionTsvParser"/> reads whatever this stage last wrote, and
 /// <see cref="Checks.DescriptionCheck"/> gates emission on it. This stage's only job is to attach provenance —
 /// it never invents prose. For every (Class, Field) already in <c>manifest/kind-descriptions.tsv</c>:
@@ -10,7 +10,7 @@ namespace SIL.Motif.Generator.Descriptions.Harvest;
 /// <list type="number">
 /// <item>If it is one of the five hand-corrected <see cref="HandCorrectedFields.ProdRestrictFamily"/> rows,
 /// its <c>Label</c>/<c>Description</c> are preserved byte-for-byte — regeneration must never silently replace
-/// a human's fix for the D8 polarity bug with a fresh mechanical paraphrase of the same source. A citation
+/// a human's fix for a polarity bug with a fresh mechanical paraphrase of the same source. A citation
 /// and a <see cref="SourceDigest"/> are still attached when the source is available, because the row *is*
 /// sourced; it was just corrected by a human against that source rather than transcribed from it. The digest
 /// is what makes the correction outlive the source safely: if the comment it was corrected against is ever
@@ -94,8 +94,7 @@ public static class KindDescriptionRefresher
 
             if (HandCorrectedFields.ProdRestrictFamily.Contains(key))
             {
-                // Text preserved, provenance refreshed. The digest is over the source, so this row reports a
-                // reworded upstream comment that its own prose can no longer reveal.
+                // Text preserved, provenance refreshed: the digest is over the source, so a reworded upstream comment is still reported even though our prose can't reveal it.
                 refreshed.Add(resolved is null
                     ? row with { Reviewed = "hand-corrected" }
                     : Cite(row, row.Description, resolved, "hand-corrected", textIsTheSource: false, drifted));
@@ -154,15 +153,7 @@ public static class KindDescriptionRefresher
             exempt, unsourced, drifted);
     }
 
-    /// <summary>
-    /// Writes one row's text and provenance, recording drift when the upstream fragment's digest has moved.
-    /// </summary>
-    /// <param name="textIsTheSource">
-    /// Whether <paramref name="text"/> is the upstream sentence itself. When it is, the row's previous
-    /// description <em>was</em> the previous source text, so the report can show both wordings. When it is
-    /// not — a hand-corrected fix, an adapted sibling — only the digests can be compared, which is precisely
-    /// why the digest is stored.
-    /// </param>
+    /// <summary>Writes one row's text and provenance, recording drift when the upstream fragment's digest has moved; <paramref name="textIsTheSource"/> is false for a hand-corrected or adapted row, where only the digest — not the wording — can reveal that the source moved.</summary>
     private static KindDescription Cite(
         KindDescription row,
         string text,

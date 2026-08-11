@@ -3,7 +3,7 @@ namespace SIL.Motif.Generator.Model;
 /// <summary>
 /// One <c>&lt;basic&gt;</c>/<c>&lt;owning&gt;</c>/<c>&lt;rel&gt;</c> declaration from
 /// <c>MasterLCModel.xml</c>, keyed for the join by (<see cref="DeclaringClass"/>,
-/// <see cref="FieldName"/>) — the exact pair MOT-2 joins against the manifest's (Class, Field)
+/// <see cref="FieldName"/>) — the exact pair the join matches against the manifest's (Class, Field)
 /// columns.
 /// </summary>
 /// <param name="DeclaringClass">The enclosing <c>&lt;class id="..."&gt;</c>, never the target of an

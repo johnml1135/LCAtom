@@ -1,10 +1,9 @@
 namespace SIL.Motif.Generator.Emit;
 
 /// <summary>
-/// Every derived fact the basic-Integer-enum template needs for one field — the shape MOT-22
-/// introduces: a small closed-range enum LibLCM stores as a plain <c>Integer</c>, authorable with the
-/// derived <c>set|clear</c> like every other basic field, where <c>clear</c> writes the enum's zero
-/// member.
+/// Every derived fact the basic-Integer-enum template needs for one field: a small closed-range enum
+/// LibLCM stores as a plain <c>Integer</c>, authorable with the derived <c>set|clear</c> like every
+/// other basic field, where <c>clear</c> writes the enum's zero member.
 /// </summary>
 /// <param name="TargetInterface">The LibLCM interface a resolved target is cast to: <c>"I" +
 /// DeclaringClass</c>, matching <see cref="BasicFieldSpec"/>.</param>
@@ -19,9 +18,9 @@ namespace SIL.Motif.Generator.Emit;
 /// <param name="ZeroMemberName">
 /// The name of the <c>0</c> member — <c>Undecided</c> for <c>WfiWordform.SpellingStatus</c> — which is
 /// what <c>clear</c> writes, and which the generated documentation names so a caller reads what clearing
-/// actually does rather than assuming it erases something. <see cref="IntegerEnumFieldSpecBuilder"/>
-/// refuses to build a spec for an enum with no zero member: <c>clear</c> would then write a value
-/// outside the field's own confirmed set, which is exactly what this shape's range check exists to stop.
+/// actually does rather than assuming it erases something. This shape requires every enum to have a zero
+/// member: <c>clear</c> would otherwise have to write a value outside the field's own confirmed set,
+/// which is exactly what this shape's range check exists to stop.
 /// </param>
 public sealed record IntegerEnumFieldSpec(
     string DeclaringClass,

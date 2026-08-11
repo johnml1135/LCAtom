@@ -20,10 +20,7 @@ public static class ModelCoverageReportBuilder
         var inScope = rows.Where(r => r.Manifest.Scope == "in").ToList();
         var outOfScopeCount = rows.Count - inScope.Count;
 
-        // "How many kinds would be emitted per group" — one kind per verb, per in-scope
-        // authorable field, per docs/plan-motif.md MOT-2/MOT-3. Verbs == "n/a" rows are
-        // unauthorable and contribute zero kinds (manifest/README.md: blank/n/a for anything the
-        // Classification column marks non-authorable).
+        // "How many kinds would be emitted per group" — one kind per verb, per in-scope authorable field; "n/a" rows are unauthorable and contribute zero (manifest/README.md).
         var kindsPerGroup = new Dictionary<string, int>();
         foreach (var row in inScope)
         {

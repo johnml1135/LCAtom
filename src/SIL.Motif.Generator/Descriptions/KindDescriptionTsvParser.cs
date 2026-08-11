@@ -14,7 +14,7 @@ namespace SIL.Motif.Generator.Descriptions;
 /// the manifest.
 /// </para>
 /// <para>
-/// The trailing <c>Source</c>/<c>SourceDetail</c>/<c>SourceHash</c> columns were added for <c>docs/issues.md</c> D8: a
+/// The trailing <c>Source</c>/<c>SourceDetail</c>/<c>SourceHash</c> columns exist because a
 /// description with no recorded provenance is exactly the failure mode that let four inverted
 /// <c>ProdRestrict</c>-family descriptions pass the original presence-only check. This file is Stage 2 of a
 /// two-stage pipeline — <c>Descriptions.Harvest.KindDescriptionRefresher</c> is Stage 1, the re-runnable
@@ -44,8 +44,7 @@ public static class KindDescriptionTsvParser
     /// <summary>Exposed for tests, which supply the file's content inline rather than on disk.</summary>
     public static IReadOnlyList<KindDescription> ParseText(string path, string text)
     {
-        // CRLF-only split, matching ManifestTsvParser: these are checked-in artifacts shipped with known
-        // line endings, and a silent LF/CRLF drift should be visible rather than tolerated.
+        // CRLF-only split, matching ManifestTsvParser: a silent LF/CRLF drift in a checked-in artifact should be visible rather than tolerated.
         var lines = text.Split("\r\n");
 
         if (lines.Length == 0 || !lines[0].StartsWith("\"Class\"", StringComparison.Ordinal))
@@ -70,8 +69,7 @@ public static class KindDescriptionTsvParser
                 SourceDetail: columns[6],
                 SourceHash: columns[7]);
 
-            // One description per field, or the emitted text depends on read order — the same class of
-            // defect ADR 0026 removed from operation ordering.
+            // One description per field, or the emitted text depends on read order — the same class of defect ADR 0026 removed from operation ordering.
             if (seen.TryGetValue(row.Key, out var firstLine))
                 throw new GeneratorException(
                     $"'{path}' line {i + 1}: '{row.Key}' already has a description on line {firstLine}. " +

@@ -1,8 +1,8 @@
 namespace SIL.Motif.Generator.Emit;
 
 /// <summary>
-/// MOT-4 slice 3's emission orchestrator: the 78 rows <see cref="Slice3FieldSelector"/> selects —
-/// ADR 0025's parser-first slice (<c>HcReachable=yes</c>), restricted to the three generic shapes
+/// Emission orchestrator for the 78 rows <see cref="Slice3FieldSelector"/> selects —
+/// ADR 0025's parser-first shape (<c>HcReachable=yes</c>), restricted to the three generic shapes
 /// slices 1/2 already built (basic <c>MultiUnicode</c>/<c>MultiString</c>/<c>Boolean</c>
 /// <c>set|clear</c>, <c>rel/atomic</c> <c>set|clear</c>, <c>rel/col</c>/<c>rel/seq</c>
 /// <c>addRef|removeRef</c>), across every declaring class rather than only <c>LexEntry</c>/<c>MoForm</c>.
@@ -24,8 +24,7 @@ namespace SIL.Motif.Generator.Emit;
 /// 0022's "Creation validity" row — "the model file does not encode validity"), which is new
 /// hand-written machinery per field, not a template instantiation of an existing shape. The task this
 /// writer completes is explicitly scoped to shapes an existing emitter already handles; owning/atomic
-/// rows are recorded as skipped, not silently dropped — see the generator's own commit message and
-/// docs/plan-motif.md's MOT-4 section for the accounting of which rows still need that shape.
+/// rows are recorded as skipped, not silently dropped.
 /// </para>
 /// <para>
 /// <b>One class can need a <c>Snapshotter</c>, a <c>RelationsSnapshotter</c>, or both.</b> A basic
@@ -67,8 +66,7 @@ public static class Slice3CatalogWriter
         foreach (var spec in collectionSpecs)
             written.Add(WriteFile(repoRoot, operationsDir, $"{spec.SnapshotFieldConstant}.g.cs", ReferenceCollectionFieldEmitter.Render(spec)));
 
-        // Snapshotting: one Snapshotter per class with a basic field, one RelationsSnapshotter per
-        // class with a rel field -- a class with both gets both files (see this type's remarks).
+        // Snapshotting: one Snapshotter per class with a basic field, one RelationsSnapshotter per class with a rel field; a class with both gets both files (see this type's remarks).
         var snapshottingDir = Path.Combine(repoRoot, "src", "SIL.Motif.Runner", "Snapshotting", "Generated3");
         Directory.CreateDirectory(snapshottingDir);
 

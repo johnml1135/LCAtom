@@ -10,10 +10,8 @@ namespace SIL.Motif.Generator.Descriptions.Harvest;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The tool is <c>hh.exe -decompile</c></b>, which ships with Windows. An earlier research pass reported
-/// the <c>.chm</c> as unextractable "with tools available this session" and recommended un-shallowing the
-/// <c>FwHelps</c> submodule instead; that was wrong, and the correction is worth keeping visible — the file
-/// was sitting in the FieldWorks checkout and this command opens it in seconds.
+/// <b>The tool is <c>hh.exe -decompile</c></b>, which ships with Windows and extracts the checked-in
+/// <c>.chm</c> in seconds — no submodule checkout is needed.
 /// </para>
 /// <para>
 /// <b>Why it polls.</b> <c>hh.exe</c> hands the work to the HTML Help runtime and exits immediately, so its

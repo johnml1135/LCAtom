@@ -4,18 +4,18 @@ using SIL.Motif.Generator.Model;
 namespace SIL.Motif.Generator.Emit;
 
 /// <summary>
-/// Selects MOT-4 slice 2's exact field lists from the joined model — the same "derive the list, do not
+/// Selects the remaining field lists from the joined model — the same "derive the list, do not
 /// hardcode it" discipline <see cref="BasicFieldSelector"/> established for slice 1, extended to the
-/// three remaining structural shapes docs/plan-motif.md's MOT-4 section names for this family:
+/// three remaining structural shapes for this family:
 /// <c>rel/atomic</c> (<c>MoForm.MorphType</c>), <c>rel/col</c>/<c>rel/seq</c>
 /// (<c>LexEntry.DialectLabels</c>, <c>.DoNotPublishIn</c>, <c>.DoNotShowMainEntryIn</c>), and
 /// <c>owning/atomic</c> <c>create|delete</c> (<c>LexEntry.LexemeForm</c>).
 /// </summary>
 /// <remarks>
 /// One class filter, shared with <see cref="BasicFieldSelector"/>: <c>LexEntry</c>/<c>MoForm</c>, the
-/// two classes docs/plan-motif.md's MOT-4 section names as this family. Each of the three selectors
+/// two classes that make up this family. Each of the three selectors
 /// below additionally filters by <c>(Kind, Card, Verbs)</c>, which mechanically yields exactly the
-/// rows the plan's table lists — checked against the real manifest in
+/// intended rows — checked against the real manifest in
 /// <c>RelationFieldSelectorTests</c> — with no field name hardcoded anywhere in the filter itself.
 /// </remarks>
 public static class RelationFieldSelector

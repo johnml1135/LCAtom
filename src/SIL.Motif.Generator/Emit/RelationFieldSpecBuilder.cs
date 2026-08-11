@@ -27,8 +27,7 @@ public static class RelationFieldSpecBuilder
             ClearKind: KindNameDerivation.DeriveOne(group, construct, "clear", row.FieldName),
             TargetInterface: "I" + row.DeclaringClass,
             RefInterface: "I" + row.Sig,
-            // LibLCM's own accessor-property suffix convention for a rel/atomic field, verified
-            // against the real IMoForm interface (SIL.LCModel): "RA" for a reference atomic.
+            // LibLCM's own accessor-property suffix convention (SIL.LCModel's IMoForm): "RA" for a reference atomic.
             AccessorPropertyName: row.FieldName + "RA",
             SnapshotFieldConstant: row.DeclaringClass + row.FieldName);
     }
@@ -44,8 +43,7 @@ public static class RelationFieldSpecBuilder
                 $"{row.DeclaringClass}.{row.FieldName}: a rel/col or rel/seq field must carry a Card.");
         }
 
-        // LibLCM's own accessor-property suffix convention, verified against the real ILexEntry
-        // interface (SIL.LCModel): "RC" for a reference collection, "RS" for a reference sequence.
+        // LibLCM's own accessor-property suffix convention (SIL.LCModel's ILexEntry): "RC" for a reference collection, "RS" for a reference sequence.
         var accessorSuffix = card == FieldCard.Seq ? "RS" : "RC";
 
         return new ReferenceCollectionFieldSpec(

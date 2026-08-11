@@ -10,7 +10,7 @@ namespace SIL.Motif.Generator.Ordering;
 /// re-derived from a field name.
 /// </summary>
 /// <remarks>
-/// The 2026-08-03 manifest trust audit recommended "100%-review the 61 non-default rows before the
+/// The manifest trust audit recommended "100%-review the 61 non-default rows before the
 /// generator ships from them" and called it a bounded, one-sitting task. It is — once someone has the
 /// evidence in front of them. This is the part a machine can do: find the sentences, quote them, cite them,
 /// digest them. What it deliberately does not do is decide whether they support the classification.
@@ -87,12 +87,7 @@ public static class OrderingEvidenceHarvester
         return (string.Join(" ", selected), terms);
     }
 
-    /// <summary>
-    /// <c>i.e.</c>, <c>e.g.</c> and friends are everywhere in this file's prose ("i.e. those slots which
-    /// correspond to enclitics"), and splitting on them would cut an ordering statement in half and quote
-    /// the wrong fragment. They are protected before the split and restored after, which is cruder than a
-    /// real sentence segmenter and entirely sufficient for one XML file's comments.
-    /// </summary>
+    /// <summary>Protects abbreviations like <c>i.e.</c>/<c>e.g.</c> before sentence-splitting and restores them after, so their periods aren't read as sentence boundaries.</summary>
     private static readonly (string Abbreviation, string Placeholder)[] Abbreviations =
     [
         ("i.e.", "IE"),

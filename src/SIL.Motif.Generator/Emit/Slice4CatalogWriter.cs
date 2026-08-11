@@ -1,8 +1,8 @@
 namespace SIL.Motif.Generator.Emit;
 
 /// <summary>
-/// MOT-22's emission orchestrator: the basic-Integer-enum shape <see cref="Slice4FieldSelector"/>
-/// selects — today exactly one field, <c>WfiWordform.SpellingStatus</c>.
+/// Emission orchestrator for the basic-Integer-enum shape <see cref="Slice4FieldSelector"/> selects
+/// (e.g. <c>WfiWordform.SpellingStatus</c>).
 /// </summary>
 /// <remarks>
 /// A separate writer from <see cref="GeneratedCatalogWriter"/>/<see cref="Slice2CatalogWriter"/>/
@@ -42,10 +42,7 @@ public static class Slice4CatalogWriter
             written.Add(WriteFile(repoRoot, snapshottingDir, $"{group.Key}Snapshotter.g.cs", content));
         }
 
-        // SnapshotFields: a fourth shared partial-class file, in SIL.Motif.Model/Snapshot. Reuses
-        // Slice3SnapshotFieldsEmitter -- its ConstantEntry shape and Render body are spec-agnostic
-        // already (basic, rel/atomic, rel/col|seq all feed it), so this shape needs no fifth copy of the
-        // same few lines.
+        // SnapshotFields: reuses Slice3SnapshotFieldsEmitter, whose ConstantEntry/Render are spec-agnostic across basic/rel shapes, so this shape needs no separate copy.
         var modelSnapshotDir = Path.Combine(repoRoot, "src", "SIL.Motif.Model", "Snapshot");
         Directory.CreateDirectory(modelSnapshotDir);
         var constants = specs
