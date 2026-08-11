@@ -23,8 +23,7 @@ public sealed class LcmWordformCorpusTests
         var viaExtract = LcmWordformCorpus.Extract(cache, "Sena 3", limit: 25);
         var viaFormsThenCreate = CorpusDescriptor.Create("Sena 3", LcmWordformCorpus.ExtractForms(cache).Take(25));
 
-        // Extract is documented as ExtractForms (capped) piped into CorpusDescriptor.Create; this pins that
-        // there is no hidden divergence between the two paths.
+        // Extract is documented as ExtractForms (capped) piped into CorpusDescriptor.Create; pins no divergence.
         Assert.Equal(viaFormsThenCreate.Sha256, viaExtract.Sha256);
         Assert.Equal(viaFormsThenCreate.Words, viaExtract.Words);
     }
@@ -38,8 +37,7 @@ public sealed class LcmWordformCorpusTests
         var uncapped = LcmWordformCorpus.Extract(cache, "Sena 3 (whole)");
 
         Assert.True(capped.Words.Count <= 5);
-        // Sena 3 has on the order of 6,973 word forms (docs/research/2026-08-06-parser-timing-measured.md),
-        // so an uncapped extraction must produce strictly more than a 5-word cap did.
+        // Sena 3 has ~6,973 forms (docs/research/2026-08-06-parser-timing-measured.md); uncapped must exceed a 5-cap.
         Assert.True(uncapped.Words.Count > capped.Words.Count);
         Assert.NotEqual(uncapped.Sha256, capped.Sha256);
     }

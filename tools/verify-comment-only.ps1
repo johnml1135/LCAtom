@@ -51,8 +51,7 @@ try {
         exit 0
     }
 
-    # An empty diff for a file named as changed means the caller is verifying the wrong thing; that
-    # must be visible rather than pass quietly.
+    # An empty diff for a file named as changed means the caller is verifying the wrong thing.
     $failures = New-Object System.Collections.ArrayList
     $checked = 0
 

@@ -120,8 +120,7 @@ public sealed class ParserSeamIntegrationTests
         Assert.True(pruned.Succeeded, pruned.Refusal?.Detail ?? "the pruned engine refused");
         Assert.True(hermitCrabOnly.Succeeded, hermitCrabOnly.Refusal?.Detail ?? "the fallback engine refused");
 
-        // The owner's constraint is that these two modes are equivalent, so Motif may fall back without
-        // changing the answer. Compared on which words got a verdict, not on timing, which differs by design.
+        // The two engines must agree on verdicts; compared by outcome only, since timing differs by design.
         var prunedVerdicts = pruned.Analysis!.Words
             .ToDictionary(w => w.Word, w => w.Outcome);
         var fallbackVerdicts = hermitCrabOnly.Analysis!.Words

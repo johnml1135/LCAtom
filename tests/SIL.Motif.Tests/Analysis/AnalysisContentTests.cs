@@ -29,9 +29,7 @@ public class AnalysisContentTests
     [Fact]
     public void ContentBuiltFromSeparateEqualBundleLists_DigestsIdentically()
     {
-        // Two independently-constructed lists that happen to name the same three references. This
-        // stands in for "the same analysis, recreated as a new WfiAnalysis object after a breakdown
-        // edit" (ADR 0038 decision 3) — the digest must not care that they are different .NET instances.
+        // Stands in for the same analysis recreated as a new WfiAnalysis (ADR 0038 decision 3): instance id irrelevant.
         var a = new List<MorphBundleContent> { new("morph-1", "msa-1", "infl-1") };
         var b = new List<MorphBundleContent> { new("morph-1", "msa-1", "infl-1") };
 
@@ -41,8 +39,7 @@ public class AnalysisContentTests
     [Fact]
     public void MorphOrderIsPartOfTheContent_ReversingItChangesTheDigest()
     {
-        // WfiAnalysis.MorphBundlesOS is an owning SEQUENCE — morpheme order is linguistic content, not
-        // incidental — so the digest must not be order-insensitive the way a set-based hash would be.
+        // MorphBundlesOS is an owning SEQUENCE: morpheme order is content, so the digest must be order-sensitive.
         var forward = new List<MorphBundleContent> { new("m1", "s1", null), new("m2", "s2", null) };
         var backward = new List<MorphBundleContent> { new("m2", "s2", null), new("m1", "s1", null) };
 
@@ -66,8 +63,7 @@ public class AnalysisContentTests
         var differentMsa = AnalysisContent.ComputeDigest(new[] { new MorphBundleContent("m1", "s2", "i1") });
         var differentInflType = AnalysisContent.ComputeDigest(new[] { new MorphBundleContent("m1", "s1", "i2") });
 
-        // Each field is load-bearing on its own — none of them can be dropped without losing a real
-        // distinction FieldWorks' own comparison makes.
+        // Each field is load-bearing: dropping any one loses a real distinction FieldWorks' own comparison makes.
         Assert.NotEqual(baseline, differentMorph);
         Assert.NotEqual(baseline, differentMsa);
         Assert.NotEqual(baseline, differentInflType);
@@ -76,8 +72,7 @@ public class AnalysisContentTests
     [Fact]
     public void ANullInflTypeIsDistinctFromABundleThatHasOne()
     {
-        // A guessed-root or unmarked bundle genuinely has no InflTypeRA (MasterLCModel.xml: "optional").
-        // That absence must not collide with any bundle that does carry one.
+        // InflTypeRA is genuinely optional (MasterLCModel.xml); absence must not collide with a bundle that has one.
         var withoutInflType = AnalysisContent.ComputeDigest(new[] { new MorphBundleContent("m1", "s1", null) });
         var withInflType = AnalysisContent.ComputeDigest(new[] { new MorphBundleContent("m1", "s1", "infl-1") });
 
@@ -87,8 +82,7 @@ public class AnalysisContentTests
     [Fact]
     public void AnEmptyAnalysis_DigestsDifferentlyFromAOneBundleAnalysis()
     {
-        // Guards the "count folded in explicitly" design note on AnalysisContent.ComputeDigest: without
-        // it, an empty bundle list and a list whose one bundle carries no references at all could collide.
+        // Without folding the count in, an empty list and a one-bundle list with no references would collide.
         var empty = AnalysisContent.ComputeDigest(Array.Empty<MorphBundleContent>());
         var oneEmptyBundle = AnalysisContent.ComputeDigest(new[] { new MorphBundleContent(null, null, null) });
 

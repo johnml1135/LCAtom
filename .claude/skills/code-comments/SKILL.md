@@ -92,6 +92,7 @@ behaviour**, and that is the class that costs the most, because it looks maintai
 | Tier | Looks like | What to do | Who checks it |
 |---|---|---|---|
 | **Executable** | "an out-of-range value is rejected rather than clamped" | a test, cited as ``pinned by `TestName` `` | `dotnet test`; the checker verifies the name exists in the tree |
+| **Quoted contract** | a verbatim sentence from `docs/change-set-contract.md` or similar | quote it and cite the file | the checker verifies the file exists; never reword a quotation to dodge a claim verb |
 | **Resolved** | any reference to another type or member | `<see cref="Foo"/>` | the C# compiler (CS1574) |
 | **Durable external** | a paper, an algorithm, an upstream issue, LibLCM or HermitCrab behaviour with a `file:line` | keep it | nothing needed — it does not rot on our side |
 | **Project state** | plans, issues, dates, slice status, history | delete | the hygiene checker |
@@ -106,8 +107,13 @@ implementation.
 
 | Kind | Cap | Why |
 |---|---|---|
-| **API doc** — `///` on a `public` or `internal` type or member | long form as appropriate | This is the abstraction. Without it a caller must read the body, and there is no interface |
-| **Implementation comment** — any `//`, and `///` on a `private` member | **one line** | It explains code the reader is already looking at. If one line cannot carry it, the knowledge belongs in the API doc or in a test |
+| **API doc** — `///` on a `public` or `internal` type or member, on an interface member, or on an enum member | long form as appropriate | This is the abstraction. Without it a caller must read the body, and there is no interface |
+| **Implementation comment** — any `//`, and `///` on a `private` member | **one line, at most 110 characters** | It explains code the reader is already looking at. If one line cannot carry it, the knowledge belongs in the API doc or in a test |
+
+The character cap is not pedantry, it is the same rule stated twice. A five-line block reflowed onto
+one four-hundred-character line satisfies the line count and reads worse than what it replaced.
+**Shorten the content, not the whitespace.** An interface or enum member carries no access modifier
+because it cannot; both are API surface at their type's visibility, and both get long form.
 
 **A reference document REPLACES a long comment; it does not license one.** If the knowledge needs a
 paragraph, write it in `docs/research/` and let the comment be the one line that points there.

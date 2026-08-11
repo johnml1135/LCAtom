@@ -16,9 +16,8 @@ namespace SIL.Motif.Tests.Parser;
 /// </para>
 /// <para>
 /// What these tests defend is the distinction the whole grammar coverage story rests on: <b>timed out is not
-/// failed</b>. See <c>docs/issues.md</c> <c>D9</c> — the moment a figure counts "we stopped waiting" as "the
-/// grammar cannot analyse this", coverage stops being usable as a target, because it then moves when the
-/// machine is busy.
+/// failed</b>. The moment a figure counts "we stopped waiting" as "the grammar cannot analyse this", coverage
+/// stops being usable as a target, because it then moves when the machine is busy.
 /// </para>
 /// </remarks>
 public class ParserOutputTests
@@ -69,8 +68,7 @@ public class ParserOutputTests
         Assert.True(analysis.IsLowerBound);
         Assert.Equal(2, analysis.TimedOut);
 
-        // The honest denominator excludes words with no verdict either way — 7 analysed + 0 unanalysable,
-        // not 10. Using the row count would report 70% coverage where the truth is 100% of what was judged.
+        // Honest denominator excludes no-verdict words (7, not 10) — row count would show 70% when truth is 100%.
         Assert.Equal(7, analysis.Adjudicated);
         Assert.Equal(7, analysis.Analysed);
     }
@@ -91,8 +89,7 @@ public class ParserOutputTests
     [Fact]
     public void AnUnrecognisedStatus_ThrowsRatherThanBecomingAFailure()
     {
-        // The defect this prevents: a future parser status silently bucketed as "no analysis" would move
-        // every coverage number downward with no diagnostic anywhere.
+        // Prevents a future parser status being silently bucketed as "no analysis", moving coverage down invisibly.
         var ex = Assert.Throws<InvalidOperationException>(
             () => BatchTsvParser.Parse("0\tword\t5\tSOMETHING_NEW\t-\n"));
 
@@ -108,8 +105,7 @@ public class ParserOutputTests
         Assert.NotNull(refusal);
         Assert.Equal(ParserRefusalKind.FstEnumerationBudgetExceeded, refusal!.Kind);
 
-        // The parser's own numbers survive into the diagnostic: a reviewer needs to see how far over the
-        // limit this grammar is, not merely that it was over.
+        // The parser's own numbers survive into the diagnostic: a reviewer needs to see how far over the limit it is.
         Assert.Contains("200500", refusal.Detail);
         Assert.Contains("200000", refusal.Detail);
     }
@@ -117,8 +113,7 @@ public class ParserOutputTests
     [Fact]
     public void AMissingExecutableOrBadPath_IsNotMistakenForARefusedGrammar()
     {
-        // The two must stay distinguishable: one means "use the other engine", the other means "your build
-        // environment is wrong". Conflating them files an environment problem as a linguistic finding.
+        // Must stay distinguishable: "use the other engine" vs "your build is wrong" — conflating mislabels the cause.
         Assert.Null(ParserRefusalRecognizer.Recognize("No such file or directory"));
         Assert.Null(ParserRefusalRecognizer.Recognize(""));
         Assert.Null(ParserRefusalRecognizer.Recognize("thread 'main' panicked at src/main.rs:1:1"));
@@ -127,8 +122,7 @@ public class ParserOutputTests
     [Fact]
     public void EngineFlags_MapBothCommandSpellingsOfTheSameMode()
     {
-        // batch and assess spell the identical propose-then-confirm composite differently, which has already
-        // been mis-read once. Pinned so the next reader does not have to re-derive it.
+        // batch and assess spell the same propose-then-confirm composite differently; pinned so it need not be redone.
         Assert.Equal("foma", ParserEngine.FstPrunedByHermitCrab.BatchEngine());
         Assert.Equal("foma-confirm", ParserEngine.FstPrunedByHermitCrab.AssessPipeline());
         Assert.Equal("default", ParserEngine.HermitCrabOnly.BatchEngine());

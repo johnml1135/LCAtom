@@ -67,8 +67,7 @@ public class GrammarCoverageFigureTests
     [Fact]
     public void Compute_FractionIsNullWhenNothingWasAdjudicated()
     {
-        // Every word either timed out or was skipped: nothing was ever judged against the grammar, so there
-        // is no honest percentage to report — not 0%, not 100%.
+        // Nothing was judged against the grammar (all timed out/skipped): no percentage — not 0%, not 100%.
         var batch = Batch(("mbali", WordOutcome.TimedOut), ("ya", WordOutcome.Skipped));
         var corpus = CorpusDescriptor.Create("test-corpus", new[] { "mbali", "ya" });
 
@@ -199,7 +198,7 @@ public class GrammarCoverageFigureTests
     /// A lower bound says so in either tense, and nothing-adjudicated never renders as a percentage.
     /// </summary>
     /// <remarks>
-    /// These are the two existing refusals this type already enforces (<c>docs/issues.md</c> <c>D9</c>, and
+    /// These are the two existing refusals this type already enforces (the lower-bound flag and
     /// the zero-adjudicated rule), and rendering must not be the place they leak. A sentence is what people
     /// actually read, so a caveat that survives in the record but not in the prose has not survived.
     /// </remarks>

@@ -16,8 +16,8 @@ namespace SIL.Motif.Tests.Analysis;
 /// <item>"No assessment known" (<c>null</c>), "assessment covered this word, parser found nothing"
 /// (empty list), and "the parser found N analyses" are three distinct states, not two — collapsing the
 /// first two would misreport a word nobody asked the parser about as a parser failure.</item>
-/// <item><see cref="WordFormAnalysisAggregate.AutomaticAnalysisCount"/> — the over-generation signal
-/// named in <c>docs/plan-motif.md</c> MOT-23 — reports a plain count with no verdict attached.</item>
+/// <item><see cref="WordFormAnalysisAggregate.AutomaticAnalysisCount"/> — the over-generation signal —
+/// reports a plain count with no verdict attached.</item>
 /// </list>
 /// </remarks>
 public class WordFormAnalysisAggregateTests
@@ -50,8 +50,7 @@ public class WordFormAnalysisAggregateTests
     [Fact]
     public void AutomaticAnalysisCount_IsZero_NotNull_WhenTheAssessmentCoveredTheWordAndFoundNothing()
     {
-        // "Covered, found nothing" and "not covered" both look like "no analyses" unless the collection
-        // itself distinguishes null from empty — this is that distinction surfacing on the count.
+        // "Covered, found nothing" vs "not covered": distinguished by null vs empty, not "no analyses".
         var wordform = new WordFormAnalysisAggregate(
             "w1", "mbali", Array.Empty<ApprovedAnalysis>(), AutomaticAnalyses: Array.Empty<AutomaticAnalysis>());
 
@@ -70,8 +69,7 @@ public class WordFormAnalysisAggregateTests
         };
         var wordform = new WordFormAnalysisAggregate("w1", "mbali", Array.Empty<ApprovedAnalysis>(), many);
 
-        // Reported as a plain count — the over-generation *signal*, not a verdict (ADR 0038 decision 6):
-        // nothing on this type says whether three analyses is ambiguity or looseness.
+        // A plain count, not a verdict (ADR 0038 decision 6): ambiguity vs looseness is unsaid.
         Assert.Equal(3, wordform.AutomaticAnalysisCount);
     }
 }

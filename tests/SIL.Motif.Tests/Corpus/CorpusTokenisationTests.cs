@@ -5,8 +5,7 @@ namespace SIL.Motif.Tests.Corpus;
 
 /// <summary>
 /// The bridge from Documents — running text, in order, with repetition — to a CorpusDescriptor — sorted,
-/// distinct word forms — that <c>docs/issues.md</c> <c>B26</c> names as the missing connection between
-/// ingestion and measurement.
+/// distinct word forms — the missing connection between ingestion and measurement.
 /// </summary>
 /// <remarks>
 /// The rules these tests defend, in order of how much damage getting them wrong would do:
@@ -42,8 +41,7 @@ public class CorpusTokenisationTests
         ContentSha256: new string('0', 64),
         IngestedUtc: new DateTimeOffset(2026, 8, 9, 0, 0, 0, TimeSpan.Zero));
 
-    /// <summary>A tokeniser that otherwise behaves like the real one but records the order it was asked to
-    /// tokenise texts in — the fact CorpusDescriptor's final, sorted Words can never reveal on its own.</summary>
+    /// <summary>Wraps the real tokeniser but records call order — sorted Words can never reveal that.</summary>
     private sealed class RecordingTokeniser : IWordTokeniser
     {
         private readonly WhitespaceAndPunctuationTokeniser _inner = new();
@@ -69,8 +67,8 @@ public class CorpusTokenisationTests
     /// characters survive. That is the same failure the word-internal rule prevents, at the other end of the
     /// token, and it hits legacy data for exactly the languages this project serves. It is not fixable by
     /// classification alone — <c>'mbali'</c> is genuinely ambiguous between a quoted word and one with edge
-    /// glottals — so this test exists to make the behaviour visible and deliberate. See <c>docs/issues.md</c>
-    /// <c>B29</c>; the real fix is a writing-system-aware tokeniser reading Valid Characters.
+    /// glottals — so this test exists to make the behaviour visible and deliberate. The real fix is a
+    /// writing-system-aware tokeniser reading Valid Characters.
     /// </remarks>
     [Fact]
     public void EdgeGlottalsSurviveOnlyWhenWrittenWithLetterCharacters()
@@ -129,8 +127,7 @@ public class CorpusTokenisationTests
             new[] { "nyumba", "mbali", "mbali", "nyumba" },
             tokeniser.Tokenise(corpus.Documents[0].Text));
 
-        // Half two: CorpusTokenisation.ToDescriptor's result is sorted and distinct, because that
-        // transformation belongs to CorpusDescriptor.Create alone, never to the bridge or the tokeniser.
+        // Half two: ToDescriptor's result is sorted/distinct — that's CorpusDescriptor.Create's job, not the bridge's.
         var descriptor = CorpusTokenisation.ToDescriptor(corpus, tokeniser);
         Assert.Equal(new[] { "mbali", "nyumba" }, descriptor.Words);
     }
@@ -144,13 +141,11 @@ public class CorpusTokenisationTests
 
         var tokens = tokeniser.Tokenise("\"don't\" (mother-in-law), 'quoted'.").ToList();
 
-        // A form invented by splitting on a word-internal apostrophe or hyphen fails to parse and reads as a
-        // gap in the grammar that is really a tokenisation artefact — the specific failure to avoid.
+        // Splitting on a word-internal apostrophe/hyphen invents a form that misreads as a grammar gap, not a bug.
         Assert.Contains("don't", tokens);
         Assert.Contains("mother-in-law", tokens);
 
-        // Edge punctuation — quotes, parentheses, the trailing comma and period — must not survive in any
-        // yielded token.
+        // Edge punctuation (quotes, parens, trailing comma/period) must not survive in any yielded token.
         Assert.DoesNotContain(tokens, t => t.Contains('"') || t.Contains('(') || t.Contains(')'));
         Assert.Equal("quoted", tokens[^1]);
     }
@@ -162,8 +157,7 @@ public class CorpusTokenisationTests
 
         var tokens = tokeniser.Tokenise("Verse 23 says the 2nd house at v42 stood.").ToList();
 
-        // A verse number or footnote marker is not a word form; keeping it would pollute a coverage figure
-        // with tokens no grammar is meant to analyse.
+        // A verse number or footnote marker is not a word form; keeping it would pollute a coverage figure.
         Assert.DoesNotContain("23", tokens);
 
         // But a form that merely contains digits is not "entirely digits" — dropping it would be guessing.
@@ -178,8 +172,7 @@ public class CorpusTokenisationTests
 
         var tokens = tokeniser.Tokenise("Mbali MBALI mbali").ToList();
 
-        // Casing is a vernacular-orthography question, not the tokeniser's to normalise — three differently
-        // cased spellings must survive as three distinct forms.
+        // Casing is a vernacular-orthography question, not the tokeniser's — three casings stay three distinct forms.
         Assert.Equal(new[] { "Mbali", "MBALI", "mbali" }, tokens);
     }
 
@@ -195,8 +188,7 @@ public class CorpusTokenisationTests
 
         Assert.Equal(corpus.Provenance, descriptor.Provenance);
 
-        // Building the bridge must not be a back door around ADR 0036 decision 5: no qualification means no
-        // accuracy claims, before the bridge and after it alike.
+        // Not a back door around ADR 0036 decision 5: no qualification means no accuracy claims, before or after.
         Assert.False(descriptor.SupportsAccuracyClaims);
     }
 
@@ -228,9 +220,7 @@ public class CorpusTokenisationTests
         var ex = Assert.Throws<InvalidOperationException>(
             () => CorpusTokenisation.ToDescriptor(corpus, new WhitespaceAndPunctuationTokeniser()));
 
-        // Two corpora tokenised differently are not comparable even over identical bytes (ADR 0036 decision
-        // 4); the message must name both the declared and the supplied values, or a reader cannot tell which
-        // one is the mistake.
+        // Differently-tokenised corpora aren't comparable (ADR 0036 decision 4); message must name both values.
         Assert.Contains("SIL.Machine LatinWordTokenizer", ex.Message);
         Assert.Contains("3.6.2", ex.Message);
         Assert.Contains("whitespace-and-punctuation", ex.Message);
@@ -249,8 +239,7 @@ public class CorpusTokenisationTests
         var subset = CorpusTokenisation.ToDescriptor(
             corpus, new WhitespaceAndPunctuationTokeniser(), documentIds: new[] { "sehNT" });
 
-        // Following LcmWordformCorpus.Extract's precedent: a label must not let a figure look like it covers
-        // more than it actually measured.
+        // Following LcmWordformCorpus.Extract's precedent: a label must not claim to cover more than it measured.
         Assert.Equal("ebible-seh", whole.CorpusId);
         Assert.NotEqual("ebible-seh", subset.CorpusId);
         Assert.Contains("sehNT", subset.CorpusId);
@@ -279,9 +268,7 @@ public class CorpusTokenisationTests
 
         CorpusTokenisation.ToDescriptor(corpus, recorder);
 
-        // The order Documents were added is the order an n-gram model built downstream would see. Getting
-        // this wrong is invisible in the final descriptor, because CorpusDescriptor.Create sorts — so this
-        // has to be pinned at the point the bridge feeds text to the tokeniser, not at the final result.
+        // Document order is what a downstream n-gram model sees; invisible after Create sorts, so pin it at the feed.
         Assert.Equal(new[] { "nyumba", "mbali", "chuma" }, recorder.TokenisedTexts);
     }
 }

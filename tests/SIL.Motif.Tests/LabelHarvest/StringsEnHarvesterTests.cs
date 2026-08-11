@@ -60,8 +60,7 @@ public class StringsEnHarvesterTests
     [Fact]
     public void PossibilityListItemTypeNames_drops_keys_with_no_resolvable_class_rather_than_guessing()
     {
-        // ProdRestrict has no entry in ownerFieldToClass here (mirrors the real areaConfiguration.xml, where
-        // it is genuinely absent) — the harvester must not default it to CmPossibility.
+        // ProdRestrict is genuinely absent from areaConfiguration.xml; must not default to CmPossibility.
         using var file = new TestFile("strings-en.xml", Fixture);
         var ownerFieldToClass = new Dictionary<string, string> { ["ConfidenceLevels"] = "CmPossibility" };
 

@@ -20,12 +20,13 @@ where the project is — a comment duplicating any of those three will eventuall
 
 | Check | Standard |
 |---|---|
-| Implementation comment (`//`, or `///` on a `private` member) | **one line** |
-| API doc (`///` on a `public`/`internal` type or member) | long form as appropriate |
+| Implementation comment (`//`, or `///` on a `private` member) | **one line, at most 110 characters** — reflowing a paragraph onto one long line is not compliance |
+| API doc (`///` on a `public`/`internal` type or member, an interface member, or an enum member) | long form as appropriate |
 | Plan and issue references — `MOT-22`, `docs/issues.md D8`, `issue B18` | **banned**; state the constraint instead |
 | ADR citations | **allowed** — an ADR number is immutable; cite it for a decision, never for a status |
 | Dates, slice/wiring status, history narrative, agent attribution | **banned** |
-| A claim about another entity's behaviour | cite the pinning test — ``pinned by `TestName` `` — or reword |
+| A claim about another entity's behaviour | cite the pinning test — ``pinned by `TestName` `` — or quote a `docs/*.md`, or reword |
+| A `//` inside an emitter's raw-string template | scanned for banned references; exempt from the length rule, being a generated file's banner |
 | `<see cref="X"/>` | keep; the C# compiler resolves it (CS1574), unlike Rust's intra-doc links |
 
 Zero tolerance, no baseline: a baseline records the current count as acceptable, and re-baselining

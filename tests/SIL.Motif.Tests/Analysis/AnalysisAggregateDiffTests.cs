@@ -71,8 +71,7 @@ public class AnalysisAggregateDiffTests
     [Fact]
     public void ABrandNewWordFormWithNoApprovedAnalysis_ProducesNoDiffEntryAtAll()
     {
-        // A word nobody has analysed carries no expectation (ADR 0038 decision 7) — merely appearing in
-        // the project is not itself a test change.
+        // A word nobody has analysed carries no expectation (ADR 0038 decision 7): mere appearance is no change.
         var before = Response();
         var after = Response(Wordform("w1", "mbali"));
 
@@ -105,15 +104,13 @@ public class AnalysisAggregateDiffTests
 
         var diff = AnalysisAggregateDiff.Compute(before, after);
 
-        // It lands in Removed, and nowhere else: not Established (nothing was gained), not Updated (the
-        // set did not move to another non-empty set), not Vanished (the word form itself still exists).
+        // Lands only in Removed: not Established (nothing gained), not Updated, not Vanished (form exists).
         Assert.Single(diff.Removed);
         Assert.Empty(diff.Established);
         Assert.Empty(diff.Updated);
         Assert.Empty(diff.Vanished);
 
-        // There is no field anywhere on ManualAnalysisDiff — no net, no score, no boolean — from which
-        // this could be read off as an improvement; Removed having one entry is the whole story.
+        // No field on ManualAnalysisDiff (no net, score, or boolean) could read this as an improvement.
     }
 
     [Fact]
@@ -157,10 +154,7 @@ public class AnalysisAggregateDiffTests
     [Fact]
     public void ContentDigestEqualityIsWhatMatters_NotWhereTheRecordCameFrom()
     {
-        // Two ApprovedAnalysis records built independently that happen to carry the same content digest
-        // (as they would if rebuilt from a re-created WfiAnalysis with identical Morph/Msa/InflType
-        // references, per ADR 0038 decision 3) must not register as a change, even though their
-        // OccurrenceCount and MorphBreakdown differ — those are display and text-churn facts, not identity.
+        // Same ContentDigest is identity (ADR 0038 decision 3); differing OccurrenceCount/MorphBreakdown are churn.
         var before = Response(Wordform("w1", "mbali", new ApprovedAnalysis("same-digest", "root-SFX (old count)", 4)));
         var after = Response(Wordform("w1", "mbali", new ApprovedAnalysis("same-digest", "root-SFX (new count)", 9)));
 

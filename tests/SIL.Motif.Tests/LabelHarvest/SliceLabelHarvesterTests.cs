@@ -14,8 +14,7 @@ public class SliceLabelHarvesterTests
     [Fact]
     public void FwLayout_keys_the_label_by_enclosing_layout_class_not_the_bare_ref()
     {
-        // Reproduces LexEntry.fwlayout: two <layout> blocks both use ref="Gloss", but one is class="LexSense"
-        // and the other class="LexEtymology" — a naive scrape keyed on the bare ref would conflate them.
+        // Reproduces LexEntry.fwlayout: two <layout> blocks share ref="Gloss" across LexSense and LexEtymology.
         const string fixture = """
             <LayoutInventory>
               <layout class="LexSense" type="detail" name="Normal">
@@ -42,8 +41,7 @@ public class SliceLabelHarvesterTests
     [Fact]
     public void FwLayout_resolves_a_composite_ref_to_its_real_field_via_the_supplied_map()
     {
-        // Reproduces the MoInflAffixSlot.Name / "Slot Name" case ADR 0023 cites: the EditSlot layout's ref
-        // is "NameAllA", a composite Parts.xml part id suffix, not the bare field "Name".
+        // Reproduces the MoInflAffixSlot.Name case (ADR 0023): EditSlot's ref is "NameAllA", not bare "Name".
         const string fixture = """
             <LayoutInventory>
               <layout class="MoInflAffixSlot" type="detail" name="EditSlot">
@@ -108,8 +106,7 @@ public class SliceLabelHarvesterTests
     [Fact]
     public void PartsXml_tolerates_the_real_stray_angle_bracket_bug_in_CellarParts_xml()
     {
-        // CellarParts.xml genuinely has <bin class="CmSemanticDomain>"> — a stray '>' baked into the
-        // attribute value. The harvester must not silently lose this class's model coverage over a typo upstream.
+        // CellarParts.xml genuinely has <bin class="CmSemanticDomain>">; must not lose this class over the typo.
         const string fixture = """
             <PartInventory>
               <bin class="CmSemanticDomain>">

@@ -75,8 +75,7 @@ public sealed class AnalysisAggregateReaderRealProjectTests : IDisposable
             _cache.LangProject.DefaultUserAgent.SetEvaluation(second, Opinions.approves);
         });
 
-        // No StoredAssessment supplied: this reads only what a human approved. Reading it must not invoke
-        // the parser (ADR 0038 decision 5) — there is no parser executable anywhere near this test.
+        // Reads only human-approved analyses; must not invoke the parser (ADR 0038 decision 5).
         var response = AnalysisAggregateReader.Read(_cache);
 
         var read = response.WordForms.Single(w => w.WordformGuid == wordform.Guid.ToString());
@@ -120,9 +119,7 @@ public sealed class AnalysisAggregateReaderRealProjectTests : IDisposable
 
         var read = response.WordForms.Single(w => w.WordformGuid == wordform.Guid.ToString());
 
-        // Opinions is tri-state (disapproves/approves/noopinion): disapproved is not "no opinion", and it
-        // is emphatically not approved. Only IWfiWordform.HumanApprovedAnalyses' own notion of approval —
-        // mirrored here, not reimplemented — belongs in the manual test suite.
+        // Opinions is tri-state; disapproved is not "no opinion". Mirrors IWfiWordform.HumanApprovedAnalyses.
         Assert.Empty(read.ManualAnalyses);
     }
 }

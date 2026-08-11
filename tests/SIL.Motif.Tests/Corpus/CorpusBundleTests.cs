@@ -116,8 +116,7 @@ public class CorpusBundleTests : IDisposable
         var previous = Directory.GetCurrentDirectory();
         try
         {
-            // Run from somewhere else entirely. A bundle that only works from its own folder is a bundle that
-            // breaks the first time it is used from a script.
+            // Run from somewhere else: a bundle that only works from its own folder breaks under any script.
             Directory.SetCurrentDirectory(Path.GetTempPath());
             var bundle = CorpusBundle.ReadFile(bundlePath);
 
@@ -147,8 +146,7 @@ public class CorpusBundleTests : IDisposable
 
         Assert.IsType<DocumentSource.Url>(bundle.Documents[0].Source);
 
-        // A document with no title is named after itself rather than being rejected — the id is always
-        // present and is a usable name.
+        // A document with no title is named after itself, not rejected — the id is always a usable name.
         Assert.Equal("d", bundle.Documents[0].Metadata.Title);
     }
 
@@ -171,8 +169,7 @@ public class CorpusBundleTests : IDisposable
         var ex = Assert.Throws<InvalidDataException>(() =>
             CorpusBundle.Read(System.Text.Json.JsonDocument.Parse(json).RootElement, HandoffDirectory));
 
-        // The message says why, because a fetching tool's author is the person who has to fix this and they
-        // are not reading the ADR.
+        // The message says why: a fetching tool's author has to fix this and will not be reading the ADR.
         Assert.Contains(expectedReason, ex.Message);
     }
 
@@ -229,8 +226,7 @@ public class CorpusBundleTests : IDisposable
 
         Assert.Contains("sehPD.txt", ex.Message);
 
-        // Partial ingestion is visible rather than hidden: the corpus and the document that did arrive are
-        // there, so the fix is to add the rest rather than to work out what happened.
+        // Partial ingestion is visible, not hidden: the document that arrived is there; the fix is add-the-rest.
         var corpus = store.Load("ebible-seh")!;
         Assert.Single(corpus.Documents);
         Assert.Equal("sehNT", corpus.Documents[0].DocumentId);

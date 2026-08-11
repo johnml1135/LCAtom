@@ -11,13 +11,11 @@ namespace SIL.Motif.Tests.TestFixtures;
 internal static class TestLangProjFixture
 {
     /// <summary>
-    /// Locates the read-only <c>FieldWorks/TestLangProj</c> fixture as a sibling of this repo
-    /// checkout (see docs/build-stages.md, "Environment (verified)").
+    /// Locates the read-only <c>FieldWorks/TestLangProj</c> fixture as a sibling of this repo checkout.
     /// </summary>
     public static string FindSource()
     {
-        // Identify the repo root by its solution file rather than by folder name, so a checkout
-        // directory named anything (or cased differently) still resolves.
+        // Identify the repo root by its solution file, not folder name, so any checkout directory name resolves.
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Motif.sln")))
         {
