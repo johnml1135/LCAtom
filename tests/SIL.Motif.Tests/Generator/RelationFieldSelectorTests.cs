@@ -6,9 +6,9 @@ using Xunit;
 namespace SIL.Motif.Tests.Generator;
 
 /// <summary>
-/// Proves MOT-4 slice 2's field lists are derived, not hardcoded — the same discipline
-/// <c>BasicFieldSelectorTests</c> established for slice 1, extended to the three remaining shapes
-/// docs/plan-motif.md's MOT-4 section names: <c>rel/atomic</c>, <c>rel/col</c>/<c>rel/seq</c>, and
+/// Proves slice 2's field lists are derived, not hardcoded — the same discipline
+/// <c>BasicFieldSelectorTests</c> established for slice 1, extended to the three remaining shapes:
+/// <c>rel/atomic</c>, <c>rel/col</c>/<c>rel/seq</c>, and
 /// <c>owning/atomic</c> <c>create|delete</c>.
 /// </summary>
 public class RelationFieldSelectorTests
@@ -77,9 +77,7 @@ public class RelationFieldSelectorTests
     [Fact]
     public void SelectCollectionAddRemove_RealModel_ExcludesLexSenseDialectLabels()
     {
-        // LexSense.DialectLabels has the identical shape (rel/seq CmPossibility,
-        // addRef|removeRef|move) but LexSense is not one of this slice's two classes
-        // (docs/plan-motif.md, MOT-4) -- the class filter, not the shape filter, is what scopes it out.
+        // LexSense.DialectLabels has the identical shape; only the class filter (not shape) excludes it here.
         var model = MotifModelLoader.Load();
 
         var selected = RelationFieldSelector.SelectCollectionAddRemove(model.Rows);

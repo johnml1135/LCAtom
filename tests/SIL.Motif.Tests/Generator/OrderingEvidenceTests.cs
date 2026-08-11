@@ -60,8 +60,8 @@ public class OrderingEvidenceTests
 
     /// <summary>
     /// The vocabulary is a filter over what a human reads, not a verdict. This sentence reads as a denial
-    /// that order matters — and the audit of 2026-08-03 established that order <em>does</em> matter here,
-    /// because first appearance assigns the alpha variables. Quoting it is right; scoring it is not.
+    /// that order matters, but order <em>does</em> matter here, because first appearance assigns the alpha
+    /// variables. Quoting it is right; scoring it is not.
     /// </summary>
     [Fact]
     public void ASentenceThatSeemsToDenyOrdering_IsStillQuotedForAHumanToRead()

@@ -69,9 +69,7 @@ public class ManifestConsistencyCheckerTests
     [Fact]
     public void CheckVerbsAndComparisonClass_AnInjectedException_StillFails()
     {
-        // A field claiming "feeding" that is not one of the real cited exceptions
-        // (ComparisonClassDerivation.Exceptions) must still be caught — the table is a closed list
-        // of specific rows, not a pattern a new row can opt into.
+        // A "feeding" claim outside the cited exceptions must still fail: the table is closed, not opt-in.
         var manifest = InScopeRow("LexEntry", "SomeOtherSeqField", "create|delete|move|reparent", "feeding");
         var rows = new[] { Row("LexEntry", "SomeOtherSeqField", FieldKind.Owning, FieldCard.Seq, manifest) };
 
@@ -83,8 +81,7 @@ public class ManifestConsistencyCheckerTests
     [Fact]
     public void CheckVerbsAndComparisonClass_VerbsNa_SkipsVerbCheckButStillChecksComparisonClass()
     {
-        // Verbs = n/a is skipped; ComparisonClass is still populated and checked (65 real in-scope
-        // rows are exactly this shape — see manifest/liblcm-inventory.tsv).
+        // Verbs=n/a skips only the verb check; ComparisonClass is still checked (65 real rows are this shape).
         var manifest = InScopeRow("LexEntry", "LiftResidue", "n/a", "unordered");
         var rows = new[] { Row("LexEntry", "LiftResidue", FieldKind.Basic, null, manifest) };
 
@@ -128,9 +125,7 @@ public class ManifestConsistencyCheckerTests
     [Fact]
     public void CheckVerbsAndComparisonClass_RealInScopeRows_AllAgreeWithDerivation()
     {
-        // The plan's own claim: today the manifest and the derivation balance exactly, with zero
-        // unexplained departures among the 494 in-scope rows (docs/plan-motif.md MOT-2). This is a
-        // regression guard on that claim, not just a synthetic-fixture test.
+        // A regression guard against the real manifest, not just synthetic fixtures: every in-scope row must agree.
         var model = SIL.Motif.Generator.Model.MasterLcModelParser.Parse(SIL.Motif.Generator.ModelSource.ModelPathResolver.Resolve().Path);
         var manifestRows = ManifestTsvParser.Parse(RepoPaths.DefaultManifestPath());
         var joined = ModelManifestJoiner.Join(model.Fields, manifestRows);

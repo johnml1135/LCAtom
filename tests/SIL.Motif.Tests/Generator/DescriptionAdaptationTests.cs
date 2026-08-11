@@ -101,8 +101,7 @@ public class DescriptionAdaptationTests
             Assert.Equal(sibling.SourceHash, adapted.SourceHash);
             Assert.False(string.IsNullOrWhiteSpace(adapted.SourceHash));
 
-            // And the row really is the substitution applied to the sibling's shipped text -- so the file
-            // cannot hold a hand-edited sentence wearing an adapted label.
+            // Confirms the row is the substitution applied to the sibling's text, not a hand-edited stand-in.
             Assert.Equal(DescriptionAdaptations.Apply(rule, sibling.Description), adapted.Description);
         }
     }

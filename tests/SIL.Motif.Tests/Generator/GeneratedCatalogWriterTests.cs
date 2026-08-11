@@ -5,11 +5,10 @@ using Xunit;
 namespace SIL.Motif.Tests.Generator;
 
 /// <summary>
-/// Exercises the actual emission mechanism (docs/plan-motif.md MOT-4: "checked-in files, produced
-/// by running a console command" — see <c>Program.cs</c>'s doc comment) end to end, writing into a
-/// throwaway temp directory rather than the real repo tree, so this test can run without depending
-/// on — or risking — whatever the checked-in <c>Operations/Generated</c>/<c>Snapshotting/Generated</c>
-/// files currently look like.
+/// Exercises the actual emission mechanism — checked-in files, produced by running a console command
+/// (see <c>Program.cs</c>'s doc comment) — end to end, writing into a throwaway temp directory rather
+/// than the real repo tree, so this test can run without depending on — or risking — whatever the
+/// checked-in <c>Operations/Generated</c>/<c>Snapshotting/Generated</c> files currently look like.
 /// </summary>
 public class GeneratedCatalogWriterTests
 {
@@ -24,8 +23,7 @@ public class GeneratedCatalogWriterTests
         {
             var written = GeneratedCatalogWriter.WriteAll(model, tempRoot);
 
-            // Ten fields: one Operations file each, plus three per-class Snapshotting files, plus
-            // one shared SnapshotFields.Generated.g.cs.
+            // 10 Operations files + 3 per-class Snapshotting files + 1 shared SnapshotFields.Generated.g.cs.
             Assert.Equal(14, written.Count);
 
             foreach (var file in written)

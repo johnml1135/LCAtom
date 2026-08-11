@@ -140,8 +140,8 @@ public class DescriptionCheckTests
     }
 
     /// <summary>
-    /// docs/issues.md D8's amendment: presence was never the whole bar, and a description that claims
-    /// provenance it does not have is the exact failure mode a missing-source column exists to catch.
+    /// Presence was never the whole bar: a description that claims provenance it does not have is the
+    /// exact failure mode a missing-source column exists to catch.
     /// </summary>
     [Fact]
     public void AnUnrecognizedReviewedValue_Fails()
@@ -190,8 +190,8 @@ public class DescriptionCheckTests
     }
 
     /// <summary>
-    /// The 14 descriptions shipped for MOT-4's family must all clear the bar. This is the real file, so it
-    /// fails if someone adds a row that restates its label.
+    /// The 14 shipped descriptions must all clear the bar. This is the real file, so it fails if someone
+    /// adds a row that restates its label.
     /// </summary>
     [Fact]
     public void TheShippedDescriptionsFile_ParsesAndEveryRowClearsTheBar()

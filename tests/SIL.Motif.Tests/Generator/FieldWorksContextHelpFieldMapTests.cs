@@ -21,8 +21,7 @@ public class FieldWorksContextHelpFieldMapTests
     [Fact]
     public void NoTwoEntries_ShareAContextHelpId()
     {
-        // Each ContextHelp.xml id should be consumed by at most one (Class, Field) — reusing one id for two
-        // fields would mean the harvester attaches the same sentence to two different meanings.
+        // One id claimed by two fields would attach the same sentence to two different meanings.
         var ids = FieldWorksContextHelpFieldMap.Entries.Select(e => e.ContextHelpId).ToList();
         Assert.Equal(ids.Count, ids.Distinct().Count());
     }

@@ -5,7 +5,7 @@ using Xunit;
 namespace SIL.Motif.Tests.Generator;
 
 /// <summary>
-/// The MOT-22 analogue of <c>GeneratedFilesAreUpToDateTests</c>/<c>Slice3GeneratedFilesAreUpToDateTests</c>:
+/// The slice 4 analogue of <c>GeneratedFilesAreUpToDateTests</c>/<c>Slice3GeneratedFilesAreUpToDateTests</c>:
 /// the checked-in <c>Operations/Generated4</c>, <c>Snapshotting/Generated4</c>, and
 /// <c>SnapshotFields.Generated4.g.cs</c> files must be exactly what <see cref="Slice4CatalogWriter.WriteAll"/>
 /// produces from today's model and manifest.

@@ -6,9 +6,9 @@ namespace SIL.Motif.Tests.Generator;
 
 /// <summary>
 /// FieldWorks' <c>ContextHelp.xml</c> is a fourth previously-unharvested source for
-/// <c>manifest/kind-descriptions.tsv</c>, found while investigating docs/issues.md D8's Phase 1 ("find every
-/// source"). These tests pin the mechanical extraction on a small synthetic document; the curated
-/// id-to-(Class,Field) mapping is <see cref="FieldWorksContextHelpFieldMap"/>, tested separately.
+/// <c>manifest/kind-descriptions.tsv</c>. These tests pin the mechanical extraction on a small synthetic
+/// document; the curated id-to-(Class,Field) mapping is <see cref="FieldWorksContextHelpFieldMap"/>,
+/// tested separately.
 /// </summary>
 public class FieldWorksContextHelpHarvesterTests
 {

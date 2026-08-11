@@ -5,10 +5,9 @@ using Xunit;
 namespace SIL.Motif.Tests.Generator;
 
 /// <summary>
-/// <see cref="KindDescriptionRefresher"/> is Stage 1 of docs/issues.md D8's two-stage fix: it attaches
-/// provenance to <c>manifest/kind-descriptions.tsv</c> rows without ever writing new prose itself. These
-/// tests exercise its four branches directly, with fake harvested data so they do not depend on the real
-/// liblcm/FieldWorks checkouts being present.
+/// <see cref="KindDescriptionRefresher"/> attaches provenance to <c>manifest/kind-descriptions.tsv</c>
+/// rows without ever writing new prose itself. These tests exercise its four branches directly, with
+/// fake harvested data so they do not depend on the real liblcm/FieldWorks checkouts being present.
 /// </summary>
 public class KindDescriptionRefresherTests
 {
@@ -87,8 +86,7 @@ public class KindDescriptionRefresherTests
         var original = Row("MoStemMsa", "ProdRestrict", "The hand-corrected, verified-against-source sentence.");
         var comments = new Dictionary<(string, string), LibLcmFieldComment>
         {
-            // A real, substantive comment IS available — the refresher must not use it to overwrite the
-            // hand-corrected text, only to attach a citation.
+            // A substantive comment is available, but must not overwrite hand-corrected text — only cite it.
             [("MoStemMsa", "ProdRestrict")] = new("MoStemMsa", "ProdRestrict", "rel", "Some liblcm paragraph text.", 2, 2555),
         };
 
@@ -250,10 +248,9 @@ public class KindDescriptionRefresherTests
     }
 
     /// <summary>
-    /// The scenario this task explicitly calls out: another agent appends a row for a brand-new field while
-    /// this refresher is mid-flight. It must not error or drop the row — it should fall through to the
-    /// unsourced branch exactly like any other field this refresher has no source for, preserving whatever
-    /// text was there.
+    /// A new field's row can appear in the TSV with no matching source data anywhere. It must not error or
+    /// drop the row — it should fall through to the unsourced branch exactly like any other field this
+    /// refresher has no source for, preserving whatever text was there.
     /// </summary>
     [Fact]
     public void AnUnrecognizedAppendedRow_PassesThroughUnchangedRatherThanErroringOrBeingDropped()

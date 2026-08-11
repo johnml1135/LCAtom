@@ -18,9 +18,8 @@ namespace SIL.Motif.Tests.Generator;
 /// divergent source of truth.
 /// </para>
 /// <para>
-/// It is the same shape as the byte-equality conformance test <c>MOT-15</c> plans between the C# snapshot
-/// producer and <c>pg-fwdata</c>, and for the same reason: where two artifacts must agree by construction,
-/// assert it rather than assume it.
+/// It is the same shape as any byte-equality conformance test between two artifacts that must agree by
+/// construction: assert it rather than assume it.
 /// </para>
 /// <para>
 /// When this fails, the fix is to re-run the emitter and commit the result — not to edit the expectation.
@@ -57,9 +56,7 @@ public class GeneratedFilesAreUpToDateTests
                 var freshlyGenerated = File.ReadAllText(Path.Combine(tempRoot, file.RelativePath.Replace('/', Path.DirectorySeparatorChar)));
                 var checkedIn = File.ReadAllText(checkedInPath);
 
-                // The writer normalises to LF on write (GeneratedCatalogWriter), but git may check out CRLF on
-                // Windows, so compare with line endings normalised. Content drift is what matters here; line
-                // endings are the checkout's business.
+                // Normalised before compare: the writer emits LF but git may check out CRLF on Windows.
                 if (Normalise(freshlyGenerated) != Normalise(checkedIn))
                     stale.Add(file.RelativePath);
             }

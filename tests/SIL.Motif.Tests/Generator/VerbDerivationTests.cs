@@ -7,7 +7,7 @@ namespace SIL.Motif.Tests.Generator;
 
 /// <summary>
 /// The seven <c>(Kind, Card)</c> -> <c>Verbs</c> combinations, zero exceptions
-/// (ADR 0022 decision 1, docs/plan-motif.md MOT-2).
+/// (ADR 0022 decision 1).
 /// </summary>
 public class VerbDerivationTests
 {
@@ -27,9 +27,7 @@ public class VerbDerivationTests
     [Fact]
     public void Derive_BasicWithNonNullCard_IsStructurallyImpossibleButThrowsRatherThanGuessing()
     {
-        // <basic> never carries a card attribute (verified against MasterLCModel.xml), so this
-        // combination should never arise from real parsed data — but the function must still fail
-        // closed rather than silently pick a verb set if it ever did.
+        // <basic> never carries Card in practice, but Derive must still fail closed rather than guess a verb set.
         Assert.Throws<GeneratorException>(() => VerbDerivation.Derive(FieldKind.Basic, FieldCard.Atomic));
     }
 

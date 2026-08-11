@@ -13,8 +13,7 @@ namespace SIL.Motif.Tests.Generator;
 /// manifest's own <c>Rationale</c> column explains both), just not in the ADR's enumeration. See the
 /// class-level remarks on <see cref="ComparisonClassDerivation"/> for the full citation. This test
 /// file asserts all seven survive by name, so silently losing one is a test failure rather than a
-/// quietly shrinking table (docs/plan-motif.md MOT-2: "silently losing one is a test failure rather
-/// than a quieter grammar").
+/// quietly shrinking table.
 /// </summary>
 public class ComparisonClassDerivationTests
 {
@@ -32,21 +31,19 @@ public class ComparisonClassDerivationTests
     [Fact]
     public void Exceptions_HasExactlySevenEntries()
     {
-        // Five from ADR 0022's own prose, plus the two pooled-storage corrections found empirically
-        // against the real manifest (class remarks on ComparisonClassDerivation).
+        // 5 from ADR 0022's own prose + 2 pooled-storage corrections found against the real manifest.
         Assert.Equal(7, ComparisonClassDerivation.Exceptions.Count);
     }
 
+    /// <summary>
+    /// The two categories mean opposite things: losing a row from either is a failure here even if the
+    /// total stays seven. Category 1 ("order carries more than position") only ever produces "feeding" or
+    /// "index-as-identity"; category 2 ("order carries nothing despite card=seq") only ever produces
+    /// "unordered" — the two value sets don't overlap, so counting by value cleanly separates them.
+    /// </summary>
     [Fact]
     public void Exceptions_SplitsIntoFiveOrderCarriesMeaningAndTwoPooledButPrivate()
     {
-        // The two categories mean opposite things (class remarks on ComparisonClassDerivation), so
-        // this asserts each one's size independently of the other — losing a row from either
-        // category is a failure here even if some unrelated change kept the total at seven.
-        // Category 1 ("order carries more than position") only ever produces "feeding" or
-        // "index-as-identity"; category 2 ("order carries nothing despite card=seq") only ever
-        // produces "unordered" — the two value sets don't overlap, so counting by value cleanly
-        // separates them without reaching into the private per-category tables.
         var orderCarriesMeaningCount = ComparisonClassDerivation.Exceptions.Values
             .Count(v => v is "feeding" or "index-as-identity");
         var pooledButPrivateCount = ComparisonClassDerivation.Exceptions.Values
@@ -66,8 +63,7 @@ public class ComparisonClassDerivationTests
     public void Derive_EachOfTheFiveAdrCitedExceptions_SurvivesByName(string cls, string field, string expected)
     {
         var key = new FieldKey(cls, field);
-        // These are seq fields structurally, but the point of the test is that the exception's value
-        // wins regardless of what the base rule on card would otherwise say.
+        // These are seq fields structurally; the exception's value must win over what card alone would say.
         Assert.Equal(expected, ComparisonClassDerivation.Derive(key, FieldCard.Seq));
         Assert.Equal(expected, ComparisonClassDerivation.Derive(key, FieldCard.Atomic));
     }
@@ -77,19 +73,14 @@ public class ComparisonClassDerivationTests
     [InlineData("PhPhonData", "FeatConstraints")]
     public void Derive_EachOfTheTwoPooledStorageExceptions_SurvivesByName(string cls, string field)
     {
-        // Both are owning/seq in MasterLCModel.xml, so without the exception the base rule would say
-        // "positional" — the whole point of these two rows is that the manifest's own cited
-        // rationale overrides that to "unordered".
+        // Both are owning/seq; without the exception the base rule says "positional", but rationale overrides it.
         Assert.Equal("unordered", ComparisonClassDerivation.Derive(new FieldKey(cls, field), FieldCard.Seq));
     }
 
     [Fact]
     public void Derive_AnEighthInjectedException_InNeitherCategory_IsNotHonoredByTheRealTable()
     {
-        // Proves the table is exactly the seven cited rows (five order-carries-meaning, two
-        // pooled-but-private), not "seven examples of a pattern" a new row can opt into by
-        // resembling either category. A field not in the real table falls through to the base rule
-        // even if a caller "expected" it to be an exception.
+        // The table is exactly 7 cited rows (5+2), not a pattern a new row can opt into by resembling either.
         var notReallyAnException = new FieldKey("LexEntry", "Etymology");
         Assert.False(ComparisonClassDerivation.Exceptions.ContainsKey(notReallyAnException));
         Assert.Equal("unordered", ComparisonClassDerivation.Derive(notReallyAnException, FieldCard.Atomic));

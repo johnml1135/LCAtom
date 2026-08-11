@@ -5,7 +5,7 @@ using Xunit;
 namespace SIL.Motif.Tests.Generator;
 
 /// <summary>
-/// Exercises MOT-22's emission mechanism end to end, writing into a throwaway temp directory — the
+/// Exercises slice 4's emission mechanism end to end, writing into a throwaway temp directory — the
 /// slice-4 analogue of <c>GeneratedCatalogWriterTests</c>/<c>Slice2CatalogWriterTests</c>/
 /// <c>Slice3CatalogWriterTests</c>. A separate writer/test pair from slices 1-3's rather than a
 /// modification of any of them, so their own count assertions are untouched.
@@ -23,8 +23,7 @@ public class Slice4CatalogWriterTests
         {
             var written = Slice4CatalogWriter.WriteAll(model, tempRoot);
 
-            // Today's one field (WfiWordform.SpellingStatus): one Operations file, one Snapshotting
-            // file, plus the shared SnapshotFields.Generated4.g.cs.
+            // WfiWordform.SpellingStatus: one Operations file, one Snapshotting file, one shared g.cs.
             Assert.Equal(3, written.Count);
 
             foreach (var file in written)

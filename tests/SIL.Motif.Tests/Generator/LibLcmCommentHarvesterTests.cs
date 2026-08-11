@@ -6,7 +6,7 @@ using Xunit;
 namespace SIL.Motif.Tests.Generator;
 
 /// <summary>
-/// docs/issues.md D8: <c>MasterLCModel.xml</c> carries substantive prose the generator never looked at
+/// <c>MasterLCModel.xml</c> carries substantive prose the generator never looked at
 /// before. These tests exercise <see cref="LibLcmCommentHarvester"/> against small synthetic documents so the
 /// edge cases (no comment, a placeholder-only comment, which class a same-named field belongs to) are pinned
 /// without depending on the exact prose of the real 47,000-line file — <see cref="RealModel_*"/> tests below
@@ -93,8 +93,7 @@ public class LibLcmCommentHarvesterTests
     [Fact]
     public void ARenameNoteAfterASubstantiveFirstParagraph_IsNotPlaceholderOnly()
     {
-        // MoStemMsa.ProdRestrict's real shape: paragraph 1 is the -ity/[+Latinate] explanation, paragraph 2
-        // is "Changed from ProductivityRestrictions." Only a *lone* rename note should be flagged.
+        // MoStemMsa.ProdRestrict has a substantive paragraph then a rename note; only a *lone* rename note flags.
         Assert.False(Harvest()[("Alpha", "WithComment")].IsPlaceholderOnly);
     }
 
@@ -140,8 +139,7 @@ public class LibLcmCommentHarvesterTests
     [Fact]
     public void RealModel_MoDerivAffMsaFromProdRestrict_SaysTheStemMustBearTheClass()
     {
-        // The exact polarity docs/issues.md D8 says the first agent-written batch got backwards: the stem
-        // must bear the class, not "blocked by" it.
+        // The stem must bear the class, not be "blocked by" it — the polarity this pins.
         var harvested = LibLcmCommentHarvester.Harvest(ModelPathResolver.Resolve().Path);
         var comment = harvested[("MoDerivAffMsa", "FromProdRestrict")];
 
