@@ -44,7 +44,7 @@ public static class KindDescriptionTsvParser
     /// <summary>Exposed for tests, which supply the file's content inline rather than on disk.</summary>
     public static IReadOnlyList<KindDescription> ParseText(string path, string text)
     {
-        // CRLF-only split, matching ManifestTsvParser: a silent LF/CRLF drift in a checked-in artifact should be visible rather than tolerated.
+        // CRLF-only split (matches ManifestTsvParser): a line-ending drift must surface, not be tolerated.
         var lines = text.Split("\r\n");
 
         if (lines.Length == 0 || !lines[0].StartsWith("\"Class\"", StringComparison.Ordinal))
@@ -69,7 +69,7 @@ public static class KindDescriptionTsvParser
                 SourceDetail: columns[6],
                 SourceHash: columns[7]);
 
-            // One description per field, or the emitted text depends on read order — the same class of defect ADR 0026 removed from operation ordering.
+            // One description per field, else text depends on read order (ADR 0026's class of defect).
             if (seen.TryGetValue(row.Key, out var firstLine))
                 throw new GeneratorException(
                     $"'{path}' line {i + 1}: '{row.Key}' already has a description on line {firstLine}. " +

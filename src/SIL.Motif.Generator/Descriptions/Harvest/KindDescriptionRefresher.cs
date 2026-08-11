@@ -94,7 +94,7 @@ public static class KindDescriptionRefresher
 
             if (HandCorrectedFields.ProdRestrictFamily.Contains(key))
             {
-                // Text preserved, provenance refreshed: the digest is over the source, so a reworded upstream comment is still reported even though our prose can't reveal it.
+                // Text kept, provenance refreshed: the digest is over the source, so upstream rewording shows.
                 refreshed.Add(resolved is null
                     ? row with { Reviewed = "hand-corrected" }
                     : Cite(row, row.Description, resolved, "hand-corrected", textIsTheSource: false, drifted));
@@ -153,7 +153,7 @@ public static class KindDescriptionRefresher
             exempt, unsourced, drifted);
     }
 
-    /// <summary>Writes one row's text and provenance, recording drift when the upstream fragment's digest has moved; <paramref name="textIsTheSource"/> is false for a hand-corrected or adapted row, where only the digest — not the wording — can reveal that the source moved.</summary>
+    /// <summary>One row's text and provenance; drift is by digest, as our wording may not be the source.</summary>
     private static KindDescription Cite(
         KindDescription row,
         string text,

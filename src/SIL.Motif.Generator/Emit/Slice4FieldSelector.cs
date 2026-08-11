@@ -40,7 +40,7 @@ public static class Slice4FieldSelector
                 HasConfirmedEnumValues(row))
             .ToList();
 
-    /// <summary>The manifest's own "unconfirmed" marker is the literal <c>unknown</c>; an empty cell means a plain integer rather than an enum — neither can feed a range check, so neither is this shape.</summary>
+    /// <summary><c>unknown</c> marks unconfirmed, empty means plain integer; neither feeds a range check.</summary>
     private static bool HasConfirmedEnumValues(JoinedRow row) =>
         !string.IsNullOrWhiteSpace(row.Manifest.EnumValues) && row.Manifest.EnumValues != "unknown";
 }

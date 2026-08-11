@@ -37,7 +37,7 @@ namespace SIL.Motif.Generator.Emit;
 /// </remarks>
 public static class LexEntryLexemeFormEmitter
 {
-    /// <summary>The one concrete class this field's <c>create</c>/<c>delete</c> kinds are checked against — see this type's remarks for why <c>MoForm</c> itself cannot be used.</summary>
+    /// <summary>The concrete class the kinds are checked against; the remarks say why not <c>MoForm</c>.</summary>
     private const string ConcreteClassForAbstractCheck = "MoStemAllomorph";
 
     public static string Render(JoinedRow lexemeFormRow, IReadOnlyList<ModelClass> classes)
@@ -54,7 +54,7 @@ public static class LexEntryLexemeFormEmitter
                 $"'{ConcreteClassForAbstractCheck}' was not found in the parsed model — " +
                 "LexEntryLexemeFormEmitter's hand-chosen concrete class must exist in MasterLCModel.xml.");
 
-        // Proves the abstract-class rule accepts this hand-chosen concrete class (and would have rejected the field's raw, abstract Sig) before emitting anything that depends on it.
+        // Runs before anything is emitted: the rule accepts this class and would reject the raw abstract Sig.
         AbstractClassRule.Check(lexemeFormRow.DeclaringClass, lexemeFormRow.FieldName, "create", concreteClass);
         AbstractClassRule.Check(lexemeFormRow.DeclaringClass, lexemeFormRow.FieldName, "delete", concreteClass);
 

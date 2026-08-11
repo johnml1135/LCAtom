@@ -42,7 +42,7 @@ public static class Slice4CatalogWriter
             written.Add(WriteFile(repoRoot, snapshottingDir, $"{group.Key}Snapshotter.g.cs", content));
         }
 
-        // SnapshotFields: reuses Slice3SnapshotFieldsEmitter, whose ConstantEntry/Render are spec-agnostic across basic/rel shapes, so this shape needs no separate copy.
+        // Slice3SnapshotFieldsEmitter is spec-agnostic across shapes, so this one needs no copy of it.
         var modelSnapshotDir = Path.Combine(repoRoot, "src", "SIL.Motif.Model", "Snapshot");
         Directory.CreateDirectory(modelSnapshotDir);
         var constants = specs

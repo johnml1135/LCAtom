@@ -59,7 +59,7 @@ public static class MasterLcModelParser
         var sig = (string?)element.Attribute("sig")
             ?? throw new GeneratorException($"'{path}': {declaringClass}.{name} has no sig attribute.");
 
-        // <basic> never carries card; <owning>/<rel> always do (verified above: zero owning/rel elements in the shipped file lack it).
+        // <basic> never carries card; <owning>/<rel> always do, in every element of the shipped file.
         var cardText = (string?)element.Attribute("card");
         FieldCard? card = kind == FieldKind.Basic
             ? null

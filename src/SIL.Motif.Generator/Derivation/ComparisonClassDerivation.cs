@@ -38,28 +38,28 @@ namespace SIL.Motif.Generator.Derivation;
 /// </remarks>
 public static class ComparisonClassDerivation
 {
-    /// <summary>Category 1 (see class remarks): each row commented with *why* order carries meaning rather than just *that* it does, per ADR 0022 decision 2.</summary>
+    /// <summary>Category 1: each row's comment says *why* order carries meaning, not just *that* it does.</summary>
     private static readonly IReadOnlyDictionary<FieldKey, string> OrderCarriesMeaningExceptions = new Dictionary<FieldKey, string>
     {
-        // Allomorph order is disjunctive elsewhere-blocking in HermitCrab: list position becomes Allomorph.Index (LexEntry.cs:45-50), which drives the elsewhere-block at Allomorph.cs:127-152 — a later-indexed allomorph loses to an earlier match unless they free-fluctuate (HC's own comment, Allomorph.cs:9-11, calls this "applied disjunctively"), computed by generating from all and filtering (Morpher.cs:361-369).
+        // Position -> Allomorph.Index, disjunctive block (LexEntry.cs:45-50, Allomorph.cs:127-152, Morpher.cs:361-369).
         [new FieldKey("LexEntry", "AlternateForms")] = "feeding",
 
-        // Phonological rule order encodes feeding and bleeding between rules — a neighbour's content edit changes what a later rule in the list produces (MasterLCModel.xml:4496-4498, quoted in docs/research/2026-08-03-manifest-trust-audit.md).
+        // Feeding/bleeding rule order (MasterLCModel.xml:4496-4498; docs/research/2026-08-03-manifest-trust-audit.md).
         [new FieldKey("PhPhonData", "PhonRules")] = "feeding",
 
-        // The three PhSegRuleRHS alpha-variable pools: assigned by first-appearance traversal, so an item's position in the sequence *is* its identity, not merely its rank.
+        // Alpha-variable pools, assigned by first-appearance traversal: position *is* identity, not rank.
         [new FieldKey("PhSegRuleRHS", "LeftContext")] = "index-as-identity",
         [new FieldKey("PhSegRuleRHS", "RightContext")] = "index-as-identity",
         [new FieldKey("PhSegRuleRHS", "StrucChange")] = "index-as-identity",
     };
 
-    /// <summary>Category 2 (see class remarks): each row commented with *why* order carries nothing, despite <c>card=seq</c>.</summary>
+    /// <summary>Category 2: each row's comment says *why* order carries nothing despite card=seq.</summary>
     private static readonly IReadOnlyDictionary<FieldKey, string> PooledButPrivateExceptions = new Dictionary<FieldKey, string>
     {
-        // "Pooled-but-private storage ... members are addressed by reference from Input/StrucDesc, never by pool position" (manifest/liblcm-inventory.tsv Rationale, PhPhonData.Contexts row).
+        // "Pooled-but-private storage ... never by pool position" (liblcm-inventory.tsv, Contexts row).
         [new FieldKey("PhPhonData", "Contexts")] = "unordered",
 
-        // "Correction E3: index-as-identity was mislocated here; a move on this pool is semantically inert (pooled-but-private storage, not the traversal HCLoader walks)" (manifest Rationale, PhPhonData.FeatConstraints row).
+        // "Correction E3: index-as-identity mislocated ... semantically inert" (liblcm-inventory.tsv, FeatConstraints).
         [new FieldKey("PhPhonData", "FeatConstraints")] = "unordered",
     };
 

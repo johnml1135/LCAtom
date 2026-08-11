@@ -22,7 +22,7 @@ public static class ManifestTsvParser
             throw new GeneratorException($"Could not read manifest '{path}': {ex.Message}", ex);
         }
 
-        // The file is CRLF throughout; splitting on "\r\n" rather than a line-ending-agnostic reader keeps a silent LF/CRLF mismatch visible rather than quietly tolerated.
+        // Splitting on "\r\n" rather than agnostically keeps an LF/CRLF drift visible instead of tolerated.
         var lines = text.Split("\r\n");
 
         if (lines.Length == 0 || !lines[0].StartsWith("\"Class\"", StringComparison.Ordinal))
@@ -61,7 +61,7 @@ public static class ManifestTsvParser
 
     private static string[] SplitRow(string path, int lineNumber, string line)
     {
-        // Every value is double-quoted, so a bare tab-split is safe as long as no field embeds a literal tab inside its quotes; a literal '"' is escaped by doubling ("" -> "), unescaped after stripping the outer quotes.
+        // A bare tab-split is safe only while no quoted field embeds a literal tab; "" unescapes to ".
         var rawColumns = line.Split('\t');
         if (rawColumns.Length != ColumnCount)
             throw new GeneratorException(

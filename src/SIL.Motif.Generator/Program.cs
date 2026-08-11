@@ -73,7 +73,7 @@ public static class Program
         var model = MotifModelLoader.Load();
         var repoRoot = RepoPaths.FindRepoRoot();
 
-        // Four writers, not one: GeneratedCatalogWriter (basic set|clear, 14 files) and Slice2CatalogWriter (the lexical-entry family, 8 files) are frozen by GeneratedCatalogWriterTests/GeneratedFilesAreUpToDateTests and must not change; Slice3CatalogWriter widens the same three generic shapes beyond LexEntry/MoForm to the rest of ADR 0025's parser-first slice; Slice4CatalogWriter adds basic Integer, derived set|clear plus a range check the other basic templates have no reason to emit. One `emit` command still regenerates everything.
+        // Frozen: Generated/Slice2, pinned by `GeneratedCatalogWriterTests`. Slice3/4 widen ADR 0025 shapes further.
         var written = GeneratedCatalogWriter.WriteAll(model, repoRoot)
             .Concat(Emit.Slice2CatalogWriter.WriteAll(model, repoRoot))
             .Concat(Emit.Slice3CatalogWriter.WriteAll(model, repoRoot))
@@ -87,7 +87,7 @@ public static class Program
         return 0;
     }
 
-    /// <summary>Stage 1 of a two-stage description pipeline (Stage 2 is <see cref="KindDescriptionTsvParser"/> plus <see cref="Checks.DescriptionCheck"/>): rewrites <c>manifest/kind-descriptions.tsv</c> in place, preserving the hand-corrected <c>ProdRestrict</c> family, needs a FieldWorks checkout but reads no compiled help, and exits <c>2</c> without writing when a source has moved off its pin unless <c>--accept-source-move</c> is passed.</summary>
+    /// <summary>Stage 1: rewrites kind-descriptions.tsv; exits 2 unwritten if a source moved, flag unset.</summary>
     private static int RunRefreshDescriptions(bool acceptSourceMove)
     {
         var descriptionsPath = RepoPaths.DefaultDescriptionsPath();
@@ -116,7 +116,7 @@ public static class Program
             existingRows, libLcmComments, contextHelpEntries, helpPages);
         KindDescriptionTsvWriter.Write(descriptionsPath, result.Rows);
 
-        // A release that moved over byte-identical files is re-pinned silently-ish -- reported, not gated, since only a changed file needed the operator's consent taken above.
+        // A byte-identical move re-pins silently: reported, not gated -- only content changes needed consent.
         if (moves.Count > 0)
         {
             SourcePins.Write(pinsPath, current);
@@ -144,7 +144,7 @@ public static class Program
         Console.WriteLine($"  unsourced (still open)             : {result.Unsourced.Count}");
         WriteKeys("unsourced keys", result.Unsourced);
 
-        // The drift report — the reason the sources are pinned at all: an upstream sentence that was reworded still reads fluently, so nothing downstream would notice it changed.
+        // Why sources are pinned: a reworded-but-fluent upstream sentence would otherwise go unnoticed.
         if (result.Drifted.Count > 0)
         {
             Console.WriteLine();
@@ -164,7 +164,7 @@ public static class Program
         return 0;
     }
 
-    /// <summary>Rewrites <c>manifest/ordering-evidence.tsv</c>: for every in-scope row claiming order carries meaning, whatever <c>MasterLCModel.xml</c> says about ordering, quoted and cited. Needs no FieldWorks checkout, and nothing derives from this file (ADR 0022 keeps <c>ComparisonClass</c> a function of <c>Card</c>) — it answers a review question, not a build one.</summary>
+    /// <summary>Rewrites ordering-evidence.tsv; unconsumed downstream (ADR 0022: ComparisonClass=f(Card)).</summary>
     private static int RunHarvestOrderingEvidence()
     {
         var outputPath = RepoPaths.DefaultOrderingEvidencePath();
@@ -186,7 +186,7 @@ public static class Program
         return 0;
     }
 
-    /// <summary>Re-reads FieldWorks' compiled help and rewrites <c>manifest/fieldworks-help-descriptions.tsv</c>; Windows-only and run by hand, since the <c>.chm</c> is a personal-machine dependency and the harvested TSV, not the <c>.chm</c>, is what the build/tests/<c>refresh-descriptions</c> read. <paramref name="extractedHelpRoot"/>: a help tree already decompiled elsewhere; omit it on Windows to decompile via <c>hh.exe</c> into a temp directory instead.</summary>
+    /// <summary>Windows-only (hh.exe): a dev-time step whose TSV output is committed, not the .chm.</summary>
     private static int RunHarvestHelp(string? extractedHelpRoot)
     {
         var outputPath = RepoPaths.DefaultHelpDescriptionsPath();
@@ -217,7 +217,7 @@ public static class Program
         return 0;
     }
 
-    /// <summary>The three files the descriptions are copied out of, each with its content digest; liblcm normally resolves from the NuGet package cache, so its "release" is the pinned package version (<c>SIL.Motif.Generator.csproj</c>) rather than a commit — the digest is what the check turns on either way.</summary>
+    /// <summary>Three files, digested; liblcm's release is its NuGet version -- the digest gates it.</summary>
     private static IReadOnlyList<SourceArtifact> ReadCurrentSourceArtifacts(
         ModelSource.ModelPathResult model, string fieldWorksCheckout)
     {
@@ -246,7 +246,7 @@ public static class Program
                 contextHelp.Replace(Path.DirectorySeparatorChar, '/'),
                 SourceDigest.OfFile(Path.Combine(fieldWorksCheckout, contextHelp)), now),
 
-            // Pinned although refresh-descriptions never opens it: the checked-in help harvest is derived from this file, so a changed digest here is the only thing that can say "re-run harvest-help".
+            // Pinned though unopened here: a changed digest is the only signal to re-run harvest-help.
             new SourceArtifact(
                 "FieldWorks", SourceArtifact.GitCheckoutKind, fwRelease, fwCommit,
                 compiledHelp.Replace(Path.DirectorySeparatorChar, '/'),
@@ -254,7 +254,7 @@ public static class Program
         ];
     }
 
-    /// <summary><c>{root}/src/SIL.LCModel/MasterLCModel.xml</c> back to <c>{root}</c> — the layout <see cref="ModelPathResolver"/>'s checkout fallback already assumes.</summary>
+    /// <summary>{root} from src/SIL.LCModel/MasterLCModel.xml, per <see cref="ModelPathResolver"/> layout.</summary>
     private static string LibLcmCheckoutRootOf(string modelFilePath) =>
         Path.GetFullPath(Path.Combine(Path.GetDirectoryName(modelFilePath)!, "..", ".."));
 

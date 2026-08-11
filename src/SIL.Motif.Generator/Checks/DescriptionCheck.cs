@@ -47,7 +47,7 @@ public static class DescriptionCheck
         DescriptionExemptions.ReviewedValue,
     };
 
-    /// <summary><c>no-source-exists</c> cites a search rather than a source; <c>adapted</c> cites the sibling it was derived from and that sibling's <see cref="KindDescription.SourceHash"/> so the two cannot drift apart unnoticed.</summary>
+    /// <summary>no-source-exists cites a search; adapted cites its sibling's SourceHash to catch drift.</summary>
     private static readonly HashSet<string> ValuesRequiringACitation = new(StringComparer.Ordinal)
     {
         "sourced", "hand-corrected", DescriptionAdaptations.ReviewedValue,
@@ -87,7 +87,7 @@ public static class DescriptionCheck
                 continue;
             }
 
-            // The bar: a description must say something the name and label do not (letters/digits only, so "Is Abstract." cannot pass as a description of "IsAbstract").
+            // The bar: says what the name/label do not; "Is Abstract" cannot pass as a description of "IsAbstract".
             if (RestatesOnly(description.Description, description.Label) ||
                 RestatesOnly(description.Description, row.Manifest.Field))
             {

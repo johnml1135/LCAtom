@@ -87,7 +87,7 @@ public static class OrderingEvidenceHarvester
         return (string.Join(" ", selected), terms);
     }
 
-    /// <summary>Protects abbreviations like <c>i.e.</c>/<c>e.g.</c> before sentence-splitting and restores them after, so their periods aren't read as sentence boundaries.</summary>
+    /// <summary>Masked before sentence-splitting so <c>i.e.</c> and <c>e.g.</c> are not boundaries.</summary>
     private static readonly (string Abbreviation, string Placeholder)[] Abbreviations =
     [
         ("i.e.", "IE"),

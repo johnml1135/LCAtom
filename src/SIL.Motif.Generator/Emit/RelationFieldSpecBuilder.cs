@@ -43,7 +43,7 @@ public static class RelationFieldSpecBuilder
                 $"{row.DeclaringClass}.{row.FieldName}: a rel/col or rel/seq field must carry a Card.");
         }
 
-        // LibLCM's own accessor-property suffix convention (SIL.LCModel's ILexEntry): "RC" for a reference collection, "RS" for a reference sequence.
+        // LibLCM's accessor suffixes (SIL.LCModel's ILexEntry): RC reference collection, RS reference sequence.
         var accessorSuffix = card == FieldCard.Seq ? "RS" : "RC";
 
         return new ReferenceCollectionFieldSpec(

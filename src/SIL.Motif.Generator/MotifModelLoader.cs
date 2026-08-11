@@ -44,7 +44,7 @@ public static class MotifModelLoader
 
         var rows = ModelManifestJoiner.Join(model.Fields, manifestRows);
 
-        // ADR 0022 decision 3 and ADR 0024 decision 2: both checks fail closed, naming the offending row/class, before a report that looks like everything is fine could be printed.
+        // ADR 0022 decision 3, ADR 0024 decision 2: both checks fail closed, naming the bad row/class first.
         ManifestConsistencyChecker.CheckVerbsAndComparisonClass(rows);
         ManifestConsistencyChecker.CheckGroupIsTotal(rows);
 

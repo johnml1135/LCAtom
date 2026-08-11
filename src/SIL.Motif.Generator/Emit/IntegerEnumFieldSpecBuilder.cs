@@ -35,7 +35,7 @@ public static class IntegerEnumFieldSpecBuilder
     public static IReadOnlyList<IntegerEnumFieldSpec> BuildAll(IReadOnlyList<JoinedRow> rows) =>
         rows.Select(Build).ToList();
 
-    /// <summary>The name of the <c>0</c> member the generated <c>clear</c> writes; throws if the enum has none, since that shape needs a decision about what clearing it means, not a template.</summary>
+    /// <summary>The <c>0</c> member the generated <c>clear</c> writes; throws if there is none.</summary>
     private static string ZeroMemberNameOf(JoinedRow row, IReadOnlyList<(int Value, string Name)> members)
     {
         foreach (var member in members)
@@ -49,7 +49,7 @@ public static class IntegerEnumFieldSpecBuilder
             $"('{row.Manifest.EnumValues}'), which does not include it.");
     }
 
-    /// <summary>Parses <c>"0=Undecided;1=Correct;2=Incorrect"</c> into ordered <c>(value, name)</c> pairs; fails closed on a missing or malformed <c>EnumValues</c> mapping rather than emit a template with no range check.</summary>
+    /// <summary>Parses <c>EnumValues</c> into ordered value/name pairs; fails closed on a malformed one.</summary>
     private static IReadOnlyList<(int Value, string Name)> ParseEnumValues(JoinedRow row)
     {
         var raw = row.Manifest.EnumValues;

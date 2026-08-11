@@ -26,7 +26,7 @@ public static class FieldWorksHelpPageParser
     private static readonly Regex TitlePattern = new(
         @"<title>(?<title>.*?)</title>", RegexOptions.Singleline | RegexOptions.IgnoreCase);
 
-    /// <summary>The label cell, then the content cell's first paragraph; <c>[\s\S]*?</c> rather than <c>RegexOptions.Singleline</c> on the whole pattern so the laziness is visible where it matters.</summary>
+    /// <summary>Label cell, then first paragraph; [\s\S]*? not whole-pattern Singleline, laziness visible.</summary>
     private static readonly Regex DescriptionPattern = new(
         @"Description:[\s\S]{0,200}?</td>\s*<td[^>]*>\s*<p[^>]*>(?<body>[\s\S]*?)</p>",
         RegexOptions.IgnoreCase);
@@ -70,10 +70,10 @@ public static class FieldWorksHelpPageParser
 
     private static string CollapseToText(string markup)
     {
-        // Tags come out with nothing in their place, not a space — these paragraphs wrap individual words in <a>/<span>, and a space would punctuate the sentence as "( lexeme ... form )".
+        // Tags -> nothing, not a space: <a>/<span>-wrapped words would else read "( lexeme ... form )".
         var text = TagPattern.Replace(markup, "");
         text = WebUtility.HtmlDecode(text);
-        // A non-breaking space is still a space to a reader, and a manifest cell with U+00A0 in it silently breaks a later grep for the same sentence.
+        // A non-breaking space reads as a space, but U+00A0 in a cell silently breaks a later grep.
         text = text.Replace('\u00a0', ' ');
         return WhitespacePattern.Replace(text, " ").Trim();
     }
@@ -87,7 +87,7 @@ public static class FieldWorksHelpPageParser
 /// </summary>
 internal static class Windows1252
 {
-    /// <summary>The <c>0x80</c>-<c>0x9F</c> block, in order; the five positions Microsoft left undefined map to U+FFFD rather than to a plausible-looking character, so one showing up in a page reads as damage in review instead of as text.</summary>
+    /// <summary>0x80-0x9F in order; the five undefined slots are U+FFFD, so they read as damage.</summary>
     private const string HighPunctuation =
         "\u20ac\ufffd\u201a\u0192\u201e\u2026\u2020\u2021" +
         "\u02c6\u2030\u0160\u2039\u0152\ufffd\u017d\ufffd" +

@@ -91,6 +91,6 @@ public static class LibLcmCommentHarvester
 
     private static readonly string[] FieldTags = ["basic", "owning", "rel"];
 
-    /// <summary>Collapses embedded newlines/tabs/runs of spaces to single spaces, since the harvested text becomes one TSV cell.</summary>
+    /// <summary>Collapses newlines, tabs and space runs: the harvested text becomes one TSV cell.</summary>
     private static string NormalizeWhitespace(string value) => Regex.Replace(value, @"\s+", " ").Trim();
 }

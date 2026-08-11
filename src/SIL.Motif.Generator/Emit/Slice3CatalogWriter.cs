@@ -66,7 +66,7 @@ public static class Slice3CatalogWriter
         foreach (var spec in collectionSpecs)
             written.Add(WriteFile(repoRoot, operationsDir, $"{spec.SnapshotFieldConstant}.g.cs", ReferenceCollectionFieldEmitter.Render(spec)));
 
-        // Snapshotting: one Snapshotter per class with a basic field, one RelationsSnapshotter per class with a rel field; a class with both gets both files (see this type's remarks).
+        // One Snapshotter per class with a basic field, one Relations per class with a rel; both if both.
         var snapshottingDir = Path.Combine(repoRoot, "src", "SIL.Motif.Runner", "Snapshotting", "Generated3");
         Directory.CreateDirectory(snapshottingDir);
 

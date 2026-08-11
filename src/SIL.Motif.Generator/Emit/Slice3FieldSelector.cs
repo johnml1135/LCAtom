@@ -44,7 +44,7 @@ namespace SIL.Motif.Generator.Emit;
 /// </remarks>
 public static class Slice3FieldSelector
 {
-    /// <summary>Fields slice 1/2 already emit that also happen to be <c>HcReachable=yes</c>, named explicitly so this selector never double-emits a kind slice 1/2 already owns.</summary>
+    /// <summary><c>HcReachable=yes</c> fields slice 1/2 already own, named so no kind is emitted twice.</summary>
     private static readonly HashSet<FieldKey> AlreadyEmittedElsewhere = new()
     {
         new FieldKey("MoForm", "Form"),

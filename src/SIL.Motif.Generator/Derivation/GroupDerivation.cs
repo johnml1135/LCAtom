@@ -31,15 +31,15 @@ namespace SIL.Motif.Generator.Derivation;
 /// </remarks>
 public static class GroupDerivation
 {
-    /// <summary>Exact class-name overrides, checked before <see cref="PrefixTable"/>; each exists because a shared prefix with sibling classes would give the wrong answer for this one specific class.</summary>
+    /// <summary>Overrides checked before PrefixTable: a shared prefix would give the wrong answer here.</summary>
     private static readonly IReadOnlyDictionary<string, string> ClassOverrides = new Dictionary<string, string>
     {
-        // Part of the word-analysis family ADR 0025 brought into scope; CmAgent and StTxtPara would otherwise fall under the generic Cm*/St* -> system entries below (Text/TextTag, Segment, and Wfi* already get "analysis" from PrefixTable).
+        // ADR 0025 word-analysis family: CmAgent/StTxtPara would otherwise fall to Cm*/St* -> system.
         ["CmAgent"] = "analysis",
         ["StTxtPara"] = "analysis",
         ["Segment"] = "analysis",
 
-        // CmPossibility and CmPossibilityList are the list scaffolding itself — ADR 0023's own example (`CmPossibility.Name -> lists/cmPossibility/setName`) — distinct from ordinary Cm* administrative classes.
+        // List scaffolding itself (ADR 0023's example: CmPossibility.Name -> lists/...), not ordinary Cm*.
         ["CmPossibility"] = "lists",
         ["CmPossibilityList"] = "lists",
 
@@ -53,7 +53,7 @@ public static class GroupDerivation
         ["PunctuationForm"] = "system",
     };
 
-    /// <summary>Prefix -> group. Order does not matter for correctness (the derivation always chooses the longest matching prefix, see <see cref="Derive"/>), but is written longest-first here for a human scanning the table.</summary>
+    /// <summary>Prefix -> group; table order is cosmetic, Derive always picks the longest match.</summary>
     private static readonly IReadOnlyList<(string Prefix, string Group)> PrefixTable = new[]
     {
         ("ConstituentChart", "analysis"),  // discourse chart parts (ConstituentChartCellPart)
@@ -82,7 +82,7 @@ public static class GroupDerivation
         if (ClassOverrides.TryGetValue(declaringClass, out var overrideGroup))
             return overrideGroup;
 
-        // Longest matching prefix wins, computed rather than relying on table order, so adding a more specific entry later can never be silently shadowed by a shorter one already there.
+        // Longest match computed, not table order: a new entry can't be silently shadowed by a shorter one.
         string? bestPrefix = null;
         string? bestGroup = null;
         foreach (var (prefix, group) in PrefixTable)
