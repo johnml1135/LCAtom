@@ -10,10 +10,10 @@ namespace SIL.Motif.Contract.Model;
 /// docs/change-set-contract.md, "Document shape" and "Operation vocabulary".
 /// </summary>
 /// <remarks>
-/// This is the envelope common to every operation kind. The exact v1 vocabulary of kinds and their
-/// per-kind value schemas is produced in a later phase (docs/implementation-plan.md, Phase 6); the
-/// contract kernel fixes the envelope shape, the strict-closed-parsing discipline, and which parts
-/// of an operation are semantic (participate in the intent digest) versus metadata (do not).
+/// This is the envelope common to every operation kind. The full v1 vocabulary of kinds and their
+/// per-kind value schemas is produced elsewhere; the contract kernel fixes the envelope shape, the
+/// strict-closed-parsing discipline, and which parts of an operation are semantic (participate in
+/// the intent digest) versus metadata (do not).
 ///
 /// Semantic (participate in the intent digest): <see cref="OperationId"/>, <see cref="Kind"/>,
 /// <see cref="EntityId"/>, <see cref="Target"/>, <see cref="After"/>, <see cref="Placement"/>,

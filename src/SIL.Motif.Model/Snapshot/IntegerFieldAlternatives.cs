@@ -10,7 +10,7 @@ namespace SIL.Motif.Model.Snapshot;
 /// </summary>
 /// <remarks>
 /// <para>
-/// First user: <c>WfiWordform.SpellingStatus</c> (MOT-22) — a small closed-range enum
+/// First user: <c>WfiWordform.SpellingStatus</c> — a small closed-range enum
 /// (<c>0=Undecided;1=Correct;2=Incorrect</c>) that LibLCM stores as a plain <c>Integer</c>. The map
 /// shape costs nothing here for the same reason it cost nothing for Boolean: one well-known key,
 /// <see cref="Key"/>, and every digest/JSON-writing code path that already handles

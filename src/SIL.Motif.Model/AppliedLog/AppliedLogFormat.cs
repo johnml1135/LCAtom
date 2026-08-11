@@ -202,9 +202,7 @@ public static class AppliedLogFormat
                 nameof(description));
         }
 
-        // '|' is explicitly permitted in the description (docs/applied-log.md, "Record format"
-        // table: "<description> | free single-line text ... may contain |"). Control characters,
-        // including newlines, are still rejected: the whole Name must stay single-line.
+        // '|' is allowed in the description (docs/applied-log.md); control characters, incl. newlines, are rejected.
         if (ContainsControlCharacter(description))
             throw new ArgumentException("Description must not contain control characters (including newlines).", nameof(description));
     }
@@ -242,11 +240,7 @@ public static class AppliedLogFormat
         return false;
     }
 
-    /// <summary>
-    /// Splits <paramref name="text"/> on its first <paramref name="separatorCount"/> occurrences of
-    /// <see cref="FieldSeparator"/>, returning up to <paramref name="separatorCount"/> + 1 pieces
-    /// (fewer if there are not enough separators — the caller treats that as a parse failure).
-    /// </summary>
+    /// <summary>Splits on the first N separators; fewer pieces if there are not enough.</summary>
     private static string[] SplitOnFirstNSeparators(string text, int separatorCount)
     {
         var result = new List<string>(separatorCount + 1);

@@ -9,7 +9,7 @@ namespace SIL.Motif.Runner.Snapshotting;
 /// <summary>
 /// Reads a reference collection accessor's full current membership into the
 /// <see cref="ReferenceCollectionAlternatives"/> map shape — shared by every generated <c>rel/col</c>/
-/// <c>rel/seq</c> field's snapshot read-back (MOT-4 slice 2).
+/// <c>rel/seq</c> field's snapshot read-back.
 /// </summary>
 internal static class ReferenceCollectionFieldSnapshotting
 {

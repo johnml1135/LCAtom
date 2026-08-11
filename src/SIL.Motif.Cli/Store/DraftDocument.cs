@@ -5,7 +5,7 @@ namespace SIL.Motif.Cli.Store;
 /// <summary>
 /// The on-disk shape of <c>drafts/&lt;draftName&gt;.json</c>: a mutable local draft the CLI builds
 /// incrementally across invocations (<c>new -&gt; add-set-gloss -&gt; label -&gt; comment -&gt;
-/// finalize</c>). Never synced; deleted by <c>finalize</c>. See docs/stage2-change-management.md, S3.
+/// finalize</c>). Never synced; deleted by <c>finalize</c>.
 /// </summary>
 public sealed class DraftDocument
 {
@@ -36,7 +36,7 @@ public sealed class DraftOperation
     /// The canonical id of a newly proposed entity, for creating operations (e.g.
     /// <c>createLexemeForm</c>). <c>null</c> for operations that do not mint a new entity.
     /// Round-tripped through <c>reopen</c>/<c>finalize</c> so a later operation that <c>target</c>s
-    /// this id keeps resolving to "created earlier in this Proposal" — and so MOT-18's removal
+    /// this id keeps resolving to "created earlier in this Proposal" — and so the removal
     /// analysis (<see cref="SIL.Motif.Cli.OperationDependencyGraph"/>) can find it.
     /// </summary>
     public string? EntityId { get; set; }
@@ -44,7 +44,7 @@ public sealed class DraftOperation
     /// <summary>
     /// Explicit intra-Proposal ordering dependencies: operation ids (within this same draft) this
     /// operation requires to have already run. See <see cref="SIL.Motif.Contract.Model.OperationDependency"/>
-    /// and MOT-18's removal/split consequence enumeration.
+    /// and the removal/split consequence enumeration this feeds.
     /// </summary>
     public List<string> DependsOn { get; set; } = new();
 

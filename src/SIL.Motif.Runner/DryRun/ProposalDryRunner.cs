@@ -26,8 +26,8 @@ namespace SIL.Motif.Runner.DryRun;
 /// <remarks>
 /// <para>
 /// Dispatch is by <see cref="OperationHandlerRegistry"/> lookup, one <see cref="IOperationHandler"/>
-/// per registered kind (MOT-4) — before a second kind existed this was "a single case deliberately,
-/// not a plugin registry"; the generated catalog is that second kind, many times over. It shares the
+/// per registered kind — a registry rather than a switch, since the generated catalog registers many
+/// kinds over time. It shares the
 /// whole resolve/snapshot/lower/snapshot sequence with <see cref="SIL.Motif.Runner.Apply.ProposalApplier"/>
 /// (Stage D) via those same handlers.
 /// </para>
@@ -37,7 +37,7 @@ namespace SIL.Motif.Runner.DryRun;
 /// it</b>. The copy is discarded instead (<see cref="DryRunScratch.Dispose"/>). That is why this method
 /// no longer classifies operations by whether they might leave a derived cache stale: staleness came
 /// from <c>UndoStack.Rollback</c> skipping forward-only setter hooks, and there is no rollback here to
-/// skip them (docs/adr/0016-scratch-cache-copy-not-undo.md, amended 2026-08-06).
+/// skip them (docs/adr/0016-scratch-cache-copy-not-undo.md).
 /// </para>
 /// <para>
 /// <b>The scratch reads the project as it was last saved</b>, so the host must save before calling this
@@ -60,10 +60,7 @@ public static class ProposalDryRunner
 
         var actionHandler = cache.ServiceLocator.GetInstance<IActionHandler>();
 
-        // Non-undoable, and RollBack cleared before the first mutation rather than after the last one:
-        // there is nothing to protect here — the cache is a copy that is about to be thrown away — and
-        // a rollback is the one thing that would leave a derived cache stale. So even a *failed* Run
-        // ends its task instead of reverting it, and the damage goes out with the scratch.
+        // Non-undoable; RollBack cleared before the first mutation, not after: rollback would leave the cache stale.
         using (var unitOfWork = new NonUndoableUnitOfWorkHelper(actionHandler))
         {
             unitOfWork.RollBack = false;

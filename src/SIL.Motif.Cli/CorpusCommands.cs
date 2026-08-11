@@ -188,8 +188,7 @@ public static class CorpusCommands
         {
             var caps = d.EffectiveCapabilities(origin);
             sb.AppendLine($"  {d.DocumentId}  {d.Title}");
-            // "..." rather than an ellipsis character: Windows consoles at the default code page render
-            // U+2026 as a full stop, which reads as a truncated hash that ends in a dot.
+            // "..." not U+2026: default-code-page Windows consoles render U+2026 as a full stop.
             sb.AppendLine($"    {d.Text.Length:N0} characters, sha256 {d.ContentSha256[..12]}...");
             sb.AppendLine($"    licence: {d.EffectiveLicence(origin) ?? "(none recorded)"}; " +
                           $"derived works: {(caps.PermitsDerivedArtefacts ? "permitted" : "not permitted")}");

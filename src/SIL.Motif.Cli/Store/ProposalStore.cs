@@ -5,8 +5,7 @@ namespace SIL.Motif.Cli.Store;
 
 /// <summary>
 /// Path layout for Motif's minimal git-style files store: immutable content-addressed committed
-/// objects, mutable id-keyed review manifests, and mutable local-only drafts. No database — see
-/// docs/stage2-change-management.md, S1, and docs/build-stages.md, Stage E.
+/// objects, mutable id-keyed review manifests, and mutable local-only drafts. No database.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -23,8 +22,7 @@ namespace SIL.Motif.Cli.Store;
 /// (status/label/comment/<c>currentIntentDigest</c>) for that Proposal: a movable pointer at the
 /// object currently "current" for this id, exactly a git ref pointing at a commit hash. <c>commit</c>
 /// (via <c>Commands.Finalize</c>) writes a new object and either creates the manifest (first commit)
-/// or moves its pointer (amend, via <c>Commands.Reopen</c> + re-<c>finalize</c>) — see
-/// docs/stage2-change-management.md, S1.
+/// or moves its pointer (amend, via <c>Commands.Reopen</c> + re-<c>finalize</c>).
 /// </para>
 /// </remarks>
 public sealed class ProposalStore
@@ -76,10 +74,7 @@ public sealed class ProposalStore
         return colonIndex >= 0 ? intentDigest[(colonIndex + 1)..] : intentDigest;
     }
 
-    /// <summary>
-    /// Draft names are user-chosen local labels, not canonical ids; reject path-traversal
-    /// characters so a draft name can never escape <see cref="DraftsDirectory"/>.
-    /// </summary>
+    /// <summary>Blocks path-traversal chars so a name can't escape <see cref="DraftsDirectory"/>.</summary>
     private static string SafeFileName(string name)
     {
         if (string.IsNullOrWhiteSpace(name))

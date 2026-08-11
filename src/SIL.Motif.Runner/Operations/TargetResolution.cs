@@ -8,7 +8,7 @@ namespace SIL.Motif.Runner.Operations;
 
 /// <summary>
 /// The resolve-and-type-check preamble every generated handler needs before it can read or lower a
-/// field — generalized from <c>SetGlossOperationHandler</c>'s pre-MOT-4 body, which inlined exactly
+/// field — generalized from <c>SetGlossOperationHandler</c>'s body, which inlined exactly
 /// this sequence for <c>ILexSense</c> alone: require <c>target</c>, resolve it through
 /// <see cref="CanonicalIdResolver"/>, and fail with the same wording that type checked for
 /// <c>ILexSense</c> ("Target '...' is not a LexSense (it is a ...).") for any target class.
@@ -28,10 +28,7 @@ internal static class TargetResolution
         var resolved = CanonicalIdResolver.Resolve(cache, targetId);
         if (resolved is not T typed)
         {
-            // typeof(T).Name is always "I" + the concrete LibLCM class name for every target
-            // interface this project resolves against (ILexSense, ILexEntry, IMoForm, ...), so
-            // trimming exactly one leading 'I' reproduces SetGlossOperationHandler's original
-            // "...is not a LexSense (it is a ...)." wording for any of them.
+            // typeof(T).Name is "I" + the LibLCM class name for every target interface here; trim it for messages.
             var expectedName = typeof(T).Name.StartsWith("I", StringComparison.Ordinal)
                 ? typeof(T).Name.Substring(1)
                 : typeof(T).Name;

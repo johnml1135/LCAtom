@@ -8,7 +8,7 @@ namespace SIL.Motif.Runner.Operations;
 /// <summary>
 /// The one LibLCM write every MultiUnicode/MultiString <c>set|clear</c> kind performs — modelled on,
 /// and shared by, the generated per-field <c>*Lowering</c> classes that replaced the hand-written
-/// <c>SetGlossLowering</c> (MOT-4). MultiUnicode and MultiString accessors (<c>IMultiUnicode</c>,
+/// <c>SetGlossLowering</c>. MultiUnicode and MultiString accessors (<c>IMultiUnicode</c>,
 /// <c>IMultiString</c>) both ultimately implement <see cref="ITsMultiString"/>
 /// (<c>get_String</c>/<c>set_String</c>) and <see cref="IMultiAccessorBase"/>
 /// (<c>AvailableWritingSystemIds</c>) — verified by reflection against the pinned <c>SIL.LCModel</c>
@@ -31,8 +31,8 @@ internal static class MultiAlternativesFieldLowering
 
     /// <summary>
     /// Clears one writing-system alternative by setting it to the empty string — LibLCM's own
-    /// convention for "no value," per <c>LexSenseSnapshotter</c>'s pre-MOT-4 remarks ("Empty is
-    /// indistinguishable from absent; omit rather than write \"\"") and unchanged by MOT-4's
+    /// convention for "no value," per <c>LexSenseSnapshotter</c>'s remarks ("Empty is
+    /// indistinguishable from absent; omit rather than write \"\"") and unchanged by the generated
     /// snapshotters, which still omit an empty alternative entirely on read-back.
     /// </summary>
     public static void ApplyClear<TAccessor>(

@@ -10,15 +10,14 @@ namespace SIL.Motif.Runner.Operations;
 /// What every operation kind's handler must supply: resolve, snapshot, lower, and re-snapshot one
 /// operation (<see cref="ApplyAndCaptureEffect"/>), and read the same target's CURRENT footprint with
 /// no mutation at all (<see cref="ReadCurrentFootprint"/>). Mirrors the two static methods
-/// <c>SetGlossOperationHandler</c> exposed before MOT-4 — see that type's remarks, now preserved on
+/// <c>SetGlossOperationHandler</c> exposed — see that type's remarks, now preserved on
 /// this interface instead of duplicated ad hoc per kind.
 /// </summary>
 /// <remarks>
-/// Introduced by MOT-4 because a second operation kind now exists to justify a real dispatch table:
+/// A real dispatch table, not a single hardcoded case, because
 /// <see cref="SIL.Motif.Runner.DryRun.ProposalDryRunner"/>, <see cref="SIL.Motif.Runner.Apply.ProposalApplier"/>,
-/// and <see cref="SIL.Motif.Runner.Apply.FootprintProbe"/> previously carried "a single case
-/// deliberately, not a plugin registry, until a second kind exists to justify one" — MOT-4's ten
-/// fields (twenty kinds) are that second kind, many times over. Each generated kind file registers
+/// and <see cref="SIL.Motif.Runner.Apply.FootprintProbe"/> each dispatch across ten fields (twenty
+/// kinds), not one. Each generated kind file registers
 /// one instance per verb with <see cref="OperationHandlerRegistry"/>; the three call sites above look
 /// the handler up by <see cref="OperationEnvelope.Kind"/> instead of switching on it.
 /// </remarks>
@@ -30,8 +29,7 @@ public interface IOperationHandler
     /// caused. Must not open or close any unit of work itself (docs/adr/0006, decision 5).
     /// </summary>
     /// <param name="touchedTargets">Appended with the resolved target's <see cref="CanonicalId"/>,
-    /// exactly as the pre-MOT-4 handlers did, so callers can report which objects a Proposal
-    /// touched.</param>
+    /// so callers can report which objects a Proposal touched.</param>
     ExpectedEffect ApplyAndCaptureEffect(
         LcmCache cache, OperationEnvelope operation, List<CanonicalId> touchedTargets);
 

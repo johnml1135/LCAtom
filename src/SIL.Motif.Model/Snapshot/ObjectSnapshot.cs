@@ -11,10 +11,8 @@ namespace SIL.Motif.Model.Snapshot;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Stage C populated only what was then called <c>MultiUnicodeFields</c>, and only one field
-/// (<see cref="SnapshotFields.LexSenseGloss"/>). MOT-4 widens the same map — renamed
-/// <see cref="AlternativesFields"/> because it is no longer MultiUnicode-only — to every
-/// <c>basic</c> <c>set|clear</c> field in its slice, covering three LibLCM sigs with one shape:
+/// <see cref="AlternativesFields"/> holds one alternatives map per in-scope <c>basic</c>
+/// <c>set|clear</c> field, covering three LibLCM sigs with one shape:
 /// </para>
 /// <list type="bullet">
 /// <item>MultiUnicode/MultiString: the natural ws-tag -&gt; text alternatives map.</item>
@@ -22,7 +20,7 @@ namespace SIL.Motif.Model.Snapshot;
 /// <see cref="BooleanFieldAlternatives.Key"/> (see that type's remarks) — a representational
 /// choice, not a new shape, because <see cref="Effects.ExpectedEffect.Before"/>/<c>After</c> are
 /// already shipped as <c>IReadOnlyDictionary&lt;string, string&gt;</c> and widening that type would
-/// break already-compiled call sites (docs/plan-motif.md MOT-4's regeneration gate).</item>
+/// break already-compiled call sites a regeneration gate requires to keep compiling unmodified.</item>
 /// </list>
 /// <para>
 /// The shape is deliberately a map keyed by field name so later stages can add more fields, and

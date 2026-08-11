@@ -10,8 +10,7 @@ namespace SIL.Motif.Cli;
 /// <see cref="RequiredOperationId"/> to remain present, either because it explicitly
 /// <c>dependsOn</c> it, or because it <c>target</c>s an entity that only exists because
 /// <see cref="RequiredOperationId"/> creates it (its <c>entityId</c>). See
-/// docs/adr/0021-cli-is-the-full-surface-layer-1-churns.md decision 6 (<c>J43</c>) and
-/// docs/plan-motif.md, <c>MOT-18</c>.
+/// docs/adr/0021-cli-is-the-full-surface-layer-1-churns.md decision 6.
 /// </summary>
 public sealed record DeclaredDependencyEdge(
     string DependentOperationId,

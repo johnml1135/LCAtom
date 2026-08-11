@@ -5,7 +5,7 @@ namespace SIL.Motif.Runner.DryRun;
 
 /// <summary>
 /// A single-use, throwaway <see cref="LcmCache"/> that a Dry Run is allowed to mutate and nobody is
-/// allowed to revert. See <c>docs/adr/0016-scratch-cache-copy-not-undo.md</c>, as amended 2026-08-06.
+/// allowed to revert. See <c>docs/adr/0016-scratch-cache-copy-not-undo.md</c>.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -76,7 +76,8 @@ public sealed class DryRunScratch : IDisposable
 
     /// <summary>
     /// Hands the cache to the one Dry Run this scratch is good for. Refuses a second time rather than
-    /// returning a baseline that silently includes the first run's mutations.
+    /// returning a baseline that silently includes the first run's mutations (pinned by
+    /// `DryRunScratch_RefusesASecondRun`).
     /// </summary>
     internal LcmCache ConsumeForOneRun()
     {
