@@ -8,7 +8,7 @@ namespace SIL.Motif.Tests.TestFixtures;
 
 /// <summary>
 /// Runs a Dry Run the way a host must: save, copy the project's files, open the copy, mutate the copy,
-/// discard it. See <c>docs/adr/0016-scratch-cache-copy-not-undo.md</c>.
+/// discard it. See ADR 0016.
 /// </summary>
 /// <remarks>
 /// <para>

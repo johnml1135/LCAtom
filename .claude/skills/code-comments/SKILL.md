@@ -92,7 +92,7 @@ behaviour**, and that is the class that costs the most, because it looks maintai
 | Tier | Looks like | What to do | Who checks it |
 |---|---|---|---|
 | **Executable** | "an out-of-range value is rejected rather than clamped" | a test, cited as ``pinned by `TestName` `` | `dotnet test`; the checker verifies the name exists in the tree |
-| **Quoted contract** | a verbatim sentence from `docs/change-set-contract.md` or similar | quote it and cite the file | the checker verifies the file exists; never reword a quotation to dodge a claim verb |
+| **Quoted contract** | a verbatim sentence from a contract document | quote it, name the document in prose, and cite the test that settles it | never reword a quotation to dodge a claim verb — cite instead |
 | **Resolved** | any reference to another type or member | `<see cref="Foo"/>` | the C# compiler (CS1574) |
 | **Durable external** | a paper, an algorithm, an upstream issue, LibLCM or HermitCrab behaviour with a `file:line` | keep it | nothing needed — it does not rot on our side |
 | **Project state** | plans, issues, dates, slice status, history | delete | the hygiene checker |
@@ -116,7 +116,33 @@ one four-hundred-character line satisfies the line count and reads worse than wh
 because it cannot; both are API surface at their type's visibility, and both get long form.
 
 **A reference document REPLACES a long comment; it does not license one.** If the knowledge needs a
-paragraph, write it in `docs/research/` and let the comment be the one line that points there.
+paragraph, write it in `docs/research/` and let an *implementation* comment be the one line that
+points there. An **API doc may not point there at all** — see below.
+
+## An API doc must be complete, or cite a URL
+
+`docs/…md` paths are banned from `///` on public surface (checker: `api-doc-defers-offline`). The
+reason is where an API doc is actually read: an IDE tooltip, or the compiled XML documentation. In
+neither place can the reader open a path that resolves only inside a checkout of this repo.
+
+So an API doc either says the thing, or points at something anyone can open:
+
+| Instead of | Write |
+|---|---|
+| `docs/adr/0016-scratch-cache-copy-not-undo.md` | `ADR 0016` — the number is the stable coordinate; the path is not |
+| `docs/change-set-contract.md` | "the Change Set contract" |
+| `docs/applied-log.md` | "the applied log format" |
+| `See docs/research/2026-08-06-parser-timing-measured.md` | the measurement itself, in a sentence |
+| a URL | a URL — this is the one pointer that always works |
+
+**Inline before you delete.** A pointer that was carrying the rule must have the rule brought across
+first; removing it otherwise destroys information, which is worse than the pointer ever was. The
+test: a reader who never opens `docs/` understands the API as well afterwards as a reader who did
+before. API docs may run long form precisely so this is possible — never compress one to avoid
+inlining.
+
+Implementation comments are not covered by this rule. A one-line `//` may still point at a research
+document, because the reader of a `//` has the checkout open by construction.
 
 **Deciding whether a long API doc earns its length:** it must tell a caller something the signature
 cannot — a precondition, a trap, an invariant to preserve, or a rejected alternative that looks better

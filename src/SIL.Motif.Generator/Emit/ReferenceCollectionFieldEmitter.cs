@@ -8,7 +8,7 @@ namespace SIL.Motif.Generator.Emit;
 /// <remarks>
 /// <c>move</c> is deliberately not emitted for a <c>rel/seq</c> field
 /// (<c>LexEntry.DialectLabels</c> is the one in this slice). Placement uses identity-relative anchors
-/// (ADR 0026; docs/change-set-contract.md, "Ordered data"), and nothing in the Runner lowers
+/// (ADR 0026; the Change Set contract's ordered-data rules), and nothing in the Runner lowers
 /// <see cref="Contract.Model.OperationEnvelope.Placement"/> into an actual LibLCM reorder yet — the
 /// Contract kernel only ever reads it to feed the intent digest
 /// (<c>IntentProjectionWriter</c>) — so building a real <c>move</c> kind here would be new,

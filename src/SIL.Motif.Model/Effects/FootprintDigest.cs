@@ -11,8 +11,8 @@ namespace SIL.Motif.Model.Effects;
 /// <summary>
 /// Computes the footprint digest: a hash of only the pre-mutation ("before") half of a set of
 /// <see cref="ExpectedEffect"/>s — the live baseline an DryRun read, or Apply's pre-flight
-/// re-read of that same baseline. See docs/adr/0004-prerequisite-graph-stable-ids-bound-apply.md,
-/// decision 3, and <see cref="SIL.Motif.Model.DryRun.BoundDryRunAnchor.FootprintDigest"/>.
+/// re-read of that same baseline (ADR 0004 decision 3; see also
+/// <see cref="SIL.Motif.Model.DryRun.BoundDryRunAnchor.FootprintDigest"/>).
 /// </summary>
 /// <remarks>
 /// Deliberately excludes <see cref="ExpectedEffect.After"/>: the footprint is "what the project

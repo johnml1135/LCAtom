@@ -40,8 +40,8 @@ public static class CorpusTokenisation
     /// </param>
     /// <remarks>
     /// <b>The declared tokenisation is binding.</b> Two corpora tokenised differently are not comparable even
-    /// when the source text is identical (<c>docs/adr/0036-motif-has-its-own-data-store.md</c> decision 4;
-    /// <c>docs/corpus-ingestion.md</c>), so this throws rather than running a tokeniser that disagrees with
+    /// when the source text is identical (ADR 0036 decision 4; the corpus ingestion contract), so this
+    /// throws rather than running a tokeniser that disagrees with
     /// what <paramref name="corpus"/>'s <see cref="CorpusProvenance.Tokenisation"/> already declares, or
     /// silently re-stamping the corpus with whatever happened to run (pinned by
     /// `DeclaredVsSuppliedTokeniserMismatchThrows_NamingBothTheDeclaredAndSuppliedValues`). If the corpus

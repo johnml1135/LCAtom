@@ -12,7 +12,7 @@ namespace SIL.Motif.Tests.Contract;
 /// (input Proposal JSON → expected RFC 8785 canonical bytes → expected intent digest) and checks
 /// this C# implementation reproduces them exactly. A Python or Rust runner is expected to load the
 /// same <c>input.json</c> files and reproduce the same <c>canonical.json</c> bytes and
-/// <c>digest.txt</c> value, per docs/adr/0007-cross-language-digest-determinism.md.
+/// <c>digest.txt</c> value, per ADR 0007.
 /// </summary>
 public class ConformanceVectorTests
 {

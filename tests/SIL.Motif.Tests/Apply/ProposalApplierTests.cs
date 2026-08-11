@@ -17,12 +17,15 @@ using Xunit;
 namespace SIL.Motif.Tests.Apply;
 
 /// <summary>
-/// Stage D proof, on a real project: <see cref="ProposalApplier.Apply"/> commits a
+/// Proof, on a real project: <see cref="ProposalApplier.Apply"/> commits a
 /// <c>lexical/lexSense/setGloss</c> Proposal, writes exactly one applied-log entry inside the same
 /// unit of work, and the result survives a real save + reopen from disk — not merely an in-memory
 /// assertion. Also proves idempotence (a second Apply of the same Proposal against the reopened
-/// project does nothing) and that a distinct Proposal adds a second, distinct log entry. See
-/// docs/change-set-contract.md, "Application Receipt", and docs/applied-log.md.
+/// project does nothing) and that a distinct Proposal adds a second, distinct log entry. Per the
+/// Change Set contract's Application Receipt, apply writes exactly one entry into the applied log
+/// inside the same unit of work as the change; per the applied log format, identity is matched on
+/// the stable Change Set GUID, which is what makes a repeat apply a no-op instead of a duplicate
+/// entry.
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
 public sealed class ProposalApplierTests : IDisposable
@@ -232,7 +235,7 @@ public sealed class ProposalApplierTests : IDisposable
 
     /// <remarks>
     /// This is the only rollback left in Motif, and it is forced by atomicity rather than chosen
-    /// (AGENTS.md rule 4; docs/adr/0016-scratch-cache-copy-not-undo.md). What this
+    /// (AGENTS.md rule 4; ADR 0016). What this
     /// test no longer asserts is as important as what it does: there is no "the cache is now flagged
     /// non-reusable" check, because the flag, the field list that fed it, and the exception it threw
     /// were all deleted. The obligation moved to the host as an unconditional rule — if Apply throws,

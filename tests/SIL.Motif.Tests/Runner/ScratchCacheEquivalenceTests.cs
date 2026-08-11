@@ -8,7 +8,7 @@ using Xunit.Abstractions;
 namespace SIL.Motif.Tests.Runner;
 
 /// <summary>
-/// Grill item <c>A1</c> / <see href="../../docs/adr/0016-scratch-cache-copy-not-undo.md">ADR 0016</see>:
+/// Grill item <c>A1</c> / ADR 0016:
 /// does a scratch cache actually work, and is it equivalent to the live cache it came from?
 /// </summary>
 /// <remarks>

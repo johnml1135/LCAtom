@@ -6,8 +6,8 @@ namespace SIL.Motif.Model.Snapshot;
 
 /// <summary>
 /// A minimal deterministic semantic projection of one LibLCM object, keyed by its
-/// <see cref="CanonicalId"/> rather than a raw storage GUID. See docs/change-set-contract.md,
-/// "Canonical Semantic Snapshot".
+/// <see cref="CanonicalId"/> rather than a raw storage GUID — the Change Set contract's "Canonical
+/// Semantic Snapshot".
 /// </summary>
 /// <remarks>
 /// <para>
@@ -25,13 +25,14 @@ namespace SIL.Motif.Model.Snapshot;
 /// <para>
 /// The shape is deliberately a map keyed by field name so later stages can add more fields, and
 /// later still other per-kind maps (references, sequences) alongside this one, without breaking
-/// existing snapshot consumers — "additive-stable" per docs/change-set-contract.md, "Canonical
-/// Semantic Snapshot".
+/// existing snapshot consumers — the projection is "additive-stable": a member semantically
+/// indistinguishable from absent is omitted entirely, so classifying a newly shipped LibLCM member
+/// leaves the digest of an unpopulated model unchanged.
 /// </para>
 /// <para>
-/// Per that section, an alternative that is empty is indistinguishable from absent and is omitted
-/// entirely, both from an individual field's alternatives map and (were every alternative of a
-/// field empty) from <see cref="AlternativesFields"/> itself.
+/// Consistent with that, an alternative that is empty is indistinguishable from absent and is
+/// omitted entirely, both from an individual field's alternatives map and (were every alternative of
+/// a field empty) from <see cref="AlternativesFields"/> itself.
 /// </para>
 /// </remarks>
 public sealed record ObjectSnapshot(

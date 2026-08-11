@@ -5,8 +5,8 @@ namespace SIL.Motif.Model.Effects;
 
 /// <summary>
 /// One identity-keyed field transition: a delta of the Canonical Semantic Snapshot, scoped to the
-/// change and read back from LibLCM — not a replay of the operation's intended writes. See
-/// docs/change-set-contract.md, "Expected effects".
+/// change and read back from LibLCM — not a replay of the operation's intended writes (the Change
+/// Set contract's "Expected effects").
 /// </summary>
 /// <remarks>
 /// Stage C's only field shape is a MultiUnicode alternatives map (ws tag -&gt; text), matching the

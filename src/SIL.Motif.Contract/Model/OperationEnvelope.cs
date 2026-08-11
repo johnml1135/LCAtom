@@ -6,8 +6,8 @@ using SIL.Motif.Contract.Ids;
 namespace SIL.Motif.Contract.Model;
 
 /// <summary>
-/// One operation inside a Proposal's authoritative <c>operations</c> array. See
-/// docs/change-set-contract.md, "Document shape" and "Operation vocabulary".
+/// One operation inside a Proposal's authoritative <c>operations</c> array — the Change Set
+/// contract's "Document shape" and "Operation vocabulary".
 /// </summary>
 /// <remarks>
 /// This is the envelope common to every operation kind. The full v1 vocabulary of kinds and their
@@ -81,8 +81,8 @@ public sealed record OperationEnvelope
 
     /// <summary>
     /// An explicit authored override of the storage GUID this operation would otherwise realize.
-    /// Changes storage realization, not canonical identity (docs/change-set-contract.md,
-    /// "GUID collision behavior"), but is authored intent and therefore hashed.
+    /// Changes storage realization, not canonical identity, but is authored intent and therefore
+    /// hashed.
     /// </summary>
     public CanonicalId? StorageIdOverride { get; }
 

@@ -15,7 +15,7 @@ namespace SIL.Motif.Tests.Cli;
 /// manifests by the frozen <c>proposalId</c> (a movable <c>currentIntentDigest</c> pointer), exactly
 /// git's object/ref split — so <c>reopen</c> + re-<c>finalize</c> (an amend) can move that pointer to
 /// a new object without ever mutating the previous one
-/// (<c>docs/adr/0004-prerequisite-graph-stable-ids-bound-apply.md</c>, decision 2).
+/// (ADR 0004, decision 2).
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
 public sealed class ReopenAmendTests : IDisposable

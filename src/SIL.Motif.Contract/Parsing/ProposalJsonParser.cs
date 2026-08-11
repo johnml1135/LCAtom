@@ -11,7 +11,7 @@ namespace SIL.Motif.Contract.Parsing;
 /// top-level properties (on the Proposal, an operation, or a placement) are hard errors — this
 /// is a closed schema, not a permissive one that silently ignores what it does not recognize. Only
 /// the explicit <c>extensions</c> object is an open escape hatch, and it never enters the intent
-/// digest. See docs/change-set-contract.md.
+/// digest.
 /// </summary>
 public static class ProposalJsonParser
 {

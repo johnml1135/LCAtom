@@ -2,8 +2,8 @@ namespace SIL.Motif.Model.Snapshot;
 
 /// <summary>
 /// Canonical field-name constants used as keys into <see cref="ObjectSnapshot.AlternativesFields"/>
-/// and as the <c>field</c> value of an expected effect. These are exactly the "field" strings shown
-/// in docs/change-set-contract.md, "Expected effects" (e.g. <c>"lexical/sense/gloss"</c>), so a
+/// and as the <c>field</c> value of an expected effect. These are exactly the "field" strings the
+/// Change Set contract's "Expected effects" section shows (e.g. <c>"lexical/sense/gloss"</c>), so a
 /// snapshot field and an effect's field always agree textually.
 /// </summary>
 /// <remarks>

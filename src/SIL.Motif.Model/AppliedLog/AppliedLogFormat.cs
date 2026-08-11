@@ -6,7 +6,7 @@ namespace SIL.Motif.Model.AppliedLog;
 
 /// <summary>
 /// Packs and parses the single-line <c>CmResource.Name</c> provenance string Motif writes for
-/// every applied-change-log entry. See docs/applied-log.md, "Record format".
+/// every applied-change-log entry — the applied log format's "Record format".
 /// </summary>
 /// <remarks>
 /// <c>Version = &lt;proposalId&gt;</c><br/>
@@ -48,9 +48,9 @@ public static class AppliedLogFormat
     /// which is stored separately as <c>CmResource.Version</c>) as the packed <c>Name</c> string.
     /// </summary>
     /// <exception cref="ArgumentException">
-    /// A field violates docs/applied-log.md's constraints — rejected here rather than truncated,
-    /// per that document: "Overlong, multi-line, or control-character input is rejected at
-    /// validation rather than truncated."
+    /// A field violates the applied log format's constraints — rejected here rather than truncated:
+    /// "Overlong, multi-line, or control-character input is rejected at validation rather than
+    /// truncated."
     /// </exception>
     public static string Format(AppliedLogEntry entry)
     {
@@ -97,9 +97,9 @@ public static class AppliedLogFormat
     /// Attempts to parse a <c>CmResource.Name</c> string into the non-identity fields of an
     /// <see cref="AppliedLogEntry"/>, combining it with the already-known <paramref name="proposalId"/>
     /// (the resource's <c>Version</c>). Returns <c>false</c> both when <paramref name="name"/> is a
-    /// foreign entry (no <c>Motif</c> prefix — never touched, per docs/applied-log.md, "Foreign
-    /// entries") and when it carries the prefix but fails to parse (a diagnostic condition for the
-    /// caller to surface, per the same section) — <paramref name="isForeign"/> distinguishes the two.
+    /// foreign entry (no <c>Motif</c> prefix — never touched, per the applied log format's "Foreign
+    /// entries" rule) and when it carries the prefix but fails to parse (a diagnostic condition for
+    /// the caller to surface, per that same rule) — <paramref name="isForeign"/> distinguishes the two.
     /// </summary>
     public static bool TryParse(
         string? name, Guid proposalId, out AppliedLogEntry? entry, out bool isForeign, out string? error)

@@ -11,7 +11,7 @@ namespace SIL.Motif.Host.Analysis;
 /// <remarks>
 /// <para>
 /// <b>Deliberately not the bundle's own GUID, and not <c>SenseRA</c> or word-level <c>CategoryRA</c>
-/// either.</b> ADR 0027 (<c>docs/adr/0027-what-counts-as-the-same-word-analysis.md</c>) establishes —
+/// either.</b> ADR 0027 establishes —
 /// against FieldWorks source, not by inference — that the parser never sets Sense or Category
 /// (<c>ParseFiler.ProcessAnalysis</c> has no assignment to either), so gating agreement on them would
 /// fail every analysis a human enriched with a sense choice, for a reason that has nothing to do with
@@ -48,7 +48,7 @@ public sealed record MorphBundleContent(string? MorphGuid, string? MsaGuid, stri
 /// <summary>
 /// Computes a content digest for an ordered list of <see cref="MorphBundleContent"/> — Motif's mirror of
 /// <c>ParseAnalysis.MatchesIWfiAnalysis</c>'s shape, used as the identity for a <c>WfiAnalysis</c> in
-/// place of its GUID (<c>docs/adr/0038-expectations-are-fieldworks-approved-analyses.md</c> decision 3).
+/// place of its GUID (ADR 0038 decision 3).
 /// </summary>
 /// <remarks>
 /// <para>

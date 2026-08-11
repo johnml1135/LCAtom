@@ -17,7 +17,7 @@ namespace SIL.Motif.Tests.Apply;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <c>docs/adr/0016-scratch-cache-copy-not-undo.md</c> has the Dry Run mutate a
+/// ADR 0016 has the Dry Run mutate a
 /// file copy and bind an anchor from it, then has Apply re-probe the live project and refuse on
 /// mismatch. That only works if the digest is a function of the <i>data</i>. If an hvo — LibLCM's
 /// per-cache integer object id, assigned in load order and not stable across loads — reached the

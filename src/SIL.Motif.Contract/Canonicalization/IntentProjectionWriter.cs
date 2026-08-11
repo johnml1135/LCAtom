@@ -8,9 +8,12 @@ namespace SIL.Motif.Contract.Canonicalization;
 
 /// <summary>
 /// Renders a <see cref="Proposal"/>'s intent projection as (pre-canonicalization) JSON
-/// text: exactly the fields docs/change-set-contract.md, "Canonical JSON and hashes" lists as
-/// included, with unordered collections presorted per
-/// docs/adr/0007-cross-language-digest-determinism.md decision 2. The output still needs RFC 8785
+/// text: exactly the fields the Change Set contract's "Canonical JSON and hashes" section
+/// includes in the digest — contract group versions, the declared prerequisite (if any),
+/// operation order, operation IDs, kinds, targets and new entity IDs, desired values, dependencies,
+/// and explicit storage-GUID overrides. Unordered collections are presorted by byte-ordinal
+/// comparison of the UTF-8 encoding of the canonical identity string (ADR 0007 decision 2). The
+/// output still needs RFC 8785
 /// canonicalization (member-name sort order, ES6 number formatting, escaping) — that is
 /// <see cref="IntentDigest"/>'s job via the JCS reference implementation.
 /// </summary>

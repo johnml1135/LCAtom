@@ -8,8 +8,8 @@ namespace SIL.Motif.Generator.Descriptions;
 /// <remarks>
 /// <para>
 /// Read-only, like every other manifest artifact the generator touches. Descriptions are seeded per family as
-/// it ships ([ADR 0023](../../../docs/adr/0023-derived-kind-names-required-descriptions.md) decision 5, as
-/// amended), so this file grows over time and is expected to be incomplete — which is why
+/// it ships (ADR 0023 decision 5, as amended), so this file grows over time and is expected to be
+/// incomplete — which is why
 /// <see cref="Checks.DescriptionCheck"/> checks the kinds actually being emitted rather than every row in
 /// the manifest.
 /// </para>

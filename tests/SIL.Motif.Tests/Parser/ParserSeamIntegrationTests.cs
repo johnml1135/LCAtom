@@ -44,8 +44,10 @@ internal static class RealProject
 /// This is the test the route was chosen for. Motif can read a coverage percentage from any parser; what it
 /// cannot do without GUID-keyed analyses is say <i>which entry</i> or <i>which rule</i> an analysis used, and
 /// therefore whether a Proposal that edited that entry changed parsing the way it intended. The HermitCrab-XML
-/// route answers in synthetic keys (<c>mrule128</c>, <c>entry1083</c>) that name nothing Motif can look up.
-/// See <c>docs/research/2026-08-07-parser-seam-goes-through-the-project-file.md</c>.
+/// route answers in synthetic keys (<c>mrule128</c>, <c>entry1083</c>) that name nothing Motif can look up;
+/// measured side by side on the same 40 Sena 3 words, the two routes agree on every analysis — same
+/// morpheme counts, same consistent identity mapping — so the difference is purely the namespace, and
+/// only the GUID one (<c>603fc0f8-…</c>, <c>0832679c-…</c> for those same two keys) is usable.
 /// </para>
 /// <para>
 /// So the assertion is not "the parser ran" but <b>"every morpheme the parser named is an object this project

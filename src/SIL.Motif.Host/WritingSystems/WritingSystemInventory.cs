@@ -84,8 +84,7 @@ public sealed record WritingSystemInventory(
     /// which is Motif's business — but it also changes which alternative every multilingual field displays
     /// first, across the dictionary, the texts and every view in the application. Handing Motif a lever over
     /// project-wide configuration in order to fix a grammar-reporting problem is the wrong-sized tool, and it
-    /// crosses the boundary
-    /// <c>docs/adr/0034-the-boundary-with-fieldworks-state-versus-change.md</c> draws: FieldWorks owns the
+    /// crosses the boundary ADR 0034 draws: FieldWorks owns the
     /// project's current state, Motif owns what a change did to it.
     /// </para>
     /// <para>

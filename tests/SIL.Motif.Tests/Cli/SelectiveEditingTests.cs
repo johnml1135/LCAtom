@@ -12,7 +12,7 @@ namespace SIL.Motif.Tests.Cli;
 
 /// <summary>
 /// Selective Proposal editing (duplicate, remove, split) — the removal rule decided by
-/// docs/adr/0021-cli-is-the-full-surface-layer-1-churns.md, decision 6:
+/// ADR 0021, decision 6:
 /// <list type="number">
 /// <item>a removal with no dependents just happens;</item>
 /// <item>a removal that orphans a dependent warns and names every consequence, then requires

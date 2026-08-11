@@ -7,8 +7,10 @@ namespace SIL.Motif.Tests.Contract;
 
 /// <summary>
 /// Canonical id parsing, validation, GUID round-trip (network-order bytes), and minting, per
-/// docs/change-set-contract.md "IDs and GUID mapping" and
-/// docs/adr/0004-prerequisite-graph-stable-ids-bound-apply.md.
+/// the Change Set contract's "IDs and GUID mapping" (a 22-character unpadded base64url suffix
+/// decoding to the 16 canonical bytes, mapped left-to-right onto the textual GUID's bytes — never
+/// .NET's mixed-endian <c>Guid.ToByteArray()</c>) and ADR 0004 decision 2 (a <c>changeSetId</c> is a
+/// content-independent, uniquely minted 128-bit id, frozen at creation).
 /// </summary>
 public class CanonicalIdTests
 {

@@ -4,8 +4,7 @@ namespace SIL.Motif.Host.LcmUtils;
 
 /// <summary>
 /// Creates the throwaway <see cref="LcmCache"/> a Dry Run mutates, by either of the two candidate
-/// strategies, so they can be compared rather than assumed
-/// (<c>docs/adr/0016-scratch-cache-copy-not-undo.md</c>, grill item <c>A1</c>).
+/// strategies, so they can be compared rather than assumed (ADR 0016).
 /// </summary>
 /// <remarks>
 /// <para>

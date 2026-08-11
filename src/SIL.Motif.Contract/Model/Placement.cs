@@ -4,9 +4,9 @@ using SIL.Motif.Contract.Ids;
 namespace SIL.Motif.Contract.Model;
 
 /// <summary>
-/// Identity-relative anchor for ordered data. See docs/change-set-contract.md, "Ordered data".
-/// An edge anchor may omit one side, but never both — a placement that anchors nowhere carries no
-/// intent. Numeric indices are never canonical intent and have no representation here.
+/// Identity-relative anchor for ordered data (the Change Set contract's "Ordered data"). An edge
+/// anchor may omit one side, but never both — a placement that anchors nowhere carries no intent.
+/// Numeric indices are never canonical intent and have no representation here.
 /// </summary>
 public sealed record Placement
 {

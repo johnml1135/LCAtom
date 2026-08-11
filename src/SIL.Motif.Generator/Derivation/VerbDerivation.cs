@@ -11,7 +11,7 @@ namespace SIL.Motif.Generator.Derivation;
 public static class VerbDerivation
 {
     /// <summary>The pipe-separated verb string for one field's structural shape, in the manifest's
-    /// own ordering convention (docs/adr/0022-structure-is-derived-policy-is-five-rows.md).</summary>
+    /// own ordering convention (ADR 0022).</summary>
     public static string Derive(FieldKind kind, FieldCard? card) => (kind, card) switch
     {
         (FieldKind.Basic, null) => "set|clear",

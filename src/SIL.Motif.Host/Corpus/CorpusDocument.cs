@@ -35,7 +35,7 @@ namespace SIL.Motif.Host.Corpus;
 /// It is emphatically <b>not</b> a change detector pointed at the source. Motif never revisits a URL, never
 /// polls, and never asks whether eBible has news: text is grabbed when somebody decides to grab it, and a
 /// corpus stays exactly what it was until a person fetches again. Fetching again means a new corpus, which is
-/// the whole mechanism — see <c>docs/adr/0037-fetching-lives-outside-motif.md</c> decision 1.
+/// the whole mechanism — see ADR 0037 decision 1.
 /// </para>
 /// </param>
 /// <param name="IngestedUtc">When Motif took it in — distinct from when the source published it.</param>

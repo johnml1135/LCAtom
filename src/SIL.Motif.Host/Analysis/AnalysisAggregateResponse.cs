@@ -3,8 +3,7 @@ namespace SIL.Motif.Host.Analysis;
 /// <summary>
 /// Which Assessment, if any, the automatic side of an <see cref="AnalysisAggregateResponse"/> came from —
 /// the naming <c>GrammarCoverageFigure</c> requires of every figure it renders, carried here instead so
-/// this response can honour the same rule (<c>docs/adr/0038-expectations-are-fieldworks-approved-analyses.md</c>
-/// decision 8).
+/// this response can honour the same rule (ADR 0038 decision 8).
 /// </summary>
 public sealed record AnalysisAssessmentProvenance(string CorpusId, string CorpusSha256, string GrammarSourceSha256);
 

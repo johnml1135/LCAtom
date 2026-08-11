@@ -9,7 +9,11 @@ namespace SIL.Motif.Tests.Model;
 /// <summary>
 /// LibLCM-free unit tests for snapshot/effect JSON rendering and digest: fast checks
 /// that complement <see cref="SIL.Motif.Tests.Runner.ProposalDryRunnerTests"/>'s real-project
-/// proof. See docs/change-set-contract.md, "Canonical Semantic Snapshot" and "Expected effects".
+/// proof. Per the Change Set contract, the snapshot set is keyed by canonical id, never a storage
+/// GUID, and a field with no populated alternative is omitted rather than written as an empty
+/// value; the effect digest hashes the full set of <c>(canonicalId, field, before, after)</c>
+/// deltas, so a changed <c>before</c> moves the digest even when <c>after</c> is unchanged, and the
+/// digest is stable under reordering because it is a hash of a set, not a sequence.
 /// </summary>
 public class SnapshotAndEffectJsonTests
 {

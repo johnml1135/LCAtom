@@ -6,8 +6,8 @@ namespace SIL.Motif.Contract.Canonicalization;
 /// Thin wrapper around the RFC 8785 JSON Canonicalization Scheme (JCS) reference implementation
 /// (Anders Rundgren / Samuel Erdtman's <c>org.webpki</c> canonicalizer, ported to C#; distributed
 /// as the <c>jsoncanonicalizer</c> NuGet package). We deliberately do not hand-roll JCS's
-/// member-name sort order or ES6 number serialization — see
-/// docs/adr/0007-cross-language-digest-determinism.md.
+/// member-name sort order or ES6 number serialization — a Python or Rust reimplementation of either
+/// diverges from .NET's own output (ADR 0007).
 /// </summary>
 public static class CanonicalJson
 {

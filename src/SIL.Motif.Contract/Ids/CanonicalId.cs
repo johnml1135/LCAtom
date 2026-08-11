@@ -6,8 +6,8 @@ namespace SIL.Motif.Contract.Ids;
 
 /// <summary>
 /// The <c>&lt;optional prefix&gt;&lt;22-character unpadded base64url suffix&gt;</c> convention used
-/// for <c>proposalId</c>, every <c>operationId</c>, and proposed entity ids. See
-/// docs/change-set-contract.md, "IDs and GUID mapping".
+/// for <c>proposalId</c>, every <c>operationId</c>, and proposed entity ids — the Change Set
+/// contract's "IDs and GUID mapping" rule.
 /// </summary>
 /// <remarks>
 /// Only the trailing 22 characters are structurally enforced: URL-safe base64 alphabet, no
@@ -138,8 +138,8 @@ public readonly struct CanonicalId : IEquatable<CanonicalId>, IComparable<Canoni
 
     /// <summary>
     /// Mints a unique, content-independent, time-ordered id: a 48-bit millisecond Unix timestamp
-    /// (big-endian, most significant byte first) followed by 80 cryptographically random bits.
-    /// See docs/adr/0004-prerequisite-graph-stable-ids-bound-apply.md, decision 2.
+    /// (big-endian, most significant byte first) followed by 80 cryptographically random bits
+    /// (ADR 0004 decision 2).
     /// </summary>
     public static CanonicalId Mint(string prefix = "")
     {
@@ -209,7 +209,7 @@ public readonly struct CanonicalId : IEquatable<CanonicalId>, IComparable<Canoni
 
     /// <summary>
     /// Byte-ordinal comparison of the UTF-8 encoding of <see cref="Value"/> (prefix included), per
-    /// docs/adr/0007-cross-language-digest-determinism.md decision 2. Never decode-as-GUID.
+    /// ADR 0007 decision 2. Never decode-as-GUID.
     /// </summary>
     public int CompareTo(CanonicalId other) => Utf8Ordinal.Compare(Value, other.Value);
 

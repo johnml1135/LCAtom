@@ -12,11 +12,12 @@ using Xunit;
 namespace SIL.Motif.Tests.Runner;
 
 /// <summary>
-/// Stage C proof, on a real project: <see cref="ProposalDryRunner.Run"/> reads back real LibLCM
+/// Proof, on a real project: <see cref="ProposalDryRunner.Run"/> reads back real LibLCM
 /// state (not the intent) to compute expected effects for a <c>lexical/lexSense/setGloss</c> change
-/// set, is deterministic, and never leaves a mutation committed. See
-/// docs/change-set-contract.md, "DryRun" / "Expected effects", and
-/// docs/adr/0006-engine-reality-apply-readback-preflight.md.
+/// set, is deterministic, and never leaves a mutation committed. Per ADR 0006 decision 1, LibLCM's
+/// side effects — ownership cascade, computed defaults — apply synchronously as each mutation
+/// happens, so a before/after snapshot diff taken inside the still-open, never-committed unit of
+/// work sees the true cascaded state without needing to replay or predict it.
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
 public sealed class ProposalDryRunnerTests : IDisposable
@@ -88,7 +89,7 @@ public sealed class ProposalDryRunnerTests : IDisposable
     /// Two tests named DryRun_SetGloss_UnflaggedKind_DoesNotMarkCachePoisoned and
     /// DryRun_FlaggedKind_MarksCachePoisoned stood here, guarding a hand-maintained list of fields whose
     /// derived caches a rollback would leave stale. Both are gone with the rollback
-    /// (docs/adr/0016-scratch-cache-copy-not-undo.md). What replaces them is not
+    /// (ADR 0016). What replaces them is not
     /// another classification but the two properties the new design actually rests on: the scratch is
     /// genuinely mutated (so read-back is real), and it can only be used once (so a baseline is always
     /// a baseline the live project was really in).

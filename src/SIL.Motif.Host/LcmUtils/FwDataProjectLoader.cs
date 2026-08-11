@@ -83,10 +83,10 @@ public class FwDataProjectLoader
     /// <summary>
     /// Persists every committed change in <paramref name="cache"/> to its backing <c>.fwdata</c>
     /// file, and <b>does not return until the bytes are actually there</b>. The core does not save
-    /// projects itself (docs/change-set-contract.md, "Application Receipt"):
+    /// projects itself (the Change Set contract's Application Receipt semantics):
     /// <c>SIL.Motif.Runner.Apply.ProposalApplier.Apply</c> commits its unit of work but never calls
     /// this — it is the host's job, called only after every unit of work has closed (never while a
-    /// task is open — docs/adr/0005, decision 3; docs/adr/0006, decision 4).
+    /// task is open — ADR 0005 decision 3; ADR 0006 decision 4).
     /// </summary>
     /// <remarks>
     /// <para>
@@ -121,7 +121,7 @@ public class FwDataProjectLoader
     /// once, and it throws rather than degrading if a future liblcm renames it, because silently
     /// falling back to the asynchronous behaviour would restore a bug whose symptom points at the wrong
     /// component entirely. <b>Making a synchronous save publicly reachable is an upstream ask on
-    /// liblcm</b> (docs/adr/0016-scratch-cache-copy-not-undo.md), and this reflection is what should be
+    /// liblcm</b> (ADR 0016), and this reflection is what should be
     /// deleted when it lands.
     /// </para>
     /// </remarks>

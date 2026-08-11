@@ -15,8 +15,8 @@ namespace SIL.Motif.Host.Corpus;
 /// skipped rather than represented as an empty word.
 /// </para>
 /// <para>
-/// <b>Streamed and cappable on purpose.</b> Sena 3 has about 6,973 word forms
-/// (<c>docs/research/2026-08-06-parser-timing-measured.md</c>); a larger project must not force every form
+/// <b>Streamed and cappable on purpose.</b> Sena 3 has about 6,973 word forms;
+/// a larger project must not force every form
 /// into memory before a caller can decide it only wants a bounded sample. <see cref="ExtractForms"/> yields
 /// lazily from <c>IWfiWordformRepository.AllInstances()</c>, and <see cref="Extract"/> applies an optional
 /// cap before anything is sorted or hashed.

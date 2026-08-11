@@ -19,9 +19,8 @@ namespace SIL.Motif.Runner.DryRun;
 /// <summary>
 /// Stage C's Run: applies each operation to a <see cref="DryRunScratch"/> — a throwaway copy of the
 /// project — snapshotting the target before and after, diffing the two into expected effects, and
-/// binding an anchor a later Apply must match. See docs/change-set-contract.md, "DryRun", and
-/// docs/adr/0006-engine-reality-apply-readback-preflight.md decision 1 (read-back inside the open task
-/// sees true, synchronously-applied engine state).
+/// binding an anchor a later Apply must match. See ADR 0006 decision 1 (read-back inside the open
+/// task sees true, synchronously-applied engine state).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -37,7 +36,7 @@ namespace SIL.Motif.Runner.DryRun;
 /// it</b>. The copy is discarded instead (<see cref="DryRunScratch.Dispose"/>). That is why this method
 /// no longer classifies operations by whether they might leave a derived cache stale: staleness came
 /// from <c>UndoStack.Rollback</c> skipping forward-only setter hooks, and there is no rollback here to
-/// skip them (docs/adr/0016-scratch-cache-copy-not-undo.md).
+/// skip them (ADR 0016).
 /// </para>
 /// <para>
 /// <b>The scratch reads the project as it was last saved</b>, so the host must save before calling this

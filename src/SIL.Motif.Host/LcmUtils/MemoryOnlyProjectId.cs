@@ -4,8 +4,7 @@ namespace SIL.Motif.Host.LcmUtils;
 
 /// <summary>
 /// A minimal <see cref="IProjectIdentifier"/> for an in-memory scratch cache
-/// (<see cref="BackendProviderType.kMemoryOnly"/>), as required by
-/// <c>docs/adr/0016-scratch-cache-copy-not-undo.md</c>.
+/// (<see cref="BackendProviderType.kMemoryOnly"/>), as required by ADR 0016.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -18,8 +17,7 @@ namespace SIL.Motif.Host.LcmUtils;
 /// rather than cosmetic.</b> <c>BackendProvider.InitializeWritingSystemManager</c> only reaches the
 /// process-global <c>CoreGlobalWritingSystemRepository</c> singleton (via <c>SingletonsContainer</c>) when
 /// the project folder is non-empty. Keeping it empty is what lets a scratch cache coexist with a live one
-/// without touching shared writing-system state. See
-/// <c>docs/research/2026-08-05-createcachecopy-provenance-and-hazards.md</c> §3.
+/// without touching shared writing-system state.
 /// </para>
 /// <para>
 /// Note that a memory-only cache's writing systems are therefore synthesized from the bare language tag

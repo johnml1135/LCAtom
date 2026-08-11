@@ -18,7 +18,7 @@ namespace SIL.Motif.Runner.Operations;
 /// <remarks>
 /// Scoped to the two concrete classes this field can hold —
 /// <c>MoStemAllomorph</c> "or an affix form" — and deliberately excludes <c>MoAffixProcess</c>: per
-/// docs/api-surface-layer1.md's collapse criterion, that class is a *rule* (an <c>Input</c> pattern
+/// the layer-1 API surface's collapse criterion, that class is a *rule* (an <c>Input</c> pattern
 /// plus an <c>Output</c> action list), not a form with different fields, so it is a different
 /// construct entirely and out of scope for "create the entry's lexeme form."
 /// </remarks>

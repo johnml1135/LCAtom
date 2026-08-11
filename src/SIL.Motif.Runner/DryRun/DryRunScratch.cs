@@ -5,7 +5,7 @@ namespace SIL.Motif.Runner.DryRun;
 
 /// <summary>
 /// A single-use, throwaway <see cref="LcmCache"/> that a Dry Run is allowed to mutate and nobody is
-/// allowed to revert. See <c>docs/adr/0016-scratch-cache-copy-not-undo.md</c>.
+/// allowed to revert. See ADR 0016.
 /// </summary>
 /// <remarks>
 /// <para>

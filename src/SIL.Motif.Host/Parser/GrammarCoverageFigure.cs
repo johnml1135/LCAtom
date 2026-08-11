@@ -4,7 +4,7 @@ namespace SIL.Motif.Host.Parser;
 
 /// <summary>
 /// A coverage figure, computed from one <see cref="BatchAnalysis"/> over one <see cref="CorpusDescriptor"/>,
-/// carrying everything <c>docs/adr/0032-stem-assessment-is-pangloss-supplied-lexicon.md</c> §4 requires a
+/// carrying everything ADR 0032 §4 requires a
 /// coverage number to cite. There is deliberately no path in this codebase that produces a bare coverage
 /// percentage — that omission is the defect this type exists to make impossible rather than merely
 /// discouraged.
@@ -75,8 +75,7 @@ public sealed record GrammarCoverageFigure(
     /// <para>
     /// <b>There is no parameterless overload, and that omission is the whole design.</b> A caller cannot
     /// produce a bare number without saying what the current corpus and grammar are, so a figure can never be
-    /// stated without the identifiers that give it meaning
-    /// (<c>docs/adr/0038-expectations-are-fieldworks-approved-analyses.md</c> decision 8).
+    /// stated without the identifiers that give it meaning (ADR 0038 decision 8).
     /// </para>
     /// <para>
     /// <b>Staleness is handled by tense, not by a caveat.</b> A stale figure is not wrong — it is a correct

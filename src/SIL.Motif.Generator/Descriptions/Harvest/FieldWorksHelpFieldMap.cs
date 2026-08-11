@@ -24,12 +24,11 @@ namespace SIL.Motif.Generator.Descriptions.Harvest;
 /// </para>
 /// <para>
 /// <b>One field the resx points at was deliberately not mapped.</b>
-/// <c>khtpField-lexiconEdit-MoInflAffMsa-CategoryInfo</c> resolves to <c>Category_Info_field.htm</c>, which
-/// <c>docs/research/2026-08-09-kind-description-sources.md</c> proposed this page for
-/// <c>MoInflAffMsa.PartOfSpeech</c>. Reading the page refutes it: it describes a prose summary area whose
-/// harvested label is <c>Category Info.</c> — which is <c>MoInflAffMsa.MainEdit</c>, a different field.
-/// <c>MoInflAffMsa.PartOfSpeech</c>'s label is <c>Category</c>, and no page describes it. It stays
-/// unsourced, which is the correct outcome: a page that does not describe the field is not a source for it.
+/// <c>khtpField-lexiconEdit-MoInflAffMsa-CategoryInfo</c> resolves to <c>Category_Info_field.htm</c>. The
+/// page describes a prose summary area whose harvested label is <c>Category Info.</c> — which is
+/// <c>MoInflAffMsa.MainEdit</c>, not <c>MoInflAffMsa.PartOfSpeech</c>. <c>PartOfSpeech</c>'s own label is
+/// <c>Category</c>, and no page describes it. It stays unsourced, which is the correct outcome: a page that
+/// does not describe the field is not a source for it.
 /// </para>
 /// </remarks>
 public static class FieldWorksHelpFieldMap

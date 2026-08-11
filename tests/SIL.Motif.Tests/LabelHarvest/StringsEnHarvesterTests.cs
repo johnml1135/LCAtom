@@ -4,9 +4,13 @@ using Xunit;
 namespace SIL.Motif.Tests.LabelHarvest;
 
 /// <summary>
-/// Covers mechanism 1 (docs/research/2026-08-05-fieldworks-user-facing-names.md §1.1): the three
-/// class/list-level groups <c>strings-en.xml</c> carries, and the two lookups the parser needs from other
-/// sources to place each group's rows correctly.
+/// Covers FieldWorks' <c>strings-en.xml</c>, which carries class names and list-purpose names but no
+/// per-field text, in its three groups: <c>ClassNames</c> (a class id maps directly to one English
+/// string), <c>PossibilityListItemTypeNames</c> (keyed by a <c>CmPossibilityList</c>'s owning-field name
+/// rather than by class, so a caller must resolve the owning field to its real class before the row
+/// means anything), and <c>AlternativeTitles</c> (plurals and view-specific titles, prefixed with a
+/// class id that must be checked against known classes before being trusted, since some prefixes —
+/// <c>Concordance</c>, <c>PubSettings</c> — are not classes at all).
 /// </summary>
 public class StringsEnHarvesterTests
 {

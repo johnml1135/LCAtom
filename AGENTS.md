@@ -21,7 +21,7 @@ where the project is — a comment duplicating any of those three will eventuall
 | Check | Standard |
 |---|---|
 | Implementation comment (`//`, or `///` on a `private` member) | **one line, at most 110 characters** — reflowing a paragraph onto one long line is not compliance |
-| API doc (`///` on a `public`/`internal` type or member, an interface member, or an enum member) | long form as appropriate |
+| API doc (`///` on a `public`/`internal` type or member, an interface member, or an enum member) | long form as appropriate, and **complete**: no `docs/…md` path, because a tooltip cannot open one. Cite an ADR by number, name a contract in prose, inline the fact — or give a URL |
 | Plan and issue references — `MOT-22`, `docs/issues.md D8`, `issue B18` | **banned**; state the constraint instead |
 | ADR citations | **allowed** — an ADR number is immutable; cite it for a decision, never for a status |
 | Dates, slice/wiring status, history narrative, agent attribution | **banned** |

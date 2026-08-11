@@ -3,11 +3,11 @@ using System.Text.Json;
 namespace SIL.Motif.Contract.Parsing;
 
 /// <summary>
-/// Forbids floating-point-shaped JSON number literals in semantic value content. See
-/// docs/adr/0007-cross-language-digest-determinism.md decision 4: LibLCM's model has no
-/// floating-point fields, so a float appearing in an operation's desired-value payload can only be
-/// an unsupported custom-field type; forbidding it at parse time closes the open
-/// floating-point-determinism question rather than deferring it to a lossy formatter choice.
+/// Forbids floating-point-shaped JSON number literals in semantic value content. LibLCM's model has
+/// no floating-point fields, so a float appearing in an operation's desired-value payload can only
+/// be an unsupported custom-field type; forbidding it at parse time closes the open
+/// floating-point-determinism question rather than deferring it to a lossy formatter choice
+/// (ADR 0007 decision 4).
 /// </summary>
 /// <remarks>
 /// Does not apply to <c>confidence</c>, which is explicitly excluded from the intent digest and so

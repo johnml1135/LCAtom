@@ -4,7 +4,7 @@ namespace SIL.Motif.Contract.Ids;
 
 /// <summary>
 /// Unpadded, URL-safe base64 (RFC 4648 §5) encode/decode used for the canonical-id suffix
-/// convention. See docs/change-set-contract.md, "IDs and GUID mapping".
+/// convention — the Change Set contract's "IDs and GUID mapping" rule.
 /// </summary>
 public static class Base64Url
 {

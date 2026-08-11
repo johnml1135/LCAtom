@@ -17,37 +17,40 @@ namespace SIL.Motif.Runner.Apply;
 
 /// <summary>
 /// Stage D's committing Apply: idempotent, applied-log-writing counterpart to
-/// <see cref="SIL.Motif.Runner.DryRun.ProposalDryRunner"/>. See docs/change-set-contract.md,
-/// "Application Receipt", and docs/applied-log.md.
+/// <see cref="SIL.Motif.Runner.DryRun.ProposalDryRunner"/>. Applies every operation, reads back the
+/// actual effects, and returns a <see cref="Receipt"/> — emitted only after all operations,
+/// read-back, and invariant validation succeed and the unit of work commits; no receipt is emitted
+/// for a rolled-back application.
 /// </summary>
 /// <remarks>
 /// Dispatch is by <see cref="OperationHandlerRegistry"/> lookup, matching
 /// <see cref="SIL.Motif.Runner.DryRun.ProposalDryRunner"/>. Apply never calls
 /// <c>LcmCache.ActionHandlerAccessor.Commit()</c>/saves the project itself — the core does not save
-/// projects (docs/change-set-contract.md, "Application Receipt"); that is
-/// <see cref="SIL.Motif.Host.LcmUtils.FwDataProjectLoader.Save"/>'s job, run by the host after this
-/// method returns.
+/// projects; that is <see cref="SIL.Motif.Host.LcmUtils.FwDataProjectLoader.Save"/>'s job, run by the
+/// host after this method returns.
 /// </remarks>
 public static class ProposalApplier
 {
-    /// <param name="cache">The already-loaded, already-exclusively-writable project (docs/adr/0006, decision 4).</param>
+    /// <param name="cache">The already-loaded, already-exclusively-writable project (ADR 0006 decision 4).</param>
     /// <param name="proposal">The Proposal to apply.</param>
     /// <param name="anchor">
     /// The <see cref="BoundDryRunAnchor"/> a prior <see cref="SIL.Motif.Runner.DryRun.ProposalDryRunner.Run"/>
-    /// call produced against this same baseline (docs/adr/0004-prerequisite-graph-stable-ids-bound-apply.md,
-    /// decision 3). Required: a bare apply with no bound DryRun is a hard error
-    /// (<see cref="ApplyPreconditionException"/>). Apply re-reads the current footprint and hard-stops
-    /// with a drift diagnostic if it no longer matches <see cref="BoundDryRunAnchor.FootprintDigest"/>.
+    /// call produced against this same baseline (ADR 0004 decision 3). Required: a bare apply with no
+    /// bound DryRun is a hard error (<see cref="ApplyPreconditionException"/>). Apply re-reads the
+    /// current footprint and hard-stops with a drift diagnostic if it no longer matches
+    /// <see cref="BoundDryRunAnchor.FootprintDigest"/>.
     /// </param>
     /// <param name="applierIdentity">
-    /// Opaque, host-supplied applier identity (docs/applied-log.md, "Applier identity"). Empty is
-    /// permitted; the runner never infers identity. Must not contain <c>|</c> or a control
-    /// character, and must be at most <see cref="AppliedLogFormat.MaxUserLength"/> characters.
+    /// Opaque, host-supplied applier identity: FieldWorks supplies its configured user when it has
+    /// one, an agent supplies its own name (for example <c>linguistic-assistant</c>), and empty is
+    /// permitted — the runner is stateless and never infers identity itself. Must not contain
+    /// <c>|</c> or a control character, and must be at most
+    /// <see cref="AppliedLogFormat.MaxUserLength"/> characters.
     /// </param>
     /// <param name="description">
-    /// Free single-line human-facing text for the applied-log entry (docs/applied-log.md, "Record
-    /// format"). May contain <c>|</c>; must not contain a control character or exceed
-    /// <see cref="AppliedLogFormat.MaxDescriptionLength"/> characters. Defaults to empty.
+    /// Free single-line human-facing text for the applied-log entry. May contain <c>|</c>; must not
+    /// contain a control character or exceed <see cref="AppliedLogFormat.MaxDescriptionLength"/>
+    /// characters. Defaults to empty.
     /// </param>
     /// <remarks>
     /// The whole Proposal runs inside one outer, undoable unit of work — the only rollback left in
@@ -55,8 +58,7 @@ public static class ProposalApplier
     /// derived caches stale and nothing here can repair that, so the obligation lands on the caller:
     /// <b>if this throws, discard <paramref name="cache"/> and reload the project from the file that
     /// was saved before the Dry Run</b> — strictly stronger than the rollback, since reload also
-    /// discards the non-undoable schema phase (docs/adr/0005) rollback cannot reach
-    /// (docs/adr/0016-scratch-cache-copy-not-undo.md).
+    /// discards the non-undoable schema phase (ADR 0005) rollback cannot reach (ADR 0016).
     /// </remarks>
     public static Receipt Apply(
         LcmCache cache,

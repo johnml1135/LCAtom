@@ -10,8 +10,7 @@ namespace SIL.Motif.Host.Parser;
 /// <b>Motif shells out to the parser, and that is a deliberate first step rather than the end state.</b> The
 /// only route that yields GUID-keyed analyses — the ones Motif can tie back to the entry or rule a Proposal
 /// touched — goes through a project file, and the C ABI has no entry point that takes one: <c>hc_grammar_load</c>
-/// accepts HermitCrab XML only, whose identities are synthetic and uncorrelatable. See
-/// <c>docs/research/2026-08-07-parser-seam-goes-through-the-project-file.md</c>.
+/// accepts HermitCrab XML only, whose identities are synthetic and uncorrelatable.
 /// </para>
 /// <para>
 /// So a process boundary is the price of correct identities today. It is contained to this file and

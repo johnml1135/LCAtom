@@ -27,10 +27,16 @@
   why such a comment rots -- a one-line false claim rots identically. What rots is an unverifiable
   CLAIM ABOUT ANOTHER CODE ENTITY.
 
-  A claim is answered by a `pinned by` test citation OR by a `docs/*.md` the block quotes: a quoted,
-  attributed contract is anchored to a file this checker verifies exists, and rewording it to dodge
-  a claim verb would falsify the quotation. Plan and issue documents are forbidden by the line-level
-  family regardless, so this cannot be used to smuggle one back in.
+  A claim is answered by a `pinned by` test citation, and only by that. An earlier version also
+  accepted a `docs/*.md` the block quoted, on the reasoning that rewording a quotation to dodge a
+  claim verb would falsify it. That is true, and it is still not a licence: api-doc-defers-offline
+  now bans those paths from API docs outright, so the two rules contradicted each other. Where a
+  block quotes a contract, cite the test that settles the claim and quote on.
+
+  API DOC COMPLETENESS (api-doc-defers-offline) is the third family, and it has one rule: an API doc
+  says what it means or cites a URL anyone can open. A `docs/...md` path resolves only inside a
+  checkout, so it is unreadable from an IDE tooltip or the compiled XML docs -- the two places an API
+  doc is actually read. Cite an ADR by number, name a contract in prose, and inline the fact.
 
   The C# port differs from PanGloss's Rust original in two ways that matter:
 
@@ -77,7 +83,7 @@ $repoRoot = Split-Path $PSScriptRoot -Parent
 
 # Left-boundaried so a legitimate research filename's tail cannot match.
 $categories = [ordered]@{
-    'plan-reference'  = 'docs/plan-motif|docs/plan-cross-repo|docs/plan-lcmcrdt|plan-motif\.md|HANDOFF\.md|build-stages\.md|implementation-plan\.md|operation-catalog-plan\.md'
+    'plan-reference'  = 'docs/plan-motif|docs/plan-cross-repo|docs/plan-lcmcrdt|plan-motif\.md|HANDOFF\.md|build-stages\.md|implementation-plan\.md|operation-catalog-plan\.md|stage2-change-management\.md'
     'issue-reference' = '(?-i:\bMOT-\d+)|docs/issues|issues\.md|(?-i:\b(?:issue|issues)\s+[A-Z]\d+)|(?-i:\b[A-Z]\d+\b(?=[,.;:]?\s+(?:in\s+)?docs/issues))'
     'slice-status'    = 'not wired|NOT wired|purely additive|Purely additive|not yet consumed|no slice ships|today exactly|currently names|a later increment|later slice'
     # The lookbehind spares docs/research/ filenames, where the date is part of an anchor, not a claim.
@@ -117,7 +123,7 @@ if ($sourceFiles.Count -eq 0) {
     exit 2
 }
 
-$blockCategories = @('impl-comment-too-long', 'unanchored-exception', 'cross-reference-claim', 'docs-link-broken', 'dead-citation')
+$blockCategories = @('impl-comment-too-long', 'unanchored-exception', 'cross-reference-claim', 'docs-link-broken', 'dead-citation', 'api-doc-defers-offline')
 foreach ($cat in $blockCategories) { $categories[$cat] = $null }
 
 # Every declared name in the tree, so a `pinned by` citation is checked rather than trusted.
@@ -222,14 +228,18 @@ foreach ($file in $sourceFiles) {
                 Add-Hit 'impl-comment-too-long' $FilePath ($Start + 1) ("{0} lines: {1}" -f $Text.Count, $Text[0])
             }
         }
-        elseif ($isApiDoc -and $Text.Count -gt 12 -and $anchored) {
-            $script:counts['long-blocks-anchored']++
+        elseif ($isApiDoc) {
+            # An API doc stands alone; an outward pointer must be a URL, not a path in a checkout.
+            if ($joined -match 'docs/[A-Za-z0-9._/-]+\.md') {
+                Add-Hit 'api-doc-defers-offline' $FilePath ($Start + 1) ("{0} lines: {1}" -f $Text.Count, $Text[0])
+            }
+            elseif ($Text.Count -gt 12 -and $anchored) {
+                $script:counts['long-blocks-anchored']++
+            }
         }
 
-        # A claim about another entity, with neither a test that pins it nor a document it quotes.
-        if ($joined -match $script:claimVerbs -and
-            $joined -notmatch $script:citationPhrase -and
-            $joined -notmatch 'docs/[A-Za-z0-9._/-]+\.md') {
+        # A claim about another entity, with no citation of the test that pins it.
+        if ($joined -match $script:claimVerbs -and $joined -notmatch $script:citationPhrase) {
             Add-Hit 'cross-reference-claim' $FilePath ($Start + 1) $Text[0]
         }
 

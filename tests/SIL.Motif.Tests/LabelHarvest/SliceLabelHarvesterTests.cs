@@ -4,10 +4,13 @@ using Xunit;
 namespace SIL.Motif.Tests.LabelHarvest;
 
 /// <summary>
-/// Covers mechanism 2 (docs/research/2026-08-05-fieldworks-user-facing-names.md §1.2): the fixtures below
-/// are trimmed-down reproductions of the exact shapes that file cites — the <c>Gloss</c> ref that means two
-/// different classes' fields depending on the enclosing <c>&lt;layout class="…"&gt;</c>, and the
-/// nested-<c>&lt;indent&gt;</c> case.
+/// Covers the FieldWorks <c>.fwlayout</c>/<c>Parts/*.xml</c> slice system, the closest thing FieldWorks
+/// has to a canonical <c>(class, field) -&gt; label</c> registry: a labeled <c>&lt;part&gt;</c>/<c>&lt;slice&gt;</c>
+/// is keyed by the enclosing <c>&lt;layout class="…"&gt;</c>, never by the bare <c>ref</c>/<c>field</c> string
+/// alone, because that string is reused across unrelated classes. The fixtures below are trimmed-down
+/// reproductions of real shapes observed in FieldWorks' own configuration — the <c>Gloss</c> ref that means
+/// two different classes' fields depending on the enclosing layout, and a label nested inside an
+/// <c>&lt;indent&gt;</c> grouping element rather than directly under the layout.
 /// </summary>
 public class SliceLabelHarvesterTests
 {

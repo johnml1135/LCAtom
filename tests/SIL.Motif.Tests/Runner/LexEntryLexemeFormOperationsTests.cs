@@ -26,8 +26,7 @@ namespace SIL.Motif.Tests.Runner;
 /// Both verbs feed <c>UpdateHomographs</c> (<c>MorphTypeRASideEffects</c>/<c>LexemeFormOASideEffects</c>),
 /// which used to matter here: a DryRun mutated this cache and rolled back, rollback does not refresh
 /// those derived caches, so each round-trip had to dispose and reload the project between DryRun and
-/// Apply. The DryRun now runs on a throwaway copy, so it does not — see
-/// <c>docs/adr/0016-scratch-cache-copy-not-undo.md</c>.
+/// Apply. The DryRun now runs on a throwaway copy, so it does not — see ADR 0016.
 /// </remarks>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
 public sealed class LexEntryLexemeFormOperationsTests : IDisposable

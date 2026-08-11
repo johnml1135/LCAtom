@@ -5,9 +5,10 @@ namespace SIL.Motif.Tests.Contract;
 
 /// <summary>
 /// Fixed RFC 8785 canonicalization vectors exercising the JCS reference implementation wrapper
-/// (<see cref="CanonicalJson"/>): object member sorting, escaping, and ES6 number formatting. See
-/// docs/change-set-contract.md "Canonical JSON and hashes" and
-/// docs/adr/0007-cross-language-digest-determinism.md decision 3.
+/// (<see cref="CanonicalJson"/>): object member names sorted by UTF-16 code-unit order rather than
+/// a native <c>sorted()</c> (ADR 0007 decision 3), string escaping, and ES6 number formatting via
+/// ECMAScript <c>Number::toString</c>, then hashed as canonicalization bytes with SHA-256 per the
+/// Change Set contract's "Canonical JSON and hashes" rule.
 /// </summary>
 public class CanonicalJsonTests
 {

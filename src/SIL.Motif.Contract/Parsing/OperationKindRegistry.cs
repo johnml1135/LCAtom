@@ -5,9 +5,9 @@ using SIL.Motif.Contract.Model;
 namespace SIL.Motif.Contract.Parsing;
 
 /// <summary>
-/// The set of operation kinds strict parsing will accept. An unknown <c>kind</c> is a hard error
-/// (docs/change-set-contract.md, "Operation vocabulary": "Closed schemas expose only meaningful,
-/// supported properties").
+/// The set of operation kinds strict parsing will accept. An unknown <c>kind</c> is a hard error —
+/// the Change Set contract's "Operation vocabulary" rule that "closed schemas expose only
+/// meaningful, supported properties".
 /// </summary>
 /// <remarks>
 /// The full v1 operation inventory is produced from use cases and the LibLCM model coverage manifest

@@ -9,9 +9,10 @@ namespace SIL.Motif.Host.Analysis;
 /// <param name="ContentDigest">
 /// The parser's own identity digest for this analysis (<see cref="Parser.ParsedAnalysis.IdentityDigest"/>),
 /// carried through unchanged. This is <b>not</b> computed the same way as
-/// <see cref="ApprovedAnalysis.ContentDigest"/> — PanGloss's identity is coarser than FieldWorks'
-/// (it has no allomorph or sense identity; see <c>docs/research/2026-08-05-what-is-a-proper-word-analysis.md</c>
-/// §6) — so the two digest spaces are never comparable byte-for-byte as a match/mismatch verdict. This
+/// <see cref="ApprovedAnalysis.ContentDigest"/> — PanGloss's identity is coarser than FieldWorks': its
+/// analysis identity keys each morpheme on the chosen morphosyntactic analysis (MSA) GUID alone, with no
+/// field for the allomorph chosen or for per-morpheme sense — so the two digest spaces are never comparable
+/// byte-for-byte as a match/mismatch verdict. This
 /// field exists to distinguish and de-duplicate automatic analyses among themselves, not to be diffed
 /// against the manual side. Reporting them side by side, without inferring agreement or disagreement from
 /// whether the strings happen to match, is ADR 0038 decision 6's "Motif does not attribute cause" applied

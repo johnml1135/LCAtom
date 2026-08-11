@@ -28,7 +28,7 @@ public sealed record WordAnalysis(int Index, string Word, int ElapsedMs, WordOut
 
 /// <summary>
 /// A completed batch run, with the provenance a grammar coverage figure is required to carry
-/// (<c>docs/adr/0032-stem-assessment-is-pangloss-supplied-lexicon.md</c> §4).
+/// (ADR 0032 §4).
 /// </summary>
 /// <remarks>
 /// <see cref="TimedOut"/> is surfaced beside the counts on purpose: a caller computing grammar coverage must be able
