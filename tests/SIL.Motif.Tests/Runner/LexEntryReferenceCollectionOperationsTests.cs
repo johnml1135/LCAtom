@@ -15,12 +15,11 @@ using Xunit;
 namespace SIL.Motif.Tests.Runner;
 
 /// <summary>
-/// MOT-4 slice 2's round-trip proof for the three <c>rel/col</c>/<c>rel/seq</c>
+/// Round-trip proof for the three <c>rel/col</c>/<c>rel/seq</c>
 /// <c>addRef</c>/<c>removeRef</c> fields against a real project: <c>LexEntry.DialectLabels</c>
 /// (<c>rel/seq</c>), <c>.DoNotPublishIn</c>, <c>.DoNotShowMainEntryIn</c> (both <c>rel/col</c>). None
-/// Once distinguished from the LexemeForm/MorphType counterparts by needing no dispose/reload dance
-/// between DryRun and Apply; since ADR 0016's 2026-08-06 amendment none of them do, because no DryRun
-/// touches the live cache at all.
+/// need a dispose/reload dance between DryRun and Apply (ADR 0016), because no DryRun touches the
+/// live cache at all.
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
 public sealed class LexEntryReferenceCollectionOperationsTests : IDisposable
@@ -119,8 +118,7 @@ public sealed class LexEntryReferenceCollectionOperationsTests : IDisposable
     [Fact]
     public void Move_IsDeferred_TheKindIsNotRegistered()
     {
-        // docs/plan-motif.md, MOT-4: move is deliberately deferred for DialectLabels this slice --
-        // proven here rather than merely asserted in a comment.
+        // Move is deliberately deferred for DialectLabels; proven here, not merely asserted.
         Assert.False(OperationKindRegistry.IsKnown("lexical/lexEntry/moveDialectLabels"));
         Assert.Throws<NotSupportedException>(
             () => OperationHandlerRegistry.Resolve("lexical/lexEntry/moveDialectLabels", "test"));

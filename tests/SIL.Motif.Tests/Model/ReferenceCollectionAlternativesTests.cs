@@ -5,7 +5,7 @@ using Xunit;
 namespace SIL.Motif.Tests.Model;
 
 /// <summary>
-/// LibLCM-free unit tests for the member-set-as-alternatives-map convention MOT-4 slice 2 uses for
+/// LibLCM-free unit tests for the member-set-as-alternatives-map convention used for
 /// <c>rel/col</c> and <c>rel/seq</c> <c>addRef</c>/<c>removeRef</c> fields (<c>LexEntry.DialectLabels</c>,
 /// <c>.DoNotPublishIn</c>, <c>.DoNotShowMainEntryIn</c>): the full membership, not the one member an
 /// operation added or removed, exactly mirroring how a MultiUnicode field's before/after is always the

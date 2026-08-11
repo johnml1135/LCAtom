@@ -12,10 +12,7 @@ namespace SIL.Motif.Tests.Contract;
 /// </summary>
 public class CanonicalIdTests
 {
-    // The fixed byte-vector from docs/change-set-contract.md, "IDs and GUID mapping":
-    //   bytes:  00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f
-    //   suffix: AAECAwQFBgcICQoLDA0ODw
-    //   GUID:   00010203-0405-0607-0809-0a0b0c0d0e0f
+    // The fixed byte-vector documented in docs/change-set-contract.md, "IDs and GUID mapping".
     private static readonly byte[] FixedVectorBytes =
     {
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
@@ -103,8 +100,7 @@ public class CanonicalIdTests
     [Fact]
     public void Parse_RejectsPaddedSuffix()
     {
-        // A syntactically-padded 22-char base64-looking string containing '=' is not URL-safe
-        // base64 at all (padding is never part of the alphabet), so it must fail to parse.
+        // '=' padding is never part of the URL-safe base64 alphabet, so a padded string must fail.
         var padded = FixedVectorSuffix.Substring(0, 20) + "==";
         Assert.False(CanonicalId.TryParse(padded, out _, out var error));
         Assert.Contains("base64", error, StringComparison.OrdinalIgnoreCase);
@@ -116,11 +112,7 @@ public class CanonicalIdTests
     [InlineData("")]
     public void Parse_RejectsWrongLengthId(string text)
     {
-        // Note: a string *longer* than 22 characters is not "wrong length" -- the extra leading
-        // characters are simply an arbitrary, informational prefix (see
-        // GuidRoundTrip_WithArbitraryPrefix_PreservesPrefixAndBytes and
-        // Parse_WithPrefix_SeparatesPrefixFromSuffix). Only "shorter than the 22-character
-        // suffix" is structurally invalid.
+        // Longer than 22 chars isn't "wrong length" -- the extra leading chars are an arbitrary prefix.
         Assert.False(CanonicalId.TryParse(text, out _, out var error));
         Assert.NotNull(error);
     }
@@ -128,13 +120,7 @@ public class CanonicalIdTests
     [Fact]
     public void Parse_RejectsSuffixThatDecodesToWrongByteCount()
     {
-        // 20 base64url characters (no padding) decode to 15 bytes, not 16, even though the
-        // *string* is not 22 characters -- covered above. This case is 22 characters that are
-        // valid base64url but whose bit-length, once the implicit padding is restored, still
-        // decodes to something other than 16 bytes is structurally impossible for a 22-character
-        // unpadded base64 string (22 chars is always exactly 16 bytes' worth once '==' is
-        // restored); the four-rule contract is therefore fully covered by the length check above.
-        // This test instead nails down that a non-base64url character is rejected outright.
+        // 22 unpadded base64url chars always decode to exactly 16 bytes; this instead uses a bad char.
         var invalidChar = FixedVectorSuffix.Substring(0, 21) + "+"; // '+' is standard-base64, not URL-safe
         Assert.False(CanonicalId.TryParse(invalidChar, out _, out var error));
         Assert.Contains("URL-safe", error, StringComparison.OrdinalIgnoreCase);
@@ -175,9 +161,7 @@ public class CanonicalIdTests
     [Fact]
     public void Mint_IsTimeOrdered_ByFirst48Bits()
     {
-        // The leading 6 bytes are a millisecond timestamp, so ids minted later must never sort
-        // earlier when compared by their raw bytes (random low bits cannot decrease a strictly
-        // later millisecond value's ordering across the timestamp portion).
+        // Leading 6 bytes are a millisecond timestamp: later-minted ids must never sort earlier by raw bytes.
         var first = CanonicalId.Mint();
         System.Threading.Thread.Sleep(5);
         var second = CanonicalId.Mint();

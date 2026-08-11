@@ -17,7 +17,7 @@ namespace SIL.Motif.Tests.Apply;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <c>docs/adr/0016-scratch-cache-copy-not-undo.md</c> (amended 2026-08-06) has the Dry Run mutate a
+/// <c>docs/adr/0016-scratch-cache-copy-not-undo.md</c> has the Dry Run mutate a
 /// file copy and bind an anchor from it, then has Apply re-probe the live project and refuse on
 /// mismatch. That only works if the digest is a function of the <i>data</i>. If an hvo — LibLCM's
 /// per-cache integer object id, assigned in load order and not stable across loads — reached the
@@ -54,8 +54,7 @@ public sealed class AnchorsAreCrossCachePortableTests : IDisposable
 
         var wsTag = _cache.WritingSystemFactory.GetStrFromWs(_cache.DefaultAnalWs);
 
-        // A text field and a reference field in one Proposal: the reference is the case that would
-        // break if a snapshotter ever projected an hvo instead of a guid.
+        // A reference field too: this is the case that would break if a snapshotter projected an hvo.
         var proposal = new Proposal(
             contractVersions: new Dictionary<string, string> { ["lexical"] = "1.0", ["grammar"] = "1.0" },
             proposalId: CanonicalId.Mint(),
@@ -74,8 +73,7 @@ public sealed class AnchorsAreCrossCachePortableTests : IDisposable
 
         Assert.Equal(fromOriginal, fromCopy);
 
-        // Not vacuously equal: the digest does respond to the data, so the equality above is evidence
-        // that the *data* matched rather than that the digest ignores its inputs.
+        // Not vacuously equal: proves the digest responds to data rather than ignoring its inputs.
         var otherSense = _cache.ServiceLocator.GetInstance<ILexSenseRepository>()
             .AllInstances().First(s => s.Guid != sense.Guid);
         var differentProposal = new Proposal(

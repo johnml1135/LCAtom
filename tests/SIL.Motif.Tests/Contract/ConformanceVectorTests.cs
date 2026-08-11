@@ -48,11 +48,7 @@ public class ConformanceVectorTests
         Assert.True(count >= 2, $"Expected at least two frozen conformance vectors, found {count}.");
     }
 
-    /// <summary>
-    /// Locates <c>tests/conformance/proposal-digest</c> as a sibling of this test assembly's repo
-    /// checkout, the same directory-walk-up technique <c>ProjectLoadTests</c> uses to find the
-    /// FieldWorks fixture.
-    /// </summary>
+    /// <summary>Walks up from the test assembly to the repo root to find the conformance vectors.</summary>
     private static string FindConformanceRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

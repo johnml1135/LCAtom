@@ -11,9 +11,8 @@ using Xunit;
 namespace SIL.Motif.Tests.Cli;
 
 /// <summary>
-/// MOT-18: selective Proposal editing (duplicate, remove, split) — docs/plan-motif.md, MOT-18, and
-/// the removal rule decided by
-/// docs/adr/0021-cli-is-the-full-surface-layer-1-churns.md, decision 6 (<c>J43</c>):
+/// Selective Proposal editing (duplicate, remove, split) — the removal rule decided by
+/// docs/adr/0021-cli-is-the-full-surface-layer-1-churns.md, decision 6:
 /// <list type="number">
 /// <item>a removal with no dependents just happens;</item>
 /// <item>a removal that orphans a dependent warns and names every consequence, then requires
@@ -68,9 +67,7 @@ public sealed class SelectiveEditingTests : IDisposable
         return ExtractProposalId(finalize.Output);
     }
 
-    /// <summary>Directly binds a synthetic anchor onto a Proposal's manifest, standing in for a real
-    /// <c>dry-run</c> (which needs a live project) — exercising exactly the field <c>Finalize</c>'s
-    /// amend path clears, without paying for a FieldWorks project load in every test.</summary>
+    /// <summary>Stands in for a real dry-run anchor, without a FieldWorks project load per test.</summary>
     private void BindSyntheticAnchor(string proposalId)
     {
         var store = new ProposalStore(_storeDir);
@@ -151,7 +148,7 @@ public sealed class SelectiveEditingTests : IDisposable
         Assert.Null(ReadAnchor(proposalId)); // stale anchor cleared by the edit
     }
 
-    // ---- remove: orphans a dependent -> warns, enumerates, refuses without --force -------------
+    // ---- remove: orphans a dependent -> warns, enumerates, blocked without --force -------------
 
     [Fact]
     public void RemoveOperations_WithDependent_WarnsAndRefusesWithoutForce()
@@ -328,6 +325,11 @@ public sealed class SelectiveEditingTests : IDisposable
 
     // ---- split: partitions operations into new Proposals, source untouched ---------------------
 
+    /// <summary>
+    /// Models "keep only rules 1 and 4, not 5" as a split into two successor Proposals rather than a
+    /// discard, since split's job is partitioning, not dropping — that composes with <c>remove</c>: split,
+    /// then reopen+remove on whichever fragment should drop rule 5.
+    /// </summary>
     [Fact]
     public void Split_PartitionsOperationsIntoNewProposals_SourceUnchanged()
     {
@@ -343,9 +345,6 @@ public sealed class SelectiveEditingTests : IDisposable
         var sourceId = ExtractProposalId(finalize.Output);
         BindSyntheticAnchor(sourceId);
 
-        // "keep only rules 1 and 4, not 5" — modeled here as a split into two successor Proposals
-        // rather than a discard, since split's job is partitioning, not dropping (that is `remove`'s
-        // job — the two compose: split, then reopen+remove on whichever fragment should drop rule 5).
         var groups = new[]
         {
             new Commands.SplitGroup("keep", new[] { op1Id, op2Id }),
@@ -403,8 +402,7 @@ public sealed class SelectiveEditingTests : IDisposable
         Assert.Equal(0, forced.ExitCode);
 
         var groupBDraft = ReadDraft("groupB");
-        // The severed dependency is kept exactly as authored, not silently dropped or rewritten —
-        // it now names an operation id outside groupB's own operations array.
+        // The severed dependency is kept exactly as authored: it names an id outside groupB's own operations.
         Assert.Contains(op1Id, groupBDraft.Operations.Single().DependsOn);
     }
 

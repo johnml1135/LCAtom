@@ -17,9 +17,9 @@ using Xunit;
 namespace SIL.Motif.Tests.Runner;
 
 /// <summary>
-/// MOT-4 slice 2's round-trip proof for <c>LexEntry.LexemeForm</c> (owning/atomic, <c>create|delete</c>)
-/// against a real project — the one field this slice's plan calls out as needing hand-written
-/// entity-construction validity (ADR 0014; docs/plan-motif.md, MOT-4), because <c>MoForm</c> is
+/// Round-trip proof for <c>LexEntry.LexemeForm</c> (owning/atomic, <c>create|delete</c>)
+/// against a real project — a field needing hand-written
+/// entity-construction validity (ADR 0014), because <c>MoForm</c> is
 /// abstract and which concrete class to build depends on the authored morph type.
 /// </summary>
 /// <remarks>
@@ -27,7 +27,7 @@ namespace SIL.Motif.Tests.Runner;
 /// which used to matter here: a DryRun mutated this cache and rolled back, rollback does not refresh
 /// those derived caches, so each round-trip had to dispose and reload the project between DryRun and
 /// Apply. The DryRun now runs on a throwaway copy, so it does not — see
-/// <c>docs/adr/0016-scratch-cache-copy-not-undo.md</c>, amended 2026-08-06.
+/// <c>docs/adr/0016-scratch-cache-copy-not-undo.md</c>.
 /// </remarks>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
 public sealed class LexEntryLexemeFormOperationsTests : IDisposable
@@ -65,8 +65,7 @@ public sealed class LexEntryLexemeFormOperationsTests : IDisposable
         Assert.Empty(effect.Before);
         Assert.Equal(newFormId.Value, effect.After[ReferenceFieldAlternativesKey]);
 
-        // No dispose/reload between DryRun and Apply: the DryRun ran on a throwaway copy, so this
-        // cache never saw it (docs/adr/0016-scratch-cache-copy-not-undo.md, amended 2026-08-06).
+        // No dispose/reload needed: the DryRun ran on a throwaway copy, so this cache never saw it.
 
         var receipt = ProposalApplier.Apply(_cache, proposal, dryRun.Anchor, "motif-tests");
         Assert.False(receipt.AlreadyApplied);
@@ -85,8 +84,7 @@ public sealed class LexEntryLexemeFormOperationsTests : IDisposable
     [Fact]
     public void Create_OnAFreshEntry_PrefixMorphType_BuildsAConcreteMoAffixAllomorph_RoundTripsDryRunAndApply()
     {
-        // The other branch of the hand-written concrete-class decision (MoFormConcreteClassSelection):
-        // an affix-shaped morph type must produce MoAffixAllomorph, never MoStemAllomorph.
+        // The other branch of MoFormConcreteClassSelection: affix-shaped must produce MoAffixAllomorph.
         var entryGuid = CreateBareEntry();
         var prefixMorphTypeId = CanonicalId.FromGuid(MoMorphTypeTags.kguidMorphPrefix);
         var newFormId = CanonicalId.Mint();
@@ -125,8 +123,7 @@ public sealed class LexEntryLexemeFormOperationsTests : IDisposable
         var entry = _cache.ServiceLocator.GetInstance<ILexEntryRepository>().GetObject(entryGuid);
         Assert.Equal(newFormId.ToGuid(), entry.LexemeFormOA.Guid);
 
-        // The single owning-atomic assignment performed the replacement -- this proposal contains
-        // exactly one operation (never a separate authored delete for the incumbent).
+        // One owning-atomic assignment did the replacement -- never a separate authored delete.
         Assert.Single(proposal.Operations);
     }
 
@@ -141,8 +138,7 @@ public sealed class LexEntryLexemeFormOperationsTests : IDisposable
         Assert.Equal(oldFormGuid, CanonicalId.Parse(effect.Before[ReferenceFieldAlternativesKey]).ToGuid());
         Assert.Empty(effect.After);
 
-        // No dispose/reload between DryRun and Apply: the DryRun ran on a throwaway copy, so this
-        // cache never saw it (docs/adr/0016-scratch-cache-copy-not-undo.md, amended 2026-08-06).
+        // No dispose/reload needed: the DryRun ran on a throwaway copy, so this cache never saw it.
         var receipt = ProposalApplier.Apply(_cache, proposal, dryRun.Anchor, "motif-tests");
         Assert.False(receipt.AlreadyApplied);
 
@@ -163,16 +159,16 @@ public sealed class LexEntryLexemeFormOperationsTests : IDisposable
         Assert.Null(entry.LexemeFormOA);
     }
 
+    /// <summary>
+    /// op1 (a valid create) succeeds inside the unit of work, then op2 (a delete whose target legitimately
+    /// has no lexeme form) throws — the whole Proposal is one unit of work, so op1's mutation must be
+    /// undone too. op2's target is deliberately real and resolvable, not a nonexistent guid: a bogus
+    /// target would fail earlier, in the footprint pre-flight (see <c>ProposalApplierTests.Apply_UnknownTarget_...</c>),
+    /// and this test wants the failure to happen mid-apply instead.
+    /// </summary>
     [Fact]
     public void Apply_MidProposalFailure_RollsBackTheCreate_AndWritesNoAppliedLogEntry()
     {
-        // Rollback proof: op1 (a valid create) succeeds inside the unit of work, then op2 (a delete
-        // whose target legitimately has no lexeme form) throws -- the whole Proposal is one unit of
-        // work, so op1's mutation must be undone too, and the project must come back exactly where it
-        // started. op2's target is deliberately a REAL, resolvable entry (not a nonexistent guid): a
-        // bogus target would fail earlier, inside Apply's footprint pre-flight, before any unit of
-        // work opens at all -- see ProposalApplierTests.Apply_UnknownTarget_... for that separate case
-        // -- and this test wants the failure to happen mid-apply instead.
         var entryGuid = CreateBareEntry();
         var newFormId = CanonicalId.Mint();
         var stemMorphTypeId = CanonicalId.FromGuid(MoMorphTypeTags.kguidMorphStem);
@@ -236,14 +232,15 @@ public sealed class LexEntryLexemeFormOperationsTests : IDisposable
             () => LexEntryLexemeFormDeletePayload.Parse(afterDocument.RootElement));
     }
 
+    /// <summary>
+    /// A canonical id naming no real object throws straight out of <c>ICmObjectRepository.GetObject</c>,
+    /// the same behaviour <c>TargetResolution</c> already has for an operation's own target — this proves
+    /// <c>ReferenceFieldLowering.Resolve</c> gets the identical "let the real resolver fail loudly"
+    /// treatment for a <i>referenced</i> id.
+    /// </summary>
     [Fact]
     public void Create_UnresolvableMorphType_ThrowsNamingTheGuid()
     {
-        // Resolving a canonical id that names no real object at all throws straight out of
-        // ICmObjectRepository.GetObject (CanonicalIdResolver's own remarks: "no additional preflight
-        // or existence check of its own"), the same behaviour TargetResolution already has for an
-        // operation's own target -- this proves ReferenceFieldLowering.Resolve gets the identical
-        // "let the real resolver fail loudly" treatment for a *referenced* id.
         var entryGuid = CreateBareEntry();
         var unresolvableGuid = Guid.NewGuid();
         var bogusMorphType = CanonicalId.FromGuid(unresolvableGuid);
@@ -257,9 +254,7 @@ public sealed class LexEntryLexemeFormOperationsTests : IDisposable
     [Fact]
     public void Create_MorphTypeResolvesButIsTheWrongType_ThrowsNamingTheMismatch()
     {
-        // A canonical id that resolves to a REAL object of the wrong class is the case
-        // ReferenceFieldLowering.Resolve itself is responsible for rejecting (as opposed to the
-        // previous test, where the id names nothing at all).
+        // Distinct from the previous test: this id resolves, but to an object of the wrong class.
         var entryGuid = CreateBareEntry();
         var wrongTypeId = CanonicalId.FromGuid(entryGuid); // a LexEntry, not a MoMorphType
         var proposal = BuildCreateProposal(
@@ -273,10 +268,7 @@ public sealed class LexEntryLexemeFormOperationsTests : IDisposable
     [Fact]
     public void Create_ANonStandardMorphType_ThrowsNamingTheClosedTable()
     {
-        // MoFormConcreteClassSelection's morph-type -> concrete-class table is closed by design
-        // (docs/plan-motif.md, MOT-4: this mapping "lives outside MasterLCModel.xml"). A real,
-        // resolvable MoMorphType whose guid is not one of the nineteen standard ones must fail
-        // loudly naming the table, never guess a concrete class.
+        // The morph-type -> concrete-class table is closed: a guid outside the 19 standard ones must fail.
         var entryGuid = CreateBareEntry();
         var customMorphTypeGuid = Guid.NewGuid();
         var actionHandler = _cache.ServiceLocator.GetInstance<IActionHandler>();
@@ -297,12 +289,7 @@ public sealed class LexEntryLexemeFormOperationsTests : IDisposable
 
     private const string ReferenceFieldAlternativesKey = "ref";
 
-    /// <summary>
-    /// Creates a bare <c>LexEntry</c> with no lexeme form and persists it, so the DryRun's scratch copy
-    /// -- which is a copy of the FILE -- can see it. Apply never saves itself
-    /// (docs/change-set-contract.md, "Application Receipt"), so a setup mutation left uncommitted would
-    /// be invisible to the copy and the resulting anchor would describe a state this cache is not in.
-    /// </summary>
+    /// <summary>Persists the entry: DryRun's scratch is a file copy, so it'd miss an uncommitted edit.</summary>
     private Guid CreateBareEntry()
     {
         var actionHandler = _cache.ServiceLocator.GetInstance<IActionHandler>();

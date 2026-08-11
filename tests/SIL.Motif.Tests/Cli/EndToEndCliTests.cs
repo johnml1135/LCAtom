@@ -12,11 +12,11 @@ using Xunit;
 namespace SIL.Motif.Tests.Cli;
 
 /// <summary>
-/// Stage E proof, on a real project: drives the CLI command handlers directly (never shells out to
+/// Proof, on a real project: drives the CLI command handlers directly (never shells out to
 /// the built executable) through the full <c>new -&gt; add-set-gloss -&gt; finalize -&gt; dry-run -&gt;
 /// apply -&gt; log</c> loop against a real sense's <c>CanonicalId.FromGuid(sense.Guid)</c>, proving
 /// the files store (drafts/objects/manifests) and the thin CLI drive the real Contract/Runner/Host
-/// end to end. See docs/build-stages.md, Stage E, and docs/stage2-change-management.md, S1/S3/S4.
+/// end to end.
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
 public sealed class EndToEndCliTests : IDisposable
@@ -74,8 +74,7 @@ public sealed class EndToEndCliTests : IDisposable
 
         var proposalId = ExtractProposalId(finalizeResult.Output);
         var intentDigest = ExtractIntentDigest(finalizeResult.Output);
-        // Defect 1: objects are keyed by intentDigest (content-addressed, write-once), not by the
-        // frozen proposalId — see ProposalStore's remarks and docs/stage2-change-management.md, S1.
+        // Objects are keyed by intentDigest (content-addressed, write-once), not by proposalId.
         var objectPath = new ProposalStore(_storeDir).ObjectPath(intentDigest);
         var manifestPath = Path.Combine(_storeDir, "manifests", proposalId + ".json");
         Assert.True(File.Exists(objectPath));

@@ -15,11 +15,10 @@ using Xunit;
 namespace SIL.Motif.Tests.Runner;
 
 /// <summary>
-/// MOT-4 slice 2's round-trip proof for <c>MoForm.MorphType</c> (<c>rel/atomic</c>, <c>set|clear</c>)
-/// against a real project. This field feeds <c>UpdateHomographs</c> (<c>MorphTypeRASideEffects</c>),
-/// which used to force a dispose/reload between DryRun and Apply because the DryRun mutated this cache
-/// and rolled back. It runs on a throwaway copy now, so it does not — see
-/// <c>docs/adr/0016-scratch-cache-copy-not-undo.md</c>, amended 2026-08-06.
+/// Round-trip proof for <c>MoForm.MorphType</c> (<c>rel/atomic</c>, <c>set|clear</c>)
+/// against a real project. This field feeds <c>UpdateHomographs</c> (<c>MorphTypeRASideEffects</c>);
+/// the DryRun runs on a throwaway copy and never mutates this cache, so no dispose/reload is needed
+/// between DryRun and Apply (<c>docs/adr/0016-scratch-cache-copy-not-undo.md</c>).
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
 public sealed class MoFormMorphTypeOperationsTests : IDisposable
@@ -61,8 +60,7 @@ public sealed class MoFormMorphTypeOperationsTests : IDisposable
         Assert.Equal(originalMorphTypeGuid, CanonicalId.Parse(effect.Before[RefKey]).ToGuid());
         Assert.Equal(newMorphTypeGuid, CanonicalId.Parse(effect.After[RefKey]).ToGuid());
 
-        // No dispose/reload between DryRun and Apply: the DryRun ran on a throwaway copy, so this
-        // cache never saw it (docs/adr/0016-scratch-cache-copy-not-undo.md, amended 2026-08-06).
+        // No dispose/reload needed: the DryRun ran on a throwaway copy, so this cache never saw it.
         var receipt = ProposalApplier.Apply(_cache, proposal, dryRun.Anchor, "motif-tests");
         Assert.False(receipt.AlreadyApplied);
 
@@ -85,8 +83,7 @@ public sealed class MoFormMorphTypeOperationsTests : IDisposable
         Assert.Equal(originalMorphTypeGuid, CanonicalId.Parse(effect.Before[RefKey]).ToGuid());
         Assert.Empty(effect.After);
 
-        // No dispose/reload between DryRun and Apply: the DryRun ran on a throwaway copy, so this
-        // cache never saw it (docs/adr/0016-scratch-cache-copy-not-undo.md, amended 2026-08-06).
+        // No dispose/reload needed: the DryRun ran on a throwaway copy, so this cache never saw it.
         var receipt = ProposalApplier.Apply(_cache, proposal, dryRun.Anchor, "motif-tests");
         Assert.False(receipt.AlreadyApplied);
 
@@ -97,10 +94,7 @@ public sealed class MoFormMorphTypeOperationsTests : IDisposable
     [Fact]
     public void Apply_MidProposalFailure_RollsBackTheSet_AndWritesNoAppliedLogEntry()
     {
-        // op1: a valid set on form1. op2: the SAME (valid, resolvable) target but a malformed
-        // 'after' payload (missing 'ref') -- fails only once the real, committing apply loop reads
-        // the payload, matching ProposalApplierTests.Apply_MidProposalFailure_RollsBack_...'s own
-        // shape for exactly this reason (a bogus target fails earlier, in the footprint pre-flight).
+        // op2's payload is malformed, not its target, so failure happens in apply, not footprint pre-flight.
         var form = FindStemAllomorph();
         var target = CanonicalId.FromGuid(form.Guid);
         var op1 = BuildSetOperation(target, CanonicalId.FromGuid(MoMorphTypeTags.kguidMorphBoundStem));

@@ -27,6 +27,11 @@
   why such a comment rots -- a one-line false claim rots identically. What rots is an unverifiable
   CLAIM ABOUT ANOTHER CODE ENTITY.
 
+  A claim is answered by a `pinned by` test citation OR by a `docs/*.md` the block quotes: a quoted,
+  attributed contract is anchored to a file this checker verifies exists, and rewording it to dodge
+  a claim verb would falsify the quotation. Plan and issue documents are forbidden by the line-level
+  family regardless, so this cannot be used to smuggle one back in.
+
   The C# port differs from PanGloss's Rust original in two ways that matter:
 
     - `<see cref="X"/>` is resolved by the C# compiler (CS1574), so code-to-code references are NOT
@@ -221,8 +226,10 @@ foreach ($file in $sourceFiles) {
             $script:counts['long-blocks-anchored']++
         }
 
-        # A claim about another entity, with no citation of the test that pins it.
-        if ($joined -match $script:claimVerbs -and $joined -notmatch $script:citationPhrase) {
+        # A claim about another entity, with neither a test that pins it nor a document it quotes.
+        if ($joined -match $script:claimVerbs -and
+            $joined -notmatch $script:citationPhrase -and
+            $joined -notmatch 'docs/[A-Za-z0-9._/-]+\.md') {
             Add-Hit 'cross-reference-claim' $FilePath ($Start + 1) $Text[0]
         }
 

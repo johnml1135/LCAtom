@@ -4,7 +4,7 @@ using Xunit;
 namespace SIL.Motif.Tests.Model;
 
 /// <summary>
-/// LibLCM-free unit tests for the Boolean-as-alternatives-map convention MOT-4's Boolean fields
+/// LibLCM-free unit tests for the Boolean-as-alternatives-map convention Boolean fields
 /// (<c>LexEntry.DoNotUseForParsing</c>, <c>MoForm.IsAbstract</c>) use so a scalar value can reuse
 /// <see cref="SIL.Motif.Model.Effects.ExpectedEffect.Before"/>/<c>After</c>'s already-shipped
 /// <c>IReadOnlyDictionary&lt;string, string&gt;</c> shape without widening it.

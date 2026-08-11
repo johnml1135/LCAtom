@@ -13,12 +13,12 @@ using Xunit;
 namespace SIL.Motif.Tests.Runner;
 
 /// <summary>
-/// MOT-4 slice 3's round-trip proof, on a real project, for a representative field per shape
+/// Round-trip proof, on a real project, for a representative field per shape
 /// <see cref="SIL.Motif.Generator.Emit.Slice3CatalogWriter"/> emits: basic MultiUnicode
 /// (<c>CmPossibility.Abbreviation</c>), basic Boolean (<c>MoInflAffixSlot.Optional</c>),
 /// <c>rel/atomic</c> (<c>MoStemMsa.PartOfSpeech</c>), <c>rel/col</c> (<c>MoStemMsa.FromPartsOfSpeech</c>),
-/// and <c>rel/seq</c> (<c>MoInflAffixTemplate.PrefixSlots</c>) — the same shapes slices 1/2 already
-/// proved, now exercised on grammar classes rather than only the lexical-entry family.
+/// and <c>rel/seq</c> (<c>MoInflAffixTemplate.PrefixSlots</c>) — the same shapes already proved on the
+/// lexical-entry family, now exercised on grammar classes as well.
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
 public sealed class GeneratedSlice3OperationsTests : IDisposable
@@ -51,8 +51,7 @@ public sealed class GeneratedSlice3OperationsTests : IDisposable
     [Fact]
     public void SetThenClear_CmPossibilityAbbreviation_MultiUnicode_RoundTripsThroughDryRunAndApply()
     {
-        // A part of speech IS-A CmPossibility (ADR 0023's own example), so a real, already-seeded
-        // IPartOfSpeech is a perfectly good target for a field declared on the base class.
+        // A part of speech IS-A CmPossibility (ADR 0023), so it's a valid target for a base-class field.
         var pos = FindAnyPartOfSpeech();
         var target = CanonicalId.FromGuid(pos.Guid);
         var wsTag = _cache.WritingSystemFactory.GetStrFromWs(_cache.DefaultAnalWs);

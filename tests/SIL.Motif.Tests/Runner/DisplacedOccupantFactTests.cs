@@ -20,7 +20,7 @@ namespace SIL.Motif.Tests.Runner;
 /// is the `SetPartOfSpeech`/MSA bug class this contract exists to prevent."*
 /// </para>
 /// <para>
-/// `MOT-4` slice 2 shipped <c>create</c>-into-occupied with no such disclosure or refusal, on the basis of an
+/// The current <c>create</c>-into-occupied path ships with no such disclosure or refusal, on the basis of an
 /// empirical claim that the incumbent is in fact destroyed. That claim was not asserted anywhere:
 /// <c>LexEntryLexemeFormOperationsTests.Create_IntoAnOccupiedSlot_...</c> captures the old GUID and checks it
 /// appears in the Dry Run's <c>Before</c>, but never checks whether the object still exists afterwards — while
@@ -28,8 +28,8 @@ namespace SIL.Motif.Tests.Runner;
 /// </para>
 /// <para>
 /// So this test asks LibLCM directly, with no Motif machinery in the way. Whichever way it answers, one of the
-/// two is wrong and the answer decides which: if the incumbent survives, slice 2 has shipped the bug class the
-/// contract names; if it does not, the contract's premise is wrong for <c>owning/atomic</c> and the
+/// two is wrong and the answer decides which: if the incumbent survives, the current code has shipped the bug
+/// class the contract names; if it does not, the contract's premise is wrong for <c>owning/atomic</c> and the
 /// refuse-unless-disposed rule is guarding nothing.
 /// </para>
 /// </remarks>
@@ -57,8 +57,7 @@ public sealed class DisplacedOccupantFactTests : IDisposable
 
         Assert.True(objects.IsValidObjectId(incumbentGuid), "precondition: the incumbent exists");
 
-        // The plainest possible expression of the question: one owning-atomic assignment, via LibLCM's own
-        // factory, with no Motif lowering involved.
+        // The plainest expression of the question: one owning-atomic assignment via LibLCM's own factory.
         NonUndoableUnitOfWorkHelper.Do(_cache.ActionHandlerAccessor, () =>
         {
             var replacement = _cache.ServiceLocator.GetInstance<IMoStemAllomorphFactory>().Create();

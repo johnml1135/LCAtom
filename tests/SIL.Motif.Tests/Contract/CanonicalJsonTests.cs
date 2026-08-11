@@ -20,8 +20,7 @@ public class CanonicalJsonTests
     [Fact]
     public void ObjectMembers_NumericLookingKeys_SortLexicographicallyNotNumerically()
     {
-        // "1" < "10" < "2" under RFC 8785's UTF-16 code-unit member-name ordering, unlike a
-        // numeric sort where 2 < 10.
+        // RFC 8785 UTF-16 code-unit order: "1" < "10" < "2", not the numeric order 2 < 10.
         Assert.Equal(
             """{"1":"one","10":"ten","2":"two"}""",
             CanonicalJson.Canonicalize("""{"2":"two","1":"one","10":"ten"}"""));

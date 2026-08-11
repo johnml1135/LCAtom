@@ -11,12 +11,11 @@ using Xunit;
 namespace SIL.Motif.Tests.Cli;
 
 /// <summary>
-/// Defect 1 proof: the store keys objects by <c>intentDigest</c> (write-once, never revisited) and
+/// The store keys objects by <c>intentDigest</c> (write-once, never revisited) and
 /// manifests by the frozen <c>proposalId</c> (a movable <c>currentIntentDigest</c> pointer), exactly
 /// git's object/ref split — so <c>reopen</c> + re-<c>finalize</c> (an amend) can move that pointer to
-/// a new object without ever mutating the previous one. See
-/// docs/stage2-change-management.md, S1/S3, and docs/adr/0004-prerequisite-graph-stable-ids-bound-apply.md,
-/// decision 2.
+/// a new object without ever mutating the previous one
+/// (<c>docs/adr/0004-prerequisite-graph-stable-ids-bound-apply.md</c>, decision 2).
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
 public sealed class ReopenAmendTests : IDisposable
@@ -67,8 +66,7 @@ public sealed class ReopenAmendTests : IDisposable
         Assert.Contains("\"status\": \"proposed\"", File.ReadAllText(manifestPath));
         Assert.True(File.Exists(store.ObjectPath(firstDigest)));
 
-        // Simulate this Proposal having since been applied (a real prior status), so amend's
-        // "status reset to proposed" is a real transition, not a no-op.
+        // Simulate a real prior "applied" status, so amend's reset to "proposed" is a real transition.
         var manifestBeforeAmend = File.ReadAllText(manifestPath);
         File.WriteAllText(manifestPath, manifestBeforeAmend.Replace("\"proposed\"", "\"applied\""));
         Assert.Contains("\"status\": \"applied\"", File.ReadAllText(manifestPath));
@@ -100,8 +98,7 @@ public sealed class ReopenAmendTests : IDisposable
         // (2) The digest changed (different content: two operations, not one).
         Assert.NotEqual(firstDigest, secondDigest);
 
-        // (3) BOTH object versions exist on disk — the amend never touched, deleted, or revisited
-        // the original write-once object.
+        // (3) BOTH object versions exist on disk — the amend never touched the original write-once object.
         var firstObjectPath = store.ObjectPath(firstDigest);
         var secondObjectPath = store.ObjectPath(secondDigest);
         Assert.True(File.Exists(firstObjectPath));
@@ -110,15 +107,13 @@ public sealed class ReopenAmendTests : IDisposable
         Assert.Contains(originalGloss + " v1", File.ReadAllText(firstObjectPath));
         Assert.Contains(originalGloss + " v2 (amended)", File.ReadAllText(secondObjectPath));
 
-        // (4) Status reset to proposed (approval/anchors are effect-digest-scoped; any content
-        // change invalidates them).
+        // (4) Status reset to proposed: approval/anchors are effect-digest-scoped, so content changes invalidate them.
         var manifestAfterAmend = File.ReadAllText(manifestPath);
         Assert.Contains("\"status\": \"proposed\"", manifestAfterAmend);
         Assert.Contains(secondDigest, manifestAfterAmend);
         Assert.DoesNotContain("\"status\": \"applied\"", manifestAfterAmend);
 
-        // Only one manifest file exists for this id throughout (the manifest is the movable
-        // pointer; it was never re-created, only updated in place).
+        // Only one manifest file exists for this id: it's the movable pointer, updated in place, never re-created.
         Assert.True(File.Exists(manifestPath));
         Assert.Single(Directory.GetFiles(store.ManifestsDirectory, "*.json"));
 

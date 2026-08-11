@@ -14,7 +14,7 @@ using Xunit;
 namespace SIL.Motif.Tests.Runner;
 
 /// <summary>
-/// MOT-22's round-trip proof for <c>analysis/wfiWordform/setSpellingStatus</c> and its
+/// Round-trip proof for <c>analysis/wfiWordform/setSpellingStatus</c> and its
 /// <c>clearSpellingStatus</c> counterpart — the closest existing pattern is
 /// <see cref="GeneratedBasicFieldOperationsTests"/>/<see cref="GeneratedSlice3OperationsTests"/>'s basic-field
 /// coverage, adapted for this field's one difference from every basic field those tests cover: the payload is
@@ -85,8 +85,7 @@ public sealed class WfiWordformSpellingStatusOperationsTests : IDisposable
     [InlineData(99)]
     public void SetSpellingStatusPayload_OutOfRangeValue_FailsLoudly_RatherThanClamping(int outOfRangeValue)
     {
-        // liblcm's own ValidateSpellingStatus exists, but this operation must not depend on it to
-        // silently fix an out-of-range value -- the closed payload rejects it before any LibLCM call.
+        // Must reject an out-of-range value itself, not rely on LibLCM to silently fix it up.
         var afterJson = JsonSerializer.Serialize(new { value = outOfRangeValue });
         using var afterDocument = JsonDocument.Parse(afterJson);
 
