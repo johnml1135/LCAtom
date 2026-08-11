@@ -120,11 +120,12 @@ public static class Program
         var contextHelpPath = FieldWorksPathResolver.ResolveContextHelpPath();
         var fieldWorksCheckout = FieldWorksPathResolver.ResolveCheckoutRoot();
 
-        var current = ReadCurrentSourceReleases(model, fieldWorksCheckout);
+        var current = ReadCurrentSourceArtifacts(model, fieldWorksCheckout);
         var moves = SourcePins.Compare(SourcePins.Read(pinsPath), current);
-        if (moves.Count > 0 && !acceptSourceMove)
+        var contentChanges = SourcePins.ContentChanges(moves);
+        if (contentChanges.Count > 0 && !acceptSourceMove)
         {
-            Console.Error.WriteLine(SourcePins.DescribeMoves(moves, "manifest/source-pins.tsv"));
+            Console.Error.WriteLine(SourcePins.DescribeContentChanges(contentChanges, "manifest/source-pins.tsv"));
             return 2;
         }
 
@@ -137,16 +138,20 @@ public static class Program
             existingRows, libLcmComments, contextHelpEntries, helpPages);
         KindDescriptionTsvWriter.Write(descriptionsPath, result.Rows);
 
+        // A release that moved over byte-identical files is re-pinned silently-ish -- reported, not gated.
+        // Only a changed file needed the operator's consent, and that was taken above.
         if (moves.Count > 0)
         {
             SourcePins.Write(pinsPath, current);
-            Console.WriteLine($"Re-pinned {moves.Count} moved source(s) -> {pinsPath}");
-            foreach (var move in moves)
+            foreach (var change in contentChanges)
             {
-                Console.WriteLine(move.PinnedRelease is null
-                    ? $"  {move.Source}: newly pinned at {move.Current.Describe()}"
-                    : $"  {move.Source}: {move.PinnedRelease.Describe()} -> {move.Current.Describe()}");
+                Console.WriteLine(change.Pinned is null
+                    ? $"  {change.Source}: {change.Artifact} newly pinned"
+                    : $"  {change.Source}: {change.Artifact} re-pinned at {change.Current.DescribeRelease()}");
             }
+
+            var releaseOnly = SourcePins.DescribeReleaseOnlyMoves(moves);
+            if (releaseOnly.Length > 0) Console.WriteLine(releaseOnly);
         }
 
         Console.WriteLine($"Refreshed {result.Rows.Count} description row(s) -> {descriptionsPath}");
@@ -157,6 +162,7 @@ public static class Program
         Console.WriteLine($"  sourced from liblcm               : {result.SourcedFromLibLcm.Count}");
         Console.WriteLine($"  sourced from FieldWorks ContextHelp: {result.SourcedFromFieldWorks.Count}");
         Console.WriteLine($"  sourced from FieldWorks help pages : {result.SourcedFromHelp.Count}");
+        Console.WriteLine($"  adapted from a sibling's source    : {result.Adapted.Count}");
         Console.WriteLine($"  exempt (no source exists)          : {result.Exempt.Count}");
         Console.WriteLine($"  unsourced (still open)             : {result.Unsourced.Count}");
         WriteKeys("unsourced keys", result.Unsourced);
@@ -166,12 +172,16 @@ public static class Program
         if (result.Drifted.Count > 0)
         {
             Console.WriteLine();
-            Console.WriteLine($"  {result.Drifted.Count} description(s) DRIFTED — the upstream text changed:");
+            Console.WriteLine($"  {result.Drifted.Count} description(s) DRIFTED — the upstream fragment changed:");
             foreach (var drift in result.Drifted)
             {
-                Console.WriteLine($"    {drift.Key}  ({drift.Source})");
-                Console.WriteLine($"      was: {drift.PreviousText}");
-                Console.WriteLine($"      now: {drift.CurrentText}");
+                Console.WriteLine(
+                    $"    {drift.Key}  ({drift.Source})" +
+                    (drift.OurTextDiffersFromSource
+                        ? "  [our text differs from this source by design — re-read it against the new wording]"
+                        : ""));
+                if (drift.PreviousText is { } previous) Console.WriteLine($"      was: {previous}");
+                Console.WriteLine($"      now: {drift.CurrentSourceText}");
             }
         }
 
@@ -219,22 +229,46 @@ public static class Program
     }
 
     /// <summary>
-    /// The current release of each source the descriptions are copied from. liblcm normally resolves out of
-    /// the NuGet package cache rather than a checkout, so its "release" is the pinned package version —
-    /// which <c>SIL.Motif.Generator.csproj</c> already owns — and only the checkout case has a commit.
+    /// The three files the descriptions are copied out of, each with its content digest. liblcm normally
+    /// resolves out of the NuGet package cache rather than a checkout, so its "release" is the pinned package
+    /// version — which <c>SIL.Motif.Generator.csproj</c> already owns — and only the checkout case has a
+    /// commit. The digest is what the check turns on either way.
     /// </summary>
-    private static IReadOnlyList<SourceRelease> ReadCurrentSourceReleases(
+    private static IReadOnlyList<SourceArtifact> ReadCurrentSourceArtifacts(
         ModelSource.ModelPathResult model, string fieldWorksCheckout)
     {
-        var now = DateTime.UtcNow;
+        var now = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
 
-        var libLcm = model.Source == ModelSource.ModelPathSource.NuGetPackageCache
-            ? new SourceRelease(
-                "liblcm", SourceRelease.NuGetPackageKind, ModelPathResolver.ReadPinnedPackageVersion(), "",
-                now.ToString("yyyy-MM-ddTHH:mm:ssZ"))
-            : GitRelease.Read("liblcm", LibLcmCheckoutRootOf(model.Path), now);
+        var (libLcmRelease, libLcmCommit) = model.Source == ModelSource.ModelPathSource.NuGetPackageCache
+            ? (ModelPathResolver.ReadPinnedPackageVersion(), "")
+            : GitRelease.Read(LibLcmCheckoutRootOf(model.Path));
 
-        return [libLcm, GitRelease.Read("FieldWorks", fieldWorksCheckout, now)];
+        var libLcmKind = model.Source == ModelSource.ModelPathSource.NuGetPackageCache
+            ? SourceArtifact.NuGetPackageKind
+            : SourceArtifact.GitCheckoutKind;
+
+        var (fwRelease, fwCommit) = GitRelease.Read(fieldWorksCheckout);
+        var contextHelp = Path.Combine("DistFiles", "Language Explorer", "Configuration", "ContextHelp.xml");
+        var compiledHelp = Path.Combine("DistFiles", "Helps", "FieldWorks_Language_Explorer_Help.chm");
+
+        return
+        [
+            new SourceArtifact(
+                "liblcm", libLcmKind, libLcmRelease, libLcmCommit, "MasterLCModel.xml",
+                SourceDigest.OfFile(model.Path), now),
+
+            new SourceArtifact(
+                "FieldWorks", SourceArtifact.GitCheckoutKind, fwRelease, fwCommit,
+                contextHelp.Replace(Path.DirectorySeparatorChar, '/'),
+                SourceDigest.OfFile(Path.Combine(fieldWorksCheckout, contextHelp)), now),
+
+            // Pinned although refresh-descriptions never opens it: the checked-in help harvest is derived
+            // from this file, so a changed digest here is the only thing that can say "re-run harvest-help".
+            new SourceArtifact(
+                "FieldWorks", SourceArtifact.GitCheckoutKind, fwRelease, fwCommit,
+                compiledHelp.Replace(Path.DirectorySeparatorChar, '/'),
+                SourceDigest.OfFile(Path.Combine(fieldWorksCheckout, compiledHelp)), now),
+        ];
     }
 
     /// <summary>

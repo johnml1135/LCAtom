@@ -23,7 +23,8 @@ public class FieldWorksHelpDescriptionTsvTests
                 "FsFeatStrucType", "Abbreviation", "Abbreviation field (Feature Types)",
                 "Stores the abbreviation, such as \"II\" for \"2nd declension.\"",
                 "Lists/Feature_Types_fields/abbreviation_field_feature_types.htm", "exact",
-                "HelpTopicPaths.resx:680, khtpField-FsFeatStrucType-Abbreviation"),
+                "HelpTopicPaths.resx:680, khtpField-FsFeatStrucType-Abbreviation",
+                "sha256:0000000000000000000000000000000000000000000000000000000000000000"),
         };
 
         try

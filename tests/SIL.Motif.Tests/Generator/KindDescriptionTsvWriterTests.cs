@@ -45,8 +45,10 @@ public class KindDescriptionTsvWriterTests
             KindDescriptionTsvWriter.Write(path, [new KindDescription("A", "B", "C", "D", "unsourced")]);
             var text = File.ReadAllText(path);
 
-            Assert.StartsWith("\"Class\"\t\"Field\"\t\"Label\"\t\"Description\"\t\"Reviewed\"\t\"Source\"\t\"SourceDetail\"\r\n", text);
-            Assert.Contains("\"A\"\t\"B\"\t\"C\"\t\"D\"\t\"unsourced\"\t\"\"\t\"\"\r\n", text);
+            Assert.StartsWith(
+                "\"Class\"\t\"Field\"\t\"Label\"\t\"Description\"\t\"Reviewed\"\t\"Source\"\t\"SourceDetail\"\t\"SourceHash\"\r\n",
+                text);
+            Assert.Contains("\"A\"\t\"B\"\t\"C\"\t\"D\"\t\"unsourced\"\t\"\"\t\"\"\t\"\"\r\n", text);
         }
         finally
         {

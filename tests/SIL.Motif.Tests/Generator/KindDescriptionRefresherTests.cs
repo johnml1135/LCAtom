@@ -141,7 +141,7 @@ public class KindDescriptionRefresherTests
                 "LexEtymology", "Gloss", "Gloss field (Etymology)",
                 "This field stores the gloss of the form in the Source Form field.",
                 "User_Interface/Field_Descriptions/.../Gloss_field_Etymology.htm", "exact",
-                "HelpTopicPaths.resx:314"),
+                "HelpTopicPaths.resx:314", "sha256:aaaa"),
         };
 
         var result = KindDescriptionRefresher.Refresh(
@@ -173,7 +173,7 @@ public class KindDescriptionRefresherTests
         {
             [("PhCode", "Representation")] = new(
                 "PhCode", "Representation", "Grapheme field", "A different sentence from a help page.",
-                "x.htm", "exact", "test"),
+                "x.htm", "exact", "test", "sha256:bbbb"),
         };
 
         var result = KindDescriptionRefresher.Refresh(
@@ -216,7 +216,8 @@ public class KindDescriptionRefresherTests
         };
         var alreadySourced = new KindDescription(
             "LexSense", "Gloss", "Gloss", "The sentence a reviewer read.", "sourced",
-            KindDescriptionRefresher.LibLcmSourceName, "line 42");
+            KindDescriptionRefresher.LibLcmSourceName, "line 42",
+            SourceDigest.OfText("The sentence a reviewer read."));
 
         var result = KindDescriptionRefresher.Refresh(
             [alreadySourced], comments, new Dictionary<string, ContextHelpEntry>());
@@ -224,7 +225,9 @@ public class KindDescriptionRefresherTests
         var drift = Assert.Single(result.Drifted);
         Assert.Equal("LexSense.Gloss", drift.Key);
         Assert.Equal("The sentence a reviewer read.", drift.PreviousText);
-        Assert.Equal("The reworded upstream sentence.", drift.CurrentText);
+        Assert.Equal(SourceDigest.OfText("The reworded upstream sentence."), drift.CurrentHash);
+        Assert.Equal("The reworded upstream sentence.", drift.CurrentSourceText);
+        Assert.False(drift.OurTextDiffersFromSource);
     }
 
     /// <summary>

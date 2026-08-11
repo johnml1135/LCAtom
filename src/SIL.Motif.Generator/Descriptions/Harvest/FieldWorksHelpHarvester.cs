@@ -34,7 +34,7 @@ public static class FieldWorksHelpHarvester
             var page = FieldWorksHelpPageParser.ParseFile(entry.RelativePath, fullPath);
             harvested.Add(new HarvestedHelpDescription(
                 entry.Class, entry.Field, page.Title, page.Description, entry.RelativePath, entry.Confidence,
-                entry.VerifiedAgainst));
+                entry.VerifiedAgainst, SourceDigest.OfFile(fullPath)));
         }
 
         if (missing.Count > 0)
@@ -55,6 +55,11 @@ public static class FieldWorksHelpHarvester
 /// One row of <c>manifest/fieldworks-help-descriptions.tsv</c>: a field, the sentence FieldWorks' own help
 /// gives for it, and enough provenance for a reviewer to go and check.
 /// </summary>
+/// <param name="PageSha256">
+/// <see cref="SourceDigest.OfFile"/> of the page itself. The <c>.chm</c>'s own digest says "something in the
+/// help file changed"; these say which of the nine pages it was, which is the difference between re-reading
+/// nine pages and re-reading one.
+/// </param>
 public sealed record HarvestedHelpDescription(
     string Class,
     string Field,
@@ -62,7 +67,8 @@ public sealed record HarvestedHelpDescription(
     string Description,
     string HelpPage,
     string Confidence,
-    string VerifiedAgainst)
+    string VerifiedAgainst,
+    string PageSha256)
 {
     public string Key => $"{Class}.{Field}";
 

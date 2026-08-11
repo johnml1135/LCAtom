@@ -15,17 +15,18 @@ namespace SIL.Motif.Generator.Descriptions.Harvest;
 public static class FieldWorksHelpDescriptionTsv
 {
     public static readonly string[] Header =
-        ["Class", "Field", "PageTitle", "Description", "HelpPage", "Confidence", "VerifiedAgainst"];
+        ["Class", "Field", "PageTitle", "Description", "HelpPage", "Confidence", "VerifiedAgainst", "PageSha256"];
 
     public static void Write(string path, IEnumerable<HarvestedHelpDescription> rows) =>
         QuotedTsv.Write(path, Header, rows.Select(r => new[]
         {
             r.Class, r.Field, r.PageTitle, r.Description, r.HelpPage, r.Confidence, r.VerifiedAgainst,
+            r.PageSha256,
         }));
 
     public static IReadOnlyList<HarvestedHelpDescription> Read(string path) =>
         QuotedTsv.Read(path, Header)
-            .Select(c => new HarvestedHelpDescription(c[0], c[1], c[2], c[3], c[4], c[5], c[6]))
+            .Select(c => new HarvestedHelpDescription(c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]))
             .ToList();
 
     /// <summary>

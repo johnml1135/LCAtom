@@ -31,10 +31,10 @@ namespace SIL.Motif.Generator.Checks;
 /// <b>Amended for D8:</b> presence and non-restatement are not enough — the first large batch of "draft"
 /// descriptions was 8% wrong, four of those inverted, and the check that passed them could not see it because
 /// polarity is invisible to a mechanical text check. What <i>is</i> checkable is whether the description
-/// claims a source: <see cref="KindDescription.Reviewed"/> must now be one of three documented values
-/// (<c>sourced</c>, <c>hand-corrected</c>, <c>unsourced</c>, <c>no-source-exists</c> — manifest/README.md),
-/// and a row claiming any of those but <c>unsourced</c> must actually carry a <see cref="KindDescription.Source"/> and
-/// <see cref="KindDescription.SourceDetail"/> citation. This does not catch a wrong paraphrase of a real
+/// claims a source: <see cref="KindDescription.Reviewed"/> must now be one of five documented values
+/// (<c>sourced</c>, <c>hand-corrected</c>, <c>adapted</c>, <c>unsourced</c>, <c>no-source-exists</c> —
+/// manifest/README.md), and a row claiming any of those but <c>unsourced</c> must actually carry a
+/// <see cref="KindDescription.Source"/> and <see cref="KindDescription.SourceDetail"/> citation. This does not catch a wrong paraphrase of a real
 /// citation, but it does catch the weaker and cheaper-to-produce failure of claiming provenance that was never
 /// recorded — an unsourced description masquerading as sourced is the exact gap D8 exists to close.
 /// </para>
@@ -43,17 +43,21 @@ public static class DescriptionCheck
 {
     private static readonly HashSet<string> KnownReviewedValues = new(StringComparer.Ordinal)
     {
-        "sourced", "hand-corrected", "unsourced", DescriptionExemptions.ReviewedValue,
+        "sourced", "hand-corrected", "unsourced", DescriptionAdaptations.ReviewedValue,
+        DescriptionExemptions.ReviewedValue,
     };
 
     /// <summary>
     /// <c>no-source-exists</c> is here too: its citation is of a search rather than of a source, but a row
     /// claiming nothing exists still has to say where it looked. <see cref="DescriptionExemptionCheck"/>
     /// then checks that claim against the exemption table and, for the derived one, re-derives it.
+    /// <c>adapted</c> cites the sibling it was derived from, and carries that sibling's
+    /// <see cref="KindDescription.SourceHash"/> so the two cannot drift apart unnoticed.
     /// </summary>
     private static readonly HashSet<string> ValuesRequiringACitation = new(StringComparer.Ordinal)
     {
-        "sourced", "hand-corrected", DescriptionExemptions.ReviewedValue,
+        "sourced", "hand-corrected", DescriptionAdaptations.ReviewedValue,
+        DescriptionExemptions.ReviewedValue,
     };
 
     /// <summary>
@@ -103,7 +107,7 @@ public static class DescriptionCheck
             {
                 failures.Add(
                     $"{key}: Reviewed value '{description.Reviewed}' is not one of sourced / hand-corrected / " +
-                    "unsourced / no-source-exists (manifest/README.md).");
+                    "unsourced / adapted / no-source-exists (manifest/README.md).");
             }
             else if (ValuesRequiringACitation.Contains(description.Reviewed) &&
                      (string.IsNullOrWhiteSpace(description.Source) || string.IsNullOrWhiteSpace(description.SourceDetail)))

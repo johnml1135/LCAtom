@@ -208,9 +208,9 @@ public class DescriptionCheckTests
     public void DuplicateDescriptionsForOneField_AreRejectedByTheParser()
     {
         const string text =
-            "\"Class\"\t\"Field\"\t\"Label\"\t\"Description\"\t\"Reviewed\"\t\"Source\"\t\"SourceDetail\"\r\n" +
-            "\"LexSense\"\t\"Gloss\"\t\"Gloss\"\t\"First sentence about the gloss.\"\t\"unsourced\"\t\"\"\t\"\"\r\n" +
-            "\"LexSense\"\t\"Gloss\"\t\"Gloss\"\t\"Second, conflicting sentence.\"\t\"unsourced\"\t\"\"\t\"\"\r\n";
+            "\"Class\"\t\"Field\"\t\"Label\"\t\"Description\"\t\"Reviewed\"\t\"Source\"\t\"SourceDetail\"\t\"SourceHash\"\r\n" +
+            "\"LexSense\"\t\"Gloss\"\t\"Gloss\"\t\"First sentence about the gloss.\"\t\"unsourced\"\t\"\"\t\"\"\t\"\"\r\n" +
+            "\"LexSense\"\t\"Gloss\"\t\"Gloss\"\t\"Second, conflicting sentence.\"\t\"unsourced\"\t\"\"\t\"\"\t\"\"\r\n";
 
         var ex = Assert.Throws<GeneratorException>(() => KindDescriptionTsvParser.ParseText("test.tsv", text));
 

@@ -247,9 +247,14 @@ what the pages actually said.
 evidence is a rule the build re-derives — the field is declared once on an abstract class and no concrete
 subclass redeclares it — so the exemption lapses by itself if that ever stops being true.
 
-**Four remain unsourced**, all with the search recorded and none with invented text:
-`MoInflAffMsa.PartOfSpeech` and `MoUnclassifiedAffixMsa.PartOfSpeech` (no page, no comment, no context help),
-and `PhSimpleContextBdry`/`PhSimpleContextNC.FeatureStructure`, which §3 rates the clearest pointer
-candidates in the table. Pointing them at their already-cited `PhSimpleContextSeg` sibling means writing the
-substituted clause ("for a boundary marker, not a phoneme"), which is a wording decision for the owner, not
-a harvest.
+**Two rows became `adapted`.** §3 rates `PhSimpleContextBdry`/`PhSimpleContextNC.FeatureStructure` the
+clearest pointer candidates in the table, and they are — but the obvious way to close them, copying the
+sibling's sentence and editing the clause that differs, produces prose that is correct today and frozen
+forever. What is stored instead is the *substitution*: target field, sibling field, one `(find, replace)`
+pair. The sentence is re-derived from `PhSimpleContextSeg.FeatureStructure`'s current source text on every
+refresh, and the run fails if the replaced clause is no longer present or is no longer unique. Both rows
+carry the sibling's fragment digest, so the three cannot drift apart unnoticed.
+
+**Two remain unsourced**, with the search recorded and no invented text:
+`MoInflAffMsa.PartOfSpeech` and `MoUnclassifiedAffixMsa.PartOfSpeech` — no page, no comment, no context
+help.

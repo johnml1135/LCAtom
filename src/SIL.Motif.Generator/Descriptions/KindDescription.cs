@@ -43,6 +43,16 @@ namespace SIL.Motif.Generator.Descriptions;
 /// class id="MoStemMsa"</c> — so a reviewer can go look at the exact citation rather than trusting the
 /// paraphrase. Required whenever <see cref="Source"/> is non-empty.
 /// </param>
+/// <param name="SourceHash">
+/// <see cref="Harvest.SourceDigest"/> of the exact upstream fragment this row was taken from — not of
+/// <see cref="Description"/>, and not of the whole source file. Empty when there is no source.
+/// <para>
+/// For a <c>sourced</c> row the two are the same text, so the digest is merely convenient. It earns its
+/// place on the rows whose text deliberately differs from their source: a <c>hand-corrected</c> row keeps a
+/// human's fix, and an <c>adapted</c> row is derived from a sibling — so comparing <em>our</em> prose
+/// against upstream can never detect that upstream moved. The digest can, and does.
+/// </para>
+/// </param>
 public sealed record KindDescription(
     string Class,
     string Field,
@@ -50,7 +60,8 @@ public sealed record KindDescription(
     string Description,
     string Reviewed,
     string Source = "",
-    string SourceDetail = "")
+    string SourceDetail = "",
+    string SourceHash = "")
 {
     /// <summary>The manifest join key, matching <see cref="Join.FieldKey"/>'s shape.</summary>
     public string Key => $"{Class}.{Field}";
