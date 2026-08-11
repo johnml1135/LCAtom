@@ -93,8 +93,7 @@ public class PanGlossParser
 
             if (exitCode != 0)
             {
-                // A refused FST build is a grammar fact and must trigger the fallback. Anything else is an
-                // environment or invocation fault and must not be dressed up as one.
+                // A refused FST build must trigger the fallback; anything else is an environment fault, not one.
                 var refusal = ParserRefusalRecognizer.Recognize(stdErr);
                 if (refusal is not null) return new ParserRunResult(null, refusal);
 
@@ -180,10 +179,7 @@ public class PanGlossParser
         }
     }
 
-    /// <summary>
-    /// Keeps the parser's warnings rather than discarding them. Sena 3 produces 137 through this route, and a
-    /// grammar coverage figure computed while those were ignored is not a figure about the grammar.
-    /// </summary>
+    /// <summary>Keeps the parser's warnings, ignored elsewhere they'd taint the coverage figure.</summary>
     private static IReadOnlyList<string> ExtractWarnings(string stdErr) =>
         stdErr.Split('\n')
             .Select(l => l.Trim())

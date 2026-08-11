@@ -1,9 +1,4 @@
-// Adapted from FwDataMiniLcmBridge, Copyright (c) SIL Global, licensed under the MIT License.
-// Source: languageforge-lexbox/backend/FwLite/FwDataMiniLcmBridge/LcmUtils/ProjectLoader.cs
-// https://github.com/sillsdev/languageforge-lexbox
-//
-// Simplified for Motif Stage A: no DI/config plumbing, and only the "open an existing project"
-// path (no NewProject). Reintroduce those only if a later stage needs them.
+// Adapted from languageforge-lexbox's FwDataMiniLcmBridge/LcmUtils/ProjectLoader.cs (SIL Global, MIT).
 
 using System.Diagnostics;
 using System.Reflection;
@@ -140,11 +135,7 @@ public class FwDataProjectLoader
 
     private static MethodInfo? _completeAllCommits;
 
-    /// <summary>
-    /// Blocks until the backend's background commit thread has drained, so the <c>.fwdata</c> file on
-    /// disk reflects everything committed so far. See <see cref="Save"/>'s remarks for why this is
-    /// reflection and why it is a hard failure rather than a best-effort skip.
-    /// </summary>
+    /// <summary>Blocks until the commit thread drains; see <see cref="Save"/>'s remarks for why.</summary>
     private static void WaitForPendingWritesToReachDisk(LcmCache cache)
     {
         var backend = cache.ServiceLocator.DataSetup;

@@ -7,7 +7,7 @@ namespace SIL.Motif.Host.Corpus;
 /// An <see cref="IWordTokeniser"/> that segments the way FieldWorks itself does: by asking a project's own
 /// <see cref="CoreWritingSystemDefinition"/> which characters are word-forming, rather than asking .NET's
 /// general Unicode punctuation classification (which is what <see cref="WhitespaceAndPunctuationTokeniser"/>
-/// does, and why <c>docs/issues.md</c> <c>B29</c> exists).
+/// does).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -77,11 +77,7 @@ public sealed class WritingSystemWordTokeniser : IWordTokeniser
     {
         _ws = writingSystem ?? throw new ArgumentNullException(nameof(writingSystem));
 
-        // The "main" character set is specifically what feeds CoreWritingSystemDefinition's word-forming
-        // overrides (it is loaded into a private m_wordFormingOverrides field via a CollectionChanged
-        // handler on exactly that set) — not "any character set at all". CharacterSets is the only public
-        // surface onto that state, so TryGet("main", ...) is the closest observable proxy for "has this
-        // writing system told get_IsWordForming anything beyond the ICU fallback".
+        // "main" feeds get_IsWordForming's private overrides; TryGet is the only public proxy for that state.
         WritingSystemDeclaresWordFormingCharacters =
             _ws.CharacterSets.TryGet("main", out var main) && main.Characters.Count > 0;
     }
@@ -148,11 +144,7 @@ public sealed class WritingSystemWordTokeniser : IWordTokeniser
         return TokeniseCore(text);
     }
 
-    /// <summary>
-    /// Scans <paramref name="text"/> codepoint by codepoint — not char by char — because
-    /// <c>get_IsWordForming</c> takes a Unicode codepoint and a surrogate pair must be classified, and kept,
-    /// as the single character it represents rather than as two dangling surrogate halves.
-    /// </summary>
+    /// <summary>Codepoint by codepoint, not char by char, so a surrogate pair stays one character.</summary>
     private IEnumerable<string> TokeniseCore(string text)
     {
         var current = new StringBuilder();

@@ -62,9 +62,7 @@ public static class AnalysisAggregateDiff
         {
             if (!afterByGuid.TryGetValue(guid, out var afterWordform))
             {
-                // Present before, gone now: the word form itself disappeared (ADR 0038 decision 3).
-                // Reported as vanished, not as "removed" — removed means the word form still exists
-                // with zero approved analyses, which is a different and traceable fact.
+                // Vanished (the word form itself is gone, ADR 0038 decision 3), distinct from removed (it still exists).
                 vanished.Add(new ManualAnalysisChange(guid, beforeWordform.Form));
                 continue;
             }
@@ -76,9 +74,7 @@ public static class AnalysisAggregateDiff
         {
             if (beforeByGuid.ContainsKey(guid)) continue; // already classified above
 
-            // A word form absent from the earlier response is new to it. Only report it if it carries an
-            // expectation now — a new word form with no manual analysis carries no expectation at all
-            // (ADR 0038 decision 7), so it is not a "change" in the sense this diff reports.
+            // New to this reading; reported only if it carries an expectation now (none = none, ADR 0038 decision 7).
             if (afterWordform.ManualAnalyses.Count > 0)
                 established.Add(new ManualAnalysisChange(guid, afterWordform.Form));
         }
@@ -103,16 +99,13 @@ public static class AnalysisAggregateDiff
         }
         else if (beforeDigests.Count > 0 && afterDigests.Count == 0)
         {
-            // The routinely-correct case ADR 0038 decision 5 names by name: never rendered as an
-            // improvement anywhere, even though every raw count (established, passing, whatever else a
-            // caller might compute) would look better for it.
+            // Routinely correct (ADR 0038 decision 5) but never rendered as an improvement, whatever the counts show.
             removed.Add(new ManualAnalysisChange(guid, after.Form));
         }
         else if (beforeDigests.Count > 0 && !beforeDigests.SetEquals(afterDigests))
         {
             updated.Add(new ManualAnalysisChange(guid, after.Form));
         }
-        // Both empty, or exactly equal sets: nothing to report. A word form with no manual analysis at
-        // either end carries no expectation either time (decision 7), and an unchanged set is not a change.
+        // Both empty or exactly equal: no expectation either time (decision 7), and an unchanged set is not a change.
     }
 }

@@ -155,7 +155,20 @@ function Get-DeclarationVisibility {
         if ($line -match '^\s*(sealed\s+|static\s+|abstract\s+|partial\s+)*(class|record|struct|interface|enum)\b') { return 'api' }
         # A bare identifier with no type and no semicolon is an enum member: API, at its enum's visibility.
         if ($line -match '^[A-Za-z_][A-Za-z0-9_]*\s*(=\s*[^;]+?)?,?\s*$') { return 'api' }
-        return 'private'
+        return Get-EnclosingTypeVisibility -Lines $Lines -StartIndex $StartIndex
+    }
+
+    return 'private'
+}
+
+# An interface member carries no modifier because it cannot: it is public at its interface's visibility.
+function Get-EnclosingTypeVisibility {
+    param([string[]] $Lines, [int] $StartIndex)
+
+    for ($i = $StartIndex; $i -ge 0; $i--) {
+        $line = $Lines[$i]
+        if ($line -match '\binterface\s+[A-Za-z_]') { return 'api' }
+        if ($line -match '\b(class|record|struct|enum)\s+[A-Za-z_]') { return 'private' }
     }
 
     return 'private'

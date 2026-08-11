@@ -10,9 +10,9 @@ namespace SIL.Motif.Host.Corpus;
 /// corpora already tokenised this way must keep working.
 /// </para>
 /// No dependency beyond the .NET base class library, so this project can bridge Documents into a
-/// <see cref="CorpusDescriptor"/> today without referencing SIL.Machine (<c>docs/issues.md</c> <c>B26</c>).
-/// A SIL.Machine tokeniser is expected to sit behind <see cref="IWordTokeniser"/> later; this one is the
-/// fallback that ships with Motif itself, not a placeholder for it.
+/// <see cref="CorpusDescriptor"/> without referencing SIL.Machine. A SIL.Machine tokeniser may sit behind
+/// <see cref="IWordTokeniser"/> as well; this one is the fallback that ships with Motif itself, not a
+/// placeholder for it.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -50,8 +50,8 @@ namespace SIL.Motif.Host.Corpus;
 /// </item>
 /// </list>
 /// <para>
-/// <b>Known limitation, and it bites exactly the languages this project serves — see <c>docs/issues.md</c>
-/// <c>B29</c>.</b> A <b>word-initial or word-final glottal stop written with a plain <c>'</c> (U+0027) or a
+/// <b>Known limitation, and it bites exactly the languages this project serves.</b> A <b>word-initial or
+/// word-final glottal stop written with a plain <c>'</c> (U+0027) or a
 /// curly <c>’</c> (U+2019) is stripped</b>, because .NET classifies both as punctuation. Measured:
 /// </para>
 /// <list type="table">
@@ -113,8 +113,7 @@ public sealed class WhitespaceAndPunctuationTokeniser : IWordTokeniser
 
     private static IEnumerable<string> TokeniseCore(string text)
     {
-        // (char[]?)null splits on any run of characters satisfying char.IsWhiteSpace — Unicode whitespace,
-        // not just the ASCII space.
+        // (char[]?)null splits on Unicode whitespace (char.IsWhiteSpace), not just the ASCII space.
         foreach (var rawToken in text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
         {
             var trimmed = StripEdgePunctuationAndSymbols(rawToken);
@@ -124,10 +123,7 @@ public sealed class WhitespaceAndPunctuationTokeniser : IWordTokeniser
         }
     }
 
-    /// <summary>
-    /// Trims leading and trailing punctuation/symbol characters only. Deliberately does not touch anything
-    /// in the interior of the token — that is what keeps <c>don't</c> and <c>mother-in-law</c> intact.
-    /// </summary>
+    /// <summary>Trims edge punctuation/symbols only, leaving <c>don't</c> and <c>mother-in-law</c> intact.</summary>
     private static string StripEdgePunctuationAndSymbols(string token)
     {
         var start = 0;

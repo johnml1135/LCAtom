@@ -1,9 +1,8 @@
 namespace SIL.Motif.Host.Corpus;
 
 /// <summary>
-/// The bridge <c>docs/issues.md</c> <c>B26</c> names as missing: turns a <see cref="StoredCorpus"/>'s
-/// Documents into the <see cref="CorpusDescriptor"/> that <see cref="Parser.GrammarCoverageFigure.Compute"/>
-/// consumes.
+/// Turns a <see cref="StoredCorpus"/>'s Documents into the <see cref="CorpusDescriptor"/> that
+/// <see cref="Parser.GrammarCoverageFigure.Compute"/> consumes.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -42,11 +41,12 @@ public static class CorpusTokenisation
     /// <remarks>
     /// <b>The declared tokenisation is binding.</b> Two corpora tokenised differently are not comparable even
     /// when the source text is identical (<c>docs/adr/0036-motif-has-its-own-data-store.md</c> decision 4;
-    /// <c>docs/corpus-ingestion.md</c>), so this refuses to run a tokeniser that disagrees with what
-    /// <paramref name="corpus"/>'s <see cref="CorpusProvenance.Tokenisation"/> already declares, rather than
-    /// silently re-stamping the corpus with whatever happened to run. If the corpus genuinely needs to change
-    /// which tokeniser it was measured with, that is a decision for whoever owns the corpus to make
-    /// explicitly, not a side effect of calling this method.
+    /// <c>docs/corpus-ingestion.md</c>), so this throws rather than running a tokeniser that disagrees with
+    /// what <paramref name="corpus"/>'s <see cref="CorpusProvenance.Tokenisation"/> already declares, or
+    /// silently re-stamping the corpus with whatever happened to run (pinned by
+    /// `DeclaredVsSuppliedTokeniserMismatchThrows_NamingBothTheDeclaredAndSuppliedValues`). If the corpus
+    /// genuinely needs to change which tokeniser it was measured with, that is a decision for whoever owns
+    /// the corpus to make explicitly, not a side effect of calling this method.
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="corpus"/> or <paramref name="tokeniser"/> is null.</exception>
     /// <exception cref="InvalidOperationException">
@@ -92,9 +92,7 @@ public static class CorpusTokenisation
     {
         if (documentIds is null) return corpus.Documents;
 
-        // An empty selection is a caller bug, and the failure it causes is the quiet kind: zero words
-        // produce a perfectly valid descriptor whose figure is 0% of nothing. Refuse rather than hand back
-        // a number that looks measured. Passing null is how you say "all of them".
+        // Zero words would produce a valid-looking descriptor and a figure that is 0% of nothing; refuse instead.
         if (documentIds.Count == 0)
         {
             throw new ArgumentException(
@@ -105,9 +103,7 @@ public static class CorpusTokenisation
         }
 
         var wanted = new HashSet<string>(documentIds, StringComparer.Ordinal);
-        // Filtered from the corpus's own order, not the caller's documentIds order, so a subset always
-        // concatenates the same way the whole corpus would — the caller chooses which documents, not what
-        // order they play in.
+        // Filtered from the corpus's own order, not documentIds' order, so a subset concatenates like the whole.
         var selected = corpus.Documents.Where(d => wanted.Contains(d.DocumentId)).ToList();
 
         var found = selected.Select(d => d.DocumentId).ToHashSet(StringComparer.Ordinal);
@@ -122,11 +118,7 @@ public static class CorpusTokenisation
         return selected;
     }
 
-    /// <summary>
-    /// Follows <see cref="LcmWordformCorpus.Extract"/>'s precedent: a caller who measured less than the whole
-    /// corpus must be able to see that in the label, rather than have a figure look like it covers everything
-    /// when it only covers a subset.
-    /// </summary>
+    /// <summary>Names a partial selection as partial, matching <see cref="LcmWordformCorpus.Extract"/>.</summary>
     private static string Label(string corpusId, int totalDocumentCount, IReadOnlyList<CorpusDocument> selected)
     {
         if (selected.Count == totalDocumentCount) return corpusId;

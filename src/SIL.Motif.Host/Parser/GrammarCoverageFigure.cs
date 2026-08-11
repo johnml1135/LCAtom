@@ -26,9 +26,8 @@ namespace SIL.Motif.Host.Parser;
 /// was capped, so the two fields are consistent by construction, never by convention.
 /// </param>
 /// <param name="TimedOutCount">
-/// How many words hit <see cref="PerWordTimeoutMs"/>. Non-zero forces <see cref="IsLowerBound"/>, per
-/// <c>docs/issues.md</c> <c>D9</c>: a timeout is a fact about the machine and the cap, never counted as an
-/// analysis failure.
+/// How many words hit <see cref="PerWordTimeoutMs"/>. Non-zero forces <see cref="IsLowerBound"/>: a timeout
+/// is a fact about the machine and the cap, never counted as an analysis failure.
 /// </param>
 /// <param name="Analysed">Words the parser produced at least one analysis for — the numerator.</param>
 /// <param name="Adjudicated">
@@ -50,15 +49,15 @@ public sealed record GrammarCoverageFigure(
     /// The coverage fraction — <see cref="Analysed"/> divided by <see cref="Adjudicated"/>, or <c>null</c>
     /// when nothing was adjudicated. Zero adjudicated words is not "0% coverage": every word either timed
     /// out or was skipped, so nothing was ever judged against the grammar, and reporting either 0% or 100%
-    /// would assert a verdict this run never reached.
+    /// would assert a verdict nothing here ever produced.
     /// </summary>
     public double? Fraction => Adjudicated == 0 ? null : (double)Analysed / Adjudicated;
 
     /// <summary>
     /// <c>true</c> when this figure is a lower bound and must present itself as one rather than as a
-    /// measurement (<c>docs/issues.md</c> <c>D9</c>). Computed from <see cref="TimedOutCount"/> rather than
-    /// trusted from a caller, for the same reason <see cref="BatchAnalysis.IsLowerBound"/> is a property and
-    /// not a constructor parameter: it must be impossible for a figure with timeouts to forget to say so.
+    /// measurement. Computed from <see cref="TimedOutCount"/> rather than trusted from a caller, for the
+    /// same reason <see cref="BatchAnalysis.IsLowerBound"/> is a property and not a constructor parameter:
+    /// it must be impossible for a figure with timeouts to forget to say so.
     /// </summary>
     public bool IsLowerBound => TimedOutCount > 0;
 
@@ -76,8 +75,8 @@ public sealed record GrammarCoverageFigure(
     /// <para>
     /// <b>There is no parameterless overload, and that omission is the whole design.</b> A caller cannot
     /// produce a bare number without saying what the current corpus and grammar are, so a figure can never be
-    /// stated without the identifiers that give it meaning. Decided 2026-08-09 — see
-    /// <c>docs/adr/0038-expectations-are-fieldworks-approved-analyses.md</c> decision 8.
+    /// stated without the identifiers that give it meaning
+    /// (<c>docs/adr/0038-expectations-are-fieldworks-approved-analyses.md</c> decision 8).
     /// </para>
     /// <para>
     /// <b>Staleness is handled by tense, not by a caveat.</b> A stale figure is not wrong — it is a correct
@@ -87,7 +86,7 @@ public sealed record GrammarCoverageFigure(
     /// instead of beside it cannot be paraphrased away.
     /// </para>
     /// <para>
-    /// This is deliberately unlike the two things Motif <i>refuses</i> to state. An accuracy figure over
+    /// This is deliberately unlike the two things Motif does not state. An accuracy figure over
     /// unvetted text is a number about nothing, and a causal attribution across a proposal that moved both
     /// rules and expectations is unsupported by the evidence. A stale coverage figure is neither: its meaning
     /// is exact, provided the state it describes is named.
@@ -149,10 +148,11 @@ public sealed record GrammarCoverageFigure(
     /// does not run either call itself; it only assembles what a caller already obtained from both.
     /// </para>
     /// <para>
-    /// <b>Refuses rather than silently mismeasuring</b> when <paramref name="analysis"/> did not in fact run
-    /// over <paramref name="corpus"/>'s word set — a coverage figure's provenance is only honest if it
-    /// really describes the words it cites, and a caller passing the wrong corpus for a batch is a bug to
-    /// surface immediately, not a mismatch to paper over with whichever count happens to be smaller.
+    /// <b>Throws rather than silently mismeasuring</b> when <paramref name="analysis"/> did not in fact run
+    /// over <paramref name="corpus"/>'s word set (pinned by `Compute_ThrowsWhenTheBatchsWordsDoNotMatchTheCorpus`)
+    /// — a coverage figure's provenance is only honest if it really describes the words it cites, and a
+    /// caller passing the wrong corpus for a batch is a bug to surface immediately, not a mismatch to paper
+    /// over with whichever count happens to be smaller.
     /// </para>
     /// </remarks>
     public static GrammarCoverageFigure Compute(BatchAnalysis analysis, CorpusDescriptor corpus, string grammarSourceSha256)

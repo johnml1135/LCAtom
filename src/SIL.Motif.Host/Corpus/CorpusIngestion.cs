@@ -77,7 +77,10 @@ public sealed class CorpusIngestion
     /// </summary>
     /// <remarks>
     /// The content is hashed as it arrived, before any decoding decision, so the hash identifies the bytes
-    /// rather than Motif's reading of them.
+    /// rather than Motif's reading of them. Decoded as UTF-8 with no negotiation: every source in scope
+    /// emits it, and a mis-guessed encoding produces forms that look like exotic morphology and fail to
+    /// parse — a grammar gap that is really a decoding bug, which is among the worse things this project
+    /// could report.
     /// </remarks>
     /// <exception cref="InvalidOperationException">No such corpus, or the document id is already used.</exception>
     public async Task<CorpusDocument> AddDocumentAsync(
@@ -134,14 +137,7 @@ public sealed class CorpusIngestion
         return _store.Load(bundle.CorpusId)!;
     }
 
-    /// <summary>
-    /// Decodes as UTF-8, stripping a byte-order mark if present.
-    /// </summary>
-    /// <remarks>
-    /// UTF-8 without negotiation, because every source in scope emits it and a mis-guessed encoding produces
-    /// forms that look like exotic morphology and fail to parse — a grammar gap that is really a decoding bug,
-    /// which is among the worse things this project could report.
-    /// </remarks>
+    /// <summary>UTF-8, stripping a BOM; see <see cref="AddDocumentAsync"/>'s remarks for why.</summary>
     private static string DecodeUtf8(byte[] bytes) =>
         new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetString(bytes).TrimStart('﻿');
 

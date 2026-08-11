@@ -2,9 +2,8 @@ namespace SIL.Motif.Host.Analysis;
 
 /// <summary>
 /// Everything Motif can say about one word form without parsing: the human-approved test suite it
-/// carries, and — only if an Assessment is already on record — what the parser made of it. The unit
-/// <c>MOT-23</c> (<c>docs/plan-motif.md</c>) and ADR 0038 both key on, keyed by the one durable identity a
-/// word form has: its own GUID, never a <c>WfiAnalysis</c> GUID.
+/// carries, and — only if an Assessment is already on record — what the parser made of it. Keyed by the
+/// one durable identity a word form has: its own GUID, never a <c>WfiAnalysis</c> GUID.
 /// </summary>
 /// <param name="WordformGuid">
 /// The <c>WfiWordform</c>'s own GUID, as text. Stable across breakdown edits even though the analyses
@@ -40,8 +39,8 @@ public sealed record WordFormAnalysisAggregate(
 {
     /// <summary>
     /// How many analyses the parser produced for this word form — <b>the aggregate over-generation
-    /// signal</b> named in <c>docs/plan-motif.md</c> MOT-23. <c>null</c> when nothing is known (see
-    /// <see cref="AutomaticAnalyses"/>); otherwise the count, including zero.
+    /// signal</b>. <c>null</c> when nothing is known (see <see cref="AutomaticAnalyses"/>); otherwise the
+    /// count, including zero.
     /// </summary>
     /// <remarks>
     /// A rising count is reported, not judged. ADR 0038 decision 6 forbids attributing cause, and the same

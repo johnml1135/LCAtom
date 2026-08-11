@@ -15,8 +15,8 @@ namespace SIL.Motif.Host.Parser;
 /// </para>
 /// <para>
 /// So a process boundary is the price of correct identities today. It is contained to this file and
-/// <see cref="PanGlossParser"/> so that the FFI entry point <c>MOT-15</c> asks for — which scope 2 needs, since
-/// FieldWorks must host the parser in-process on <c>net48</c> — can replace it without touching any caller.
+/// <see cref="PanGlossParser"/> so that a future in-process FFI entry point — which FieldWorks hosting on
+/// <c>net48</c> will require — can replace it without touching any caller.
 /// </para>
 /// </remarks>
 public static class PanGlossExecutable
@@ -41,8 +41,7 @@ public static class PanGlossExecutable
         if (!string.IsNullOrWhiteSpace(configured))
             return File.Exists(configured) ? configured : null;
 
-        // The conventional sibling checkout: PanGloss beside motif, release build. Searched relative to the
-        // repository root rather than the working directory, which a test runner sets wherever it likes.
+        // Relative to the repo root, not the working directory — a test runner sets that wherever it likes.
         var root = TryFindRepositoryRoot();
         if (root is null) return null;
 

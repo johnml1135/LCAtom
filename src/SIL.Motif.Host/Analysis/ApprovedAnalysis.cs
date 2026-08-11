@@ -19,9 +19,9 @@ namespace SIL.Motif.Host.Analysis;
 /// <param name="OccurrenceCount">
 /// How many places in the project's own texts reference this analysis via <c>Segment.AnalysesRS</c> —
 /// <c>IWfiAnalysis.OccurrencesInTexts</c>'s count. Reported because it was asked for, not because it
-/// changes what "approved" means: <c>docs/plan-motif.md</c> MOT-23 and ADR 0038's own framing draw a hard
-/// line between the type-level test (this analysis, approved or not) and occurrence assignment (which
-/// sentence used it), which is disambiguation and stays out of scope here. This count answers "how many
-/// occurrences", never "which ones".
+/// changes what "approved" means: ADR 0038's own framing draws a hard line between the type-level test
+/// (this analysis, approved or not) and occurrence assignment (which sentence used it), which is
+/// disambiguation and stays out of scope here. This count answers "how many occurrences", never "which
+/// ones".
 /// </param>
 public sealed record ApprovedAnalysis(string ContentDigest, string MorphBreakdown, int OccurrenceCount);

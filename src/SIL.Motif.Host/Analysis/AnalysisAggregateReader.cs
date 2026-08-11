@@ -103,9 +103,7 @@ public static class AnalysisAggregateReader
     {
         var parts = analysis.MorphBundlesOS.Select(mb =>
         {
-            // A real allomorph's own form, falling back to the guessed-root string the parser stores
-            // directly on the bundle when there is no real MoForm to point at (ParseFiler.cs's "Override
-            // default Form with GuessedString" case).
+            // The real form, or the guessed-root fallback the parser stores when there is no MoForm (ParseFiler.cs).
             var text = mb.MorphRA?.Form?.VernacularDefaultWritingSystem?.Text
                        ?? mb.Form?.VernacularDefaultWritingSystem?.Text
                        ?? "?";
@@ -124,9 +122,7 @@ public static class AnalysisAggregateReader
 
     private static string DescribeMorpheme(string morphemeGuid, ICmObjectRepository objects)
     {
-        // PanGloss's morpheme key is the MSA GUID on the LibLCM path (docs/research/2026-08-05, §6). An
-        // unresolved key is shown raw rather than dropped — a silently-shortened breakdown would
-        // misrepresent the analysis, the same reasoning AssessReportParser.Resolve already applies.
+        // docs/research/2026-08-05-what-is-a-proper-word-analysis.md: unresolved keys are shown raw, never dropped.
         if (Guid.TryParse(morphemeGuid, out var guid)
             && objects.TryGetObject(guid, out var obj)
             && obj is IMoMorphSynAnalysis msa

@@ -89,7 +89,7 @@ public class ScratchCacheFactory
     }
 
     /// <summary>
-    /// <b>THE CANONICAL PATH</b> (ADR 0016, as amended 2026-08-05). Copies the project's files to
+    /// <b>THE CANONICAL PATH</b> (ADR 0016). Copies the project's files to
     /// <paramref name="destinationRoot"/> and opens the copy normally: ~50 ms to copy plus ~550 ms to open at
     /// Sena-3 scale, and the result was equivalent to the live cache on every axis measured — objects,
     /// entries, text, custom-field flids, and all four writing systems value-equal.
@@ -100,14 +100,12 @@ public class ScratchCacheFactory
     /// not saved is absent from the result.
     /// </para>
     /// <para>
-    /// <b>So the caller must save first, and that was settled the other way round from how it reads.</b> An
-    /// earlier version of this comment said saving the live project to close that gap "would mutate the real
-    /// project, which is exactly what a hypothetical Dry Run must not do." That framing was wrong: a save
-    /// commits what the user already authored, it does not add anything, and the alternative — validating
-    /// against a state the live cache has already left — produces an anchor that is stale on arrival and an
-    /// apply that reports drift which never happened. ADR 0016 (amended 2026-08-06) makes save-before-copy
-    /// the host precondition. Use <see cref="FwDataProjectLoader.Save"/>, which waits for the write to
-    /// actually reach disk — <c>Commit()</c> alone does not, and that asynchrony was found the hard way.
+    /// <b>So the caller must save first.</b> A save commits what the user already authored; it does not add
+    /// anything, while validating against a state the live cache has already left produces an anchor that
+    /// is stale on arrival and an apply that reports drift which never happened. ADR 0016 makes
+    /// save-before-copy the host precondition. Use <see cref="FwDataProjectLoader.Save"/>, which waits for
+    /// the write to actually reach disk — <c>Commit()</c> alone does not, and that asynchrony was found the
+    /// hard way.
     /// </para>
     /// </remarks>
     /// <returns>The opened scratch cache. Deleting <paramref name="destinationRoot"/> is the caller's job.</returns>
@@ -119,8 +117,7 @@ public class ScratchCacheFactory
         var sourceFolder = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(sourceFwDataPath))
             ?? throw new ArgumentException($"Could not determine the project folder from '{sourceFwDataPath}'.", nameof(sourceFwDataPath));
 
-        // Preserve FieldWorks' {projectsFolder}/{projectName}/{projectName}.fwdata layout, which the
-        // loader relies on to derive the projects folder.
+        // Preserves FieldWorks' {projectsFolder}/{projectName}/{projectName}.fwdata layout the loader expects.
         var projectName = System.IO.Path.GetFileNameWithoutExtension(sourceFwDataPath);
         var destFolder = System.IO.Path.Combine(destinationRoot, projectName);
         CopyDirectory(sourceFolder, destFolder);

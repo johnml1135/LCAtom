@@ -30,9 +30,9 @@ public enum ParserEngine
     FstPrunedByHermitCrab,
 
     /// <summary>
-    /// HermitCrab alone. **The fallback**, for the cases the owner named: a grammar that will not compile into
-    /// an FST at all (observed on a real project — the grammar overflowed the FST engine's enumeration
-    /// budget), and anything else odd enough that the FST path refuses.
+    /// HermitCrab alone. **The fallback** for a grammar that will not compile into an FST at all (observed
+    /// on a real project — the grammar overflowed the FST engine's enumeration budget), and anything else
+    /// odd enough that the FST path cannot handle it.
     /// </summary>
     HermitCrabOnly,
 }

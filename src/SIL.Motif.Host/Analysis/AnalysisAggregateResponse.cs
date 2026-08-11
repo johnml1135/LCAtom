@@ -9,9 +9,9 @@ namespace SIL.Motif.Host.Analysis;
 public sealed record AnalysisAssessmentProvenance(string CorpusId, string CorpusSha256, string GrammarSourceSha256);
 
 /// <summary>
-/// The whole answer to <c>docs/plan-motif.md</c> MOT-23's question: for a set of word forms, what has a
-/// human approved and what did the parser say, as of whatever Assessment (if any) is on record. A Report
-/// in this codebase's sense (<c>CONTEXT.md</c>) — advisory always, gates nothing, renders no verdict.
+/// The whole answer, for a set of word forms: what has a human approved and what did the parser say, as
+/// of whatever Assessment (if any) is on record. A Report in this codebase's sense (<c>CONTEXT.md</c>) —
+/// advisory always, gates nothing, renders no verdict.
 /// </summary>
 /// <param name="WordForms">One entry per word form read. See <see cref="WordFormAnalysisAggregate"/>.</param>
 /// <param name="Assessment">

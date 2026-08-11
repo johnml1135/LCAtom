@@ -41,7 +41,8 @@ namespace SIL.Motif.Host.Corpus;
 /// </param>
 /// <param name="Sha256">
 /// <c>sha256:</c> followed by 64 lowercase hex characters, computed over <see cref="Words"/> joined by
-/// newlines. A grammar coverage figure citing a <see cref="CorpusId"/> whose current hash no longer matches this
+/// newlines rather than canonical JSON — no word form contains one, so the extra machinery buys nothing
+/// here. A grammar coverage figure citing a <see cref="CorpusId"/> whose current hash no longer matches this
 /// one is stale and must say so rather than presenting itself as current.
 /// </param>
 /// <param name="Provenance">
@@ -93,13 +94,7 @@ public sealed record CorpusDescriptor(
         return new CorpusDescriptor(corpusId, ordered, ComputeSha256(ordered), provenance);
     }
 
-    /// <summary>
-    /// Newline-joined UTF-8 bytes, not canonical JSON. A flat list of plain word forms has no structure a
-    /// delimiter can't carry — none of Sena 3's, Amharic's, or Indonesian's wordforms contain a literal
-    /// newline — so the extra machinery RFC 8785 canonicalization exists for elsewhere in this codebase
-    /// (<c>SIL.Motif.Contract.Canonicalization</c>) would buy nothing here, and this type deliberately has
-    /// no dependency on that project (see the class remarks).
-    /// </summary>
+    /// <summary>Newline-joined UTF-8 bytes; see the <see cref="Sha256"/> parameter doc for why not JSON.</summary>
     private static string ComputeSha256(IReadOnlyList<string> orderedWords)
     {
         var bytes = Encoding.UTF8.GetBytes(string.Join("\n", orderedWords));
