@@ -39,7 +39,7 @@ public class CorpusIngestionTests : IDisposable
 
     private static CorpusProvenance Provenance(LicenceCapabilities? capabilities = null) => new(
         new CorpusOrigin(
-            Description: "eBible, Sena",
+            Description: "eBible, Testlang",
             Uri: "https://github.com/BibleNLP/ebible",
             RetrievedUtc: new DateTimeOffset(2026, 8, 9, 0, 0, 0, TimeSpan.Zero),
             Licence: "CC-BY-SA-4.0",
@@ -86,14 +86,14 @@ public class CorpusIngestionTests : IDisposable
     [Fact]
     public async Task AFileBecomesADocument_WithItsBytesHashedAsTheyArrived()
     {
-        var path = WriteFile("sehNT.txt", "Mbali ninga mbali.\nNinga mbali.\n");
+        var path = WriteFile("tstNT.txt", "Mbali ninga mbali.\nNinga mbali.\n");
         var ingestion = new CorpusIngestion(Store(), new FakeFetcher());
 
-        ingestion.AddCorpus("ebible-seh", Provenance());
+        ingestion.AddCorpus("ebible-tst", Provenance());
         var document = await ingestion.AddDocumentAsync(
-            "ebible-seh",
+            "ebible-tst",
             new DocumentSource.File(path),
-            new DocumentMetadata("sehNT", "Sena New Testament"));
+            new DocumentMetadata("tstNT", "Testlang New Testament"));
 
         Assert.Equal("Mbali ninga mbali.\nNinga mbali.\n", document.Text);
 
@@ -105,20 +105,20 @@ public class CorpusIngestionTests : IDisposable
     [Fact]
     public async Task AUrlIsRetrievedThroughTheFetcher_AndTheLocationIsKept()
     {
-        var fetcher = new FakeFetcher().Serving("https://example.org/seh.txt", "mbali\nnyumba\n");
+        var fetcher = new FakeFetcher().Serving("https://example.org/tst.txt", "mbali\nnyumba\n");
         var ingestion = new CorpusIngestion(Store(), fetcher);
 
-        ingestion.AddCorpus("ebible-seh", Provenance());
+        ingestion.AddCorpus("ebible-tst", Provenance());
         var document = await ingestion.AddDocumentAsync(
-            "ebible-seh",
-            DocumentSource.Parse("https://example.org/seh.txt"),
-            new DocumentMetadata("seh", "Sena"));
+            "ebible-tst",
+            DocumentSource.Parse("https://example.org/tst.txt"),
+            new DocumentMetadata("tst", "Testlang"));
 
         Assert.Equal("mbali\nnyumba\n", document.Text);
-        Assert.Contains("https://example.org/seh.txt", fetcher.Requested);
+        Assert.Contains("https://example.org/tst.txt", fetcher.Requested);
 
         // Recording where it came from is the whole point; losing it would make the record unreproducible.
-        Assert.Equal("https://example.org/seh.txt", document.Source.Describe());
+        Assert.Equal("https://example.org/tst.txt", document.Source.Describe());
     }
 
     [Fact]
@@ -139,9 +139,9 @@ public class CorpusIngestionTests : IDisposable
     public void ACorpusIsNotSilentlyRecreated()
     {
         var ingestion = new CorpusIngestion(Store(), new FakeFetcher());
-        ingestion.AddCorpus("ebible-seh", Provenance());
+        ingestion.AddCorpus("ebible-tst", Provenance());
 
-        var ex = Assert.Throws<InvalidOperationException>(() => ingestion.AddCorpus("ebible-seh", Provenance()));
+        var ex = Assert.Throws<InvalidOperationException>(() => ingestion.AddCorpus("ebible-tst", Provenance()));
 
         // The reason matters: replacing the corpus would leave Assessments pointing at text no longer there.
         Assert.Contains("orphan", ex.Message, StringComparison.OrdinalIgnoreCase);
@@ -191,12 +191,12 @@ public class CorpusIngestionTests : IDisposable
         ingestion.AddCorpus("ebible-mixed", Provenance(LicenceCapabilities.Unknown("eBible licences.tsv")));
 
         await ingestion.AddDocumentAsync("ebible-mixed", new DocumentSource.File(noDerivatives),
-            new DocumentMetadata("sehNT", "Sena NT", "CC-BY-NC-ND-4.0",
+            new DocumentMetadata("tstNT", "Testlang NT", "CC-BY-NC-ND-4.0",
                 new LicenceCapabilities(MayRedistribute: true, MayDerive: false, MayUseCommercially: false,
                     RequiresAttribution: true, Basis: "eBible licences.tsv")));
 
         await ingestion.AddDocumentAsync("ebible-mixed", new DocumentSource.File(publicDomain),
-            new DocumentMetadata("sehPD", "Sena, public domain", "public domain",
+            new DocumentMetadata("tstPD", "Testlang, public domain", "public domain",
                 new LicenceCapabilities(MayRedistribute: true, MayDerive: true, MayUseCommercially: true,
                     RequiresAttribution: false, Basis: "eBible licences.tsv")));
 
@@ -207,11 +207,11 @@ public class CorpusIngestionTests : IDisposable
 
         // An n-gram model may only be built from the one that permits it.
         var derivable = corpus.DocumentsPermittingDerivation();
-        Assert.Equal(new[] { "sehPD" }, derivable.Select(d => d.DocumentId));
+        Assert.Equal(new[] { "tstPD" }, derivable.Select(d => d.DocumentId));
 
         var explanation = corpus.DescribeDerivationRestrictions();
         Assert.Contains("1 of 2", explanation);
-        Assert.Contains("Sena NT", explanation);
+        Assert.Contains("Testlang NT", explanation);
     }
 
     [Fact]
@@ -259,9 +259,9 @@ public class CorpusIngestionTests : IDisposable
     public void DemandingPermissionThrowsWithTheExplanation_ForCallSitesThatMustNotProceed()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            LicenceCapabilities.Unknown("nobody checked").DemandDerivationIsPermitted("seh-wikipedia"));
+            LicenceCapabilities.Unknown("nobody checked").DemandDerivationIsPermitted("tst-wikipedia"));
 
-        Assert.Contains("seh-wikipedia", ex.Message);
+        Assert.Contains("tst-wikipedia", ex.Message);
     }
 
     // ---------------------------------------------------------------- what must survive storage
@@ -289,25 +289,25 @@ public class CorpusIngestionTests : IDisposable
         var attributes = new Dictionary<string, string>
         {
             ["copyrightHolder"] = "Wycliffe Bible Translators",
-            ["isoCode"] = "seh",
+            ["isoCode"] = "tst",
         };
 
         var ingestion = new CorpusIngestion(Store(), new FakeFetcher());
         ingestion.AddCorpus("c", Provenance(new LicenceCapabilities(true, true, false, true, "eBible licences.tsv")));
         var written = await ingestion.AddDocumentAsync("c", new DocumentSource.File(path),
-            new DocumentMetadata("d", "Sena NT", "CC-BY-SA-4.0", null, attributes));
+            new DocumentMetadata("d", "Testlang NT", "CC-BY-SA-4.0", null, attributes));
 
         var corpus = Store().Load("c")!;
         var read = corpus.Documents[0];
 
         Assert.Equal(written.ContentSha256, read.ContentSha256);
         Assert.Equal(written.IngestedUtc, read.IngestedUtc);
-        Assert.Equal("Sena NT", read.Title);
+        Assert.Equal("Testlang NT", read.Title);
         Assert.Equal("CC-BY-SA-4.0", read.Licence);
         Assert.Equal("Wycliffe Bible Translators", read.Attributes!["copyrightHolder"]);
 
         // Provenance is the reason the corpus exists as an object rather than a folder of files.
-        Assert.Equal("eBible, Sena", corpus.Provenance.Origin.Description);
+        Assert.Equal("eBible, Testlang", corpus.Provenance.Origin.Description);
         Assert.Equal("whitespace-and-punctuation", corpus.Provenance.Tokenisation.Method);
         Assert.Equal("eBible licences.tsv", corpus.Provenance.Origin.Capabilities!.Basis);
 

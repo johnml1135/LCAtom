@@ -10,7 +10,7 @@ acting on the middle of this note; the sections in between record the wrong conc
 **And they agree.** `pangloss compare` over two `assess` runs reports `outcomeDigestsAgree: true`, 40 of 40
 cases unchanged — identical outcome digests, with the pipeline name as the only recorded difference. There is
 also a crossover: the FST compile means the default engine is faster for a handful of words and the FST engine
-wins from about 90 words on Sena and about 4 on Amharic.
+wins from about 90 words on the fast-parsing sample and about 4 on Amharic.
 
 ## Why this was measured
 
@@ -57,22 +57,22 @@ First 40 words each, 20 cores, 5-second per-word cap:
 | grammar | mean per word | slowest word | timed out | wall for 40 |
 | --- | --- | --- | --- | --- |
 | Indonesian | **1 ms** | 12 ms | 0 | 97 ms |
-| Sena | **151 ms** | 2,035 ms | 0 | 2,575 ms |
+| Fast-parsing sample | **151 ms** | 2,035 ms | 0 | 2,575 ms |
 | Amharic | **1,327 ms** | 5,716 ms | **7 of 40** | 9,927 ms |
 
-Extrapolated to the 6,973 wordforms measured in the Sena 3 project:
+Extrapolated to the 6,973 wordforms measured in the 152,222-object project:
 
 | grammar's profile | wall time for ~7,000 wordforms |
 | --- | --- |
 | Indonesian-like | **~17 seconds** |
-| Sena-like | **~7.5 minutes** |
+| Fast-parsing-like | **~7.5 minutes** |
 | Amharic-like | **~29 minutes**, with roughly a sixth of words abandoned |
 
 **So "cheap" is not a property of the system; it is a property of the language.** The claim that reanalysis
 is cheap because it scales with corpus size was right about the shape and wrong about the constant — the
-constant ranges over three orders of magnitude, and the hard end is not iterable. Sena is the honest number
-for the Sena 3 corpus and it is tolerable; Amharic is not something a person tries twelve variants against
-in an afternoon.
+constant ranges over three orders of magnitude, and the hard end is not iterable. The fast-parsing sample is
+the honest number for that corpus and it is tolerable; Amharic is not something a person tries twelve variants
+against in an afternoon.
 
 Two caveats. This is the default (HermitCrab) engine; `--engine=foma` exists and was not measured. And
 Amharic is genuinely hard — Semitic root-and-pattern morphology, 417 phonemes and 8 phonological rules in
@@ -118,14 +118,14 @@ Same protocol, `--engine=foma`, and compile cost isolated the same way (one word
 | grammar | FST compile, once | per word: HermitCrab | per word: **foma** | speed-up | timeouts at 5 s (HC → foma) |
 | --- | --- | --- | --- | --- | --- |
 | Indonesian | **0.13 s** | 1 ms | ~0 ms | — | 0 → 0 |
-| Sena | **12.1 s** | 151 ms | **12 ms** | **12.6×** | 0 → 0 |
+| Fast-parsing sample | **12.1 s** | 151 ms | **12 ms** | **12.6×** | 0 → 0 |
 | Amharic | **4.9 s** | 1,327 ms | **69 ms** | **19.2×** | **7 of 40 → 0** |
 
-Full corpus for the 6,973 wordforms counted in Sena 3, 20 cores, compile included:
+Full corpus for the 6,973 wordforms counted in that project, 20 cores, compile included:
 
 | | HermitCrab | **foma** |
 | --- | --- | --- |
-| Sena-profile | ~7.5 minutes | **~16 seconds** |
+| Fast-parsing profile | ~7.5 minutes | **~16 seconds** |
 | Amharic-profile | ~29 minutes, ~1 word in 6 abandoned | **~29 seconds**, none abandoned |
 
 **So the hard case improves about sixtyfold and stops abandoning words.** An Amharic-profile grammar is
@@ -135,8 +135,8 @@ iterable after all: `foma` finished 36 of 40 words where HermitCrab finished 29 
 pays — every rule change invalidates the FST. At 5–12 seconds that is comfortably below the rate at which a
 person can think of the next variant, so it does not bound the loop; it *is* the loop's floor.
 
-**One counterintuitive detail worth keeping.** Sena's compile (12.1 s) is two and a half times Amharic's
-(4.9 s), even though Sena analyses words 5.7× faster. **Compile cost does not track analysis cost**, so it
+**One counterintuitive detail worth keeping.** The fast-parsing sample's compile (12.1 s) is two and a half
+times Amharic's (4.9 s), even though it analyses words 5.7× faster. **Compile cost does not track analysis cost**, so it
 has to be measured per grammar rather than predicted from one number or the other.
 
 ### What this does to the timeout finding
@@ -149,8 +149,8 @@ stop treating it as urgent.
 
 ### Verified the same day — the engines agree exactly
 
-The blocking question above is answered. Two `pangloss assess` runs over Sena's first 40 words, one per
-pipeline, then `pangloss compare`:
+The blocking question above is answered. Two `pangloss assess` runs over the fast-parsing sample's first 40
+words, one per pipeline, then `pangloss compare`:
 
 ```
 outcomeDigestsAgree : true
@@ -165,7 +165,7 @@ sample, and the `foma` numbers are safe to design around.
 
 Two things worth keeping from the exercise. The comparison's schema is `pangloss.grammar-delta` — this *is*
 the Grammar Delta [ADR 0028](../adr/0028-feeding-reorders-require-a-grammar-delta.md) requires, confirmed as
-an artifact rather than as vocabulary. And the coverage is 40 Sena words: agreement on a harder grammar, and
+an artifact rather than as vocabulary. And the coverage is 40 words from the fast-parsing sample: agreement on a harder grammar, and
 specifically on the 7 Amharic words HermitCrab abandoned, is **not** established by this run.
 
 ### The crossover, which is the operational rule
@@ -176,7 +176,7 @@ nothing to amortise against. Dividing each compile by the per-word saving:
 
 | grammar | compile | saved per word | **FST wins above** |
 | --- | --- | --- | --- |
-| Sena | 12.1 s | 139 ms | **~87 words** |
+| Fast-parsing sample | 12.1 s | 139 ms | **~87 words** |
 | Amharic | 4.9 s | 1,258 ms | **~4 words** |
 | Indonesian | 0.13 s | ~1 ms | ~130 words (both trivial) |
 

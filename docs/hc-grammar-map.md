@@ -99,7 +99,7 @@ one documented exception, and Motif must not promise it.
 2. **Direct `.fwdata`** — PanGloss now also has `pg-fwdata` → `pg_snapshot::Snapshot` →
    `pg_grammar::compile_project`, documented as *"a Rust port of FieldWorks' HCLoader.cs"*, bypassing
    HCLoader, `XmlLanguageWriter`, and `GenerateHCConfig` entirely. A structural-equivalence gate
-   cross-checks the two paths (passing on Sena 3 and Amharic, modulo Hvo-vs-GUID identity), and reaching
+   cross-checks the two paths (passing on the larger project and Amharic, modulo Hvo-vs-GUID identity), and reaching
    parity required fixing five real importer defects against HCLoader's *actual* behavior.
 
 **Consequence:** the authoritative semantics are **HCLoader.cs's behavior**, not the HC XML DTD's

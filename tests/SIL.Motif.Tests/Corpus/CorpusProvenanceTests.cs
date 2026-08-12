@@ -17,8 +17,8 @@ namespace SIL.Motif.Tests.Corpus;
 public class CorpusProvenanceTests
 {
     private static CorpusOrigin Wikipedia() => new(
-        Description: "Wikipedia, Sena edition",
-        Uri: "https://seh.wikipedia.org/",
+        Description: "Wikipedia, Testlang edition",
+        Uri: "https://tst.wikipedia.org/",
         RetrievedUtc: new DateTimeOffset(2026, 8, 9, 0, 0, 0, TimeSpan.Zero),
         Licence: "CC-BY-SA-4.0");
 
@@ -31,7 +31,7 @@ public class CorpusProvenanceTests
     public void AnUncuratedCorpusCarriesItsOrigin_ButCannotSupportAccuracy()
     {
         var provenance = new CorpusProvenance(Wikipedia(), Tokenisation());
-        var corpus = CorpusDescriptor.Create("seh-wikipedia", new[] { "mbali", "ya" }, provenance);
+        var corpus = CorpusDescriptor.Create("tst-wikipedia", new[] { "mbali", "ya" }, provenance);
 
         Assert.False(corpus.SupportsAccuracyClaims);
 
@@ -90,8 +90,8 @@ public class CorpusProvenanceTests
     {
         // Attesting changes what may be claimed, not which words they are; moving the hash would break every figure.
         var words = new[] { "mbali", "ya", "miseru" };
-        var bare = CorpusDescriptor.Create("seh", words);
-        var attested = CorpusDescriptor.Create("seh", words,
+        var bare = CorpusDescriptor.Create("tst", words);
+        var attested = CorpusDescriptor.Create("tst", words,
             new CorpusProvenance(Wikipedia(), Tokenisation(),
                 new CorpusQualification(true, true, "A. Linguist", DateTimeOffset.UtcNow, "checked")));
 

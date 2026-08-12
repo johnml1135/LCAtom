@@ -196,7 +196,7 @@ Recovery is step 9.
 **Two costs, stated rather than buried.** Saving is a real side effect — in FieldWorks it commits the linguist's
 in-flight edits at a moment Motif chose, which is defensible (FieldWorks saves routinely, and the alternative is
 validating against a stale world) but must be **visible to the user, not silent**. And a reload is ~1.8 s on
-Sena 3, paid only on a failed apply, which after a validated Dry Run and a matching anchor should be rare.
+a 152,222-object project, paid only on a failed apply, which after a validated Dry Run and a matching anchor should be rare.
 
 Build cost is nearly nil: `ProposalApplier` already never saves — documented as the host's job — so "save first"
 is a **host precondition**, not new Runner code.
@@ -262,10 +262,10 @@ wrong — a smaller copy of the original bug. "Discard" is what makes this a del
 ## Measured, 2026-08-05 — and one decision changes
 
 The spike is built (`spikes/SIL.Motif.Spikes.ScratchCache`, plus equivalence assertions in
-`tests/SIL.Motif.Tests/Runner/ScratchCacheEquivalenceTests.cs`) and run against real Sena 3 — 152,222
+`tests/SIL.Motif.Tests/Runner/ScratchCacheEquivalenceTests.cs`) and run against a real project — 152,222
 objects, 53.3 MB. Full results: [research note §10](../research/2026-08-05-createcachecopy-provenance-and-hazards.md#10-measured--the-spike-was-built-and-run).
 
-| | Sena 3 |
+| | 152,222 objects |
 | --- | ---: |
 | Copy the project's files (control) | 49 ms |
 | **In-memory copy from a cold live cache** | **209 ms** |
@@ -283,7 +283,7 @@ hot cache — 31.8×.** That is what makes an interactive dry-run loop feel inst
    is well past it. In a live FieldWorks session the file path is likely the *cheaper* option, not the
    expensive one.
 2. **A memory-only scratch is not equivalent to the live cache.** **0 of 4 writing systems** came back
-   value-equal: every one lost its valid-character sets (2 → 0) and its font, and the vernacular `seh` lost
+   value-equal: every one lost its valid-character sets (2 → 0) and its font, and the vernacular lost
    its collation rules. The file path returned **4 of 4** value-equal and no findings at all. Hazard (a) is
    therefore confirmed at scale, not merely predicted.
 
@@ -320,7 +320,7 @@ mutate it, read back, discard
 
 **Why one path rather than two.** The hybrid asked every future operation's author to answer "does this
 depend on writing-system behaviour?" correctly, forever, with a silent wrong answer as the failure mode.
-That reasoning burden *is* the defect. `seh` — Sena 3's vernacular — loses its collation rules in a
+That reasoning burden *is* the defect. The vernacular writing system loses its collation rules in a
 memory-only scratch, and collation is exactly what ordering, homograph numbering, and "is this form already
 present" comparisons rest on. We cannot enumerate everywhere LibLCM consults a writing system during a
 write and read-back, so we do not build a design that requires us to.
@@ -390,7 +390,7 @@ non-canonical. It is not to be used for a Dry Run without a decision that reopen
 
 - **`CreateCacheCopy` has zero callers** in `liblcm` or `FieldWorks` source (matches appear only in
   compiled assemblies). It is public, plausible, and untested in practice.
-- The wall-clock cost of one `CreateCacheCopy` from a hot Sena-3-scale cache into `kMemoryOnly`, and
+- The wall-clock cost of one `CreateCacheCopy` from a hot ~152k-object-scale cache into `kMemoryOnly`, and
   of a derived copy from a pristine scratch. Decision 1 versus 2's whole value is the ratio between
   them; both are asserted from the code path, neither is measured.
 - Whether a second `LcmCache` coexists cleanly inside the FieldWorks process. The service locator is

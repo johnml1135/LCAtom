@@ -440,7 +440,7 @@ from .NET Framework 4.8 (FieldWorks)"*), not something `pangloss` (the CLI) link
     `PanGloss\rust\crates\pg-fwdata\src\lib.rs:61-69`).
 - **`pg-fwdata` reads `.fwdata` natively in Rust** — a streaming `quick_xml` parser
   (`pg-fwdata\src\lib.rs:8-12`: *"a flat sequence of `<rt class=... guid=...>` records"*, "never
-  builds a DOM of the whole document," Sena 3 is "~54MB"). **No dependency on liblcm, .NET, or
+  builds a DOM of the whole document," the larger project is "~54MB"). **No dependency on liblcm, .NET, or
   FieldWorks itself** — this is a from-scratch parser of the `.fwdata` XML schema. Malformed
   `.fwdata` data (dangling refs, unknown morph types, stale ad-hoc rules) is downgraded to
   warnings in an `ImportReport`, never a panic/hard error

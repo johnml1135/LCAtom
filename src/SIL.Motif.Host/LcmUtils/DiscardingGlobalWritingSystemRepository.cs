@@ -16,7 +16,7 @@ namespace SIL.Motif.Host.LcmUtils;
 /// local LDML store: <c>BackendProvider.InitializeWritingSystemManager</c> returns before wiring either
 /// repository, so every writing system is re-synthesized from its bare language tag. That reproduces
 /// the exact loss ADR 0016 measured and rejected for <c>kMemoryOnly</c> — 0 of 4 writing systems
-/// value-equal on Sena 3, collation gone — for the sake of skipping a save that a throwaway scratch
+/// value-equal on a ~152k-object project, collation gone — for the sake of skipping a save that a throwaway scratch
 /// should skip far more cheaply.
 /// </para>
 /// <para>

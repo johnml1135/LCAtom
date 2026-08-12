@@ -1,7 +1,7 @@
 namespace SIL.Motif.Host.Corpus;
 
 /// <summary>Where a corpus's text came from.</summary>
-/// <param name="Description">Human-facing statement of the source — "Wikipedia, Sena edition".</param>
+/// <param name="Description">Human-facing statement of the source — "Wikipedia, Testlang edition".</param>
 /// <param name="Uri">The retrievable location, when there is one.</param>
 /// <param name="RetrievedUtc">When it was pulled. A dump moves; a corpus does not.</param>
 /// <param name="Licence">

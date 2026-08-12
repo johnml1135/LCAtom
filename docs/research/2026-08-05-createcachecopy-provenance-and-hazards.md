@@ -209,22 +209,21 @@ flid across the live/scratch boundary.
 
 | File | Location | Size | `<rt>` objects |
 | --- | --- | ---: | ---: |
-| `Sena 3.fwdata` | `FieldWorks/DistFiles/Projects/Sena 3/` | 55.9 MB | **152,222** |
+| `MyProject.fwdata` *(real 152,222-object project)* | `FieldWorks/DistFiles/Projects/MyProject/` | 55.9 MB | **152,222** |
 | `Amharic.fwdata` | `FieldWorks/DistFiles/Projects/Amharic/` | 11.3 MB | 25,840 |
 | `integration_test_data.fwdata` | `FieldWorks/DistFiles/Projects/integration_test_data/` | 5.1 MB | 10,427 |
 | `NewLangProj.fwdata` | `SIL.LCModel 11.0.0-beta0150` package, `contentFiles/Templates/` | 295 KB | 688 |
-| `Sena 3.fwdata` *(pangloss-cli stub)* | `%TEMP%/pangloss-cli-test-fwdata-name-*/` | 14.9 KB | **50** |
+| `MyProject.fwdata` *(pangloss-cli stub, same file name)* | `%TEMP%/pangloss-cli-test-fwdata-name-*/` | 14.9 KB | **50** |
 
-**The trap is the last row:** a 50-object stub that reuses the name "Sena 3". Do not mistake it for a
-scale fixture. The genuine one lives only in the FieldWorks checkout, and motif ships no `.fwdata`
-fixtures of its own. Note also that `NewLangProj`'s 688 objects is the scale at which the *only* existing
-test has ever exercised this path — 221× smaller than real Sena 3.
+**The trap is the last row:** a 50-object stub that reuses the real project's file name. Note also that
+`NewLangProj`'s 688 objects is the scale at which the *only* existing test has ever exercised this path —
+221× smaller than the real 152,222-object project.
 
 ## 9. What would falsify ADR 0016
 
 The spike must be built to break the design, not to produce a number:
 
-1. **Cost falsification.** If a hot-cache → scratch copy at Sena-3 scale is slow enough that doing it once
+1. **Cost falsification.** If a hot-cache → scratch copy at ~152k-object scale is slow enough that doing it once
    per session is not cheaper than mutate-and-rollback on the live cache, the "serialize heavily once"
    premise collapses.
 2. **Ratio falsification.** If the *cheap* scratch → derived copy is not meaningfully cheaper than the hot
@@ -245,10 +244,10 @@ Item 3 is the one that would change the architecture rather than its parameters,
 `tests/SIL.Motif.Tests/Runner/ScratchCacheEquivalenceTests.cs` (equivalence as ordinary assertions on the
 small fixture). The project is copied to temp first; the source project is never opened or modified.*
 
-**Fixture: real Sena 3 — 152,222 objects, 53.3 MB, 4 writing systems, 3 custom fields.** Run on
+**Fixture: real 152,222-object project — 53.3 MB, 4 writing systems, 3 custom fields.** Run on
 2026-08-05, Release build, warm OS file cache.
 
-| Measurement | Sena 3 |
+| Measurement | 152,222-object project |
 | --- | ---: |
 | Copy the project's files to temp (control — plain I/O) | **49 ms** |
 | Open the copy, cold | 1,816 ms |
@@ -290,14 +289,14 @@ dry run.
 **Hazard (a) is confirmed at scale, on every in-memory variant:**
 
 ```
-en                : character sets 2 -> 0; font 'Times New Roman' -> 'Charis SIL'; spell-check id differs
-pt                : character sets 2 -> 0; font 'Times New Roman' -> 'Charis SIL'
-seh               : collation rules lost; character sets 2 -> 0; font 'Doulos SIL' -> 'Charis SIL'
-seh-fonipa-x-etic : character sets 2 -> 0; spell-check id differs
+en                 : character sets 2 -> 0; font 'Times New Roman' -> 'Charis SIL'; spell-check id differs
+pt                 : character sets 2 -> 0; font 'Times New Roman' -> 'Charis SIL'
+vern               : collation rules lost; character sets 2 -> 0; font 'Doulos SIL' -> 'Charis SIL'
+vern-fonipa-x-etic : character sets 2 -> 0; spell-check id differs
 ```
 
-Every writing system loses its **valid-character sets** (2 → 0) and its font, and `seh` — the vernacular —
-loses its collation rules. The file path loses nothing. So the choice between strategies is **not a
+Every writing system loses its **valid-character sets** (2 → 0) and its font, and the vernacular writing
+system loses its collation rules. The file path loses nothing. So the choice between strategies is **not a
 performance question at all**: it is whether the operation being dry-run cares how the project sorts and
 validates characters.
 
@@ -340,6 +339,6 @@ So the two properties are mutually exclusive through this API, and no choice of 
 
 **Why not keep both and choose per operation?** Because that asks every future operation's author to answer
 "does this depend on writing-system behaviour?" correctly, forever, with a silent wrong answer as the failure
-mode. `seh` — Sena 3's own vernacular — loses its collation rules, and collation underpins ordering,
+mode. The project's own vernacular writing system loses its collation rules, and collation underpins ordering,
 homograph numbering, and form comparison. Nobody can enumerate every place LibLCM consults a writing system
 during a write and read-back, so the design should not require it. The reasoning burden is the defect.

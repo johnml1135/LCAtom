@@ -70,7 +70,7 @@ report, and UI — and projects barely use it.
 
 **Narrowed 2026-08-08 by [ADR 0034](0034-the-boundary-with-fieldworks-state-versus-change.md) decision 3:**
 thin judgement data limits *precision* only. **Gap-finding may use every analysis whatever produced it**, so
-its denominator in Sena 3 is ~760 rather than 8 — absence is absence regardless of who wrote the analyses. The
+its denominator in the 152,222-object project is ~760 rather than 8 — absence is absence regardless of who wrote the analyses. The
 strict asymmetry is that a machine analysis is evidence a combination *occurs* and never evidence it is
 *correct*, since a rule cannot vindicate itself through the analyses it generated.
 

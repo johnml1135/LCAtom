@@ -53,9 +53,9 @@ public class CorpusBundleTests : IDisposable
 
     private const string EBibleBundle = """
     {
-      "corpusId": "ebible-seh",
+      "corpusId": "ebible-tst",
       "origin": {
-        "description": "eBible, Sena translations",
+        "description": "eBible, Testlang translations",
         "uri": "https://github.com/BibleNLP/ebible",
         "retrievedUtc": "2026-08-09T10:30:00Z",
         "licence": "mixed; see per-document",
@@ -68,10 +68,10 @@ public class CorpusBundleTests : IDisposable
         "notes": "Verse-per-line input; punctuation split off; digits kept."
       },
       "documents": [
-        { "documentId": "sehNT", "title": "Sena New Testament", "source": "sehNT.txt",
+        { "documentId": "tstNT", "title": "Testlang New Testament", "source": "tstNT.txt",
           "licence": "CC-BY-NC-ND-4.0",
-          "attributes": { "copyrightHolder": "Wycliffe Bible Translators", "isoCode": "seh" } },
-        { "documentId": "sehPD", "title": "Sena, public domain", "source": "sehPD.txt",
+          "attributes": { "copyrightHolder": "Wycliffe Bible Translators", "isoCode": "tst" } },
+        { "documentId": "tstPD", "title": "Testlang, public domain", "source": "tstPD.txt",
           "licence": "public domain",
           "capabilities": { "mayRedistribute": true, "mayDerive": true, "mayUseCommercially": true,
                             "requiresAttribution": false, "basis": "eBible licences.tsv" } }
@@ -82,21 +82,21 @@ public class CorpusBundleTests : IDisposable
     [Fact]
     public async Task AnEBibleHandoffIngestsWholesale_WithLicencesResolvedPerDocument()
     {
-        WriteText("sehNT.txt", "Mbali ninga mbali.\n");
-        WriteText("sehPD.txt", "Nyumba ikulu.\n");
+        WriteText("tstNT.txt", "Mbali ninga mbali.\n");
+        WriteText("tstPD.txt", "Nyumba ikulu.\n");
         var bundlePath = WriteBundle(EBibleBundle);
 
         var store = new FileCorpusStore(Path.Combine(_root, "corpora"));
         var corpus = await new CorpusIngestion(store).AddBundleAsync(CorpusBundle.ReadFile(bundlePath));
 
-        Assert.Equal("ebible-seh", corpus.CorpusId);
-        Assert.Equal(new[] { "sehNT", "sehPD" }, corpus.Documents.Select(d => d.DocumentId));
+        Assert.Equal("ebible-tst", corpus.CorpusId);
+        Assert.Equal(new[] { "tstNT", "tstPD" }, corpus.Documents.Select(d => d.DocumentId));
         Assert.Equal("Mbali ninga mbali.\n", corpus.Documents[0].Text);
 
         // The whole point of the per-document licence: one pull, two answers to "may I derive from this".
-        Assert.Equal(new[] { "sehPD" }, corpus.DocumentsPermittingDerivation().Select(d => d.DocumentId));
+        Assert.Equal(new[] { "tstPD" }, corpus.DocumentsPermittingDerivation().Select(d => d.DocumentId));
 
-        // sehNT states no capabilities, so it inherits the corpus's — which forbid derivation.
+        // tstNT states no capabilities, so it inherits the corpus's — which forbid derivation.
         Assert.False(corpus.Documents[0].EffectiveCapabilities(corpus.Provenance.Origin).PermitsDerivedArtefacts);
 
         // Facts the fetching tool knew and Motif has no field for survive verbatim.
@@ -109,8 +109,8 @@ public class CorpusBundleTests : IDisposable
     [Fact]
     public void RelativePathsResolveAgainstTheBundle_NotTheWorkingDirectory()
     {
-        WriteText("sehNT.txt", "x\n");
-        WriteText("sehPD.txt", "y\n");
+        WriteText("tstNT.txt", "x\n");
+        WriteText("tstPD.txt", "y\n");
         var bundlePath = WriteBundle(EBibleBundle);
 
         var previous = Directory.GetCurrentDirectory();
@@ -123,7 +123,7 @@ public class CorpusBundleTests : IDisposable
             var source = Assert.IsType<DocumentSource.File>(bundle.Documents[0].Source);
             Assert.True(Path.IsPathRooted(source.Path));
             Assert.Equal(
-                Path.GetFullPath(Path.Combine(HandoffDirectory, "sehNT.txt")),
+                Path.GetFullPath(Path.Combine(HandoffDirectory, "tstNT.txt")),
                 Path.GetFullPath(source.Path));
         }
         finally
@@ -137,7 +137,7 @@ public class CorpusBundleTests : IDisposable
     {
         var bundle = CorpusBundle.Read(System.Text.Json.JsonDocument.Parse("""
         {
-          "corpusId": "opus-seh",
+          "corpusId": "opus-tst",
           "origin": { "description": "OPUS bible-uedin", "retrievedUtc": "2026-08-09T00:00:00Z" },
           "tokenisation": { "method": "opustools", "version": "1.6.2" },
           "documents": [ { "documentId": "d", "source": "https://opus.nlpl.eu/download/x.txt" } ]
@@ -215,7 +215,7 @@ public class CorpusBundleTests : IDisposable
     [Fact]
     public async Task AMissingFileFailsAtIngestion_NamingTheFile()
     {
-        WriteText("sehNT.txt", "x\n");     // sehPD.txt deliberately absent
+        WriteText("tstNT.txt", "x\n");     // tstPD.txt deliberately absent
         var bundlePath = WriteBundle(EBibleBundle);
 
         var store = new FileCorpusStore(Path.Combine(_root, "corpora"));
@@ -224,12 +224,12 @@ public class CorpusBundleTests : IDisposable
         var ex = await Assert.ThrowsAsync<FileNotFoundException>(() =>
             ingestion.AddBundleAsync(CorpusBundle.ReadFile(bundlePath)));
 
-        Assert.Contains("sehPD.txt", ex.Message);
+        Assert.Contains("tstPD.txt", ex.Message);
 
         // Partial ingestion is visible, not hidden: the document that arrived is there; the fix is add-the-rest.
-        var corpus = store.Load("ebible-seh")!;
+        var corpus = store.Load("ebible-tst")!;
         Assert.Single(corpus.Documents);
-        Assert.Equal("sehNT", corpus.Documents[0].DocumentId);
+        Assert.Equal("tstNT", corpus.Documents[0].DocumentId);
     }
 
     [Fact]
@@ -238,7 +238,7 @@ public class CorpusBundleTests : IDisposable
         var json = """
         {
           "corpusId": "c",
-          "origin": { "description": "Curated Sena wordlist", "retrievedUtc": "2026-08-09T00:00:00Z" },
+          "origin": { "description": "Curated Testlang wordlist", "retrievedUtc": "2026-08-09T00:00:00Z" },
           "tokenisation": { "method": "m", "version": "1" },
           "qualification": { "knownClean": true, "inScope": true, "attestor": "A. Linguist",
                              "attestedUtc": "2026-08-09T12:00:00Z",

@@ -22,7 +22,7 @@ public sealed record ParserRunResult(BatchAnalysis? Analysis, ParserRefusal? Ref
 /// <remarks>
 /// <para>
 /// <b>The project file is the input, and that is the whole point.</b> PanGloss reads <c>.fwdata</c> directly
-/// (<c>pg_fwdata::import_file</c> → snapshot → <c>compile_project</c>), which takes ~253 ms on the 56 MB Sena 3
+/// (<c>pg_fwdata::import_file</c> → snapshot → <c>compile_project</c>), which takes ~253 ms on a 56 MB
 /// project and needs no FieldWorks assemblies, no HermitCrab dependency and no vendored grammar extractor. It
 /// also — the reason Motif requires this route rather than preferring it — answers in **FieldWorks GUIDs**,
 /// where the HermitCrab-XML route answers in synthetic keys that cannot be tied back to the entry or rule a

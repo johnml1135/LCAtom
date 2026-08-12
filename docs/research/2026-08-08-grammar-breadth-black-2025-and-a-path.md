@@ -133,7 +133,7 @@ Nahuatl signature exactly: `komitl` goes from one analysis to two.
 does the parser still produce it, and does it now produce *others*? A new reading of a word a human already
 settled is the strongest over-generation evidence available. Uses the comparison
 [ADR 0027](../adr/0027-what-counts-as-the-same-word-analysis.md) already settled — morph count, and per
-morpheme the allomorph, category record and inflection type. Sena 3 holds 760 analyses, which is signal even
+morpheme the allomorph, category record and inflection type. The 152,222-object project holds 760 analyses, which is signal even
 though only 8 carry a human evaluation.
 
 **3. Ad hoc rule census and tightness audit — Black's own diagnostic, and uniquely ours.** Count ad hoc rules,

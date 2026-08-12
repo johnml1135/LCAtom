@@ -47,14 +47,14 @@ public class ScratchCacheFactory
     /// <remarks>
     /// <para>
     /// Retained as the comparison point that settled ADR 0016, and because it is the only way to capture the
-    /// source's <i>uncommitted</i> edits. It is fast — 78–200 ms from a cold source at Sena-3 scale, against
+    /// source's <i>uncommitted</i> edits. It is fast — 78–200 ms from a cold source at ~152k objects, against
     /// ~600 ms for <see cref="CreateFromFileCopy"/> — and cost is O(objects), each either a byte-array
     /// reference copy (source surrogate never reconstituted) or a full <c>ToXmlString()</c> (source object
     /// already fluffed), so a hot source costs ~4.2 s.
     /// </para>
     /// <para>
-    /// <b>But every <c>kMemoryOnly</c> cache loses its writing-system definitions.</b> Measured on Sena 3:
-    /// 0 of 4 writing systems value-equal — valid-character sets 2 → 0, fonts replaced, and the vernacular
+    /// <b>But every <c>kMemoryOnly</c> cache loses its writing-system definitions.</b> Measured on a
+    /// ~152k-object project: 0 of 4 writing systems value-equal — valid-character sets 2 → 0, fonts replaced, and the vernacular
     /// <c>seh</c> stripped of its collation rules. This is a property of the target backend, not of the
     /// source: <c>useMemoryWsManager</c> is hardwired for it, so copying from a file-loaded scratch with
     /// perfect writing systems still yields 0 of 4. Collation is what ordering, homograph numbering, and
@@ -90,7 +90,7 @@ public class ScratchCacheFactory
     /// <summary>
     /// <b>THE CANONICAL PATH</b> (ADR 0016). Copies the project's files to
     /// <paramref name="destinationRoot"/> and opens the copy normally: ~50 ms to copy plus ~550 ms to open at
-    /// Sena-3 scale, and the result was equivalent to the live cache on every axis measured — objects,
+    /// ~152k objects, and the result was equivalent to the live cache on every axis measured — objects,
     /// entries, text, custom-field flids, and all four writing systems value-equal.
     /// </summary>
     /// <remarks>

@@ -33,7 +33,7 @@ small enough for a single integrator — one person, or several people together 
 
 Object counts from two real projects, by class, straight from the `.fwdata`:
 
-| | Sena 3 | Amharic |
+| | Larger project (152,222 objects) | Amharic |
 | --- | --- | --- |
 | Objects, total | 152,222 | 25,840 |
 | Text and analysis | 34,308 | 2,522 |
@@ -44,7 +44,7 @@ Object counts from two real projects, by class, straight from the `.fwdata`:
 | Human evaluations of an analysis (`CmAgentEvaluation`) | 8 | 8 |
 
 **Why "hand-authored grammar" is smaller than a naive count.** Grouping by class name suggests ~4,900
-grammar objects in Sena 3, but `MoStemAllomorph` (1,485), `MoStemMsa` (1,417) and `FsFeatStruc` (1,480)
+grammar objects in the larger project, but `MoStemAllomorph` (1,485), `MoStemMsa` (1,417) and `FsFeatStruc` (1,480)
 scale with the *lexicon* — roughly one per entry or sense — so they are lexical data wearing grammatical
 class names. What a linguist actually authors is the inventory and the rules: 44 environments, 44
 phonemes, 37 parts of speech, 25 inflectional templates, 25 slots, 22 symbolic feature values. Counting
@@ -56,13 +56,13 @@ project contains a single phonological or compound rule. A grammar of this size 
 integration cost of a second editor would exceed the cost of writing the whole thing once.
 
 **Two cells above were wrong, corrected 2026-08-06 (see `E8`, `E9`).** Amharic has **8** `PhRegularRule`
-objects, not zero, and both projects have compound rules: Sena 3 has 4 `MoExoCompound`, Amharic 1
+objects, not zero, and both projects have compound rules: the larger project has 4 `MoExoCompound`, Amharic 1
 `MoEndoCompound`. Two separate counting mistakes, both mine: the script printed only the twelve largest
 classes per group, so I read a missing line as a zero; and `MoCompoundRule` is the **abstract parent**, so
 querying it returns zero however many compound rules exist — the instances are always `MoEndoCompound` or
 `MoExoCompound`. The same hierarchy trap I had just caught for `MoStemMsa`, missed one paragraph later.
 
-**The conclusion is unaffected and the arithmetic barely moves.** Sena 3 gains 4 objects (~220 → ~224) and
+**The conclusion is unaffected and the arithmetic barely moves.** The larger project gains 4 objects (~220 → ~224) and
 Amharic gains 18 (~620 → ~638); the grammar is still ~0.15% of the project and still fits in one head. What
 does not survive is the rhetorical flourish — *"neither sample project contains a single phonological or
 compound rule"* is simply false, and it was doing real work below, where I used zero compound rules as
@@ -70,8 +70,8 @@ evidence that a compounding concern had no surface area. It has some. See
 [ADR 0032](0032-stem-assessment-is-pangloss-supplied-lexicon.md), where that concern turned out to be
 misplaced for an unrelated reason.
 
-**One finding worth flagging separately:** only 8 human evaluations of a word analysis exist in a project
-with 6,973 wordforms and 760 analyses. Approval of analyses is a feature FieldWorks has and projects
+**One finding worth flagging separately:** only 8 human evaluations of a word analysis exist in the larger project,
+which has 6,973 wordforms and 760 analyses. Approval of analyses is a feature FieldWorks has and projects
 barely use. That is a caution about designing review around it, and it lowers the urgency of `I40` (who
 overrules a native speaker when a corrected rule breaks an approved analysis) — the pile being protected
 is currently almost empty. Two projects is a thin sample; treat this as a prompt to check more, not proof.
@@ -293,7 +293,7 @@ shape — delta against the previous run — though it does not settle which den
    path skips any rule application, the report is optimistically wrong: a stem would look correctly
    categorised when it is not, which is worse than no report. This is a question for PanGloss, recorded as
    an interface requirement in [the cross-repo plan](../plan-cross-repo.md#pangloss).
-2. **"Cheap" needs a number.** Reanalysing Sena 3's corpus is 6,973 wordforms; the cost scales with corpus
+2. **"Cheap" needs a number.** Reanalysing the larger project's corpus is 6,973 wordforms; the cost scales with corpus
    size, not grammar size, so it is almost certainly fine — but it is unmeasured, and a coverage report
    that takes four minutes changes how often it can run. Measure before relying on it.
 

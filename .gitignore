@@ -8,7 +8,6 @@
 *.chm
 WritingSystemStore/
 TestLangProj/
-Sena*/
 
 ## .NET build output
 bin/
