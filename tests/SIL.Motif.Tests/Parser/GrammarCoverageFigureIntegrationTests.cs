@@ -1,3 +1,6 @@
+using SIL.LCModel;
+using SIL.LCModel.Core.Text;
+using SIL.LCModel.Infrastructure;
 using SIL.Motif.Host.Corpus;
 using SIL.Motif.Host.LcmUtils;
 using SIL.Motif.Host.Parser;
@@ -7,29 +10,48 @@ using Xunit;
 namespace SIL.Motif.Tests.Parser;
 
 /// <summary>
-/// The end-to-end path: a real project's wordforms go in, a real <c>pangloss</c> run comes back, and a
-/// <see cref="GrammarCoverageFigure"/> comes out citing exactly what produced it. Every other test in this feature
-/// exercises one seam at a time against synthetic or captured data; this one proves the seams actually fit
-/// together against the real Sena 3 project.
+/// The end-to-end path: a project's wordforms go in, a real <c>pangloss</c> run comes back, and a
+/// <see cref="GrammarCoverageFigure"/> comes out citing exactly what produced it. Every other test in this
+/// feature exercises one seam at a time against synthetic or captured data; this one proves the seams
+/// actually fit together against a live project and a live parser run.
 /// </summary>
+/// <remarks>
+/// Runs against <see cref="PristineProjectFixture"/>'s two seeded stems, not a realistic corpus, so it
+/// cannot claim anything about coverage <i>quality</i> — only that the wiring produces a figure and that
+/// the figure's own invariants (denominator bound, lower-bound flag, fraction range) hold for whatever the
+/// parser actually returned.
+/// </remarks>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
-[Trait("Fixture", "FieldWorks")]
-public sealed class GrammarCoverageFigureIntegrationTests
+public sealed class GrammarCoverageFigureIntegrationTests : IDisposable
 {
+    private readonly LcmCache _cache;
+
+    public GrammarCoverageFigureIntegrationTests(PristineProjectFixture pristine)
+    {
+        _cache = pristine.NewScratch();
+        RealParserProject.PrepareForParsing(_cache, "m", "o", "t", "i", "f", "a", "b");
+    }
+
+    public void Dispose()
+    {
+        if (!_cache.IsDisposed) _cache.Dispose();
+    }
+
     [RealParserFact]
     public void ExtractingAnalysingAndComputing_ProducesAFigureThatCitesItsOwnRun()
     {
-        var projectPath = RealProject.Sena3Path()!;
-
-        // Small cap: proves wiring only; full-corpus timing is in docs/research/2026-08-06-parser-timing-measured.md.
-        CorpusDescriptor corpus;
-        using (var cache = new FwDataProjectLoader().LoadScratchCache(projectPath))
+        // One word matching a seeded stem (should be analysable) and one that matches nothing.
+        NonUndoableUnitOfWorkHelper.Do(_cache.ActionHandlerAccessor, () =>
         {
-            corpus = LcmWordformCorpus.Extract(cache, "Sena 3 (smoke sample)", limit: 8);
-        }
+            var factory = _cache.ServiceLocator.GetInstance<IWfiWordformFactory>();
+            factory.Create(TsStringUtils.MakeString(SeededProject.FirstForm, _cache.DefaultVernWs));
+            factory.Create(TsStringUtils.MakeString("zzznotaseededword", _cache.DefaultVernWs));
+        });
 
+        var corpus = LcmWordformCorpus.Extract(_cache, "seeded project (smoke sample)");
         Assert.NotEmpty(corpus.Words);
 
+        var projectPath = _cache.ProjectId.Path;
         var parser = new PanGlossParser();
 
         var batchResult = parser.AnalyseBatch(projectPath, corpus.Words, ParserEngine.FstPrunedByHermitCrab);

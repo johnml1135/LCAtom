@@ -11,10 +11,11 @@ namespace SIL.Motif.Tests.Runner;
 /// ADR 0016: does a scratch cache actually work, and is it equivalent to the live cache it came from?
 /// </summary>
 /// <remarks>
-/// These run against the small <c>TestLangProj</c> fixture, so they assert <b>behaviour</b> and say nothing
-/// about cost — timing at real scale is the console harness's job
-/// (<c>spikes/SIL.Motif.Spikes.ScratchCache</c>, pointed at Sena 3). Keeping the equivalence checks here
-/// means a regression in either strategy fails the suite rather than waiting for someone to re-run a spike.
+/// These run against <see cref="TestFixtures.PristineProjectFixture"/>'s small seeded project, so they
+/// assert <b>behaviour</b> and say nothing about cost — timing at real scale is the console harness's job
+/// (<c>spikes/SIL.Motif.Spikes.ScratchCache</c>, pointed at a real project on disk). Keeping the
+/// equivalence checks here means a regression in either strategy fails the suite rather than waiting for
+/// someone to re-run a spike.
 /// </remarks>
 [Collection(LcmCacheTestCollection.Name)]
 public class ScratchCacheEquivalenceTests : IDisposable

@@ -15,12 +15,13 @@ first, so one green run means clean comments, a clean compile, and a passing sui
 CI runs the same two scripts (`.github/workflows/ci.yml`), so anything they reject locally is
 rejected there too — and anything they let through is not a CI surprise.
 
-**`./test.ps1` needs a FieldWorks sibling checkout.** Much of the suite reads `../FieldWorks` —
-`TestLangProj` for a live LibLCM cache, `DistFiles` for `ContextHelp.xml`. Those tests fail rather
-than skip when it is absent, on purpose: a suite that quietly shrinks reports success for work it
-never did. They carry `[Trait("Fixture", "FieldWorks")]`; CI runs `-Filter 'Fixture!=FieldWorks'` and
-says so in the step name. **A test needing anything outside this repo must carry that trait**, or it
-passes here and fails in CI.
+**`./test.ps1` needs no project or checkout from outside this repo.** Every LibLCM project the suite
+exercises is a real, blank `LcmCache` built at run time by `NewLangProjFixture` and seeded by
+`SeededProject` (`tests/SIL.Motif.Tests/TestFixtures/`) — no vendored sample project, no sibling
+FieldWorks checkout. The one external dependency that remains is the `pangloss` executable, a separate
+Rust build; tests needing it are gated by `RealParserFactAttribute`, which skips — rather than fails —
+when it is not built, since "the parser is not built here" is an ordinary state of a developer's
+machine.
 
 ## Building against a local libpalaso (opt-in, off by default)
 

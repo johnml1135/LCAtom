@@ -24,7 +24,8 @@ namespace SIL.Motif.Tests.Cli;
 /// </list>
 /// None of this touches a live LibLCM project — the dependency graph is entirely declared in the
 /// Proposal document (<c>dependsOn</c>, <c>entityId</c>/<c>target</c>), so these tests use synthetic
-/// canonical ids rather than <c>TestLangProjFixture</c>, unlike <see cref="ReopenAmendTests"/>.
+/// canonical ids rather than a live project via
+/// <see cref="SIL.Motif.Tests.TestFixtures.PristineProjectFixture"/>, unlike <see cref="ReopenAmendTests"/>.
 /// </summary>
 public sealed class SelectiveEditingTests : IDisposable
 {

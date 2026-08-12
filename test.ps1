@@ -7,18 +7,10 @@
   implies clean comments and a clean compile -- one command whose success means the whole thing is
   good, rather than three that have to be remembered in order.
 
-  ON THE EXTERNAL FIXTURE. Much of this suite reads a FieldWorks SIBLING checkout that is not vendored
-  here: `TestLangProj` for a live LibLCM cache, and `DistFiles` for `ContextHelp.xml`. Without it those
-  tests fail rather than skip, which is deliberate -- a suite that quietly shrinks when a fixture goes
-  missing reports success for work it never did.
-
-  Every one of them carries `[Trait("Fixture", "FieldWorks")]`, which is what makes them selectable.
-  The trait is named for the checkout rather than for `TestLangProj`, because one of them wants a file
-  from `DistFiles` instead, and a filter that reads as a lie is how the next one gets missed.
-
-  That is why -Filter exists. CI has no sibling checkout, so it runs the subset needing none and says
-  so in its own step name. A filtered run is not a full run and nothing here pretends otherwise: the
-  count printed at the end is the count that actually executed.
+  The suite needs no project or checkout from outside this repo: every LibLCM project it exercises is
+  built at run time by `NewLangProjFixture` and seeded by `SeededProject`. The one external dependency
+  that remains is the `pangloss` executable, a separate Rust build gated by `RealParserFactAttribute`
+  -- those tests skip, rather than fail, when it is not built.
 
   .PARAMETER Configuration
   MSBuild configuration. Must match what build.ps1 produced, since the suite runs with --no-build.
@@ -31,9 +23,6 @@
 
   .EXAMPLE
   ./test.ps1
-
-  .EXAMPLE
-  ./test.ps1 -Filter 'Fixture!=FieldWorks'
 #>
 [CmdletBinding()]
 param(

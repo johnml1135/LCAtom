@@ -2,10 +2,7 @@ namespace SIL.Motif.Generator;
 
 /// <summary>
 /// Locates repo-relative files the generator needs by default — namely the manifest — by walking up
-/// from the running assembly until <c>Motif.sln</c> is found. Mirrors
-/// <c>tests/SIL.Motif.Tests/TestFixtures/TestLangProjFixture.cs</c>'s own convention deliberately,
-/// so there is exactly one "find the repo root" trick in this codebase rather than two guesses at
-/// the same layout.
+/// from the running assembly until <c>Motif.sln</c> is found.
 /// </summary>
 public static class RepoPaths
 {

@@ -1,14 +1,16 @@
 using SIL.Motif.Host.LcmUtils;
 using SIL.Motif.Host.Parser;
+using SIL.Motif.Tests.TestFixtures;
 using SIL.LCModel;
+using SIL.LCModel.Infrastructure;
 using Xunit;
 
 namespace SIL.Motif.Tests.Parser;
 
 /// <summary>
-/// Skips at discovery when the parser executable or the real project this test needs is absent, rather than
-/// failing. Neither is checked in — one is a Rust build in a sibling repository, the other a 56 MB FieldWorks
-/// project — and a developer without them has a build-environment gap, not a broken repository.
+/// Skips at discovery when the parser executable is absent, rather than failing. It is a Rust build in a
+/// sibling repository and not checked in, so a developer without it has a build-environment gap, not a
+/// broken repository.
 /// </summary>
 public sealed class RealParserFactAttribute : FactAttribute
 {
@@ -17,27 +19,12 @@ public sealed class RealParserFactAttribute : FactAttribute
         if (PanGlossExecutable.TryLocate() is null)
             Skip = $"pangloss not found. Build it (cargo build --release -p pg-cli) or set " +
                    $"{PanGlossExecutable.PathVariable}.";
-        else if (RealProject.Sena3Path() is null)
-            Skip = "The Sena 3 project was not found in a sibling FieldWorks checkout.";
-    }
-}
-
-/// <summary>Locates the real project these tests need.</summary>
-internal static class RealProject
-{
-    public static string? Sena3Path()
-    {
-        var candidate = Path.Combine(
-            AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..",
-            "FieldWorks", "DistFiles", "Projects", "Sena 3", "Sena 3.fwdata");
-
-        return File.Exists(candidate) ? Path.GetFullPath(candidate) : null;
     }
 }
 
 /// <summary>
-/// The seam that everything about grammar review rests on: <b>a real FieldWorks project goes in, and analyses
-/// come out whose identities name real objects in that same project.</b>
+/// The seam that everything about grammar review rests on: <b>a project goes in, and analyses come out
+/// whose identities name real objects in that same project.</b>
 /// </summary>
 /// <remarks>
 /// <para>
@@ -45,9 +32,7 @@ internal static class RealProject
 /// cannot do without GUID-keyed analyses is say <i>which entry</i> or <i>which rule</i> an analysis used, and
 /// therefore whether a Proposal that edited that entry changed parsing the way it intended. The HermitCrab-XML
 /// route answers in synthetic keys (<c>mrule128</c>, <c>entry1083</c>) that name nothing Motif can look up;
-/// measured side by side on the same 40 Sena 3 words, the two routes agree on every analysis — same
-/// morpheme counts, same consistent identity mapping — so the difference is purely the namespace, and
-/// only the GUID one (<c>603fc0f8-…</c>, <c>0832679c-…</c> for those same two keys) is usable.
+/// only the GUID one is usable.
 /// </para>
 /// <para>
 /// So the assertion is not "the parser ran" but <b>"every morpheme the parser named is an object this project
@@ -55,20 +40,36 @@ internal static class RealProject
 /// that ever fails, the whole grammar-feedback design fails with it, and it fails silently otherwise: coverage
 /// numbers would keep working while correlation quietly returned nothing.
 /// </para>
+/// <para>
+/// Runs against <see cref="PristineProjectFixture"/>'s two seeded stems rather than a large real project: the
+/// claim under test is that a GUID names an object, which the seam either honours or does not regardless of
+/// how many entries the project holds.
+/// </para>
 /// </remarks>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
-[Trait("Fixture", "FieldWorks")]
-public sealed class ParserSeamIntegrationTests
+public sealed class ParserSeamIntegrationTests : IDisposable
 {
-    // Sena words drawn from the project's own corpus. Small, because the FST build alone is ~11 s.
-    private static readonly string[] Words = { "mbali", "ya", "miseru", "nkazi", "munthu", "anthu" };
+    private readonly LcmCache _cache;
+    private readonly string _projectPath;
+
+    public ParserSeamIntegrationTests(PristineProjectFixture pristine)
+    {
+        _cache = pristine.NewScratch();
+        RealParserProject.PrepareForParsing(_cache, "m", "o", "t", "i", "f", "a", "b");
+        _projectPath = _cache.ProjectId.Path;
+    }
+
+    public void Dispose()
+    {
+        if (!_cache.IsDisposed) _cache.Dispose();
+    }
 
     [RealParserFact]
     public void EveryMorphemeTheParserNames_IsAnObjectTheProjectContains()
     {
-        var projectPath = RealProject.Sena3Path()!;
+        var words = new[] { SeededProject.FirstForm, SeededProject.SecondForm };
 
-        var (report, refusal) = new PanGlossParser().Assess(projectPath, Words);
+        var (report, refusal) = new PanGlossParser().Assess(_projectPath, words);
 
         Assert.Null(refusal);
         Assert.NotNull(report);
@@ -80,8 +81,7 @@ public sealed class ParserSeamIntegrationTests
         var analysed = report.Words.Where(w => w.Analyses.Count > 0).ToList();
         Assert.NotEmpty(analysed);
 
-        using var cache = new FwDataProjectLoader().LoadScratchCache(projectPath);
-        var objects = cache.ServiceLocator.GetInstance<ICmObjectRepository>();
+        var objects = _cache.ServiceLocator.GetInstance<ICmObjectRepository>();
 
         var unresolved = new List<string>();
         var resolvedCount = 0;
@@ -114,11 +114,11 @@ public sealed class ParserSeamIntegrationTests
     [RealParserFact]
     public void TheFallbackEngineIsReachable_AndAgreesOnWhichWordsParse()
     {
-        var projectPath = RealProject.Sena3Path()!;
+        var words = new[] { SeededProject.FirstForm, SeededProject.SecondForm, "zzznotaseededword" };
         var parser = new PanGlossParser();
 
-        var pruned = parser.AnalyseBatch(projectPath, Words, ParserEngine.FstPrunedByHermitCrab);
-        var hermitCrabOnly = parser.AnalyseBatch(projectPath, Words, ParserEngine.HermitCrabOnly);
+        var pruned = parser.AnalyseBatch(_projectPath, words, ParserEngine.FstPrunedByHermitCrab);
+        var hermitCrabOnly = parser.AnalyseBatch(_projectPath, words, ParserEngine.HermitCrabOnly);
 
         Assert.True(pruned.Succeeded, pruned.Refusal?.Detail ?? "the pruned engine refused");
         Assert.True(hermitCrabOnly.Succeeded, hermitCrabOnly.Refusal?.Detail ?? "the fallback engine refused");
