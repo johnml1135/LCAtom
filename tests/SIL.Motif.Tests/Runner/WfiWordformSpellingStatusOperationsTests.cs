@@ -2,12 +2,12 @@ using System.Text.Json;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Model;
 using SIL.Motif.Contract.Parsing;
-using SIL.Motif.Host.LcmUtils;
 using SIL.Motif.Runner.Apply;
 using SIL.Motif.Runner.Operations;
 using SIL.Motif.Tests.TestFixtures;
 using SIL.LCModel;
 using SIL.LCModel.Core.KernelInterfaces;
+using SIL.LCModel.Core.Text;
 using SIL.LCModel.Infrastructure;
 using Xunit;
 
@@ -23,19 +23,28 @@ namespace SIL.Motif.Tests.Runner;
 /// rather than erasing anything.
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
-[Trait("Fixture", "FieldWorks")]
 public sealed class WfiWordformSpellingStatusOperationsTests : IDisposable
 {
     private readonly string _tempRoot;
-    private readonly string _fwDataPath;
-    private readonly FwDataProjectLoader _loader = new();
-    private LcmCache _cache;
+    private readonly LcmCache _cache;
+    private readonly IWfiWordform _wordform;
 
     public WfiWordformSpellingStatusOperationsTests()
     {
         _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests.SpellingStatus", Guid.NewGuid().ToString("N"));
-        _fwDataPath = TestLangProjFixture.CopyToTempAndGetFwDataPath(_tempRoot);
-        _cache = _loader.LoadCache(_fwDataPath);
+        _cache = NewLangProjFixture.CreateCache(_tempRoot);
+        _wordform = CreateWordform();
+    }
+
+    private IWfiWordform CreateWordform()
+    {
+        IWfiWordform wordform = null!;
+        NonUndoableUnitOfWorkHelper.Do(_cache.ActionHandlerAccessor, () =>
+        {
+            wordform = _cache.ServiceLocator.GetInstance<IWfiWordformFactory>()
+                .Create(TsStringUtils.MakeString("zzMotifTestWordform", _cache.DefaultVernWs));
+        });
+        return wordform;
     }
 
     public void Dispose()
@@ -116,10 +125,10 @@ public sealed class WfiWordformSpellingStatusOperationsTests : IDisposable
     [Fact]
     public void DryRun_SetSpellingStatus_ExpectedEffectReportsBeforeAndAfterValues()
     {
-        var wordform = FindAnyWordform();
+        var wordform = _wordform;
         var target = CanonicalId.FromGuid(wordform.Guid);
 
-        // Known starting state, regardless of what the fixture's own wordform already carries.
+        // Known starting state, asserted rather than assumed from the factory default.
         UndoableUnitOfWorkHelper.Do(
             "test setup", "test setup", _cache.ServiceLocator.GetInstance<IActionHandler>(),
             () => wordform.SpellingStatus = 0);
@@ -138,7 +147,7 @@ public sealed class WfiWordformSpellingStatusOperationsTests : IDisposable
     [Fact]
     public void SetSpellingStatus_RoundTripsThroughDryRunAndApply()
     {
-        var wordform = FindAnyWordform();
+        var wordform = _wordform;
         var target = CanonicalId.FromGuid(wordform.Guid);
 
         UndoableUnitOfWorkHelper.Do(
@@ -176,7 +185,7 @@ public sealed class WfiWordformSpellingStatusOperationsTests : IDisposable
     [Fact]
     public void ClearSpellingStatus_RoundTripsThroughDryRunAndApply_WritingUndecided()
     {
-        var wordform = FindAnyWordform();
+        var wordform = _wordform;
         var target = CanonicalId.FromGuid(wordform.Guid);
 
         UndoableUnitOfWorkHelper.Do(
@@ -200,9 +209,6 @@ public sealed class WfiWordformSpellingStatusOperationsTests : IDisposable
         Assert.Equal("2", actual.Before["value"]);
         Assert.Equal("0", actual.After["value"]);
     }
-
-    private IWfiWordform FindAnyWordform() =>
-        _cache.ServiceLocator.GetInstance<IWfiWordformRepository>().AllInstances().First();
 
     private static Proposal BuildProposal(string kind, CanonicalId target, object after)
     {

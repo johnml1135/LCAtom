@@ -2,7 +2,6 @@ using System.Text.Json;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Model;
 using SIL.Motif.Contract.Parsing;
-using SIL.Motif.Host.LcmUtils;
 using SIL.Motif.Model.DryRun;
 using SIL.Motif.Runner.AppliedLog;
 using SIL.Motif.Runner.Apply;
@@ -21,21 +20,19 @@ namespace SIL.Motif.Tests.Runner;
 /// between DryRun and Apply (ADR 0016).
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
-[Trait("Fixture", "FieldWorks")]
 public sealed class MoFormMorphTypeOperationsTests : IDisposable
 {
     private const string RefKey = "ref";
 
     private readonly string _tempRoot;
-    private readonly string _fwDataPath;
-    private readonly FwDataProjectLoader _loader = new();
-    private LcmCache _cache;
+    private readonly LcmCache _cache;
+    private readonly SeededProject _seed;
 
     public MoFormMorphTypeOperationsTests()
     {
         _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests.MorphType", Guid.NewGuid().ToString("N"));
-        _fwDataPath = TestLangProjFixture.CopyToTempAndGetFwDataPath(_tempRoot);
-        _cache = _loader.LoadCache(_fwDataPath);
+        _cache = NewLangProjFixture.CreateCache(_tempRoot);
+        _seed = SeededProject.Seed(_cache);
     }
 
     public void Dispose()
@@ -155,8 +152,7 @@ public sealed class MoFormMorphTypeOperationsTests : IDisposable
     }
 
     private IMoForm FindStemAllomorph() =>
-        _cache.ServiceLocator.GetInstance<IMoStemAllomorphRepository>().AllInstances()
-            .First(f => f.MorphTypeRA is not null);
+        _cache.ServiceLocator.GetInstance<IMoFormRepository>().GetObject(_seed.FirstLexemeFormId);
 
     private static OperationEnvelope BuildSetOperation(CanonicalId target, CanonicalId refId)
     {

@@ -1,7 +1,6 @@
 using System.Text.Json;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Model;
-using SIL.Motif.Host.LcmUtils;
 using SIL.Motif.Runner.Apply;
 using SIL.Motif.Runner.DryRun;
 using SIL.Motif.Runner.Operations;
@@ -22,19 +21,17 @@ namespace SIL.Motif.Tests.Runner;
 /// properties rejected).
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
-[Trait("Fixture", "FieldWorks")]
 public sealed class GeneratedBasicFieldOperationsTests : IDisposable
 {
     private readonly string _tempRoot;
-    private readonly string _fwDataPath;
-    private readonly FwDataProjectLoader _loader = new();
-    private LcmCache _cache;
+    private readonly LcmCache _cache;
+    private readonly SeededProject _seed;
 
     public GeneratedBasicFieldOperationsTests()
     {
         _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests.Generated", Guid.NewGuid().ToString("N"));
-        _fwDataPath = TestLangProjFixture.CopyToTempAndGetFwDataPath(_tempRoot);
-        _cache = _loader.LoadCache(_fwDataPath);
+        _cache = NewLangProjFixture.CreateCache(_tempRoot);
+        _seed = SeededProject.Seed(_cache);
     }
 
     public void Dispose()
@@ -202,31 +199,17 @@ public sealed class GeneratedBasicFieldOperationsTests : IDisposable
     // No Dry Run rolls back any more, so no field needs a hand-maintained "feeds a derived cache" list.
 
     private ILexEntry FindAnyEntry() =>
-        _cache.ServiceLocator.GetInstance<ILexEntryRepository>().AllInstances().First();
+        _cache.ServiceLocator.GetInstance<ILexEntryRepository>().GetObject(_seed.FirstEntryId);
 
     private ILexEntry FindEntryWithLexemeForm() =>
-        _cache.ServiceLocator.GetInstance<ILexEntryRepository>().AllInstances()
-            .First(e => e.LexemeFormOA is not null);
+        _cache.ServiceLocator.GetInstance<ILexEntryRepository>().GetObject(_seed.FirstEntryId);
 
     private (ILexSense Sense, int WsHandle, string WsTag, string Gloss) FindSenseWithKnownGloss()
     {
-        var senseRepo = _cache.ServiceLocator.GetInstance<ILexSenseRepository>();
-
-        foreach (var sense in senseRepo.AllInstances())
-        {
-            foreach (var wsHandle in sense.Gloss.AvailableWritingSystemIds)
-            {
-                var text = sense.Gloss.get_String(wsHandle).Text;
-                if (!string.IsNullOrEmpty(text))
-                {
-                    var wsTag = _cache.WritingSystemFactory.GetStrFromWs(wsHandle);
-                    return (sense, wsHandle, wsTag, text);
-                }
-            }
-        }
-
-        throw new InvalidOperationException(
-            "Expected the real TestLangProj fixture to contain at least one LexSense with a non-empty gloss.");
+        var sense = _cache.ServiceLocator.GetInstance<ILexSenseRepository>().GetObject(_seed.FirstSenseId);
+        var wsHandle = _cache.DefaultAnalWs;
+        var wsTag = _cache.WritingSystemFactory.GetStrFromWs(wsHandle);
+        return (sense, wsHandle, wsTag, SeededProject.FirstGloss);
     }
 
     private static Proposal BuildProposal(string kind, CanonicalId target, object after)

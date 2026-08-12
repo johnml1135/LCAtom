@@ -29,19 +29,20 @@ namespace SIL.Motif.Tests.Runner;
 /// Apply. The DryRun now runs on a throwaway copy, so it does not — see ADR 0016.
 /// </remarks>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
-[Trait("Fixture", "FieldWorks")]
 public sealed class LexEntryLexemeFormOperationsTests : IDisposable
 {
     private readonly string _tempRoot;
     private readonly string _fwDataPath;
     private readonly FwDataProjectLoader _loader = new();
+    private readonly SeededProject _seed;
     private LcmCache _cache;
 
     public LexEntryLexemeFormOperationsTests()
     {
         _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests.LexemeForm", Guid.NewGuid().ToString("N"));
-        _fwDataPath = TestLangProjFixture.CopyToTempAndGetFwDataPath(_tempRoot);
-        _cache = _loader.LoadCache(_fwDataPath);
+        _cache = NewLangProjFixture.CreateCache(_tempRoot);
+        _fwDataPath = NewLangProjFixture.FwDataPath(_tempRoot);
+        _seed = SeededProject.Seed(_cache);
     }
 
     public void Dispose()
@@ -304,9 +305,8 @@ public sealed class LexEntryLexemeFormOperationsTests : IDisposable
 
     private (Guid EntryGuid, Guid FormGuid) FindEntryWithLexemeForm()
     {
-        var entry = _cache.ServiceLocator.GetInstance<ILexEntryRepository>().AllInstances()
-            .First(e => e.LexemeFormOA is not null);
-        return (entry.Guid, entry.LexemeFormOA.Guid);
+        var entry = _cache.ServiceLocator.GetInstance<ILexEntryRepository>().GetObject(_seed.FirstEntryId);
+        return (entry.Guid, entry.LexemeFormOA!.Guid);
     }
 
     private static OperationEnvelope BuildCreateOperation(
