@@ -3,19 +3,16 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <!--
-      Exe, not the implicit Library default: MOT-4 gives this project its first real command,
-      `emit` (src/SIL.Motif.Generator/Program.cs), the console-command half of the "checked-in
-      files, produced by running a console command" emission mechanism (see that file's own doc
-      comment for the alternatives considered and why). Still referenced as a library by
+      Exe, not the implicit Library default: `emit` (Program.cs) is the console-command half of the
+      "checked-in files, produced by running a console command" emission mechanism, and that file's
+      own doc comment records the alternatives considered. Still referenced as a library by
       tests/SIL.Motif.Tests, which is unaffected by OutputType.
     -->
     <OutputType>Exe</OutputType>
     <!--
-      Single source of truth for the pinned SIL.LCModel version, reused below by both the
+      Single source of truth for the pinned SIL.LCModel version, read below by both the
       PackageReference and the AssemblyMetadata attribute that lets ModelSource/ModelPathResolver.cs
-      read the version back at runtime without a second hardcoded copy of the string. MOT-2
-      requires the resolved model-file path to be recorded, and the version is half of that path
-      (docs/plan-motif.md, MOT-2 acceptance: "which path was used must be recorded").
+      recover the version at run time without a second hardcoded copy of the string.
     -->
     <SilLCModelPackageVersion>11.0.0-beta0150</SilLCModelPackageVersion>
   </PropertyGroup>
@@ -24,8 +21,8 @@
     <!--
       This project never calls into SIL.LCModel — it only reads the MasterLCModel.xml the package
       ships under contentFiles/ (see ModelSource/ModelPathResolver.cs). The PackageReference exists
-      solely so the pinned version above is the one MSBuild actually restores, keeping the
-      AssemblyMetadata value below honest rather than a second guess.
+      solely so the pinned version is the one MSBuild actually restores, keeping the AssemblyMetadata
+      value below honest rather than a second guess.
     -->
     <PackageReference Include="SIL.LCModel" Version="$(SilLCModelPackageVersion)" />
   </ItemGroup>
