@@ -61,7 +61,11 @@ public class FwDataProjectLoader
     /// Which one do I want? If the caller does not own the project and intend to persist it — a
     /// copy, a temp project, a read-only analysis — use <see cref="LoadScratchCache"/> instead.
     /// </remarks>
-    public virtual LcmCache LoadCache(string fwDataFilePath, string? templatesFolder = null)
+    public virtual LcmCache LoadCache(string fwDataFilePath, string? templatesFolder = null) =>
+        LoadCacheCore(fwDataFilePath, templatesFolder);
+
+    // Non-virtual, so LoadScratchCache bypasses the virtual LoadCache: overriding one never double-counts.
+    private static LcmCache LoadCacheCore(string fwDataFilePath, string? templatesFolder)
     {
         Init();
 
@@ -100,7 +104,7 @@ public class FwDataProjectLoader
     public virtual LcmCache LoadScratchCache(string fwDataFilePath, string? templatesFolder = null)
     {
         using (SuppressGlobalWritingSystemPersistence())
-            return LoadCache(fwDataFilePath, templatesFolder);
+            return LoadCacheCore(fwDataFilePath, templatesFolder);
     }
 
     // Key SingletonsContainer stores the shared writing-system repository under (BackendProvider.cs).

@@ -1025,6 +1025,145 @@ public static class Commands
         }
     }
 
+    /// <summary>
+    /// Session-backed counterpart to <see cref="DryRun(string,string,string)"/>: dry-runs against
+    /// <paramref name="session"/>'s already-open live cache and footprint-gated pristine scratch
+    /// instead of loading and disposing a fresh <see cref="LcmCache"/> per call, so N calls against one
+    /// session cost at most one live project load (<see cref="CliSession.Open"/>) plus footprint-gated
+    /// scratch rebuilds (<see cref="CliSession.PristineRebuildCount"/>).
+    /// </summary>
+    public static CommandResult DryRun(CliSession session, string storeDir, string proposalId)
+    {
+        if (session is null) throw new ArgumentNullException(nameof(session));
+        try
+        {
+            if (!TryLoadProposalForRun(
+                    storeDir, proposalId, out var manifest, out var manifestPath, out var id,
+                    out var envelope, out var failure))
+            {
+                return failure!;
+            }
+
+            var dryRun = session.DryRun(envelope);
+
+            // Persist the bound-DryRun anchor (docs/adr/0004 decision 3): apply requires it present and unmoved.
+            manifest.Anchor = dryRun.Anchor;
+            WriteManifest(manifestPath, manifest);
+
+            var sb = new StringBuilder();
+            sb.AppendLine($"DryRun of Proposal {id}");
+            sb.AppendLine($"  intentDigest: {dryRun.IntentDigest}");
+            sb.AppendLine($"  baseline:     {dryRun.BaselineNote}");
+            sb.AppendLine($"  effects ({dryRun.ExpectedEffects.Count}):");
+            foreach (var effect in dryRun.ExpectedEffects)
+                AppendEffect(sb, effect);
+            sb.AppendLine($"  effectDigest: {dryRun.EffectDigest}");
+            sb.AppendLine($"  footprintDigest: {dryRun.Anchor.FootprintDigest}");
+            sb.AppendLine("  (bound-DryRun anchor recorded on the manifest; 'apply' will require it)");
+            return Ok(sb);
+        }
+        catch (Exception ex)
+        {
+            return Fail(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Session-backed counterpart to <see cref="Apply(string,string,string,string)"/>: applies against
+    /// <paramref name="session"/>'s live cache and saves through it, rather than loading and disposing a
+    /// fresh <see cref="LcmCache"/>. On failure <see cref="CliSession.Apply"/> has already discarded the
+    /// session's live cache (ADR 0016); the caller must open a new session rather than reuse this one.
+    /// </summary>
+    public static CommandResult Apply(CliSession session, string storeDir, string proposalId, string user)
+    {
+        if (session is null) throw new ArgumentNullException(nameof(session));
+        try
+        {
+            if (!TryLoadProposalForRun(
+                    storeDir, proposalId, out var manifest, out var manifestPath, out var id,
+                    out var envelope, out var failure))
+            {
+                return failure!;
+            }
+
+            // ADR 0004 decision 3: a bare apply with no bound DryRun is a hard error, checked before applying.
+            if (manifest.Anchor is null)
+            {
+                return Fail(
+                    $"Proposal {id} has no bound DryRun recorded. Run " +
+                    $"'dry-run {id} --project <fwdata>' first, then 'apply'.");
+            }
+
+            var description = manifest.Label ?? "";
+            var receipt = session.Apply(envelope, manifest.Anchor, user, description);
+
+            var sb = new StringBuilder();
+            if (receipt.AlreadyApplied)
+            {
+                sb.AppendLine($"Proposal {id} was already applied (idempotent; no mutation performed).");
+                sb.AppendLine($"  {receipt.ResultNote}");
+            }
+            else
+            {
+                sb.AppendLine($"Applied Proposal {id}.");
+                sb.AppendLine($"  {receipt.ResultNote}");
+                sb.AppendLine($"  effects ({receipt.ActualEffects.Count}):");
+                foreach (var effect in receipt.ActualEffects)
+                    AppendEffect(sb, effect);
+                sb.AppendLine($"  effectDigest: {receipt.EffectDigest}");
+            }
+
+            sb.AppendLine(
+                $"  applied-log entry: proposalId={receipt.AppliedLogEntry.ProposalId:D} " +
+                $"timestamp={receipt.AppliedLogEntry.TimestampUtc} user='{receipt.AppliedLogEntry.User}' " +
+                $"intentDigest={receipt.AppliedLogEntry.IntentDigest}");
+
+            manifest.Status = ManifestStatus.Applied;
+            WriteManifest(manifestPath, manifest);
+
+            return Ok(sb);
+        }
+        catch (Exception ex)
+        {
+            // A failed apply rolled back, not Undo: the session already discarded its live cache above.
+            return Fail(
+                ex.Message +
+                " [This session's live cache is no longer trustworthy: a failed apply rolls back, which " +
+                "does not refresh LibLCM's derived caches. Open a new session rather than reuse this one.]");
+        }
+    }
+
+    /// <summary>Loads the manifest and Proposal envelope a dry-run/apply needs, or the failure to return.</summary>
+    private static bool TryLoadProposalForRun(
+        string storeDir, string proposalId,
+        out ManifestDocument manifest, out string manifestPath, out string normalizedId,
+        out SIL.Motif.Contract.Model.Proposal envelope, out CommandResult? failure)
+    {
+        var store = new ProposalStore(storeDir);
+        normalizedId = NormalizeId(proposalId);
+        manifestPath = store.ManifestPath(normalizedId);
+        if (!File.Exists(manifestPath))
+        {
+            manifest = null!;
+            envelope = null!;
+            failure = Fail(ProposalNotFoundMessage(store, normalizedId));
+            return false;
+        }
+
+        manifest = ReadManifest(manifestPath);
+        var objectPath = store.ObjectPath(manifest.CurrentIntentDigest);
+        if (!File.Exists(objectPath))
+        {
+            envelope = null!;
+            failure = Fail(StoreInconsistencyMessage(normalizedId, manifest.CurrentIntentDigest, objectPath));
+            return false;
+        }
+
+        envelope = ProposalJsonParser.Parse(File.ReadAllText(objectPath));
+        failure = null;
+        return true;
+    }
+
     public static CommandResult Log(string fwDataPath)
     {
         try
