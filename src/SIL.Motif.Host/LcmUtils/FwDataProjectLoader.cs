@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using SIL.LCModel;
+using SIL.LCModel.Core.WritingSystems;
 using SIL.LCModel.Utils;
 using SIL.WritingSystems;
 
@@ -78,6 +79,58 @@ public class FwDataProjectLoader
             lcmDirectories,
             new LcmSettings(),
             progress);
+    }
+
+    /// <summary>
+    /// Opens an existing <c>.fwdata</c> project the same way <see cref="LoadCache"/> does, except that
+    /// disposing the returned cache cannot register a writing-system change in the machine-wide
+    /// <c>%ProgramData%\SIL\WritingSystemRepository</c> store.
+    /// </summary>
+    /// <remarks>
+    /// For a throwaway scratch (ADR 0016), that store is the wrong place to write to: a Dry Run scratch
+    /// is a proposal being tried and discarded, and disposing it must not touch state shared with every
+    /// other project on the machine. See <see cref="DiscardingGlobalWritingSystemRepository"/> for the
+    /// mechanism. <see cref="LoadCache"/> itself is unchanged and remains what a real, persisted project
+    /// open uses.
+    /// </remarks>
+    public virtual LcmCache LoadScratchCache(string fwDataFilePath, string? templatesFolder = null)
+    {
+        using (SuppressGlobalWritingSystemPersistence())
+            return LoadCache(fwDataFilePath, templatesFolder);
+    }
+
+    // Key SingletonsContainer stores the shared writing-system repository under (BackendProvider.cs).
+    private static readonly string GlobalWritingSystemRepositoryKey =
+        typeof(CoreGlobalWritingSystemRepository).FullName!;
+
+    // One decoy for the process: the base holds a GlobalMutex, so one per scratch would leak a handle.
+    private static readonly DiscardingGlobalWritingSystemRepository SharedDecoy = new();
+
+    // Swaps the decoy in for one cache open, so that cache is wired to it for life (see the decoy's remarks).
+    private static IDisposable SuppressGlobalWritingSystemPersistence()
+    {
+        var restore = SingletonsContainer.Item(GlobalWritingSystemRepositoryKey) as CoreGlobalWritingSystemRepository;
+        if (restore is not null) SingletonsContainer.Remove(GlobalWritingSystemRepositoryKey);
+
+        SingletonsContainer.Add(GlobalWritingSystemRepositoryKey, SharedDecoy);
+        return new RestoreGlobalWritingSystemRepository(restore);
+    }
+
+    // Undoes SuppressGlobalWritingSystemPersistence: later cache opens see the real repository again.
+    private sealed class RestoreGlobalWritingSystemRepository : IDisposable
+    {
+        private readonly CoreGlobalWritingSystemRepository? _restore;
+
+        public RestoreGlobalWritingSystemRepository(CoreGlobalWritingSystemRepository? restore)
+        {
+            _restore = restore;
+        }
+
+        public void Dispose()
+        {
+            SingletonsContainer.Remove(GlobalWritingSystemRepositoryKey);
+            if (_restore is not null) SingletonsContainer.Add(GlobalWritingSystemRepositoryKey, _restore);
+        }
     }
 
     /// <summary>

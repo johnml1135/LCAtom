@@ -106,6 +106,11 @@ public class ScratchCacheFactory
     /// the write to actually reach disk — <c>Commit()</c> alone does not, and that asynchrony was found the
     /// hard way.
     /// </para>
+    /// <para>
+    /// <b>Disposing the returned cache does not persist to the machine-wide writing-system repository.</b>
+    /// A scratch is discarded, never kept, so the cache is opened via
+    /// <see cref="FwDataProjectLoader.LoadScratchCache"/> rather than <see cref="FwDataProjectLoader.LoadCache"/>.
+    /// </para>
     /// </remarks>
     /// <returns>The opened scratch cache. Deleting <paramref name="destinationRoot"/> is the caller's job.</returns>
     public virtual LcmCache CreateFromFileCopy(string sourceFwDataPath, string destinationRoot)
@@ -125,7 +130,7 @@ public class ScratchCacheFactory
         if (!System.IO.File.Exists(destFwData))
             throw new System.IO.FileNotFoundException($"Copy did not produce the expected project file.", destFwData);
 
-        return _loader.LoadCache(destFwData);
+        return _loader.LoadScratchCache(destFwData);
     }
 
     private static void CopyDirectory(string sourceDir, string destDir)

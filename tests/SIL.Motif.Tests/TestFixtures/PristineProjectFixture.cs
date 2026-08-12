@@ -92,7 +92,9 @@ public sealed class PristineProjectFixture : IDisposable
 
     /// <summary>
     /// Opens a private, file-backed copy of the seeded project. The caller disposes the cache; the
-    /// directory behind it is cleaned up when the whole collection finishes.
+    /// directory behind it is cleaned up when the whole collection finishes. Loaded via
+    /// <see cref="FwDataProjectLoader.LoadScratchCache"/>, so disposing it never touches the
+    /// machine-wide writing-system repository — every copy here is throwaway, same as a Dry Run scratch.
     /// </summary>
     public LcmCache NewScratch()
     {
@@ -103,7 +105,7 @@ public sealed class PristineProjectFixture : IDisposable
 
         CopyDirectory(_masterFolder, projectFolder);
 
-        return new FwDataProjectLoader().LoadCache(
+        return new FwDataProjectLoader().LoadScratchCache(
             Path.Combine(projectFolder, NewLangProjFixture.ProjectName + ".fwdata"));
     }
 
