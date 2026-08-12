@@ -76,15 +76,19 @@
   project compiles against, so a comment there is read exactly like one anywhere else. Exempting a
   directory is a baseline wearing a different hat.
 
-  Two gaps remain, both known and both cheaper to state than to close:
+  Both of those needed the same thing, and `Split-CSharpLine` is it: one pass per line that tracks
+  string, verbatim-string and char-literal state, so a `//` is known to be a comment rather than the
+  middle of a URL. It answers two questions at once.
 
-    - a template whose comment text is built by concatenation or interpolation rather than written
-      literally at the start of a line is invisible here;
-    - a TRAILING comment -- one sharing a line with code -- is not scanned, because telling `//` from
-      the `//` inside a string literal needs a lexer rather than a regex.
+    - A TRAILING comment -- one sharing a line with code -- is scanned by the line-level family, and
+      for width. It is one line by construction, so width is the only length question left.
+    - COMMENT TEXT ASSEMBLED IN A LITERAL, the `$"/// ..."` an emitter writes, is scanned as what it
+      becomes. Plan and issue references are skipped there only because the literal families already
+      cover them, and reporting twice for one line helps nobody.
 
-  Apply the rules by hand in both. A trailing comment is an implementation comment whatever else it
-  is, so the one-line rule it would be measured against is one it already satisfies.
+  What remains genuinely uncheckable is the interpolated VALUE: `$"/// {summary}"` can carry anything
+  at run time, and no static pass will see it. That is a smaller claim than the one it replaces --
+  the literal parts around the hole are now read.
 
   .PARAMETER List
   Show the offending file, line number and text for every violation.
@@ -211,6 +215,67 @@ function Get-DeclarationVisibility {
     }
 
     return 'private'
+}
+
+# One pass over a C# line tracking literal state: which "//" starts a comment, and what each string holds.
+function Split-CSharpLine {
+    param([string] $Line)
+
+    $literals = New-Object System.Collections.ArrayList
+    $commentStart = -1
+    $i = 0
+    $n = $Line.Length
+
+    while ($i -lt $n) {
+        $c = $Line[$i]
+
+        if ($c -eq [char]'/' -and $i + 1 -lt $n -and $Line[$i + 1] -eq [char]'/') { $commentStart = $i; break }
+
+        # Verbatim string: no backslash escapes, and a doubled quote is one quote rather than the end.
+        if ($c -eq [char]'@' -and $i + 1 -lt $n -and $Line[$i + 1] -eq [char]'"') {
+            $i += 2
+            $start = $i
+            while ($i -lt $n) {
+                if ($Line[$i] -eq [char]'"') {
+                    if ($i + 1 -lt $n -and $Line[$i + 1] -eq [char]'"') { $i += 2; continue }
+                    break
+                }
+                $i++
+            }
+            [void]$literals.Add($Line.Substring($start, [Math]::Min($i, $n) - $start))
+            $i++
+            continue
+        }
+
+        if ($c -eq [char]'"') {
+            $i++
+            $start = $i
+            while ($i -lt $n) {
+                if ($Line[$i] -eq [char]'\') { $i += 2; continue }
+                if ($Line[$i] -eq [char]'"') { break }
+                $i++
+            }
+            [void]$literals.Add($Line.Substring($start, [Math]::Min($i, $n) - $start))
+            $i++
+            continue
+        }
+
+        # A char literal can hold a lone quote or slash, either of which would derail the scan.
+        if ($c -eq [char]"'") {
+            $i++
+            while ($i -lt $n) {
+                if ($Line[$i] -eq [char]'\') { $i += 2; continue }
+                if ($Line[$i] -eq [char]"'") { break }
+                $i++
+            }
+            $i++
+            continue
+        }
+
+        $i++
+    }
+
+    return [pscustomobject]@{ CommentStart = $commentStart; Literals = $literals.ToArray() }
 }
 
 # An interface member carries no modifier because it cannot: it is public at its interface's visibility.
@@ -354,9 +419,43 @@ foreach ($file in $sourceFiles) {
             [void]$blockLines.Add($body)
         }
         else {
-            if (-not $isPowerShell) {
+            # Template content is generated code scanned above, and its fences would derail a line scanner.
+            if (-not $isPowerShell -and -not $inTemplate) {
+                $split = Split-CSharpLine -Line $raw
+                $codePart = if ($split.CommentStart -ge 0) { $raw.Substring(0, $split.CommentStart) } else { $raw }
+
                 foreach ($cat in $literalCategories.Keys) {
-                    if ($raw -match $literalCategories[$cat]) { Add-Hit $cat $file.FullName ($i + 1) $trimmed }
+                    if ($codePart -match $literalCategories[$cat]) { Add-Hit $cat $file.FullName ($i + 1) $trimmed }
+                }
+
+                # Comment text built inside a literal: emitted into a generated file, where it is a comment.
+                foreach ($literal in $split.Literals) {
+                    $marker = [regex]::Match($literal, '///?')
+                    if (-not $marker.Success) { continue }
+
+                    $emitted = $literal.Substring($marker.Index + $marker.Length)
+                    foreach ($cat in $categories.Keys) {
+                        if ($null -eq $categories[$cat]) { continue }
+                        if ($cat -eq 'plan-reference' -or $cat -eq 'issue-reference') { continue }
+                        if ($emitted -match $categories[$cat]) { Add-Hit $cat $file.FullName ($i + 1) $emitted }
+                    }
+
+                    if ($marker.Length -eq 3 -and $emitted -match $mdPathPattern) {
+                        Add-Hit 'api-doc-defers-offline' $file.FullName ($i + 1) $emitted
+                    }
+                }
+
+                if ($split.CommentStart -ge 0) {
+                    $tail = $raw.Substring($split.CommentStart + 2)
+                    foreach ($cat in $categories.Keys) {
+                        if ($null -eq $categories[$cat]) { continue }
+                        if ($tail -match $categories[$cat]) { Add-Hit $cat $file.FullName ($i + 1) $tail }
+                    }
+
+                    # A trailing comment is one line by construction, so width is all that is left to check.
+                    if ($tail.Length -gt $maxImplWidth) {
+                        Add-Hit 'impl-comment-too-long' $file.FullName ($i + 1) ("{0} chars: {1}" -f $tail.Length, $tail.Substring(0, 70))
+                    }
                 }
             }
 

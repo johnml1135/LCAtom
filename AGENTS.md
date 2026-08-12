@@ -28,6 +28,8 @@ where the project is — a comment duplicating any of those three will eventuall
 | A claim about another entity's behaviour | cite the pinning test — ``pinned by `TestName` `` — or reword |
 | A `//` inside an emitter's raw-string template | scanned for banned references; exempt from the length rule, being a generated file's banner |
 | A `///` inside an emitter's raw-string template | length-exempt, but **completeness still applies**: it lands in a public class and is read from a tooltip |
+| A trailing `// note` sharing a line with code | scanned like any implementation comment — one line by construction, so **at most 110 characters** |
+| Comment text assembled in a literal — `$"/// …"` | scanned as the comment it becomes. Only the interpolated *value* is beyond a static pass |
 | `<see cref="X"/>` | keep; the C# compiler resolves it (CS1574), unlike Rust's intra-doc links |
 
 Zero tolerance, no baseline: a baseline records the current count as acceptable, and re-baselining

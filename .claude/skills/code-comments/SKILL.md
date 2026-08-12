@@ -180,9 +180,14 @@ lands in a public class and is read from a tooltip like any other API doc, so a 
 is the same defect one directory further from where anyone would look for it. Two of them survived a
 whole sweep this way.
 
-**The gap that remains:** a template whose comment text is assembled by concatenation or
-interpolation, rather than written literally at the start of a line, is invisible to the checker.
-Apply these rules by hand when you edit one.
+**Assembled comment text is scanned as what it becomes.** The `$"/// ..."` an emitter writes is read
+as a doc comment, not as a string, so a date or a `docs/…md` path typed into one is caught where it is
+written rather than in the file it lands in. **Trailing comments** — the `// note` sharing a line with
+code — are scanned too, for the same reason and by the same machinery.
+
+**The gap that remains is smaller and exact:** the interpolated *value*. `$"/// {summary}"` can carry
+anything at run time and no static pass will see it. The literal text around the hole is read; what
+flows through the hole is not. Apply these rules by hand to whatever feeds it.
 
 ## When you find a violation
 
