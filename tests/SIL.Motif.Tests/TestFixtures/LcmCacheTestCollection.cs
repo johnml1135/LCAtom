@@ -17,7 +17,7 @@ namespace SIL.Motif.Tests.TestFixtures;
 /// tests via a shared collection avoids the race without touching LibLCM itself.
 /// </remarks>
 [CollectionDefinition(Name, DisableParallelization = true)]
-public class LcmCacheTestCollection
+public class LcmCacheTestCollection : ICollectionFixture<PristineProjectFixture>
 {
     public const string Name = "LcmCache tests (serialized: LcmCache bootstrap is not concurrency-safe)";
 }

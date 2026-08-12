@@ -24,21 +24,18 @@ public sealed class MoFormMorphTypeOperationsTests : IDisposable
 {
     private const string RefKey = "ref";
 
-    private readonly string _tempRoot;
     private readonly LcmCache _cache;
     private readonly SeededProject _seed;
 
-    public MoFormMorphTypeOperationsTests()
+    public MoFormMorphTypeOperationsTests(PristineProjectFixture pristine)
     {
-        _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests.MorphType", Guid.NewGuid().ToString("N"));
-        _cache = NewLangProjFixture.CreateCache(_tempRoot);
-        _seed = SeededProject.Seed(_cache);
+        _cache = pristine.NewScratch();
+        _seed = pristine.Seed;
     }
 
     public void Dispose()
     {
         if (!_cache.IsDisposed) _cache.Dispose();
-        try { Directory.Delete(_tempRoot, recursive: true); } catch { /* best effort */ }
     }
 
     [Fact]
