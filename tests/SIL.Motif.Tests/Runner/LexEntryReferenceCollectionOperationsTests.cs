@@ -22,19 +22,19 @@ namespace SIL.Motif.Tests.Runner;
 /// live cache at all.
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
-[Trait("Fixture", "FieldWorks")]
 public sealed class LexEntryReferenceCollectionOperationsTests : IDisposable
 {
     private const string MemberKey = "member";
 
     private readonly string _tempRoot;
     private readonly LcmCache _cache;
+    private readonly SeededProject _seed;
 
     public LexEntryReferenceCollectionOperationsTests()
     {
         _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests.RefCollections", Guid.NewGuid().ToString("N"));
-        var fwDataPath = TestLangProjFixture.CopyToTempAndGetFwDataPath(_tempRoot);
-        _cache = new FwDataProjectLoader().LoadCache(fwDataPath);
+        _cache = NewLangProjFixture.CreateCache(_tempRoot);
+        _seed = SeededProject.Seed(_cache);
     }
 
     public void Dispose()
@@ -190,7 +190,7 @@ public sealed class LexEntryReferenceCollectionOperationsTests : IDisposable
     }
 
     private ILexEntry FindAnyEntry() =>
-        _cache.ServiceLocator.GetInstance<ILexEntryRepository>().AllInstances().First();
+        _cache.ServiceLocator.GetInstance<ILexEntryRepository>().GetObject(_seed.FirstEntryId);
 
     private ICmPossibility FindAPossibilityNotAlreadyOn(ILexEntry entry, string field)
     {

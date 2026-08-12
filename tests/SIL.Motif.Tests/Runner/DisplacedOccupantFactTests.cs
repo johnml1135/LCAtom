@@ -1,5 +1,4 @@
 using SIL.Motif.Contract.Ids;
-using SIL.Motif.Host.LcmUtils;
 using SIL.Motif.Tests.TestFixtures;
 using SIL.LCModel;
 using SIL.LCModel.Infrastructure;
@@ -34,24 +33,23 @@ namespace SIL.Motif.Tests.Runner;
 /// </para>
 /// </remarks>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
-[Trait("Fixture", "FieldWorks")]
 public sealed class DisplacedOccupantFactTests : IDisposable
 {
     private readonly string _tempRoot;
     private readonly LcmCache _cache;
+    private readonly SeededProject _seed;
 
     public DisplacedOccupantFactTests()
     {
         _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests.Displaced", Guid.NewGuid().ToString("N"));
-        var fwDataPath = TestLangProjFixture.CopyToTempAndGetFwDataPath(_tempRoot);
-        _cache = new FwDataProjectLoader().LoadCache(fwDataPath);
+        _cache = NewLangProjFixture.CreateCache(_tempRoot);
+        _seed = SeededProject.Seed(_cache);
     }
 
     [Fact]
     public void OverwritingAnOwningAtomicSlot_DestroysTheIncumbent_RatherThanLeavingAnOrphan()
     {
-        var entry = _cache.ServiceLocator.GetInstance<ILexEntryRepository>()
-            .AllInstances().First(e => e.LexemeFormOA is not null);
+        var entry = _cache.ServiceLocator.GetInstance<ILexEntryRepository>().GetObject(_seed.FirstEntryId);
 
         var incumbentGuid = entry.LexemeFormOA!.Guid;
         var objects = _cache.ServiceLocator.GetInstance<ICmObjectRepository>();
