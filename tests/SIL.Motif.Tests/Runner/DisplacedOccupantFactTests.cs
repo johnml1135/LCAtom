@@ -35,15 +35,13 @@ namespace SIL.Motif.Tests.Runner;
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
 public sealed class DisplacedOccupantFactTests : IDisposable
 {
-    private readonly string _tempRoot;
     private readonly LcmCache _cache;
     private readonly SeededProject _seed;
 
-    public DisplacedOccupantFactTests()
+    public DisplacedOccupantFactTests(PristineProjectFixture pristine)
     {
-        _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests.Displaced", Guid.NewGuid().ToString("N"));
-        _cache = NewLangProjFixture.CreateCache(_tempRoot);
-        _seed = SeededProject.Seed(_cache);
+        _cache = pristine.NewScratch();
+        _seed = pristine.Seed;
     }
 
     [Fact]
@@ -82,7 +80,5 @@ public sealed class DisplacedOccupantFactTests : IDisposable
     public void Dispose()
     {
         if (!_cache.IsDisposed) _cache.Dispose();
-        try { Directory.Delete(_tempRoot, recursive: true); }
-        catch { /* best effort */ }
     }
 }

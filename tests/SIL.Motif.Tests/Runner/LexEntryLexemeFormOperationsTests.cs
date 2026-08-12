@@ -31,24 +31,19 @@ namespace SIL.Motif.Tests.Runner;
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
 public sealed class LexEntryLexemeFormOperationsTests : IDisposable
 {
-    private readonly string _tempRoot;
-    private readonly string _fwDataPath;
     private readonly FwDataProjectLoader _loader = new();
     private readonly SeededProject _seed;
     private LcmCache _cache;
 
-    public LexEntryLexemeFormOperationsTests()
+    public LexEntryLexemeFormOperationsTests(PristineProjectFixture pristine)
     {
-        _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests.LexemeForm", Guid.NewGuid().ToString("N"));
-        _cache = NewLangProjFixture.CreateCache(_tempRoot);
-        _fwDataPath = NewLangProjFixture.FwDataPath(_tempRoot);
-        _seed = SeededProject.Seed(_cache);
+        _cache = pristine.NewScratch();
+        _seed = pristine.Seed;
     }
 
     public void Dispose()
     {
         if (!_cache.IsDisposed) _cache.Dispose();
-        try { Directory.Delete(_tempRoot, recursive: true); } catch { /* best effort */ }
     }
 
     [Fact]
@@ -94,8 +89,9 @@ public sealed class LexEntryLexemeFormOperationsTests : IDisposable
         var proposal = BuildCreateProposal(CanonicalId.FromGuid(entryGuid), newFormId, prefixMorphTypeId, vernWs, "zzMotifPrefix");
 
         var dryRun = ScratchDryRun.Of(_cache, proposal);
+        var fwDataPath = _cache.ProjectId.Path;
         _cache.Dispose();
-        _cache = _loader.LoadCache(_fwDataPath);
+        _cache = _loader.LoadCache(fwDataPath);
         ProposalApplier.Apply(_cache, proposal, dryRun.Anchor, "motif-tests");
 
         var entry = _cache.ServiceLocator.GetInstance<ILexEntryRepository>().GetObject(entryGuid);
@@ -117,8 +113,9 @@ public sealed class LexEntryLexemeFormOperationsTests : IDisposable
         var oldRef = Assert.Single(dryRun.ExpectedEffects).Before;
         Assert.Equal(oldFormGuid.ToString(), CanonicalId.Parse(oldRef[ReferenceFieldAlternativesKey]).ToGuid().ToString());
 
+        var fwDataPath = _cache.ProjectId.Path;
         _cache.Dispose();
-        _cache = _loader.LoadCache(_fwDataPath);
+        _cache = _loader.LoadCache(fwDataPath);
         ProposalApplier.Apply(_cache, proposal, dryRun.Anchor, "motif-tests");
 
         var entry = _cache.ServiceLocator.GetInstance<ILexEntryRepository>().GetObject(entryGuid);

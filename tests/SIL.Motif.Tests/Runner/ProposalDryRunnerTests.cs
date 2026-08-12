@@ -26,19 +26,19 @@ public sealed class ProposalDryRunnerTests : IDisposable
     private readonly LcmCache _cache;
     private readonly SeededProject _seed;
 
-    public ProposalDryRunnerTests()
+    public ProposalDryRunnerTests(PristineProjectFixture pristine)
     {
-        _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests", Guid.NewGuid().ToString("N"));
-        _cache = NewLangProjFixture.CreateCache(_tempRoot);
-        _seed = SeededProject.Seed(_cache);
+        // A scratch is opened from files already carrying the seed, so no save is needed to put it on disk.
+        _cache = pristine.NewScratch();
+        _seed = pristine.Seed;
 
-        // Two tests below copy _cache.ProjectId.Path directly, so the seed must already be on disk.
-        new FwDataProjectLoader().Save(_cache);
+        _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_tempRoot);
     }
 
     public void Dispose()
     {
-        _cache.Dispose();
+        if (!_cache.IsDisposed) _cache.Dispose();
         try
         {
             Directory.Delete(_tempRoot, recursive: true);

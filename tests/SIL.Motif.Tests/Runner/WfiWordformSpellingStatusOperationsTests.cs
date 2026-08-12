@@ -25,14 +25,12 @@ namespace SIL.Motif.Tests.Runner;
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
 public sealed class WfiWordformSpellingStatusOperationsTests : IDisposable
 {
-    private readonly string _tempRoot;
     private readonly LcmCache _cache;
     private readonly IWfiWordform _wordform;
 
-    public WfiWordformSpellingStatusOperationsTests()
+    public WfiWordformSpellingStatusOperationsTests(PristineProjectFixture pristine)
     {
-        _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests.SpellingStatus", Guid.NewGuid().ToString("N"));
-        _cache = NewLangProjFixture.CreateCache(_tempRoot);
+        _cache = pristine.NewScratch();
         _wordform = CreateWordform();
     }
 
@@ -50,14 +48,6 @@ public sealed class WfiWordformSpellingStatusOperationsTests : IDisposable
     public void Dispose()
     {
         if (!_cache.IsDisposed) _cache.Dispose();
-        try
-        {
-            Directory.Delete(_tempRoot, recursive: true);
-        }
-        catch
-        {
-            // best-effort cleanup; a locked native handle should not fail the test
-        }
     }
 
     [Fact]
