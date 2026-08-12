@@ -19,6 +19,7 @@ namespace SIL.Motif.Tests.Cli;
 /// end to end.
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
+[Trait("Fixture", "TestLangProj")]
 public sealed class EndToEndCliTests : IDisposable
 {
     private readonly string _tempRoot;

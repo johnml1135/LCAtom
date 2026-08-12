@@ -159,6 +159,7 @@ $sourceFiles = @(
     Get-ChildItem -Path (Join-Path $repoRoot 'tests') -Filter '*.cs' -Recurse -File -ErrorAction SilentlyContinue
     Get-ChildItem -Path (Join-Path $repoRoot 'spikes') -Filter '*.cs' -Recurse -File -ErrorAction SilentlyContinue
     Get-ChildItem -Path (Join-Path $repoRoot 'tools') -Filter '*.ps1' -Recurse -File -ErrorAction SilentlyContinue
+    Get-ChildItem -Path $repoRoot -Filter '*.ps1' -File -ErrorAction SilentlyContinue
 ) | Where-Object {
     $_.FullName -notmatch '\\(bin|obj)\\' -and $_.Name -notmatch '\.g\.cs$'
 }

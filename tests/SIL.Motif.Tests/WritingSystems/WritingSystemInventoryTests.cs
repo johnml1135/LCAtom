@@ -26,6 +26,7 @@ namespace SIL.Motif.Tests.WritingSystems;
 /// </para>
 /// </remarks>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
+[Trait("Fixture", "TestLangProj")]
 public sealed class WritingSystemInventoryTests : IDisposable
 {
     private readonly string _tempRoot;

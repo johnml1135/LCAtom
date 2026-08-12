@@ -29,6 +29,7 @@ namespace SIL.Motif.Tests.Runner;
 /// Apply. The DryRun now runs on a throwaway copy, so it does not — see ADR 0016.
 /// </remarks>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
+[Trait("Fixture", "TestLangProj")]
 public sealed class LexEntryLexemeFormOperationsTests : IDisposable
 {
     private readonly string _tempRoot;

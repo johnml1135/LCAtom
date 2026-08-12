@@ -21,6 +21,7 @@ namespace SIL.Motif.Tests.Runner;
 /// lexical-entry family, now exercised on grammar classes as well.
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
+[Trait("Fixture", "TestLangProj")]
 public sealed class GeneratedSlice3OperationsTests : IDisposable
 {
     private readonly string _tempRoot;

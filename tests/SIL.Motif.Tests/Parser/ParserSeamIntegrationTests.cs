@@ -57,6 +57,7 @@ internal static class RealProject
 /// </para>
 /// </remarks>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
+[Trait("Fixture", "TestLangProj")]
 public sealed class ParserSeamIntegrationTests
 {
     // Sena words drawn from the project's own corpus. Small, because the FST build alone is ~11 s.

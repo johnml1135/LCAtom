@@ -1,0 +1,36 @@
+name: CI
+
+# Runs the same two scripts a developer runs, so CI cannot disagree with a local run about what passes.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    # Windows because the repo targets net48 alongside net10.0, and nuget.config uses %USERPROFILE%.
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # nuget.config declares the global packages folder as a source; NuGet fails if it is absent.
+      - name: Ensure the local package source exists
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.nuget\packages" | Out-Null
+
+      - name: Build (comment hygiene, then compile)
+        shell: pwsh
+        run: ./build.ps1 -Configuration Release
+
+      # The rest of the suite drives a real LibLCM cache from ../FieldWorks/TestLangProj, a sibling
+      # checkout that does not exist here. Those tests fail rather than skip when it is missing, which
+      # is deliberate, so they are excluded by name instead of being allowed to fail quietly.
+      - name: Test (the subset needing no FieldWorks checkout)
+        shell: pwsh
+        run: ./test.ps1 -Configuration Release -SkipBuild -Filter 'Fixture!=TestLangProj'

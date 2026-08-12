@@ -28,6 +28,7 @@ namespace SIL.Motif.Tests.Apply;
 /// entry.
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
+[Trait("Fixture", "TestLangProj")]
 public sealed class ProposalApplierTests : IDisposable
 {
     private readonly string _tempRoot;

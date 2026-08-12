@@ -20,6 +20,7 @@ namespace SIL.Motif.Tests.Runner;
 /// work sees the true cascaded state without needing to replay or predict it.
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
+[Trait("Fixture", "TestLangProj")]
 public sealed class ProposalDryRunnerTests : IDisposable
 {
     private readonly string _tempRoot;

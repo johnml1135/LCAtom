@@ -33,6 +33,7 @@ namespace SIL.Motif.Tests.Apply;
 /// </para>
 /// </remarks>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
+[Trait("Fixture", "TestLangProj")]
 public sealed class AnchorsAreCrossCachePortableTests : IDisposable
 {
     private readonly string _tempRoot;

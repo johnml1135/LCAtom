@@ -21,6 +21,7 @@ namespace SIL.Motif.Tests.Runner;
 /// between DryRun and Apply (ADR 0016).
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
+[Trait("Fixture", "TestLangProj")]
 public sealed class MoFormMorphTypeOperationsTests : IDisposable
 {
     private const string RefKey = "ref";

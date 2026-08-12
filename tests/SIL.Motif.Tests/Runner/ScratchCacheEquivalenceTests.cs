@@ -17,6 +17,7 @@ namespace SIL.Motif.Tests.Runner;
 /// means a regression in either strategy fails the suite rather than waiting for someone to re-run a spike.
 /// </remarks>
 [Collection(LcmCacheTestCollection.Name)]
+[Trait("Fixture", "TestLangProj")]
 public class ScratchCacheEquivalenceTests : IDisposable
 {
     private readonly ITestOutputHelper _output;

@@ -1,5 +1,25 @@
 # AGENTS.md
 
+## Build and test with these, not with `dotnet` directly
+
+```
+./build.ps1     # comment hygiene, then compile
+./test.ps1      # the above, then the full suite
+```
+
+**Use them every time.** `./build.ps1` runs the comment gate before it compiles, so a violation fails
+in seconds rather than surviving until someone remembers to look. A bare `dotnet build` skips that
+gate entirely, which is how the rules below decay into suggestions. `./test.ps1` runs the build gate
+first, so one green run means clean comments, a clean compile, and a passing suite.
+
+CI runs the same two scripts (`.github/workflows/ci.yml`), so anything they reject locally is
+rejected there too — and anything they let through is not a CI surprise.
+
+**`./test.ps1` needs a FieldWorks sibling checkout.** Much of the suite drives a real LibLCM cache
+loaded from `../FieldWorks/TestLangProj`. Those tests fail rather than skip when it is absent, on
+purpose: a suite that quietly shrinks reports success for work it never did. CI has no sibling
+checkout, so it runs a named subset and says so.
+
 Read `CONTEXT.md` first — it is the canonical glossary, and its terms are binding in code, comments,
 CLI verbs, and prose. Then `README.md` and the documents in `docs/`.
 

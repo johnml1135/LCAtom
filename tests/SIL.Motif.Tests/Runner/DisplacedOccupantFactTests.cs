@@ -34,6 +34,7 @@ namespace SIL.Motif.Tests.Runner;
 /// </para>
 /// </remarks>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
+[Trait("Fixture", "TestLangProj")]
 public sealed class DisplacedOccupantFactTests : IDisposable
 {
     private readonly string _tempRoot;
