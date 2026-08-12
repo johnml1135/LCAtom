@@ -117,8 +117,7 @@ public class CorpusIngestionTests : IDisposable
         Assert.Equal("mbali\nnyumba\n", document.Text);
         Assert.Contains("https://example.org/seh.txt", fetcher.Requested);
 
-        // Recording where it came from is the whole point; losing it at ingestion would make the record
-        // unreproducible in exactly the case where reproducing it matters.
+        // Recording where it came from is the whole point; losing it would make the record unreproducible.
         Assert.Equal("https://example.org/seh.txt", document.Source.Describe());
     }
 
@@ -144,8 +143,7 @@ public class CorpusIngestionTests : IDisposable
 
         var ex = Assert.Throws<InvalidOperationException>(() => ingestion.AddCorpus("ebible-seh", Provenance()));
 
-        // The reason matters more than the refusal: replacing the corpus would leave Assessments pointing at
-        // text that is no longer there.
+        // The reason matters: replacing the corpus would leave Assessments pointing at text no longer there.
         Assert.Contains("orphan", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -177,8 +175,7 @@ public class CorpusIngestionTests : IDisposable
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             ingestion.AddDocumentAsync("nope", new DocumentSource.File("x.txt"), new DocumentMetadata("d", "D")));
 
-        // Because the corpus is what carries the origin and the tokenisation record. Letting text land first
-        // means back-filling provenance later, which is where provenance goes to die.
+        // The corpus carries origin and tokenisation; letting text land first means back-filling provenance later.
         Assert.Contains("tokenisation record", ex.Message);
     }
 
@@ -252,8 +249,7 @@ public class CorpusIngestionTests : IDisposable
         var corpus = Store().Load("c")!;
         var effective = corpus.Documents[0].EffectiveCapabilities(corpus.Provenance.Origin);
 
-        // Field-by-field merging would let the corpus's MayDerive:true fill the document's null fields and,
-        // worse, invite the same treatment of MayDerive itself. Override wholesale instead.
+        // Field-by-field merging would let the corpus's MayDerive:true leak into the document; override wholesale.
         Assert.False(effective.MayDerive);
         Assert.Null(effective.MayUseCommercially);
         Assert.Empty(corpus.DocumentsPermittingDerivation());
@@ -280,8 +276,7 @@ public class CorpusIngestionTests : IDisposable
 
         var text = Store().Load("c")!.Documents[0].Text;
 
-        // CorpusDescriptor sorts and deduplicates and is right to; a Document must not, because that
-        // transformation only runs one way. "mbali" appearing three times is the data.
+        // CorpusDescriptor sorts/dedupes and is right to; a Document must not — "mbali" three times is the data.
         Assert.Equal("mbali mbali nyumba\nmbali\n", text);
         Assert.Equal(3, text.Split(new[] { ' ', '\n' }, StringSplitOptions.RemoveEmptyEntries)
             .Count(w => w == "mbali"));
@@ -330,8 +325,7 @@ public class CorpusIngestionTests : IDisposable
         await ingestion.AddDocumentAsync("../../escaped", new DocumentSource.File(path),
             new DocumentMetadata("../../also-escaped", "D"));
 
-        // Ids come from bundles written by other programs. Everything written stays under the store root,
-        // and the ids themselves are preserved in the metadata rather than being mangled.
+        // Ids come from other programs' bundles; writes stay under the store root, but ids are preserved, not mangled.
         var written = Directory.GetFiles(_root, "*", SearchOption.AllDirectories);
         Assert.All(written, f => Assert.StartsWith(Path.GetFullPath(_root), Path.GetFullPath(f), StringComparison.Ordinal));
 

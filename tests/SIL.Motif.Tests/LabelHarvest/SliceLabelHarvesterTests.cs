@@ -4,18 +4,20 @@ using Xunit;
 namespace SIL.Motif.Tests.LabelHarvest;
 
 /// <summary>
-/// Covers mechanism 2 (docs/research/2026-08-05-fieldworks-user-facing-names.md §1.2): the fixtures below
-/// are trimmed-down reproductions of the exact shapes that file cites — the <c>Gloss</c> ref that means two
-/// different classes' fields depending on the enclosing <c>&lt;layout class="…"&gt;</c>, and the
-/// nested-<c>&lt;indent&gt;</c> case.
+/// Covers the FieldWorks <c>.fwlayout</c>/<c>Parts/*.xml</c> slice system, the closest thing FieldWorks
+/// has to a canonical <c>(class, field) -&gt; label</c> registry: a labeled <c>&lt;part&gt;</c>/<c>&lt;slice&gt;</c>
+/// is keyed by the enclosing <c>&lt;layout class="…"&gt;</c>, never by the bare <c>ref</c>/<c>field</c> string
+/// alone, because that string is reused across unrelated classes. The fixtures below are trimmed-down
+/// reproductions of real shapes observed in FieldWorks' own configuration — the <c>Gloss</c> ref that means
+/// two different classes' fields depending on the enclosing layout, and a label nested inside an
+/// <c>&lt;indent&gt;</c> grouping element rather than directly under the layout.
 /// </summary>
 public class SliceLabelHarvesterTests
 {
     [Fact]
     public void FwLayout_keys_the_label_by_enclosing_layout_class_not_the_bare_ref()
     {
-        // Reproduces LexEntry.fwlayout: two <layout> blocks both use ref="Gloss", but one is class="LexSense"
-        // and the other class="LexEtymology" — a naive scrape keyed on the bare ref would conflate them.
+        // Reproduces LexEntry.fwlayout: two <layout> blocks share ref="Gloss" across LexSense and LexEtymology.
         const string fixture = """
             <LayoutInventory>
               <layout class="LexSense" type="detail" name="Normal">
@@ -42,8 +44,7 @@ public class SliceLabelHarvesterTests
     [Fact]
     public void FwLayout_resolves_a_composite_ref_to_its_real_field_via_the_supplied_map()
     {
-        // Reproduces the MoInflAffixSlot.Name / "Slot Name" case ADR 0023 cites: the EditSlot layout's ref
-        // is "NameAllA", a composite Parts.xml part id suffix, not the bare field "Name".
+        // Reproduces the MoInflAffixSlot.Name case (ADR 0023): EditSlot's ref is "NameAllA", not bare "Name".
         const string fixture = """
             <LayoutInventory>
               <layout class="MoInflAffixSlot" type="detail" name="EditSlot">
@@ -108,8 +109,7 @@ public class SliceLabelHarvesterTests
     [Fact]
     public void PartsXml_tolerates_the_real_stray_angle_bracket_bug_in_CellarParts_xml()
     {
-        // CellarParts.xml genuinely has <bin class="CmSemanticDomain>"> — a stray '>' baked into the
-        // attribute value. The harvester must not silently lose this class's model coverage over a typo upstream.
+        // CellarParts.xml genuinely has <bin class="CmSemanticDomain>">; must not lose this class over the typo.
         const string fixture = """
             <PartInventory>
               <bin class="CmSemanticDomain>">

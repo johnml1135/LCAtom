@@ -7,8 +7,8 @@ namespace SIL.Motif.Tests.Generator;
 /// End-to-end exercise of <see cref="MotifModelLoader.Load"/> against the real
 /// <c>MasterLCModel.xml</c>, proving the whole pipeline — resolve, parse, join, check, report —
 /// fails closed on an injected manifest-side orphan, not just the unit-level
-/// <see cref="Join.ModelManifestJoiner"/> tests (docs/plan-motif.md MOT-2 acceptance: "an injected
-/// extra (Class, Field) key on either side fails the build with a message naming the key").
+/// <see cref="Join.ModelManifestJoiner"/> tests: an injected extra (Class, Field) key on either side
+/// must fail the build with a message naming the key.
 /// </summary>
 public class MotifModelLoaderTests
 {
@@ -21,17 +21,19 @@ public class MotifModelLoaderTests
         Assert.Equal("7000072", loaded.Model.Version);
     }
 
+    /// <summary>
+    /// One extra, well-formed, 18-column row whose (Class, Field) key exists nowhere in
+    /// <c>MasterLCModel.xml</c> — the manifest-side orphan the join must reject. The column count has to
+    /// match the manifest exactly (pinned by `Parse_Fixture_RejectsWrongColumnCount`), or the parser
+    /// rejects the row on shape before the join ever sees the key, and this test would pass for the wrong
+    /// reason: it must fail loudly on the join, not silently on parse shape.
+    /// </summary>
     [Fact]
     public void Load_ManifestWithInjectedOrphanRow_FailsClosedNamingTheKey()
     {
         var realManifestPath = RepoPaths.DefaultManifestPath();
         var realText = File.ReadAllText(realManifestPath);
 
-        // One extra, well-formed, 18-column row whose (Class, Field) key exists nowhere in
-        // MasterLCModel.xml — the manifest-side orphan the join must refuse. The column count has to
-        // match the manifest exactly, or the parser rejects the row on shape before the join ever sees
-        // the key, and this test would pass for the wrong reason. (It failed loudly instead when
-        // `AssessPoisonsCache` was retired on 2026-08-06, which is the behaviour to want.)
         var injectedRow =
             "\"ZzzSyntheticInjectedClass\"\t\"CmObject\"\t\"false\"\t\"in\"\t\"synthetic test row\"\t" +
             "\"ZzzSyntheticInjectedField\"\t\"basic\"\t\"Unicode\"\t\"\"\t\"no\"\t\"x\"\t\"system\"\t" +

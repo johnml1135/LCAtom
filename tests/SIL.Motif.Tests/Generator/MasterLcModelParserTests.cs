@@ -5,9 +5,9 @@ using Xunit;
 namespace SIL.Motif.Tests.Generator;
 
 /// <summary>
-/// Parses the real, pinned <c>MasterLCModel.xml</c> and checks it against the verified facts
-/// docs/plan-motif.md MOT-2 records: version <c>7000072</c>, 445 <c>&lt;basic&gt;</c> + 235
-/// <c>&lt;owning&gt;</c> + 218 <c>&lt;rel&gt;</c> = 898 field declarations, 193 classes.
+/// Parses the real, pinned <c>MasterLCModel.xml</c> and checks it against the verified facts: version
+/// <c>7000072</c>, 445 <c>&lt;basic&gt;</c> + 235 <c>&lt;owning&gt;</c> + 218 <c>&lt;rel&gt;</c> = 898 field
+/// declarations, 193 classes.
 /// </summary>
 public class MasterLcModelParserTests
 {
@@ -56,8 +56,7 @@ public class MasterLcModelParserTests
     [Fact]
     public void Parse_RealModel_MoFormIsAbstract()
     {
-        // The live example the plan names for the abstract-class rule (ADR 0023 decision 2,
-        // Checks/AbstractClassRule.cs).
+        // The live example for the abstract-class rule (ADR 0023 decision 2, Checks/AbstractClassRule.cs).
         var moForm = ParseRealModel().Classes.Single(c => c.Id == "MoForm");
         Assert.True(moForm.Abstract);
     }

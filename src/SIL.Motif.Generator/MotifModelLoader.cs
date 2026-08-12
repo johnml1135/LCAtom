@@ -8,8 +8,8 @@ using SIL.Motif.Generator.ModelSource;
 namespace SIL.Motif.Generator;
 
 /// <summary>The full result of one load: where the model came from, the parsed model, the joined
-/// rows, and the model coverage report — everything MOT-2/MOT-3's acceptance criteria ask a caller (a
-/// test, or eventually MOT-4) to be able to inspect.</summary>
+/// rows, and the model coverage report — everything a caller needs in order to inspect what was
+/// loaded.</summary>
 public sealed record LoadedMotifModel(
     ModelPathResult PathResult,
     ParsedModel Model,
@@ -18,17 +18,17 @@ public sealed record LoadedMotifModel(
 
 /// <summary>
 /// The generator's single entry point: resolve <c>MasterLCModel.xml</c>, parse it, parse the
-/// manifest, join the two fail-closed (MOT-2), run the derivation-consistency checks ADR 0022/0024
-/// require, and report model coverage (MOT-3). This is "the skeleton plus the fail-closed join" the plan
-/// asks for — it emits nothing; MOT-4 is what turns <see cref="LoadedMotifModel.Rows"/> into actual
-/// operation code.
+/// manifest, join the two fail-closed, run the derivation-consistency checks ADR 0022/0024
+/// require, and report model coverage. It emits nothing — turning
+/// <see cref="LoadedMotifModel.Rows"/> into operation code is a separate concern this loader does
+/// not take on.
 /// </summary>
 public static class MotifModelLoader
 {
     /// <param name="manifestPath">Defaults to <c>manifest/liblcm-inventory.tsv</c> under the repo
     /// root (<see cref="RepoPaths.DefaultManifestPath"/>). Overridable so tests can point at a
     /// fixture with an injected extra/missing/mismatched row without touching the read-only real
-    /// file (manifest/README.md: "never modify it").</param>
+    /// file (the manifest README: "never modify it").</param>
     /// <param name="packagesRootOverride">Forwarded to <see cref="ModelPathResolver.Resolve"/>.</param>
     /// <param name="libLcmCheckoutRoot">Forwarded to <see cref="ModelPathResolver.Resolve"/>.</param>
     public static LoadedMotifModel Load(
@@ -44,9 +44,7 @@ public static class MotifModelLoader
 
         var rows = ModelManifestJoiner.Join(model.Fields, manifestRows);
 
-        // ADR 0022 decision 3 and ADR 0024 decision 2: both checks fail closed, naming the
-        // offending row/class, before model coverage is even computed — a build that fails these checks
-        // should not get as far as printing a report that looks like everything is fine.
+        // ADR 0022 decision 3, ADR 0024 decision 2: both checks fail closed, naming the bad row/class first.
         ManifestConsistencyChecker.CheckVerbsAndComparisonClass(rows);
         ManifestConsistencyChecker.CheckGroupIsTotal(rows);
 

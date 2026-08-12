@@ -1,4 +1,6 @@
 <Project>
+  <Import Project="$(MSBuildThisFileDirectory)SilVersions.props" />
+
   <PropertyGroup>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -11,5 +13,15 @@
     <Product>Motif</Product>
     <Copyright>Copyright (c) SIL Global</Copyright>
     <RootNamespace>$(MSBuildProjectName)</RootNamespace>
+  </PropertyGroup>
+
+  <!--
+    Opt-in local libpalaso override (design rule 16). Off unless LOCAL_NUGET_REPO names an existing
+    folder; CI never sets it, so this is inert there regardless of what SilVersions.props contains.
+    tools/Manage-LocalLibraries.ps1 and AGENTS.md document the workflow.
+  -->
+  <PropertyGroup>
+    <MotifLocalPalasoActive Condition="'$(LOCAL_NUGET_REPO)' != '' and Exists('$(LOCAL_NUGET_REPO)')">true</MotifLocalPalasoActive>
+    <RestoreAdditionalProjectSources Condition="'$(MotifLocalPalasoActive)' == 'true'">$(RestoreAdditionalProjectSources);$(LOCAL_NUGET_REPO)</RestoreAdditionalProjectSources>
   </PropertyGroup>
 </Project>

@@ -25,34 +25,25 @@ namespace SIL.Motif.Generator.Derivation;
 /// feature-structure classes, <c>lexical</c> for the dictionary, <c>lists</c> for the
 /// <c>CmPossibility</c> family) plus <c>system</c> for administrative/import/Scripture machinery and
 /// <c>analysis</c> for the word-analysis family ADR 0025 brought into scope — mirroring the five
-/// values manifest/README.md documents for its own (differently-sourced) <c>Group</c>/domain column,
+/// values the manifest README documents for its own (differently-sourced) <c>Group</c>/domain column,
 /// without being derived from it.
 /// </para>
 /// </remarks>
 public static class GroupDerivation
 {
-    /// <summary>
-    /// Exact class-name overrides, checked before <see cref="PrefixTable"/>. Each exists because a
-    /// shared prefix with sibling classes would give the wrong answer for this one specific class.
-    /// </summary>
+    /// <summary>Overrides checked before PrefixTable: a shared prefix would give the wrong answer here.</summary>
     private static readonly IReadOnlyDictionary<string, string> ClassOverrides = new Dictionary<string, string>
     {
-        // The word-analysis family ADR 0025 brought into scope, called out by name in
-        // docs/plan-motif.md: "Segment, WfiAnalysis, WfiWordform, WfiMorphBundle, Text, CmAgent and
-        // StTxtPara." CmAgent and StTxtPara would otherwise fall under the generic Cm*/St* -> system
-        // entries below; Text/TextTag, Segment, and Wfi* already get "analysis" from PrefixTable.
+        // ADR 0025 word-analysis family: CmAgent/StTxtPara would otherwise fall to Cm*/St* -> system.
         ["CmAgent"] = "analysis",
         ["StTxtPara"] = "analysis",
         ["Segment"] = "analysis",
 
-        // CmPossibility and CmPossibilityList are the list scaffolding itself — ADR 0023's own
-        // example (`CmPossibility.Name -> lists/cmPossibility/setName`) — distinct from every other
-        // Cm* class, which is ordinary Cellar-model administrative machinery.
+        // List scaffolding itself (ADR 0023's example: CmPossibility.Name -> lists/...), not ordinary Cm*.
         ["CmPossibility"] = "lists",
         ["CmPossibilityList"] = "lists",
 
-        // No shared prefix with any sibling class, so each gets its own entry rather than a
-        // one-member "prefix".
+        // No shared prefix with any sibling class, so each gets its own entry rather than a one-member "prefix".
         ["CrossReference"] = "system",
         ["LangProject"] = "system",
         ["Note"] = "system",
@@ -62,11 +53,7 @@ public static class GroupDerivation
         ["PunctuationForm"] = "system",
     };
 
-    /// <summary>
-    /// Prefix -> group. Order does not matter for correctness (the derivation always chooses the
-    /// longest matching prefix, see <see cref="Derive"/>), but is written longest-first here for a
-    /// human scanning the table.
-    /// </summary>
+    /// <summary>Prefix -> group; table order is cosmetic, Derive always picks the longest match.</summary>
     private static readonly IReadOnlyList<(string Prefix, string Group)> PrefixTable = new[]
     {
         ("ConstituentChart", "analysis"),  // discourse chart parts (ConstituentChartCellPart)
@@ -95,8 +82,7 @@ public static class GroupDerivation
         if (ClassOverrides.TryGetValue(declaringClass, out var overrideGroup))
             return overrideGroup;
 
-        // Longest matching prefix wins, computed rather than relying on table order, so adding a
-        // more specific entry later can never be silently shadowed by a shorter one already there.
+        // Longest match computed, not table order: a new entry can't be silently shadowed by a shorter one.
         string? bestPrefix = null;
         string? bestGroup = null;
         foreach (var (prefix, group) in PrefixTable)

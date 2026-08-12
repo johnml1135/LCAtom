@@ -5,7 +5,7 @@ namespace SIL.Motif.Model.AppliedLog;
 /// <summary>
 /// One parsed applied-change-log record: the combination of a <c>CmResource.Version</c> (the
 /// stable <c>proposalId</c> GUID, used for identity matching) and its <c>CmResource.Name</c>,
-/// split into fields. See docs/applied-log.md, "Record format".
+/// split into fields — the applied log format's "Record format".
 /// </summary>
 /// <param name="ProposalId">
 /// The stable <c>proposalId</c> GUID this entry records. Stored in <c>CmResource.Version</c>,

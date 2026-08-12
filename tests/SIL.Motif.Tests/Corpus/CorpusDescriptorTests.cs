@@ -24,8 +24,7 @@ public class CorpusDescriptorTests
         var first = CorpusDescriptor.Create("test-corpus", new[] { "mbali", "ya", "nkazi" });
         var second = CorpusDescriptor.Create("test-corpus", new[] { "nkazi", "mbali", "ya" });
 
-        // The whole point of sorting before hashing: two extractions of the same wordforms that merely
-        // enumerated them differently must not look like drift.
+        // The whole point of sorting before hashing: differently-enumerated same wordforms must not look like drift.
         Assert.Equal(first.Sha256, second.Sha256);
         Assert.Equal(first.Words, second.Words);
     }
@@ -55,9 +54,7 @@ public class CorpusDescriptorTests
     [Fact]
     public void Create_HashDoesNotDependOnTheCorpusId()
     {
-        // The id is a label for reporting; the hash is a fact about content. Two differently-labelled
-        // descriptors over the same words describe the same corpus content, which a reviewer comparing
-        // hashes across a rename needs to be true.
+        // The id is a label; the hash is a content fact — differently-labelled descriptors over the same words match.
         var first = CorpusDescriptor.Create("sena-3", new[] { "mbali", "ya" });
         var second = CorpusDescriptor.Create("a different label", new[] { "mbali", "ya" });
 
@@ -92,8 +89,7 @@ public class CorpusDescriptorTests
     [Fact]
     public void Create_AcceptsAnEmptyCorpus()
     {
-        // An empty corpus is a legitimate (if useless) input — this exercises the boundary rather than
-        // asserting it should be rejected, since nothing about hashing or ordering requires words to exist.
+        // An empty corpus is a legitimate (if useless) input; hashing and ordering do not require words to exist.
         var descriptor = CorpusDescriptor.Create("empty-corpus", Array.Empty<string>());
 
         Assert.Empty(descriptor.Words);
@@ -103,10 +99,7 @@ public class CorpusDescriptorTests
     [Fact]
     public void ACorpusIsASet_SoDuplicatesDoNotChangeItsIdentity()
     {
-        // Found reviewing the first implementation, which sorted but did not deduplicate. GrammarCoverageFigure
-        // compares a corpus against what was analysed with set semantics, and a word form analysed twice is
-        // analysed once — so if the hash counted duplicates, two corpora covering identically the same words
-        // would carry different hashes and a figure would report drift against itself.
+        // GrammarCoverageFigure compares with set semantics; a duplicate-counting hash would fake drift.
         var once = CorpusDescriptor.Create("sena", new[] { "mbali", "ya", "miseru" });
         var twice = CorpusDescriptor.Create("sena", new[] { "mbali", "ya", "mbali", "miseru", "ya" });
 

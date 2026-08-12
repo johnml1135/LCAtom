@@ -8,8 +8,8 @@ namespace SIL.Motif.Model.Snapshot;
 
 /// <summary>
 /// Renders one or more <see cref="ObjectSnapshot"/>s as (pre-canonicalization) JSON text, keyed by
-/// canonical id, per docs/change-set-contract.md, "Canonical Semantic Snapshot": "The snapshot is an
-/// inspectable deterministic projection ... rendered [to] its RFC 8785 canonical JSON form."
+/// canonical id — the Change Set contract's "Canonical Semantic Snapshot": "an inspectable
+/// deterministic projection ... rendered [to] its RFC 8785 canonical JSON form."
 /// </summary>
 /// <remarks>
 /// Object member order here does not need to be pre-sorted: <see cref="SIL.Motif.Contract.Canonicalization.CanonicalJson"/>

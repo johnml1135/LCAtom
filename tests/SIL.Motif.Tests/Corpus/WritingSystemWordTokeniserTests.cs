@@ -10,8 +10,7 @@ namespace SIL.Motif.Tests.Corpus;
 /// <see cref="WritingSystemWordTokeniser"/> segments the way FieldWorks' own <c>WordMaker</c> does — maximal
 /// runs of characters the writing system's <c>get_IsWordForming</c> accepts — rather than by .NET's general
 /// Unicode punctuation classification, which is what <see cref="WhitespaceAndPunctuationTokeniser"/> uses and
-/// why it silently strips an edge glottal stop written as a plain or curly apostrophe (<c>docs/issues.md</c>
-/// <c>B29</c>).
+/// why it silently strips an edge glottal stop written as a plain or curly apostrophe.
 /// </summary>
 /// <remarks>
 /// The rules these tests defend, in order of how much damage getting them wrong would do:
@@ -31,29 +30,21 @@ namespace SIL.Motif.Tests.Corpus;
 /// Motif substitutes for populating the writing system's own declared characters.</item>
 /// <item>The Name/Version binding <see cref="CorpusTokenisation"/> enforces for the existing tokeniser must
 /// hold for this one too, so two differently-tokenised corpora still cannot be silently conflated.</item>
+/// <item><c>WritingSystemManager.Set(string)</c> resolves a script code through the SLDR, which throws
+/// <see cref="InvalidOperationException"/> if initialized twice in one process — so the static constructor
+/// reuses <see cref="FwDataProjectLoader.Init"/>'s idempotent bootstrap rather than calling
+/// <c>Sldr.Initialize</c> directly, avoiding a race with another LibLCM-touching test class's constructor.</item>
 /// </list>
 /// </remarks>
 public class WritingSystemWordTokeniserTests
 {
-    /// <summary>
-    /// <c>WritingSystemManager.Set(string)</c> resolves an implicit script code through the SLDR (SIL Locale
-    /// Data Repository), which throws <see cref="InvalidOperationException"/> until initialized exactly once
-    /// per process. <see cref="FwDataProjectLoader.Init"/> is the process-wide ICU/SLDR bootstrap every other
-    /// LibLCM-touching test in this suite already goes through (<c>WritingSystemInventoryTests</c>,
-    /// <c>LcmWordformCorpusTests</c>, ...) and is idempotent by its own static flag — reusing it here, rather
-    /// than calling <c>Sldr.Initialize</c> directly, avoids a second initializer that throws
-    /// "already initialized" against whichever one of these test classes' constructors the runner happens to
-    /// invoke first in the same process.
-    /// </summary>
+    // SLDR must init exactly once per process; reuses FwDataProjectLoader.Init (see class remarks).
     static WritingSystemWordTokeniserTests()
     {
         FwDataProjectLoader.Init();
     }
 
-    /// <summary>
-    /// Builds a writing system in-process, the way liblcm's own
-    /// <c>WritingSystemManagerTests.get_IsWordForming</c> does — no FieldWorks project, no LDML file on disk.
-    /// </summary>
+    /// <summary>Builds a writing system in-process, as liblcm's own get_IsWordForming tests do.</summary>
     private static CoreWritingSystemDefinition WritingSystem(string id, params string[] mainCharacters)
     {
         var wsManager = new WritingSystemManager();
@@ -83,8 +74,7 @@ public class WritingSystemWordTokeniserTests
     [Fact]
     public void DigitsSplitAWordUntilTheWritingSystemDeclaresThem()
     {
-        // Undeclared: a digit is a separator, not a character to trim. "ma1" loses its tone mark and "a1b"
-        // becomes two words that were never in the text.
+        // Undeclared: a digit is a separator, not trimmable — "ma1" loses its tone mark, "a1b" splits wrongly.
         var undeclared = new WritingSystemWordTokeniser(WritingSystem("seh"));
         Assert.Equal(new[] { "ma" }, undeclared.Tokenise("ma1").ToArray());
         Assert.Equal(new[] { "a", "b" }, undeclared.Tokenise("a1b").ToArray());
@@ -104,22 +94,26 @@ public class WritingSystemWordTokeniserTests
         var ws = WritingSystem("seh", "'");
         var tokeniser = new WritingSystemWordTokeniser(ws);
 
-        // With '\'' declared word-forming, "'mbali'" is one maximal run, not three pieces with the
-        // apostrophes stripped — the whole reason this tokeniser exists.
+        // With ' declared word-forming, "'mbali'" is one run, not stripped pieces — why this tokeniser exists.
         Assert.Equal(new[] { "'mbali'" }, tokeniser.Tokenise("'mbali'").ToArray());
     }
 
+    /// <summary>
+    /// DO NOT "fix" this by special-casing apostrophes in <see cref="WritingSystemWordTokeniser"/>.
+    /// </summary>
+    /// <remarks>
+    /// An unconfigured writing system falls through to the ICU fallback for every character, under which
+    /// U+0027 is punctuation, not a letter — exactly liblcm's own
+    /// <c>WritingSystemManagerTests.get_IsWordForming</c> after <c>CharacterSets.Clear()</c>. Motif must
+    /// agree with FieldWorks here, not improve on it, because the lexicon being measured against was built
+    /// under FieldWorks' own (unconfigured) segmentation.
+    /// </remarks>
     [Fact]
     public void WithNoCharacterSetsDeclared_TheEdgeApostropheIsDropped_ThisIsDeliberateFieldWorksAgreement()
     {
         var ws = WritingSystem("seh"); // no CharacterSets.Add at all
         var tokeniser = new WritingSystemWordTokeniser(ws);
 
-        // DO NOT "fix" this by special-casing apostrophes in this class. An unconfigured writing system falls
-        // through to the ICU fallback for every character, under which U+0027 is punctuation, not a letter —
-        // exactly liblcm's own WritingSystemManagerTests.get_IsWordForming after CharacterSets.Clear(). Motif
-        // must agree with FieldWorks here, not improve on it, because the lexicon being measured against was
-        // built under FieldWorks' own (unconfigured) segmentation. See the class remarks and docs/issues.md B29.
         Assert.Equal(new[] { "mbali" }, tokeniser.Tokenise("'mbali'").ToArray());
     }
 
@@ -129,8 +123,7 @@ public class WritingSystemWordTokeniserTests
         var ws = WritingSystem("haw"); // no CharacterSets declared
         var tokeniser = new WritingSystemWordTokeniser(ws);
 
-        // U+02BB okina, U+02BC modifier letter apostrophe and U+0294 glottal stop are ICU letters, so the
-        // fallback path (not the "main" override) already keeps them — unlike U+0027/U+2019.
+        // U+02BB, U+02BC, U+0294 are ICU letters, so the ICU fallback keeps them — unlike U+0027/U+2019.
         Assert.Equal(new[] { "ʻohana" }, tokeniser.Tokenise("ʻohana").ToArray());
         Assert.Equal(new[] { "mbaʼli" }, tokeniser.Tokenise("mbaʼli").ToArray());
         Assert.Equal(new[] { "ʔa" }, tokeniser.Tokenise("ʔa").ToArray());
@@ -144,8 +137,7 @@ public class WritingSystemWordTokeniserTests
         var ws = WritingSystem("seh", "'");
         var tokeniser = new WritingSystemWordTokeniser(ws);
 
-        // The tokeniser itself must not sort or deduplicate — that contract is IWordTokeniser's, not specific
-        // to the old implementation.
+        // The tokeniser itself must not sort or dedupe — that's IWordTokeniser's contract, not the old impl's.
         Assert.Equal(
             new[] { "nyumba", "mbali", "mbali", "nyumba" },
             tokeniser.Tokenise("nyumba mbali mbali nyumba").ToArray());
@@ -168,9 +160,7 @@ public class WritingSystemWordTokeniserTests
     [Fact]
     public void ANonBmpWordFormingCodepointIsNotSplitAcrossItsSurrogatePair()
     {
-        // U+1044F (𐑏, DESERET SMALL LETTER EW) is a letter, so it is word-forming via the ICU fallback with
-        // no CharacterSets declared. get_IsWordForming takes an int codepoint, so this only tokenises
-        // correctly if the surrogate pair is measured and kept as one unit.
+        // U+10451 Deseret Small Letter Bee is ICU-fallback word-forming; its surrogate pair must not split.
         const string deseretLetter = "\U00010451"; // DESERET SMALL LETTER BEE (Lo)
         var ws = WritingSystem("seh"); // no CharacterSets declared
         var tokeniser = new WritingSystemWordTokeniser(ws);
@@ -212,9 +202,7 @@ public class WritingSystemWordTokeniserTests
     [Fact]
     public void TheDiagnosticFiresWhenMainIsPresentButEmpty()
     {
-        // A "main" character set that exists but has never had anything added to it must still count as
-        // undeclared — an empty override set contributes nothing to get_IsWordForming, exactly as if the
-        // set were entirely absent.
+        // An empty "main" set must still count as undeclared — it contributes nothing to get_IsWordForming.
         var wsManager = new WritingSystemManager();
         var ws = wsManager.Set("seh");
         ws.CharacterSets.Add(new CharacterSetDefinition("main"));
@@ -232,8 +220,7 @@ public class WritingSystemWordTokeniserTests
         var ws = WritingSystem("seh", "'");
         var tokeniser = new WritingSystemWordTokeniser(ws);
 
-        // A figure computed under one writing system is not comparable to one computed under another, so the
-        // notes must say which writing system this instance was built for, not just describe the algorithm.
+        // Notes must name the writing system, not just the algorithm — figures across writing systems don't compare.
         Assert.Contains("seh", tokeniser.Notes);
         Assert.Contains("WordMaker", tokeniser.Notes);
         Assert.Contains("main", tokeniser.Notes);
@@ -244,8 +231,7 @@ public class WritingSystemWordTokeniserTests
     [Fact]
     public void TheOldTokeniserNameAndVersionAreUnchanged()
     {
-        // This new tokeniser must not have touched the existing one — corpora already declaring
-        // "whitespace-and-punctuation" must keep working exactly as before.
+        // This new tokeniser must not touch the existing one — corpora declaring the old name still work.
         var whitespaceTokeniser = new WhitespaceAndPunctuationTokeniser();
         Assert.Equal("whitespace-and-punctuation", whitespaceTokeniser.Name);
         Assert.Equal("1", whitespaceTokeniser.Version);
@@ -264,8 +250,7 @@ public class WritingSystemWordTokeniserTests
         var ws = WritingSystem("seh", "'");
         var tokeniser = new WritingSystemWordTokeniser(ws);
 
-        // The existing binding rule (CorpusTokenisation.ToDescriptor) must still refuse a mismatched
-        // tokeniser — two corpora tokenised differently are not comparable, whichever two tokenisers they are.
+        // ToDescriptor must still refuse a mismatched tokeniser — differently-tokenised corpora aren't comparable.
         var ex = Assert.Throws<InvalidOperationException>(
             () => CorpusTokenisation.ToDescriptor(corpus, tokeniser));
         Assert.Contains("whitespace-and-punctuation", ex.Message);

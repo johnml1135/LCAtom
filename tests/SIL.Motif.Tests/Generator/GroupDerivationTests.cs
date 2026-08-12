@@ -41,9 +41,7 @@ public class GroupDerivationTests
     [Fact]
     public void Derive_IsTotalOverEveryDeclaringClassInTheRealManifest()
     {
-        // ADR 0024 decision 2 requires the table be total over the classes present, not merely
-        // "usually works" — every one of the ~180 distinct declaring classes must resolve without
-        // throwing.
+        // ADR 0024 decision 2: this table must be total, so every declaring class (~180) must resolve.
         var classes = ManifestTsvParser.Parse(RepoPaths.DefaultManifestPath())
             .Select(r => r.Class)
             .Distinct()

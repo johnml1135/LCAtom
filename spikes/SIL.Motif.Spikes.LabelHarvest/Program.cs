@@ -2,8 +2,9 @@ namespace SIL.Motif.Spikes.LabelHarvest;
 
 /// <summary>
 /// Harvests FieldWorks' own linguist-facing vocabulary into <c>manifest/fieldworks-labels.tsv</c>, per
-/// ADR 0023 decision 5. See <c>docs/research/2026-08-05-fieldworks-user-facing-names.md</c> for the source
-/// investigation this builds on — this tool implements what that note found, without redoing it.
+/// ADR 0023 decision 5. Three mechanisms carry a label: the <c>.fwlayout</c>/<c>Parts</c> slice registry,
+/// <c>strings-en.xml</c>, and <c>toolConfiguration.xml</c>. This tool implements a prior investigation of
+/// those sources rather than redoing it.
 /// </summary>
 /// <remarks>
 /// Usage: <c>dotnet run --project spikes/SIL.Motif.Spikes.LabelHarvest -- [FieldWorksRoot] [ManifestPath] [OutputPath]</c>
@@ -42,9 +43,7 @@ public static class Program
 
         var raw = new List<RawLabel>();
 
-        // Mechanism 2: the .fwlayout / Parts/*.xml slice registry — the richest, most-exact source.
-        // fwlayout refs sometimes name a composite Parts/*.xml part rather than a bare field; resolve those
-        // first so e.g. MoInflAffixSlot's "NameAllA" ref lands on the real field "Name".
+        // Resolve composite part ids first, so e.g. MoInflAffixSlot's "NameAllA" ref lands on the field "Name".
         var fieldMap = PartIdFieldResolver.BuildFieldMap(partsDir);
         foreach (var fwlayout in Directory.EnumerateFiles(partsDir, "*.fwlayout"))
             raw.AddRange(SliceLabelHarvester.HarvestFwLayout(fwlayout, fieldMap));
@@ -111,8 +110,7 @@ public static class Program
 
     private static string FindDefault(string relativeToReposParent)
     {
-        // The repo convention is sibling checkouts: .../repos/motif, .../repos/FieldWorks. Walk up from this
-        // assembly's location to find the "repos" parent, rather than hardcoding an absolute path.
+        // Sibling checkouts: walk up to the shared parent rather than hardcoding an absolute path.
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, "motif")))
             dir = dir.Parent;

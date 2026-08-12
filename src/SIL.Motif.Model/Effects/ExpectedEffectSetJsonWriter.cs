@@ -9,7 +9,7 @@ namespace SIL.Motif.Model.Effects;
 
 /// <summary>
 /// Renders a set of <see cref="ExpectedEffect"/>s as (pre-canonicalization) JSON text: the preimage
-/// for the effect digest. See docs/change-set-contract.md, "Expected effects", rule 4: "the effect
+/// for the effect digest — the Change Set contract's "Expected effects" rule 4: "the effect
 /// digest is the RFC 8785 hash of the full set of <c>(canonicalId, field, before, after)</c> deltas".
 /// </summary>
 /// <remarks>

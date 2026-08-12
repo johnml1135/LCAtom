@@ -14,13 +14,11 @@ namespace SIL.Motif.Tests.Host;
 /// <remarks>
 /// <para>
 /// This is not a theoretical property. <c>XMLBackendProvider.PerformCommit</c> enqueues the write on a
-/// background thread and returns, so a <c>Save</c> that only calls <c>IActionHandler.Commit()</c> — which
-/// is what this loader did until 2026-08-06, copied from <c>FwDataMiniLcmBridge</c> — returns before the
-/// bytes exist. Nothing noticed while Motif only ever read the project through the cache. It broke the
-/// moment the Dry Run started working from a <i>file copy</i>: the copy was one operation stale, its
-/// baseline disagreed with the live cache, and Apply reported <b>footprint drift on a project nobody had
-/// touched</b>. Twelve round-trip tests failed that way, and the message pointed at drift detection
-/// rather than at the save.
+/// background thread and returns, so a naive <c>Save</c> that only calls <c>IActionHandler.Commit()</c>
+/// returns before the bytes exist on disk. That is invisible as long as Motif only reads the project
+/// through the live cache; it surfaces the moment a Dry Run opens a separate <i>file copy</i>, because a
+/// stale copy's baseline disagrees with the cache and Apply misreports the disagreement as
+/// <b>footprint drift on a project nobody touched</b>.
 /// </para>
 /// <para>
 /// So the assertion is deliberately end-to-end and file-level: mutate, save, then open the file
@@ -31,22 +29,22 @@ namespace SIL.Motif.Tests.Host;
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
 public sealed class SaveIsSynchronousTests : IDisposable
 {
-    private readonly string _tempRoot;
     private readonly string _fwDataPath;
     private readonly FwDataProjectLoader _loader = new();
     private readonly LcmCache _cache;
+    private readonly SeededProject _seed;
 
-    public SaveIsSynchronousTests()
+    public SaveIsSynchronousTests(PristineProjectFixture pristine)
     {
-        _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests.Save", Guid.NewGuid().ToString("N"));
-        _fwDataPath = TestLangProjFixture.CopyToTempAndGetFwDataPath(_tempRoot);
-        _cache = _loader.LoadCache(_fwDataPath);
+        _cache = pristine.NewScratch();
+        _seed = pristine.Seed;
+        _fwDataPath = _cache.ProjectId.Path;
     }
 
     [Fact]
     public void AfterSaveReturns_AFreshCopyOfTheFileAlreadyContainsTheChange()
     {
-        var entry = _cache.ServiceLocator.GetInstance<ILexEntryRepository>().AllInstances().First();
+        var entry = _cache.ServiceLocator.GetInstance<ILexEntryRepository>().GetObject(_seed.FirstEntryId);
         var entryGuid = entry.Guid;
         var wsHandle = _cache.DefaultAnalWs;
         const string marker = "zzSaveIsSynchronous";
@@ -56,10 +54,9 @@ public sealed class SaveIsSynchronousTests : IDisposable
 
         _loader.Save(_cache);
 
-        // Copy and open with no further ceremony — exactly what a Dry Run does, and the step that
-        // exposed the asynchronous save. No sleeping, no retrying: if the barrier is missing this must
-        // fail, because a test that waits would hide the very defect it exists to catch.
-        var copyRoot = Path.Combine(_tempRoot, "copy-immediately-after-save");
+        // No sleeping or retrying: copy immediately, exactly what a Dry Run does — waiting would hide the defect.
+        var scratchRoot = Path.GetDirectoryName(Path.GetDirectoryName(_fwDataPath))!;
+        var copyRoot = Path.Combine(scratchRoot, "copy-immediately-after-save");
         using var copy = new ScratchCacheFactory(_loader).CreateFromFileCopy(_fwDataPath, copyRoot);
 
         var copiedEntry = copy.ServiceLocator.GetInstance<ILexEntryRepository>().GetObject(entryGuid);
@@ -72,7 +69,5 @@ public sealed class SaveIsSynchronousTests : IDisposable
     public void Dispose()
     {
         if (!_cache.IsDisposed) _cache.Dispose();
-        try { Directory.Delete(_tempRoot, recursive: true); }
-        catch { /* best effort */ }
     }
 }

@@ -1,8 +1,8 @@
 namespace SIL.Motif.Generator.Emit;
 
 /// <summary>
-/// MOT-4 slice 2's emission orchestrator: the remaining verbs of the lexical-entry family
-/// (docs/plan-motif.md, MOT-4) that <see cref="GeneratedCatalogWriter"/> — slice 1's <c>set|clear</c>
+/// Emission orchestrator for the remaining verbs of the lexical-entry family that
+/// <see cref="GeneratedCatalogWriter"/> — slice 1's <c>set|clear</c>
 /// over <c>basic</c> fields — does not cover: <c>LexEntry.LexemeForm</c> (owning/atomic
 /// <c>create|delete</c>), <c>LexEntry.DialectLabels</c>/<c>.DoNotPublishIn</c>/<c>.DoNotShowMainEntryIn</c>
 /// (<c>rel/col</c>/<c>rel/seq</c> <c>addRef|removeRef</c>), and <c>MoForm.MorphType</c> (<c>rel/atomic</c>
@@ -26,7 +26,7 @@ namespace SIL.Motif.Generator.Emit;
 /// <c>{Class}RelationsSnapshotter.g.cs</c> covers only this slice's fields. Every generated handler
 /// reads back only its own field (<c>TryGetValue</c> on one constant), never a full merged object
 /// snapshot, so two sibling snapshotter classes per class are functionally equivalent to one merged
-/// class today — a later slice could combine them without changing any handler.
+/// class; combining them would not change any handler's behavior.
 /// </para>
 /// </remarks>
 public static class Slice2CatalogWriter

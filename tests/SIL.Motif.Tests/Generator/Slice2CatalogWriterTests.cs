@@ -5,7 +5,7 @@ using Xunit;
 namespace SIL.Motif.Tests.Generator;
 
 /// <summary>
-/// Exercises MOT-4 slice 2's emission mechanism end to end, writing into a throwaway temp directory —
+/// Exercises slice 2's emission mechanism end to end, writing into a throwaway temp directory —
 /// the slice-2 analogue of <c>GeneratedCatalogWriterTests</c>. A separate writer/test pair from slice
 /// 1's (see <see cref="Slice2CatalogWriter"/>'s remarks for why) rather than a modification of the
 /// existing one, so <c>GeneratedCatalogWriterTests</c>' own count assertion is untouched.
@@ -23,8 +23,7 @@ public class Slice2CatalogWriterTests
         {
             var written = Slice2CatalogWriter.WriteAll(model, tempRoot);
 
-            // Five fields: one Operations file each, plus two per-class RelationsSnapshotter files
-            // (LexEntry, MoForm), plus one shared SnapshotFields.Generated2.g.cs.
+            // 5 Operations files + RelationsSnapshotter for LexEntry/MoForm (2) + shared SnapshotFields.Generated2.g.cs.
             Assert.Equal(8, written.Count);
 
             foreach (var file in written)

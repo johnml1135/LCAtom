@@ -15,32 +15,29 @@ using Xunit;
 namespace SIL.Motif.Tests.Runner;
 
 /// <summary>
-/// MOT-4 slice 2's round-trip proof for the three <c>rel/col</c>/<c>rel/seq</c>
+/// Round-trip proof for the three <c>rel/col</c>/<c>rel/seq</c>
 /// <c>addRef</c>/<c>removeRef</c> fields against a real project: <c>LexEntry.DialectLabels</c>
 /// (<c>rel/seq</c>), <c>.DoNotPublishIn</c>, <c>.DoNotShowMainEntryIn</c> (both <c>rel/col</c>). None
-/// Once distinguished from the LexemeForm/MorphType counterparts by needing no dispose/reload dance
-/// between DryRun and Apply; since ADR 0016's 2026-08-06 amendment none of them do, because no DryRun
-/// touches the live cache at all.
+/// need a dispose/reload dance between DryRun and Apply (ADR 0016), because no DryRun touches the
+/// live cache at all.
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
 public sealed class LexEntryReferenceCollectionOperationsTests : IDisposable
 {
     private const string MemberKey = "member";
 
-    private readonly string _tempRoot;
     private readonly LcmCache _cache;
+    private readonly SeededProject _seed;
 
-    public LexEntryReferenceCollectionOperationsTests()
+    public LexEntryReferenceCollectionOperationsTests(PristineProjectFixture pristine)
     {
-        _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests.RefCollections", Guid.NewGuid().ToString("N"));
-        var fwDataPath = TestLangProjFixture.CopyToTempAndGetFwDataPath(_tempRoot);
-        _cache = new FwDataProjectLoader().LoadCache(fwDataPath);
+        _cache = pristine.NewScratch();
+        _seed = pristine.Seed;
     }
 
     public void Dispose()
     {
-        _cache.Dispose();
-        try { Directory.Delete(_tempRoot, recursive: true); } catch { /* best effort */ }
+        if (!_cache.IsDisposed) _cache.Dispose();
     }
 
     [Theory]
@@ -117,16 +114,6 @@ public sealed class LexEntryReferenceCollectionOperationsTests : IDisposable
     }
 
     [Fact]
-    public void Move_IsDeferred_TheKindIsNotRegistered()
-    {
-        // docs/plan-motif.md, MOT-4: move is deliberately deferred for DialectLabels this slice --
-        // proven here rather than merely asserted in a comment.
-        Assert.False(OperationKindRegistry.IsKnown("lexical/lexEntry/moveDialectLabels"));
-        Assert.Throws<NotSupportedException>(
-            () => OperationHandlerRegistry.Resolve("lexical/lexEntry/moveDialectLabels", "test"));
-    }
-
-    [Fact]
     public void Apply_MidProposalFailure_RollsBackTheAddRef_AndWritesNoAppliedLogEntry()
     {
         var entry = FindAnyEntry();
@@ -159,25 +146,6 @@ public sealed class LexEntryReferenceCollectionOperationsTests : IDisposable
     }
 
     [Fact]
-    public void AddRefPayload_UnknownProperty_IsRejectedByTheClosedSchema()
-    {
-        var afterJson = JsonSerializer.Serialize(new { member = CanonicalId.Mint().Value, extra = 1 });
-        using var afterDocument = JsonDocument.Parse(afterJson);
-
-        Assert.Throws<ContractParseException>(() =>
-            LexEntryDialectLabelsMemberPayload.Parse(afterDocument.RootElement, LexEntryDialectLabelsOperationKinds.AddRefDialectLabels));
-    }
-
-    [Fact]
-    public void RemoveRefPayload_MissingMember_IsRejectedByTheClosedSchema()
-    {
-        using var afterDocument = JsonDocument.Parse("{}");
-
-        Assert.Throws<ContractParseException>(() =>
-            LexEntryDoNotPublishInMemberPayload.Parse(afterDocument.RootElement, LexEntryDoNotPublishInOperationKinds.RemoveRefDoNotPublishIn));
-    }
-
-    [Fact]
     public void AddRef_MemberOfTheWrongType_ThrowsNamingTheMismatch()
     {
         var entry = FindAnyEntry();
@@ -191,7 +159,7 @@ public sealed class LexEntryReferenceCollectionOperationsTests : IDisposable
     }
 
     private ILexEntry FindAnyEntry() =>
-        _cache.ServiceLocator.GetInstance<ILexEntryRepository>().AllInstances().First();
+        _cache.ServiceLocator.GetInstance<ILexEntryRepository>().GetObject(_seed.FirstEntryId);
 
     private ICmPossibility FindAPossibilityNotAlreadyOn(ILexEntry entry, string field)
     {
@@ -245,4 +213,40 @@ public sealed class LexEntryReferenceCollectionOperationsTests : IDisposable
         LibLcmVersion: "test",
         ProjectionVersion: "1",
         DryRunAtUtc: "20260101T000000Z");
+}
+
+/// <summary>
+/// Registry and payload-parsing tests for the <c>rel/col</c>/<c>rel/seq</c> reference-collection
+/// verbs — no <c>LcmCache</c> involved, so unlike <see cref="LexEntryReferenceCollectionOperationsTests"/>
+/// this class needs no <see cref="PristineProjectFixture"/>.
+/// </summary>
+public sealed class LexEntryReferenceCollectionSchemaTests
+{
+    [Fact]
+    public void Move_IsDeferred_TheKindIsNotRegistered()
+    {
+        // Move is deliberately deferred for DialectLabels; proven here, not merely asserted.
+        Assert.False(OperationKindRegistry.IsKnown("lexical/lexEntry/moveDialectLabels"));
+        Assert.Throws<NotSupportedException>(
+            () => OperationHandlerRegistry.Resolve("lexical/lexEntry/moveDialectLabels", "test"));
+    }
+
+    [Fact]
+    public void AddRefPayload_UnknownProperty_IsRejectedByTheClosedSchema()
+    {
+        var afterJson = JsonSerializer.Serialize(new { member = CanonicalId.Mint().Value, extra = 1 });
+        using var afterDocument = JsonDocument.Parse(afterJson);
+
+        Assert.Throws<ContractParseException>(() =>
+            LexEntryDialectLabelsMemberPayload.Parse(afterDocument.RootElement, LexEntryDialectLabelsOperationKinds.AddRefDialectLabels));
+    }
+
+    [Fact]
+    public void RemoveRefPayload_MissingMember_IsRejectedByTheClosedSchema()
+    {
+        using var afterDocument = JsonDocument.Parse("{}");
+
+        Assert.Throws<ContractParseException>(() =>
+            LexEntryDoNotPublishInMemberPayload.Parse(afterDocument.RootElement, LexEntryDoNotPublishInOperationKinds.RemoveRefDoNotPublishIn));
+    }
 }

@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Linq;
 using SIL.Motif.Cli;
 using SIL.Motif.Cli.Store;
 using SIL.Motif.Host.LcmUtils;
@@ -12,43 +11,36 @@ using Xunit;
 namespace SIL.Motif.Tests.Cli;
 
 /// <summary>
-/// Stage E proof, on a real project: drives the CLI command handlers directly (never shells out to
+/// Proof, on a real project: drives the CLI command handlers directly (never shells out to
 /// the built executable) through the full <c>new -&gt; add-set-gloss -&gt; finalize -&gt; dry-run -&gt;
 /// apply -&gt; log</c> loop against a real sense's <c>CanonicalId.FromGuid(sense.Guid)</c>, proving
 /// the files store (drafts/objects/manifests) and the thin CLI drive the real Contract/Runner/Host
-/// end to end. See docs/build-stages.md, Stage E, and docs/stage2-change-management.md, S1/S3/S4.
+/// end to end.
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
-public sealed class EndToEndCliTests : IDisposable
+public sealed class EndToEndCliTests
 {
-    private readonly string _tempRoot;
+    private readonly SeededProject _seed;
     private readonly string _fwDataPath;
     private readonly string _storeDir;
 
-    public EndToEndCliTests()
+    public EndToEndCliTests(PristineProjectFixture pristine)
     {
-        // Never mutate the shared fixture: copy to a temp directory this test owns and cleans up.
-        _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests.Cli", Guid.NewGuid().ToString("N"));
-        _fwDataPath = TestLangProjFixture.CopyToTempAndGetFwDataPath(_tempRoot);
-        _storeDir = Path.Combine(_tempRoot, ".motif-store");
-    }
+        _seed = pristine.Seed;
+        using var scratch = pristine.NewScratch();
+        _fwDataPath = scratch.ProjectId.Path;
 
-    public void Dispose()
-    {
-        try
-        {
-            Directory.Delete(_tempRoot, recursive: true);
-        }
-        catch
-        {
-            // best-effort cleanup; a locked native handle should not fail the test
-        }
+        // The scratch root is the project folder's parent -- a sibling location for the CLI's own store.
+        var scratchRoot = Path.GetDirectoryName(Path.GetDirectoryName(_fwDataPath))!;
+        _storeDir = Path.Combine(scratchRoot, ".motif-store");
     }
 
     [Fact]
     public void FullLoop_New_AddSetGloss_Finalize_DryRun_Apply_Log_DrivesRealProjectEndToEnd()
     {
-        var (senseGuid, wsTag, originalGloss) = FindSenseWithKnownGloss();
+        var senseGuid = _seed.FirstSenseId;
+        var wsTag = NewLangProjFixture.AnalysisTag;
+        var originalGloss = SeededProject.FirstGloss;
         var canonicalId = SIL.Motif.Contract.Ids.CanonicalId.FromGuid(senseGuid);
         var newGloss = originalGloss + " (revised sense, Stage E CLI)";
         const string draftName = "stage-e-demo";
@@ -74,8 +66,7 @@ public sealed class EndToEndCliTests : IDisposable
 
         var proposalId = ExtractProposalId(finalizeResult.Output);
         var intentDigest = ExtractIntentDigest(finalizeResult.Output);
-        // Defect 1: objects are keyed by intentDigest (content-addressed, write-once), not by the
-        // frozen proposalId — see ProposalStore's remarks and docs/stage2-change-management.md, S1.
+        // Objects are keyed by intentDigest (content-addressed, write-once), not by proposalId.
         var objectPath = new ProposalStore(_storeDir).ObjectPath(intentDigest);
         var manifestPath = Path.Combine(_storeDir, "manifests", proposalId + ".json");
         Assert.True(File.Exists(objectPath));
@@ -154,36 +145,15 @@ public sealed class EndToEndCliTests : IDisposable
         Assert.NotEqual(0, missingProposal.ExitCode);
         Assert.Contains("not found", missingProposal.Output, StringComparison.OrdinalIgnoreCase);
 
-        var missingProject = Commands.Log(Path.Combine(_tempRoot, "does-not-exist.fwdata"));
+        var missingProjectPath = Path.Combine(Path.GetDirectoryName(_fwDataPath)!, "does-not-exist.fwdata");
+        var missingProject = Commands.Log(missingProjectPath);
         Assert.NotEqual(0, missingProject.ExitCode);
         Assert.Contains("not found", missingProject.Output, StringComparison.OrdinalIgnoreCase);
     }
 
-    private (Guid SenseGuid, string WsTag, string Gloss) FindSenseWithKnownGloss()
-    {
-        using var cache = new FwDataProjectLoader().LoadCache(_fwDataPath);
-        var senseRepo = cache.ServiceLocator.GetInstance<ILexSenseRepository>();
-
-        foreach (var sense in senseRepo.AllInstances())
-        {
-            foreach (var wsHandle in sense.Gloss.AvailableWritingSystemIds)
-            {
-                var text = sense.Gloss.get_String(wsHandle).Text;
-                if (!string.IsNullOrEmpty(text))
-                {
-                    var wsTag = cache.WritingSystemFactory.GetStrFromWs(wsHandle);
-                    return (sense.Guid, wsTag, text);
-                }
-            }
-        }
-
-        throw new InvalidOperationException(
-            "Expected the real TestLangProj fixture to contain at least one LexSense with a non-empty gloss.");
-    }
-
     private void AssertGlossOnDisk(Guid senseGuid, string wsTag, string expectedGloss)
     {
-        using var cache = new FwDataProjectLoader().LoadCache(_fwDataPath);
+        using var cache = new FwDataProjectLoader().LoadScratchCache(_fwDataPath);
         var wsHandle = cache.WritingSystemFactory.GetWsFromStr(wsTag);
         var senseRepo = cache.ServiceLocator.GetInstance<ILexSenseRepository>();
         Assert.Equal(expectedGloss, senseRepo.GetObject(senseGuid).Gloss.get_String(wsHandle).Text);
@@ -191,7 +161,7 @@ public sealed class EndToEndCliTests : IDisposable
 
     private void AssertAppliedLogEntryCount(int expectedCount)
     {
-        using var cache = new FwDataProjectLoader().LoadCache(_fwDataPath);
+        using var cache = new FwDataProjectLoader().LoadScratchCache(_fwDataPath);
         Assert.Equal(expectedCount, ProjectAppliedLog.ReadAll(cache).Count);
     }
 

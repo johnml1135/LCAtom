@@ -11,7 +11,7 @@ namespace SIL.Motif.Model.Snapshot;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Two MOT-4 slice-2 shapes need exactly this: a <c>rel/atomic</c> field
+/// Two shapes need exactly this: a <c>rel/atomic</c> field
 /// (<c>MoForm.MorphType</c>, <c>set</c>/<c>clear</c>) and an <c>owning/atomic</c> slot's own occupant
 /// identity (<c>LexEntry.LexemeForm</c>, <c>create</c>/<c>delete</c>) — both are "at most one
 /// <see cref="CanonicalId"/>," the reference analogue of the scalar Boolean

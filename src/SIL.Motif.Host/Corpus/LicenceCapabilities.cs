@@ -24,7 +24,8 @@ namespace SIL.Motif.Host.Corpus;
 /// <b>Unknown is not permission.</b> Every flag is a nullable three-state: yes, no, or nobody has established
 /// it. <see cref="MayDerive"/> being <c>null</c> blocks derivation exactly as <c>false</c> does, and the two
 /// give different explanations. This mirrors <see cref="CorpusProvenance.SupportsAccuracyClaims"/>: the record
-/// states what is known, the consumer refuses, and "I could not establish it" never reads as "it is fine".
+/// states what is known; consuming code must refuse rather than assume, so "I could not establish it" never
+/// reads as "it is fine".
 /// </para>
 /// <para>
 /// <b>This is a recorded claim, not legal advice.</b> Motif does not interpret licences; whoever ingests the

@@ -40,8 +40,7 @@ public class PartIdFieldResolverTests
     [Fact]
     public void BuildFieldMap_ignores_parts_with_no_nested_slice()
     {
-        // "jtview" composite parts that reference other parts rather than wrapping a <slice> directly must
-        // not produce a bogus field mapping.
+        // "jtview" parts reference other parts rather than wrapping a <slice> — must not yield a mapping.
         const string fixture = """
             <PartInventory>
               <bin class="LexSense">

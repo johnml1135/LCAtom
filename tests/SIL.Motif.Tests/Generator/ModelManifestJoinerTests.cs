@@ -7,9 +7,8 @@ using Xunit;
 namespace SIL.Motif.Tests.Generator;
 
 /// <summary>
-/// MOT-2's core: the (Class, Field) join balances today (898 = 898, zero orphans either way,
-/// docs/plan-motif.md MOT-2) and fails closed, naming the key, the moment either side gains an
-/// unmatched key.
+/// The (Class, Field) join balances today (898 = 898, zero orphans either way) and fails closed, naming
+/// the key, the moment either side gains an unmatched key.
 /// </summary>
 public class ModelManifestJoinerTests
 {

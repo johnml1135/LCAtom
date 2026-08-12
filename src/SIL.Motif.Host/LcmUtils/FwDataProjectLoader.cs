@@ -1,14 +1,10 @@
-// Adapted from FwDataMiniLcmBridge, Copyright (c) SIL Global, licensed under the MIT License.
-// Source: languageforge-lexbox/backend/FwLite/FwDataMiniLcmBridge/LcmUtils/ProjectLoader.cs
-// https://github.com/sillsdev/languageforge-lexbox
-//
-// Simplified for Motif Stage A: no DI/config plumbing, and only the "open an existing project"
-// path (no NewProject). Reintroduce those only if a later stage needs them.
+// Adapted from languageforge-lexbox's FwDataMiniLcmBridge/LcmUtils/ProjectLoader.cs (SIL Global, MIT).
 
 using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using SIL.LCModel;
+using SIL.LCModel.Core.WritingSystems;
 using SIL.LCModel.Utils;
 using SIL.WritingSystems;
 
@@ -61,6 +57,10 @@ public class FwDataProjectLoader
     /// Folder LibLCM expects to exist for new-project templates. Its contents are not needed to
     /// open an existing project; defaults to a scratch folder under the temp path.
     /// </param>
+    /// <remarks>
+    /// Which one do I want? If the caller does not own the project and intend to persist it — a
+    /// copy, a temp project, a read-only analysis — use <see cref="LoadScratchCache"/> instead.
+    /// </remarks>
     public virtual LcmCache LoadCache(string fwDataFilePath, string? templatesFolder = null)
     {
         Init();
@@ -86,12 +86,64 @@ public class FwDataProjectLoader
     }
 
     /// <summary>
+    /// Opens an existing <c>.fwdata</c> project the same way <see cref="LoadCache"/> does, except that
+    /// disposing the returned cache cannot register a writing-system change in the machine-wide
+    /// <c>%ProgramData%\SIL\WritingSystemRepository</c> store.
+    /// </summary>
+    /// <remarks>
+    /// For a throwaway scratch (ADR 0016), that store is the wrong place to write to: a Dry Run scratch
+    /// is a proposal being tried and discarded, and disposing it must not touch state shared with every
+    /// other project on the machine. See <see cref="DiscardingGlobalWritingSystemRepository"/> for the
+    /// mechanism. <see cref="LoadCache"/> itself is unchanged and remains what a real, persisted project
+    /// open uses.
+    /// </remarks>
+    public virtual LcmCache LoadScratchCache(string fwDataFilePath, string? templatesFolder = null)
+    {
+        using (SuppressGlobalWritingSystemPersistence())
+            return LoadCache(fwDataFilePath, templatesFolder);
+    }
+
+    // Key SingletonsContainer stores the shared writing-system repository under (BackendProvider.cs).
+    private static readonly string GlobalWritingSystemRepositoryKey =
+        typeof(CoreGlobalWritingSystemRepository).FullName!;
+
+    // One decoy for the process: the base holds a GlobalMutex, so one per scratch would leak a handle.
+    private static readonly DiscardingGlobalWritingSystemRepository SharedDecoy = new();
+
+    // Swaps the decoy in for one cache open, so that cache is wired to it for life (see the decoy's remarks).
+    private static IDisposable SuppressGlobalWritingSystemPersistence()
+    {
+        var restore = SingletonsContainer.Item(GlobalWritingSystemRepositoryKey) as CoreGlobalWritingSystemRepository;
+        if (restore is not null) SingletonsContainer.Remove(GlobalWritingSystemRepositoryKey);
+
+        SingletonsContainer.Add(GlobalWritingSystemRepositoryKey, SharedDecoy);
+        return new RestoreGlobalWritingSystemRepository(restore);
+    }
+
+    // Undoes SuppressGlobalWritingSystemPersistence: later cache opens see the real repository again.
+    private sealed class RestoreGlobalWritingSystemRepository : IDisposable
+    {
+        private readonly CoreGlobalWritingSystemRepository? _restore;
+
+        public RestoreGlobalWritingSystemRepository(CoreGlobalWritingSystemRepository? restore)
+        {
+            _restore = restore;
+        }
+
+        public void Dispose()
+        {
+            SingletonsContainer.Remove(GlobalWritingSystemRepositoryKey);
+            if (_restore is not null) SingletonsContainer.Add(GlobalWritingSystemRepositoryKey, _restore);
+        }
+    }
+
+    /// <summary>
     /// Persists every committed change in <paramref name="cache"/> to its backing <c>.fwdata</c>
     /// file, and <b>does not return until the bytes are actually there</b>. The core does not save
-    /// projects itself (docs/change-set-contract.md, "Application Receipt"):
+    /// projects itself (the Change Set contract's Application Receipt semantics):
     /// <c>SIL.Motif.Runner.Apply.ProposalApplier.Apply</c> commits its unit of work but never calls
     /// this — it is the host's job, called only after every unit of work has closed (never while a
-    /// task is open — docs/adr/0005, decision 3; docs/adr/0006, decision 4).
+    /// task is open — ADR 0005 decision 3; ADR 0006 decision 4).
     /// </summary>
     /// <remarks>
     /// <para>
@@ -126,7 +178,7 @@ public class FwDataProjectLoader
     /// once, and it throws rather than degrading if a future liblcm renames it, because silently
     /// falling back to the asynchronous behaviour would restore a bug whose symptom points at the wrong
     /// component entirely. <b>Making a synchronous save publicly reachable is an upstream ask on
-    /// liblcm</b> (docs/adr/0016-scratch-cache-copy-not-undo.md), and this reflection is what should be
+    /// liblcm</b> (ADR 0016), and this reflection is what should be
     /// deleted when it lands.
     /// </para>
     /// </remarks>
@@ -140,11 +192,7 @@ public class FwDataProjectLoader
 
     private static MethodInfo? _completeAllCommits;
 
-    /// <summary>
-    /// Blocks until the backend's background commit thread has drained, so the <c>.fwdata</c> file on
-    /// disk reflects everything committed so far. See <see cref="Save"/>'s remarks for why this is
-    /// reflection and why it is a hard failure rather than a best-effort skip.
-    /// </summary>
+    /// <summary>Blocks until the commit thread drains; see <see cref="Save"/>'s remarks for why.</summary>
     private static void WaitForPendingWritesToReachDisk(LcmCache cache)
     {
         var backend = cache.ServiceLocator.DataSetup;
@@ -159,7 +207,7 @@ public class FwDataProjectLoader
                 "CompleteAllCommits() to wait on, so Save cannot guarantee the .fwdata file is current. " +
                 "Refusing rather than returning from a save that has not saved: a Dry Run copies the " +
                 "file immediately afterwards, and a stale copy produces a false 'footprint drift' " +
-                "report on apply. See docs/adr/0016-scratch-cache-copy-not-undo.md.");
+                "report on apply (ADR 0016).");
         }
 
         flush.Invoke(backend, null);

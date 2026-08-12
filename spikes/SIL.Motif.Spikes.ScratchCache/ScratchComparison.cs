@@ -6,10 +6,9 @@ using SIL.WritingSystems;
 namespace SIL.Motif.Spikes.ScratchCache;
 
 /// <summary>
-/// Compares a scratch <see cref="LcmCache"/> against the live cache it was derived from, on the axes that
-/// the <c>A1</c> research identified as the real risks. Timing is the easy question; equivalence is the one
-/// that could invalidate <c>docs/adr/0016-scratch-cache-copy-not-undo.md</c>'s design rather than its
-/// parameters.
+/// Compares a scratch <see cref="LcmCache"/> against the live cache it was derived from, on the axes the
+/// research identified as the real risks. Timing is the easy question; equivalence is the one that could
+/// invalidate ADR 0016's design rather than merely its parameters.
 /// </summary>
 public static class ScratchComparison
 {
@@ -28,9 +27,7 @@ public static class ScratchComparison
         var scratchObjects = scratch.ServiceLocator.GetInstance<ICmObjectRepository>().Count;
         if (liveObjects != scratchObjects)
         {
-            // Not automatically a defect: CreateCacheCopy skips cache.Initialize(), so it never runs
-            // DataStoreInitializationServices.PrepareCache, which a normal file load does. A file-loaded
-            // scratch can therefore legitimately hold objects the in-memory copy does not.
+            // CreateCacheCopy skips cache.Initialize(), so PrepareCache never runs and a file load holds more.
             findings.Add($"object count differs: live {liveObjects:N0}, scratch {scratchObjects:N0} (delta {scratchObjects - liveObjects:+#;-#;0})");
         }
 
@@ -56,11 +53,7 @@ public static class ScratchComparison
             Findings: findings);
     }
 
-    /// <summary>
-    /// Hazard (a) from the research: a <c>kMemoryOnly</c> target never attaches a writing-system store, so
-    /// <c>GetOrSet</c> always falls through to <c>Create(tag)</c> and synthesizes a definition from the bare
-    /// language tag — losing custom collation, valid characters, fonts and keyboards.
-    /// </summary>
+    // No WS store on kMemoryOnly, so GetOrSet falls through to Create(tag): collation and fonts are lost.
     private static WritingSystemComparison CompareWritingSystems(LcmCache live, LcmCache scratch, List<string> findings)
     {
         var liveWs = live.ServiceLocator.WritingSystems.AllWritingSystems.ToList();
@@ -129,10 +122,7 @@ public static class ScratchComparison
         static string Len(string? s) => s is null ? "(none)" : s.Length.ToString();
     }
 
-    /// <summary>
-    /// Hazard (b): <c>AddCustomFields</c> discards the source's flid and re-derives it while enumerating a
-    /// <c>HashSet</c> whose order is not contractual, so the same field can land on a different flid.
-    /// </summary>
+    // AddCustomFields re-derives each flid while enumerating an unordered HashSet, so a flid can move.
     private static CustomFieldComparison CompareCustomFields(LcmCache live, LcmCache scratch, List<string> findings)
     {
         var liveFields = CustomFieldMap(live);
@@ -159,8 +149,7 @@ public static class ScratchComparison
         foreach (var flid in mdc.GetFieldIds())
         {
             if (!mdc.IsCustom(flid)) continue;
-            // Resolve by (ownerClass, name) — the only durable key. AGENTS.md rule 11: a flid is
-            // cache-local and never portable identity. This map exists precisely to prove that.
+            // Resolve by (ownerClass, name): a flid is cache-local, never portable identity (AGENTS rule 11).
             map[$"{mdc.GetOwnClsName(flid)}.{mdc.GetFieldName(flid)}"] = flid;
         }
 

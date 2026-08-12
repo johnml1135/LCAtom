@@ -4,9 +4,11 @@ using Xunit;
 namespace SIL.Motif.Tests.LabelHarvest;
 
 /// <summary>
-/// Covers mechanism 3 (docs/research/2026-08-05-fieldworks-user-facing-names.md §1.3): a tool's label is
-/// keyed by the tool id, and the tool id is in turn keyed by <c>(ownerClass, ownerField)</c> in a separate
-/// file — <c>className</c> in that second file is often the generic base class.
+/// Covers FieldWorks' tool/area configuration: a tool's label is keyed by the tool id in
+/// <c>toolConfiguration.xml</c>, and the tool id is in turn keyed by <c>(ownerClass, ownerField)</c> in
+/// the separate <c>areaConfiguration.xml</c> — whose own <c>className</c> attribute is often the
+/// generic base class, not the field's real owning class, so a harvester must join through the tool id
+/// rather than trust <c>className</c> directly.
 /// </summary>
 public class ToolConfigHarvesterTests
 {

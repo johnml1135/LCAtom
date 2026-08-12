@@ -5,8 +5,11 @@ namespace SIL.Motif.Tests.Contract;
 
 /// <summary>
 /// Strict closed JSON parsing: valid documents parse into the expected DTO shape, and every class
-/// of malformed input the contract classifies as a hard error is rejected rather than silently
-/// ignored or truncated. See docs/change-set-contract.md.
+/// of malformed input the Change Set contract classifies as a hard error — unknown top-level or
+/// operation properties, unknown operation kinds, malformed or duplicate ids, a contract-versions
+/// mismatch with the operations actually used, more than one creator operation for an entity id,
+/// and a non-integral number where the schema requires one — is rejected rather than silently
+/// ignored or truncated.
 /// </summary>
 public class ProposalJsonParserTests
 {

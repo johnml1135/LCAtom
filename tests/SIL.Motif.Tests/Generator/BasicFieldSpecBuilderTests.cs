@@ -5,8 +5,8 @@ using Xunit;
 namespace SIL.Motif.Tests.Generator;
 
 /// <summary>
-/// Proves the exact 20 kind strings MOT-4 slice 1 emits, derived through the same
-/// <c>GroupDerivation</c>/<c>ConstructDerivation</c>/<c>KindNameDerivation</c> MOT-2's checks use —
+/// Proves the exact 20 kind strings slice 1 emits, derived through the same
+/// <c>GroupDerivation</c>/<c>ConstructDerivation</c>/<c>KindNameDerivation</c> the checks elsewhere use —
 /// including the one case that would be wrong if group/construct were read off the manifest's
 /// <c>domain</c>/<c>Construct</c> columns instead of derived: <c>MoForm</c> is manifest-domain
 /// <c>lexical</c> (ADR 0024's 15 <c>Mo*</c> exceptions) but derived-group <c>grammar</c>, so
@@ -48,8 +48,7 @@ public class BasicFieldSpecBuilderTests
         var model = MotifModelLoader.Load();
         var moFormRow = model.Rows.Single(r => r.DeclaringClass == "MoForm" && r.FieldName == "Form");
 
-        // The manifest's own hand-authored domain column for this row (renamed from "Group" by
-        // ADR 0024) is "lexical" — verifying the test setup itself understood the row it exercises.
+        // Manifest.Group holds the manifest's domain column (ADR 0024): this row's value is "lexical".
         Assert.Equal("lexical", moFormRow.Manifest.Group);
 
         var spec = BasicFieldSpecBuilder.Build(moFormRow);

@@ -3,8 +3,8 @@ using System.Reflection;
 namespace SIL.Motif.Generator.ModelSource;
 
 /// <summary>
-/// Finds <c>MasterLCModel.xml</c> without requiring a liblcm source checkout (docs/plan-motif.md
-/// MOT-2). <c>SIL.LCModel.csproj</c> packs the file into the NuGet package under
+/// Finds <c>MasterLCModel.xml</c> without requiring a liblcm source checkout.
+/// <c>SIL.LCModel.csproj</c> packs the file into the NuGet package under
 /// <c>contentFiles/</c>, but not in the conventional <c>contentFiles/{lang}/{tfm}/</c> layout NuGet
 /// auto-flows into a <c>PackageReference</c> consumer's build output — so it has to be located
 /// directly in the package cache rather than found alongside this assembly.
@@ -44,9 +44,7 @@ public static class ModelPathResolver
         if (File.Exists(packageCachePath))
             return new ModelPathResult(packageCachePath, ModelPathSource.NuGetPackageCache);
 
-        // Fallback only (docs/plan-motif.md MOT-2: "A liblcm checkout may be accepted as a fallback
-        // but never as a requirement"). Path convention per ADR 0014's own citation of the file in
-        // the liblcm repository: `liblcm/src/SIL.LCModel/MasterLCModel.xml`.
+        // Fallback only, never required; the path is ADR 0014's: liblcm/src/SIL.LCModel/MasterLCModel.xml.
         var checkoutRoot = libLcmCheckoutRoot ?? Environment.GetEnvironmentVariable("MOTIF_LIBLCM_CHECKOUT");
         string? checkoutPath = null;
         if (!string.IsNullOrWhiteSpace(checkoutRoot))
@@ -61,7 +59,7 @@ public static class ModelPathResolver
             (checkoutPath is null
                 ? " and no MOTIF_LIBLCM_CHECKOUT fallback was set."
                 : $" and the liblcm checkout fallback at '{checkoutPath}'.") +
-            " See docs/plan-motif.md, MOT-2.");
+            " Restore the SIL.LCModel package, or point MOTIF_LIBLCM_CHECKOUT at a liblcm checkout.");
     }
 
     /// <summary>

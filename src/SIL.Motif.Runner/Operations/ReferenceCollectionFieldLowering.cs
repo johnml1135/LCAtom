@@ -7,7 +7,7 @@ namespace SIL.Motif.Runner.Operations;
 /// <summary>
 /// The one LibLCM write every <c>rel/col</c>/<c>rel/seq</c> <c>addRef</c>/<c>removeRef</c> kind
 /// performs — shared by every generated <c>*Lowering</c> class for a reference collection field
-/// (MOT-4 slice 2; <c>LexEntry.DialectLabels</c>, <c>.DoNotPublishIn</c>, <c>.DoNotShowMainEntryIn</c>
+/// (<c>LexEntry.DialectLabels</c>, <c>.DoNotPublishIn</c>, <c>.DoNotShowMainEntryIn</c>
 /// today). LibLCM's own <c>ILcmReferenceCollection&lt;T&gt;</c> and <c>ILcmReferenceSequence&lt;T&gt;</c>
 /// both implement the ordinary <see cref="ICollection{T}"/> (<c>Add</c>/<c>Remove</c>/<c>Contains</c>),
 /// verified by reflection against the pinned <c>SIL.LCModel</c> package, so one generic helper covers

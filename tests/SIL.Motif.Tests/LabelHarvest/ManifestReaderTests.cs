@@ -15,8 +15,7 @@ public class ManifestReaderTests
         var path = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.tsv");
         try
         {
-            // Mirrors the real header order/dialect: quoted, tab-separated, CRLF, extra columns present but
-            // not needed by this tool.
+            // Mirrors the real manifest dialect: quoted, tab-separated, CRLF, with extra unused columns.
             var content =
                 "\"Class\"\t\"Base\"\t\"Scope\"\t\"Field\"\r\n" +
                 "\"LexEntry\"\t\"CmObject\"\t\"in\"\t\"LexemeForm\"\r\n" +

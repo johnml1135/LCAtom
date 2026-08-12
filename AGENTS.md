@@ -1,5 +1,45 @@
 # AGENTS.md
 
+## Build and test with these, not with `dotnet` directly
+
+```
+./build.ps1     # comment hygiene, then compile
+./test.ps1      # the above, then the full suite
+```
+
+**Use them every time.** `./build.ps1` runs the comment gate before it compiles, so a violation fails
+in seconds rather than surviving until someone remembers to look. A bare `dotnet build` skips that
+gate entirely, which is how the rules below decay into suggestions. `./test.ps1` runs the build gate
+first, so one green run means clean comments, a clean compile, and a passing suite.
+
+CI runs the same two scripts (`.github/workflows/ci.yml`), so anything they reject locally is
+rejected there too — and anything they let through is not a CI surprise.
+
+**`./test.ps1` needs a FieldWorks sibling checkout.** Much of the suite reads `../FieldWorks` —
+`TestLangProj` for a live LibLCM cache, `DistFiles` for `ContextHelp.xml`. Those tests fail rather
+than skip when it is absent, on purpose: a suite that quietly shrinks reports success for work it
+never did. They carry `[Trait("Fixture", "FieldWorks")]`; CI runs `-Filter 'Fixture!=FieldWorks'` and
+says so in the step name. **A test needing anything outside this repo must carry that trait**, or it
+passes here and fails in CI.
+
+## Building against a local libpalaso (opt-in, off by default)
+
+`SIL.WritingSystems`/`SIL.Core` are pinned transitively via `SIL.LCModel` (`SilVersions.props`).
+To build against a local libpalaso checkout instead — e.g. to pick up a fix before it ships in a
+package — pack it and point motif at the result:
+
+```
+$env:LOCAL_NUGET_REPO = 'C:\localnugetpackages'
+./tools/Manage-LocalLibraries.ps1 -PalasoPath C:\path\to\libpalaso
+./build.ps1
+```
+
+`Manage-LocalLibraries.ps1` packs only `SIL.Core` and `SIL.WritingSystems` (not the whole libpalaso
+solution), writes the produced version into `SilVersions.props`, and clears any stale copy from the
+NuGet cache. `./build.ps1` prints a line when `LOCAL_NUGET_REPO` is active. With it unset (the
+default), nothing changes — CI never sets it, and neither does an unconfigured dev machine. To
+revert: `git checkout SilVersions.props` and unset `LOCAL_NUGET_REPO`.
+
 Read `CONTEXT.md` first — it is the canonical glossary, and its terms are binding in code, comments,
 CLI verbs, and prose. Then `README.md` and the documents in `docs/`.
 
@@ -8,13 +48,47 @@ CLI verbs, and prose. Then `README.md` and the documents in `docs/`.
 run and nothing else. Documents written before that date use the old words — they are historical
 records, not counter-examples.
 
+## Comments
+
+**Authoritative rules: `.claude/skills/code-comments/SKILL.md`. Enforced by
+`tools/comment-hygiene.ps1`.** Ported from PanGloss, where the same rot was measured and corrected;
+the intent is identical and the mechanics are adapted for C#.
+
+A comment explains what the code cannot: why this, why not the obvious alternative, what breaks if you
+change it. Code says what it does, git says when, and `docs/plan-motif.md` and `docs/issues.md` say
+where the project is — a comment duplicating any of those three will eventually contradict it.
+
+| Check | Standard |
+|---|---|
+| Implementation comment (`//`, or `///` on a `private` member) | **one line, at most 110 characters** — reflowing a paragraph onto one long line is not compliance |
+| API doc (`///` on a `public`/`internal` type or member, an interface member, or an enum member) | long form as appropriate, and **complete**: no repo-relative `…md` path — `manifest/README.md` no more than `docs/…` — because a tooltip cannot open one. Cite an ADR by number, name a contract in prose, inline the fact — or give a URL |
+| Plan and issue references — `MOT-22`, `docs/issues.md D8`, and the bare `D8`, `A1`, `J44` | **banned**, in string literals as well as comments; state the constraint instead |
+| ADR citations | **allowed** — an ADR number is immutable; cite it for a decision, never for a status |
+| Dates, slice/wiring status, history narrative, agent attribution | **banned** |
+| A claim about another entity's behaviour | cite the pinning test — ``pinned by `TestName` `` — or reword |
+| A `//` inside an emitter's raw-string template | scanned for banned references; exempt from the length rule, being a generated file's banner |
+| A `///` inside an emitter's raw-string template | length-exempt, but **completeness still applies**: it lands in a public class and is read from a tooltip |
+| A trailing `// note` sharing a line with code | scanned like any implementation comment — one line by construction, so **at most 110 characters** |
+| Comment text assembled in a literal — `$"/// …"` | scanned as the comment it becomes. Only the interpolated *value* is beyond a static pass |
+| `<see cref="X"/>` | keep; the C# compiler resolves it (CS1574), unlike Rust's intra-doc links |
+
+Zero tolerance, no baseline: a baseline records the current count as acceptable, and re-baselining
+after a rule change relabels old debt as the new normal. `src/`, `tests/`, `spikes/` and `tools/` are
+all scanned on the same terms — exempting a directory is a baseline wearing a different hat.
+
+Run `tools/verify-comment-only.ps1` after a comment sweep. It requires every line the diff **adds and
+removes** to be a comment — the symmetric check, because a pure deletion satisfies the obvious
+one-sided version while removing the `using` block along with the comment above it.
+
 ## Non-negotiable design rules
 
 1. The canonical input is semantic CRUD+ intent, never a low-level property script or reflection
    plan.
 2. A generated LibLCM Mutation Plan is output-only. It may be previewed and recorded, but never
    accepted as canonical input.
-3. The caller supplies an already-loaded `LcmCache` and owns project lifecycle and persistence.
+3. The caller supplies an already-loaded `LcmCache` and owns project lifecycle and persistence. If
+   the caller does not own the project and intend to persist it, `FwDataProjectLoader.LoadScratchCache`
+   is the one to call, not `LoadCache`.
 4. One complete Change Set is one atomic LibLCM unit of work. Individual operation methods never
    commit or open independent transactions.
 5. **Order is authoritative only where it is declared.** The runner honours declared dependencies

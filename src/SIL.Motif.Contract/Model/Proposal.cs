@@ -6,15 +6,14 @@ using SIL.Motif.Contract.Ids;
 namespace SIL.Motif.Contract.Model;
 
 /// <summary>
-/// The Proposal document envelope. See docs/change-set-contract.md, "Document shape".
+/// The Proposal document envelope — the Change Set contract's "Document shape".
 /// </summary>
 /// <remarks>
 /// Semantic (participate in the intent digest): <see cref="ContractVersions"/>,
 /// <see cref="Requires"/>, and <see cref="Operations"/> (order is authoritative and hashed).
 ///
 /// Non-semantic (excluded from the intent digest): <see cref="ProposalId"/> — uniquely minted at
-/// creation, content-independent, frozen (see
-/// docs/adr/0004-prerequisite-graph-stable-ids-bound-apply.md) — and <see cref="Extensions"/>.
+/// creation, content-independent, frozen (ADR 0004) — and <see cref="Extensions"/>.
 /// </remarks>
 public sealed record Proposal
 {

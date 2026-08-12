@@ -4,7 +4,7 @@ using SIL.Motif.Generator.Model;
 namespace SIL.Motif.Generator.Emit;
 
 /// <summary>
-/// Selects MOT-4's next increment beyond the lexEntry/moForm family: every remaining in-scope row
+/// Selects every remaining in-scope row beyond the lexEntry/moForm family
 /// that already fits one of the three generic shapes slices 1/2 built — basic
 /// <c>MultiUnicode</c>/<c>MultiString</c>/<c>Boolean</c> <c>set|clear</c>, <c>rel/atomic</c>
 /// <c>set|clear</c>, and <c>rel/col</c>/<c>rel/seq</c> <c>addRef|removeRef(|move)</c> — across every
@@ -13,8 +13,8 @@ namespace SIL.Motif.Generator.Emit;
 /// <remarks>
 /// <para>
 /// <b>Why widening the class filter is safe.</b> Unlike <see cref="BasicFieldSelector"/>/
-/// <see cref="RelationFieldSelector"/>, whose class filter exists only to scope MOT-4's *first*
-/// family (docs/plan-motif.md, MOT-4: "the family is the lexical entry"), the templates those two
+/// <see cref="RelationFieldSelector"/>, whose class filter exists only to scope the lexical-entry
+/// family to <c>LexEntry</c>/<c>MoForm</c>, the templates those two
 /// selectors feed — <see cref="AlternativesFieldEmitter"/>/<see cref="BooleanFieldEmitter"/>/
 /// <see cref="ReferenceAtomicFieldEmitter"/>/<see cref="ReferenceCollectionFieldEmitter"/> — never
 /// hardcode a class name; they read <c>DeclaringClass</c>/<c>FieldName</c>/<c>Sig</c> off the row and
@@ -27,29 +27,24 @@ namespace SIL.Motif.Generator.Emit;
 /// <c>RC</c>/<c>RS</c> property, and (for reference fields) that <c>"I" + Sig</c> exists too. That
 /// harness was scratch work, not checked in; the 225-row candidate list it validated is a superset of
 /// what this selector actually yields, since it also covered rows outside <c>HcReachable=yes</c> that
-/// a later slice may pick up.
+/// this selector does not yield.
 /// </para>
 /// <para>
 /// <b>Why <c>HcReachable=yes</c> is the filter, not "all 239 shape-matching rows".</b> ADR 0025 is
 /// the parser-first slice's own authority: the 150 rows it marks <c>HcReachable=yes</c> are exactly
 /// "everything the parser touches, plus the material you judge it against" — the stated priority
-/// for what MOT-4 builds next. Of those 150, 4 already have a generated kind (<c>MoForm.Form</c>,
+/// for what this generator builds next. Of those 150, 4 already have a generated kind (<c>MoForm.Form</c>,
 /// <c>MoForm.IsAbstract</c>, <c>MoForm.MorphType</c>, <c>LexSense.Gloss</c> — all class-filtered into
 /// slice 1/2 already) and the rest are of shapes this generator does not support yet (owning/atomic
 /// beyond the one hand-written field, owning/col, owning/seq). What is left — 78 rows — is exactly
 /// what this selector yields. The other ~147 in-scope rows that share these three shapes but are not
-/// <c>HcReachable=yes</c> are deliberately deferred to a later increment, not blocked by a missing
+/// <c>HcReachable=yes</c> are deliberately excluded here, not blocked by a missing
 /// shape: see <see cref="Slice3CatalogWriter"/>'s remarks for the accounting.
 /// </para>
 /// </remarks>
 public static class Slice3FieldSelector
 {
-    /// <summary>
-    /// Fields slice 1/2 already emit that also happen to be <c>HcReachable=yes</c> — named
-    /// explicitly, the same "one named exception" discipline <see cref="BasicFieldSelector"/> uses
-    /// for <c>LexSense.Gloss</c>, so this selector can never double-emit a kind slice 1/2 already
-    /// owns.
-    /// </summary>
+    /// <summary><c>HcReachable=yes</c> fields slice 1/2 already own, named so no kind is emitted twice.</summary>
     private static readonly HashSet<FieldKey> AlreadyEmittedElsewhere = new()
     {
         new FieldKey("MoForm", "Form"),

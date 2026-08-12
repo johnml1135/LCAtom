@@ -5,12 +5,12 @@ using Xunit;
 namespace SIL.Motif.Tests.Generator;
 
 /// <summary>
-/// The MOT-4 slice 2 analogue of <c>GeneratedFilesAreUpToDateTests</c>: the checked-in
+/// The slice 2 analogue of <c>GeneratedFilesAreUpToDateTests</c>: the checked-in
 /// <c>Operations/Generated2</c>, <c>Snapshotting/Generated2</c>, and
 /// <c>SnapshotFields.Generated2.g.cs</c> files must be exactly what <see cref="Slice2CatalogWriter.WriteAll"/>
 /// produces from today's model and manifest. A separate test from slice 1's rather than a widening of
 /// it, matching <see cref="Slice2CatalogWriter"/> being a separate writer — see that type's remarks for
-/// why (<c>GeneratedCatalogWriterTests</c> hard-asserts an exact file count this task must not touch).
+/// why (<c>GeneratedCatalogWriterTests</c> hard-asserts an exact file count this test must not touch).
 /// </summary>
 /// <remarks>
 /// When this fails, the fix is the same as its slice-1 counterpart's: re-run

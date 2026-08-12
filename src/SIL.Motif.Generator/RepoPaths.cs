@@ -30,4 +30,25 @@ public static class RepoPaths
     /// </summary>
     public static string DefaultDescriptionsPath(string? startDirectory = null) =>
         Path.Combine(FindRepoRoot(startDirectory), "manifest", "kind-descriptions.tsv");
+
+    /// <summary>
+    /// Descriptions harvested out of FieldWorks' compiled help by the dev-time <c>harvest-help</c> command.
+    /// Checked in so the <c>.chm</c> — and the Windows-only tool that opens it — stay out of the build.
+    /// </summary>
+    public static string DefaultHelpDescriptionsPath(string? startDirectory = null) =>
+        Path.Combine(FindRepoRoot(startDirectory), "manifest", "fieldworks-help-descriptions.tsv");
+
+    /// <summary>
+    /// What the model says about ordering, for every in-scope row whose <c>ComparisonClass</c> claims order
+    /// carries meaning (<see cref="Ordering.OrderingEvidenceHarvester"/>).
+    /// </summary>
+    public static string DefaultOrderingEvidencePath(string? startDirectory = null) =>
+        Path.Combine(FindRepoRoot(startDirectory), "manifest", "ordering-evidence.tsv");
+
+    /// <summary>
+    /// Which release of liblcm and FieldWorks the cited descriptions were copied from
+    /// (<see cref="Descriptions.Harvest.SourcePins"/>).
+    /// </summary>
+    public static string DefaultSourcePinsPath(string? startDirectory = null) =>
+        Path.Combine(FindRepoRoot(startDirectory), "manifest", "source-pins.tsv");
 }

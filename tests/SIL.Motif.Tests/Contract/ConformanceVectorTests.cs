@@ -12,7 +12,7 @@ namespace SIL.Motif.Tests.Contract;
 /// (input Proposal JSON → expected RFC 8785 canonical bytes → expected intent digest) and checks
 /// this C# implementation reproduces them exactly. A Python or Rust runner is expected to load the
 /// same <c>input.json</c> files and reproduce the same <c>canonical.json</c> bytes and
-/// <c>digest.txt</c> value, per docs/adr/0007-cross-language-digest-determinism.md.
+/// <c>digest.txt</c> value, per ADR 0007.
 /// </summary>
 public class ConformanceVectorTests
 {
@@ -48,11 +48,7 @@ public class ConformanceVectorTests
         Assert.True(count >= 2, $"Expected at least two frozen conformance vectors, found {count}.");
     }
 
-    /// <summary>
-    /// Locates <c>tests/conformance/proposal-digest</c> as a sibling of this test assembly's repo
-    /// checkout, the same directory-walk-up technique <c>ProjectLoadTests</c> uses to find the
-    /// FieldWorks fixture.
-    /// </summary>
+    /// <summary>Walks up from the test assembly to the repo root to find the conformance vectors.</summary>
     private static string FindConformanceRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

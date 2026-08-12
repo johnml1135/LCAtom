@@ -38,8 +38,7 @@ public class LabelTsvWriterTests
     [Fact]
     public void Write_doubles_embedded_quotes()
     {
-        // strings-en.xml has <string id="ProdRestrict-Plural" txt='Exception "Features"'/> — a label with a
-        // literal embedded quote. The writer must escape it, not break the row.
+        // A real label (strings-en.xml ProdRestrict-Plural) carries a literal embedded quote to escape.
         var path = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.tsv");
         try
         {

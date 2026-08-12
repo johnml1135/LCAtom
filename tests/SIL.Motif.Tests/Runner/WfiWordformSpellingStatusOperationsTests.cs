@@ -1,0 +1,229 @@
+using System.Text.Json;
+using SIL.Motif.Contract.Ids;
+using SIL.Motif.Contract.Model;
+using SIL.Motif.Contract.Parsing;
+using SIL.Motif.Runner.Apply;
+using SIL.Motif.Runner.Operations;
+using SIL.Motif.Tests.TestFixtures;
+using SIL.LCModel;
+using SIL.LCModel.Core.KernelInterfaces;
+using SIL.LCModel.Core.Text;
+using SIL.LCModel.Infrastructure;
+using Xunit;
+
+namespace SIL.Motif.Tests.Runner;
+
+/// <summary>
+/// Round-trip proof for <c>analysis/wfiWordform/setSpellingStatus</c> and its
+/// <c>clearSpellingStatus</c> counterpart — the closest existing pattern is
+/// <see cref="GeneratedBasicFieldOperationsTests"/>/<see cref="GeneratedSlice3OperationsTests"/>'s basic-field
+/// coverage, adapted for this field's one difference from every basic field those tests cover: the payload is
+/// a closed-range Integer rather than free text/boolean, so an out-of-range value must be rejected rather
+/// than silently accepted or clamped, and <c>clear</c> writes the enum's zero member (<c>Undecided</c>)
+/// rather than erasing anything.
+/// </summary>
+[Collection(TestFixtures.LcmCacheTestCollection.Name)]
+public sealed class WfiWordformSpellingStatusOperationsTests : IDisposable
+{
+    private readonly LcmCache _cache;
+    private readonly IWfiWordform _wordform;
+
+    public WfiWordformSpellingStatusOperationsTests(PristineProjectFixture pristine)
+    {
+        _cache = pristine.NewScratch();
+        _wordform = CreateWordform();
+    }
+
+    private IWfiWordform CreateWordform()
+    {
+        IWfiWordform wordform = null!;
+        NonUndoableUnitOfWorkHelper.Do(_cache.ActionHandlerAccessor, () =>
+        {
+            wordform = _cache.ServiceLocator.GetInstance<IWfiWordformFactory>()
+                .Create(TsStringUtils.MakeString("zzMotifTestWordform", _cache.DefaultVernWs));
+        });
+        return wordform;
+    }
+
+    public void Dispose()
+    {
+        if (!_cache.IsDisposed) _cache.Dispose();
+    }
+
+    [Fact]
+    public void DryRun_SetSpellingStatus_ExpectedEffectReportsBeforeAndAfterValues()
+    {
+        var wordform = _wordform;
+        var target = CanonicalId.FromGuid(wordform.Guid);
+
+        // Known starting state, asserted rather than assumed from the factory default.
+        UndoableUnitOfWorkHelper.Do(
+            "test setup", "test setup", _cache.ServiceLocator.GetInstance<IActionHandler>(),
+            () => wordform.SpellingStatus = 0);
+
+        var proposal = BuildProposal(WfiWordformSpellingStatusOperationKinds.SetSpellingStatus, target, new { value = 2 });
+        var dryRun = ScratchDryRun.Of(_cache, proposal);
+
+        var effect = Assert.Single(dryRun.ExpectedEffects);
+        Assert.Equal("0", effect.Before["value"]);
+        Assert.Equal("2", effect.After["value"]);
+
+        // The dry run must not have mutated the live cache (ADR 0016).
+        Assert.Equal(0, wordform.SpellingStatus);
+    }
+
+    [Fact]
+    public void SetSpellingStatus_RoundTripsThroughDryRunAndApply()
+    {
+        var wordform = _wordform;
+        var target = CanonicalId.FromGuid(wordform.Guid);
+
+        UndoableUnitOfWorkHelper.Do(
+            "test setup", "test setup", _cache.ServiceLocator.GetInstance<IActionHandler>(),
+            () => wordform.SpellingStatus = 0);
+
+        var proposal = BuildProposal(WfiWordformSpellingStatusOperationKinds.SetSpellingStatus, target, new { value = 2 });
+        var dryRun = ScratchDryRun.Of(_cache, proposal);
+        var receipt = ProposalApplier.Apply(_cache, proposal, dryRun.Anchor, "motif-tests");
+
+        Assert.False(receipt.AlreadyApplied);
+        Assert.Equal(2, wordform.SpellingStatus);
+
+        var effect = Assert.Single(receipt.ActualEffects);
+        Assert.Equal("0", effect.Before["value"]);
+        Assert.Equal("2", effect.After["value"]);
+    }
+
+    /// <summary>
+    /// The behaviour the manifest's rationale claims: clearing retracts a judgement by writing the zero
+    /// member, <c>Undecided</c>. It is a different act from asserting <c>Correct</c>, which is why this
+    /// field keeps the derived <c>clear</c> rather than making a caller spell it <c>set 0</c>.
+    /// </summary>
+    [Fact]
+    public void ClearSpellingStatus_RoundTripsThroughDryRunAndApply_WritingUndecided()
+    {
+        var wordform = _wordform;
+        var target = CanonicalId.FromGuid(wordform.Guid);
+
+        UndoableUnitOfWorkHelper.Do(
+            "test setup", "test setup", _cache.ServiceLocator.GetInstance<IActionHandler>(),
+            () => wordform.SpellingStatus = 2);
+
+        var proposal = BuildProposal(WfiWordformSpellingStatusOperationKinds.ClearSpellingStatus, target, new { });
+        var dryRun = ScratchDryRun.Of(_cache, proposal);
+
+        var expected = Assert.Single(dryRun.ExpectedEffects);
+        Assert.Equal("2", expected.Before["value"]);
+        Assert.Equal("0", expected.After["value"]);
+        Assert.Equal(2, wordform.SpellingStatus); // the dry run left the live cache alone (ADR 0016)
+
+        var receipt = ProposalApplier.Apply(_cache, proposal, dryRun.Anchor, "motif-tests");
+
+        Assert.False(receipt.AlreadyApplied);
+        Assert.Equal(0, wordform.SpellingStatus);
+
+        var actual = Assert.Single(receipt.ActualEffects);
+        Assert.Equal("2", actual.Before["value"]);
+        Assert.Equal("0", actual.After["value"]);
+    }
+
+    private static Proposal BuildProposal(string kind, CanonicalId target, object after)
+    {
+        var afterJson = JsonSerializer.Serialize(after);
+        using var afterDocument = JsonDocument.Parse(afterJson);
+
+        var group = kind.Substring(0, kind.IndexOf('/'));
+        var operation = new OperationEnvelope(
+            operationId: CanonicalId.Mint(),
+            kind: kind,
+            target: target,
+            after: afterDocument.RootElement.Clone());
+
+        return new Proposal(
+            contractVersions: new Dictionary<string, string> { [group] = "1.0" },
+            proposalId: CanonicalId.Mint(),
+            requires: null,
+            operations: new[] { operation });
+    }
+}
+
+/// <summary>
+/// Registry and payload-parsing tests for <c>setSpellingStatus</c>/<c>clearSpellingStatus</c> — no
+/// <c>LcmCache</c> involved, so unlike <see cref="WfiWordformSpellingStatusOperationsTests"/> this
+/// class needs no <see cref="PristineProjectFixture"/>.
+/// </summary>
+public sealed class WfiWordformSpellingStatusSchemaTests
+{
+    [Fact]
+    public void BothKinds_AreRegistered()
+    {
+        Assert.Equal("analysis/wfiWordform/setSpellingStatus", WfiWordformSpellingStatusOperationKinds.SetSpellingStatus);
+        Assert.Equal("analysis/wfiWordform/clearSpellingStatus", WfiWordformSpellingStatusOperationKinds.ClearSpellingStatus);
+
+        foreach (var kind in new[]
+                 {
+                     WfiWordformSpellingStatusOperationKinds.SetSpellingStatus,
+                     WfiWordformSpellingStatusOperationKinds.ClearSpellingStatus,
+                 })
+        {
+            Assert.True(OperationKindRegistry.IsKnown(kind));
+            Assert.Contains(kind, OperationHandlerRegistry.RegisteredKinds);
+        }
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void SetSpellingStatusPayload_AcceptsEveryDocumentedValue(int value)
+    {
+        var afterJson = JsonSerializer.Serialize(new { value });
+        using var afterDocument = JsonDocument.Parse(afterJson);
+
+        Assert.Equal(value, WfiWordformSpellingStatusSetPayload.Parse(afterDocument.RootElement));
+    }
+
+    [Theory]
+    [InlineData(3)]
+    [InlineData(-1)]
+    [InlineData(99)]
+    public void SetSpellingStatusPayload_OutOfRangeValue_FailsLoudly_RatherThanClamping(int outOfRangeValue)
+    {
+        // Must reject an out-of-range value itself, not rely on LibLCM to silently fix it up.
+        var afterJson = JsonSerializer.Serialize(new { value = outOfRangeValue });
+        using var afterDocument = JsonDocument.Parse(afterJson);
+
+        var ex = Assert.Throws<ContractParseException>(
+            () => WfiWordformSpellingStatusSetPayload.Parse(afterDocument.RootElement));
+        Assert.Contains(outOfRangeValue.ToString(), ex.Message);
+    }
+
+    [Fact]
+    public void SetSpellingStatusPayload_UnknownProperty_IsRejectedByTheClosedSchema()
+    {
+        var afterJson = JsonSerializer.Serialize(new { value = 1, extra = "not allowed" });
+        using var afterDocument = JsonDocument.Parse(afterJson);
+
+        Assert.Throws<ContractParseException>(() => WfiWordformSpellingStatusSetPayload.Parse(afterDocument.RootElement));
+    }
+
+    [Fact]
+    public void SetSpellingStatusPayload_NonIntegerValue_IsRejected()
+    {
+        var afterJson = JsonSerializer.Serialize(new { value = "incorrect" });
+        using var afterDocument = JsonDocument.Parse(afterJson);
+
+        Assert.Throws<ContractParseException>(() => WfiWordformSpellingStatusSetPayload.Parse(afterDocument.RootElement));
+    }
+
+    [Fact]
+    public void ClearSpellingStatusPayload_RejectsAnyProperty_IncludingTheSetVerbsOwn()
+    {
+        using var empty = JsonDocument.Parse("{}");
+        WfiWordformSpellingStatusClearPayload.Parse(empty.RootElement); // does not throw
+
+        using var withValue = JsonDocument.Parse(JsonSerializer.Serialize(new { value = 0 }));
+        Assert.Throws<ContractParseException>(
+            () => WfiWordformSpellingStatusClearPayload.Parse(withValue.RootElement));
+    }
+}

@@ -2,7 +2,6 @@ using System.Text.Json;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Model;
 using SIL.Motif.Contract.Parsing;
-using SIL.Motif.Host.LcmUtils;
 using SIL.Motif.Model.DryRun;
 using SIL.Motif.Runner.AppliedLog;
 using SIL.Motif.Runner.Apply;
@@ -15,33 +14,28 @@ using Xunit;
 namespace SIL.Motif.Tests.Runner;
 
 /// <summary>
-/// MOT-4 slice 2's round-trip proof for <c>MoForm.MorphType</c> (<c>rel/atomic</c>, <c>set|clear</c>)
-/// against a real project. This field feeds <c>UpdateHomographs</c> (<c>MorphTypeRASideEffects</c>),
-/// which used to force a dispose/reload between DryRun and Apply because the DryRun mutated this cache
-/// and rolled back. It runs on a throwaway copy now, so it does not — see
-/// <c>docs/adr/0016-scratch-cache-copy-not-undo.md</c>, amended 2026-08-06.
+/// Round-trip proof for <c>MoForm.MorphType</c> (<c>rel/atomic</c>, <c>set|clear</c>)
+/// against a real project. This field feeds <c>UpdateHomographs</c> (<c>MorphTypeRASideEffects</c>);
+/// the DryRun runs on a throwaway copy and never mutates this cache, so no dispose/reload is needed
+/// between DryRun and Apply (ADR 0016).
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
 public sealed class MoFormMorphTypeOperationsTests : IDisposable
 {
     private const string RefKey = "ref";
 
-    private readonly string _tempRoot;
-    private readonly string _fwDataPath;
-    private readonly FwDataProjectLoader _loader = new();
-    private LcmCache _cache;
+    private readonly LcmCache _cache;
+    private readonly SeededProject _seed;
 
-    public MoFormMorphTypeOperationsTests()
+    public MoFormMorphTypeOperationsTests(PristineProjectFixture pristine)
     {
-        _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests.MorphType", Guid.NewGuid().ToString("N"));
-        _fwDataPath = TestLangProjFixture.CopyToTempAndGetFwDataPath(_tempRoot);
-        _cache = _loader.LoadCache(_fwDataPath);
+        _cache = pristine.NewScratch();
+        _seed = pristine.Seed;
     }
 
     public void Dispose()
     {
         if (!_cache.IsDisposed) _cache.Dispose();
-        try { Directory.Delete(_tempRoot, recursive: true); } catch { /* best effort */ }
     }
 
     [Fact]
@@ -61,8 +55,7 @@ public sealed class MoFormMorphTypeOperationsTests : IDisposable
         Assert.Equal(originalMorphTypeGuid, CanonicalId.Parse(effect.Before[RefKey]).ToGuid());
         Assert.Equal(newMorphTypeGuid, CanonicalId.Parse(effect.After[RefKey]).ToGuid());
 
-        // No dispose/reload between DryRun and Apply: the DryRun ran on a throwaway copy, so this
-        // cache never saw it (docs/adr/0016-scratch-cache-copy-not-undo.md, amended 2026-08-06).
+        // No dispose/reload needed: the DryRun ran on a throwaway copy, so this cache never saw it.
         var receipt = ProposalApplier.Apply(_cache, proposal, dryRun.Anchor, "motif-tests");
         Assert.False(receipt.AlreadyApplied);
 
@@ -85,8 +78,7 @@ public sealed class MoFormMorphTypeOperationsTests : IDisposable
         Assert.Equal(originalMorphTypeGuid, CanonicalId.Parse(effect.Before[RefKey]).ToGuid());
         Assert.Empty(effect.After);
 
-        // No dispose/reload between DryRun and Apply: the DryRun ran on a throwaway copy, so this
-        // cache never saw it (docs/adr/0016-scratch-cache-copy-not-undo.md, amended 2026-08-06).
+        // No dispose/reload needed: the DryRun ran on a throwaway copy, so this cache never saw it.
         var receipt = ProposalApplier.Apply(_cache, proposal, dryRun.Anchor, "motif-tests");
         Assert.False(receipt.AlreadyApplied);
 
@@ -97,10 +89,7 @@ public sealed class MoFormMorphTypeOperationsTests : IDisposable
     [Fact]
     public void Apply_MidProposalFailure_RollsBackTheSet_AndWritesNoAppliedLogEntry()
     {
-        // op1: a valid set on form1. op2: the SAME (valid, resolvable) target but a malformed
-        // 'after' payload (missing 'ref') -- fails only once the real, committing apply loop reads
-        // the payload, matching ProposalApplierTests.Apply_MidProposalFailure_RollsBack_...'s own
-        // shape for exactly this reason (a bogus target fails earlier, in the footprint pre-flight).
+        // op2's payload is malformed, not its target, so failure happens in apply, not footprint pre-flight.
         var form = FindStemAllomorph();
         var target = CanonicalId.FromGuid(form.Guid);
         var op1 = BuildSetOperation(target, CanonicalId.FromGuid(MoMorphTypeTags.kguidMorphBoundStem));
@@ -129,24 +118,6 @@ public sealed class MoFormMorphTypeOperationsTests : IDisposable
     }
 
     [Fact]
-    public void SetPayload_UnknownProperty_IsRejectedByTheClosedSchema()
-    {
-        var afterJson = JsonSerializer.Serialize(new { @ref = CanonicalId.Mint().Value, extra = 1 });
-        using var afterDocument = JsonDocument.Parse(afterJson);
-
-        Assert.Throws<ContractParseException>(() => MoFormMorphTypeSetPayload.Parse(afterDocument.RootElement));
-    }
-
-    [Fact]
-    public void ClearPayload_AnyProperty_IsRejectedByTheClosedSchema()
-    {
-        var afterJson = JsonSerializer.Serialize(new { @ref = CanonicalId.Mint().Value });
-        using var afterDocument = JsonDocument.Parse(afterJson);
-
-        Assert.Throws<ContractParseException>(() => MoFormMorphTypeClearPayload.Parse(afterDocument.RootElement));
-    }
-
-    [Fact]
     public void Set_ReferencingAnObjectOfTheWrongType_ThrowsNamingTheMismatch()
     {
         var form = FindStemAllomorph();
@@ -160,8 +131,7 @@ public sealed class MoFormMorphTypeOperationsTests : IDisposable
     }
 
     private IMoForm FindStemAllomorph() =>
-        _cache.ServiceLocator.GetInstance<IMoStemAllomorphRepository>().AllInstances()
-            .First(f => f.MorphTypeRA is not null);
+        _cache.ServiceLocator.GetInstance<IMoFormRepository>().GetObject(_seed.FirstLexemeFormId);
 
     private static OperationEnvelope BuildSetOperation(CanonicalId target, CanonicalId refId)
     {
@@ -205,4 +175,30 @@ public sealed class MoFormMorphTypeOperationsTests : IDisposable
         LibLcmVersion: "test",
         ProjectionVersion: "1",
         DryRunAtUtc: "20260101T000000Z");
+}
+
+/// <summary>
+/// Closed-schema rejection tests for the <c>MoForm.MorphType</c> set/clear payloads — no
+/// <c>LcmCache</c> involved, so unlike <see cref="MoFormMorphTypeOperationsTests"/> this class needs
+/// no <see cref="PristineProjectFixture"/>.
+/// </summary>
+public sealed class MoFormMorphTypeSchemaTests
+{
+    [Fact]
+    public void SetPayload_UnknownProperty_IsRejectedByTheClosedSchema()
+    {
+        var afterJson = JsonSerializer.Serialize(new { @ref = CanonicalId.Mint().Value, extra = 1 });
+        using var afterDocument = JsonDocument.Parse(afterJson);
+
+        Assert.Throws<ContractParseException>(() => MoFormMorphTypeSetPayload.Parse(afterDocument.RootElement));
+    }
+
+    [Fact]
+    public void ClearPayload_AnyProperty_IsRejectedByTheClosedSchema()
+    {
+        var afterJson = JsonSerializer.Serialize(new { @ref = CanonicalId.Mint().Value });
+        using var afterDocument = JsonDocument.Parse(afterJson);
+
+        Assert.Throws<ContractParseException>(() => MoFormMorphTypeClearPayload.Parse(afterDocument.RootElement));
+    }
 }

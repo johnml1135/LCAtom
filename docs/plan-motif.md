@@ -143,7 +143,7 @@ the first author, not the last. M5 is the first thing a linguist would recognise
 | `MOT-14` — Receipt store and sync in Lexbox | M4b | Medium | **Scope 2** |
 | `MOT-20` — the Motif store | M2 | Medium, and newly load-bearing | **Ingestion built** 2026-08-09 — `add-corpus` / `add-document` / `add-corpus-bundle`, behind `ICorpusStore` ([ADR 0037](adr/0037-fetching-lives-outside-motif.md)). **Storage still files**: the embedded database for Corpora and Assessments in [ADR 0036](adr/0036-motif-has-its-own-data-store.md) decision 6 is not built, and pruning rules are undecided |
 | `MOT-21` — promotion: pulling a curated subset into FieldWorks | M4 | Medium | **Not started** — the only sanctioned route from the Motif store into the language project ([ADR 0036](adr/0036-motif-has-its-own-data-store.md) decision 2). Which words, which analyses, and what record the crossing leaves |
-| `MOT-22` — mark a word form as not correctly spelled | M3 | Small | **Decided 2026-08-09, not started** — Motif reads and writes `WfiWordform.SpellingStatus`. The manifest row exists and is switched off; turning it on is one hand-authored row plus a regenerate. Writing it moves the Hunspell dictionary, so the dry run must say so |
+| `MOT-22` — mark a word form as not correctly spelled | M3 | Small | **Built 2026-08-10** — `analysis/wfiWordform/set`/`clearSpellingStatus` are generated from a fourth emit shape (basic `Integer` enum, range-checked payload). Writing it moves the Hunspell dictionary, so the dry run must say so |
 | `MOT-23` — the analysis aggregate read API | M3 | Medium | **Decided 2026-08-09, not started** — [ADR 0038](adr/0038-expectations-are-fieldworks-approved-analyses.md). Per word form: manual and automatic analyses, counts and instances, links through to the words, and an option to reparse and compare. "What changed" is the diff between two responses, so there is no separate change-tracking type |
 
 **Withdrawn:** `MOT-1` and `MOT-5`. Both existed only to serve a merge layer that is not on this path;
@@ -503,9 +503,26 @@ the dry run's expected effects rather than as a surprise after apply.
 
 **The work.** The manifest row exists and is switched off — `Scope="out"`, no `Group`, no `Verbs`. Give it the
 same hand-authored [ADR 0025](adr/0025-parser-first-build-order.md) treatment `Analyses` and `Form` already
-carry on that class: a group, a `set` verb, and `EnumValues="0=Undecided;1=Correct;2=Incorrect"` following the
-`CmPicture.LayoutPos` precedent. Then regenerate the kind and extend `ManifestHandAuthoredRowsTests`, which
-pins those rows against a `classify.ps1` rerun.
+carry on that class: a group, the derived `set|clear` verbs, and `EnumValues="0=Undecided;1=Correct;2=Incorrect"`
+following the `CmPicture.LayoutPos` precedent. Then regenerate the kind and extend
+`ManifestHandAuthoredRowsTests`, which pins those rows against a `classify.ps1` rerun.
+
+**Built 2026-08-10.** `analysis/wfiWordform/setSpellingStatus` and `analysis/wfiWordform/clearSpellingStatus`
+are generated, from a fourth emit shape: a basic `Integer` standing in for a small closed enum, whose payload
+range-checks the value against the manifest's own `EnumValues` rather than trusting liblcm's
+`ValidateSpellingStatus` to fix it.
+
+**One thing this task got wrong first, recorded because the correction is the interesting part.** It shipped as
+`Verbs="set"` only, on the argument that `clear` would be a synonym for `set 0` given that the zero member is
+`Undecided` — and it created the first-ever exception table for `Verbs` in the generator to express that,
+against [ADR 0022](adr/0022-structure-is-derived-policy-is-five-rows.md) decision 1's "seven combinations, zero
+exceptions". The other eleven in-scope enum fields settle it: every one carries the derived `set|clear`, and
+every one of *their* zero members is a substantive value (`CenterInColumn`, `Variant`,
+`LeftToRightIterative`). `clear` in this manifest has never meant "erase to nothing" — it means "write the zero
+member" — which makes `SpellingStatus`, the one enum whose zero genuinely means *no judgement recorded*, the
+best candidate for `clear` rather than the worst. The exception table is gone, ADR 0022's claim stands
+unamended, and `ManifestHandAuthoredRowsTests.EveryInScopeEnumField_CarriesTheDerivedSetClear` now fails the
+build if any row tries this again.
 
 **What this does not cover, and it is a different claim:** a word that *is* correctly spelled but that the
 grammar should not analyse — a borrowed proper noun, a code-switch. FieldWorks has nothing for that, and

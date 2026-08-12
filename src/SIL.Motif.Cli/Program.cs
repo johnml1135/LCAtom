@@ -3,10 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using SIL.Motif.Cli;
 
-// Thin argument dispatcher: every verb below is a plain call into SIL.Motif.Cli.Commands, which
-// does all the real work (files store + Contract/Runner/Host calls) and returns a captured exit
-// code + output. Keeping Program.cs thin is what lets tests drive the exact same command handlers
-// directly, without shelling out to this executable. See docs/build-stages.md, Stage E.
+// Thin dispatcher: verbs call straight into Commands, so tests exercise the same handlers without shelling out.
 
 if (args.Length == 0)
 {
@@ -195,9 +192,7 @@ try
                     "[--title <text>] [--licence <text>] [--may-derive true|false] [--licence-basis <text>]");
             }
 
-            // No capability flags on a document means "same as the corpus", which is different from
-            // "nothing established" — so pass null rather than Unknown, or every document would silently
-            // override a corpus licence that was properly recorded.
+            // No flags means "same as corpus", not "nothing established": pass null, not Unknown, or it overrides one.
             var documentCapabilities = HasAnyLicenceFlag(flags)
                 ? CorpusCommands.CapabilitiesFromFlags(flags)
                 : null;
@@ -309,9 +304,7 @@ static (Dictionary<string, string> Flags, List<string> Positionals) ParseArgs(st
         if (token.StartsWith("--", StringComparison.Ordinal))
         {
             var name = token[2..];
-            // A flag with no following value, or one immediately followed by another flag, is a
-            // bare boolean switch (e.g. --force) rather than a value-taking flag — none of this
-            // CLI's value-taking flags ever need a value that itself starts with "--".
+            // No value, or one followed by another flag, is a bare switch (e.g. --force): no value starts with "--".
             if (i + 1 >= tokens.Length || tokens[i + 1].StartsWith("--", StringComparison.Ordinal))
                 flags[name] = "true";
             else

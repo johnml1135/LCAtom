@@ -57,9 +57,7 @@ public class AbstractClassRuleTests
     [Fact]
     public void Check_AgainstTheRealParsedModel_FiresForLexEntryLexemeForm()
     {
-        // End-to-end version of the same fact, against the real MasterLCModel.xml rather than a
-        // hand-built ModelClass fixture — proves the abstract flag this rule depends on is read
-        // correctly off the real file, not just asserted in a fixture.
+        // Runs against the real MasterLCModel.xml, not a hand-built fixture, to prove Abstract reads correctly.
         var model = MasterLcModelParser.Parse(ModelPathResolver.Resolve().Path);
         var moForm = model.Classes.Single(c => c.Id == "MoForm");
         Assert.True(moForm.Abstract);

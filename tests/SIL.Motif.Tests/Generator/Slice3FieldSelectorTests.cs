@@ -6,7 +6,7 @@ using Xunit;
 namespace SIL.Motif.Tests.Generator;
 
 /// <summary>
-/// Proves MOT-4 slice 3's field lists are derived from <c>Scope=in</c> + <c>HcReachable=yes</c> +
+/// Proves slice 3's field lists are derived from <c>Scope=in</c> + <c>HcReachable=yes</c> +
 /// shape, not hardcoded to a class list — the widening <see cref="Slice3FieldSelector"/>'s own
 /// remarks describe relative to <see cref="BasicFieldSelector"/>/<see cref="RelationFieldSelector"/>.
 /// </summary>

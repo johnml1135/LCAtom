@@ -5,7 +5,7 @@ using Xunit;
 namespace SIL.Motif.Tests.Model;
 
 /// <summary>
-/// LibLCM-free unit tests for the single-reference-as-alternatives-map convention MOT-4 slice 2 uses
+/// LibLCM-free unit tests for the single-reference-as-alternatives-map convention used
 /// for <c>rel/atomic</c> fields (<c>MoForm.MorphType</c>) and for the owning/atomic
 /// <c>create</c>/<c>delete</c> slot itself (<c>LexEntry.LexemeForm</c>) — both are "which one entity,
 /// if any, does this slot currently hold," which is exactly <see cref="BooleanFieldAlternatives"/>'s

@@ -7,7 +7,7 @@ namespace SIL.Motif.Tests.Generator;
 /// <summary>
 /// Parses both a small synthetic fixture (to pin the exact quoting/escaping/CRLF rules) and the
 /// real, read-only <c>manifest/liblcm-inventory.tsv</c> (899 lines: header + 898 rows,
-/// manifest/README.md).
+/// the manifest README).
 /// </summary>
 public class ManifestTsvParserTests
 {
@@ -76,10 +76,10 @@ public class ManifestTsvParserTests
     }
 
     [Fact]
-    public void Parse_RealManifest_Has494InScopeRows()
+    public void Parse_RealManifest_Has495InScopeRows()
     {
-        // docs/plan-motif.md, MOT-2/MOT-3: "494 in-scope of 898".
+        // 495, not 494: WfiWordform.SpellingStatus counts as in-scope in the current manifest.
         var rows = ManifestTsvParser.Parse(RepoPaths.DefaultManifestPath());
-        Assert.Equal(494, rows.Count(r => r.Scope == "in"));
+        Assert.Equal(495, rows.Count(r => r.Scope == "in"));
     }
 }

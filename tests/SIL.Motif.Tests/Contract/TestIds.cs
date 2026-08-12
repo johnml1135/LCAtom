@@ -2,7 +2,7 @@ namespace SIL.Motif.Tests.Contract;
 
 /// <summary>
 /// A handful of fixed, valid canonical-id suffixes (16 sequential bytes each, matching the style
-/// of the worked examples in docs/change-set-contract.md) shared across the contract kernel
+/// of the Change Set contract's own worked examples) shared across the contract kernel
 /// tests, so fixtures stay readable and stable instead of relying on randomly minted ids.
 /// </summary>
 internal static class TestIds

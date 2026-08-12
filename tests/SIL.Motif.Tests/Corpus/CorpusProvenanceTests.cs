@@ -35,8 +35,7 @@ public class CorpusProvenanceTests
 
         Assert.False(corpus.SupportsAccuracyClaims);
 
-        // The refusal has to explain itself, or a reader concludes the tool is broken rather than the corpus
-        // unvetted — and has to say what the corpus IS still good for.
+        // The refusal must explain itself (else it looks like a bug) and say what the corpus IS good for.
         var why = provenance.WhyAccuracyIsNotComputable();
         Assert.Contains("Wikipedia", why);
         Assert.Contains("nobody has attested", why);
@@ -46,8 +45,7 @@ public class CorpusProvenanceTests
     [Fact]
     public void AttestingOnlyHalfOfIt_StillDoesNotSupportAccuracy_AndNamesWhichHalfIsMissing()
     {
-        // "Known clean" is the easy claim; "in scope" is the one the proposal calls easiest to get wrong,
-        // because a corpus full of names and borrowings fails it while looking fine.
+        // "Known clean" is the easy claim; "in scope" is easiest to get wrong — names/borrowings look fine but fail it.
         var halfAttested = new CorpusProvenance(
             Wikipedia(), Tokenisation(),
             new CorpusQualification(
@@ -90,8 +88,7 @@ public class CorpusProvenanceTests
     [Fact]
     public void ProvenanceIsOutsideTheHash_SoAttestingACorpusDoesNotMakeItADifferentCorpus()
     {
-        // Attesting changes what may be claimed about the words, not which words they are. If it moved the
-        // hash, signing a corpus would invalidate every figure previously computed over exactly those words.
+        // Attesting changes what may be claimed, not which words they are; moving the hash would break every figure.
         var words = new[] { "mbali", "ya", "miseru" };
         var bare = CorpusDescriptor.Create("seh", words);
         var attested = CorpusDescriptor.Create("seh", words,

@@ -5,8 +5,8 @@ namespace SIL.Motif.Generator.Emit;
 
 /// <summary>
 /// Assembles a <see cref="BasicFieldSpec"/> from one <see cref="JoinedRow"/>, calling
-/// <see cref="GroupDerivation"/>/<see cref="ConstructDerivation"/>/<see cref="KindNameDerivation"/>
-/// exactly as MOT-2's checks do — this is glue, not a fourth place that decides group/construct/kind.
+/// <see cref="GroupDerivation"/>/<see cref="ConstructDerivation"/>/<see cref="KindNameDerivation"/> —
+/// this is glue, not a fourth place that decides group/construct/kind.
 /// </summary>
 public static class BasicFieldSpecBuilder
 {

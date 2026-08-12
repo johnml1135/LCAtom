@@ -5,19 +5,18 @@ using SIL.Motif.Contract.Model;
 namespace SIL.Motif.Contract.Parsing;
 
 /// <summary>
-/// The set of operation kinds strict parsing will accept. An unknown <c>kind</c> is a hard error
-/// (docs/change-set-contract.md, "Operation vocabulary": "Closed schemas expose only meaningful,
-/// supported properties").
+/// The set of operation kinds strict parsing will accept. An unknown <c>kind</c> is a hard error —
+/// the Change Set contract's "Operation vocabulary" rule that "closed schemas expose only
+/// meaningful, supported properties".
 /// </summary>
 /// <remarks>
-/// The exact v1 operation inventory is produced from use cases and the LibLCM model coverage manifest in
-/// a later phase (docs/implementation-plan.md, Phase 6) and is out of scope for the LibLCM-free
-/// contract kernel. This registry is seeded only with the two kinds the normative contract
-/// document itself uses as illustrations (<c>lexical/entry/create</c> in "Document shape",
-/// <c>sequence/move</c> in "Ordered data"), so that strict-kind rejection is real and testable
-/// without inventing vocabulary this repository has not yet ratified. It is deliberately an open,
-/// mutable registry — not a closed enum — so later phases can register the full inventory without
-/// changing the parsing or digest machinery.
+/// The full v1 operation inventory is produced from use cases and the LibLCM model coverage manifest
+/// elsewhere, and is out of scope for the LibLCM-free contract kernel. This registry is seeded only
+/// with the two kinds the normative contract document itself uses as illustrations
+/// (<c>lexical/entry/create</c> in "Document shape", <c>sequence/move</c> in "Ordered data"), so that
+/// strict-kind rejection is real and testable without inventing vocabulary this repository has not
+/// yet ratified. It is deliberately an open, mutable registry — not a closed enum — so the full
+/// inventory can be registered later without changing the parsing or digest machinery.
 /// </remarks>
 public static class OperationKindRegistry
 {

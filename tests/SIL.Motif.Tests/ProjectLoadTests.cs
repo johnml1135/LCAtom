@@ -6,7 +6,7 @@ using Xunit;
 namespace SIL.Motif.Tests;
 
 /// <summary>
-/// Stage A proof: a real FieldWorks <c>.fwdata</c> loads headless through
+/// Stage A proof: a real <c>.fwdata</c> on disk loads headless through
 /// <see cref="FwDataProjectLoader"/>, and the loaded project exposes a non-empty lexicon via the
 /// public <see cref="ILexEntryRepository"/>.
 /// </summary>
@@ -16,19 +16,24 @@ public class ProjectLoadTests
     [Fact]
     public void OpeningRealProject_ReportsProjectNameAndPositiveEntryCount()
     {
-        // Never mutate the shared fixture: copy to a temp directory this test owns and cleans up.
         var tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests", Guid.NewGuid().ToString("N"));
         try
         {
-            var fwDataPath = TestLangProjFixture.CopyToTempAndGetFwDataPath(tempRoot);
-
             var loader = new FwDataProjectLoader();
-            using var cache = loader.LoadCache(fwDataPath);
 
-            Assert.False(string.IsNullOrWhiteSpace(cache.ProjectId.Name));
+            using (var cache = NewLangProjFixture.CreateCache(tempRoot))
+            {
+                SeededProject.Seed(cache);
+                loader.Save(cache);
+            }
 
-            var entryRepo = cache.ServiceLocator.GetInstance<ILexEntryRepository>();
-            Assert.True(entryRepo.Count > 0, "Expected the real TestLangProj fixture to contain lexical entries.");
+            // Reopen from disk: proves LoadCache itself, not just the in-process cache that wrote the file.
+            using var reopened = loader.LoadCache(NewLangProjFixture.FwDataPath(tempRoot));
+
+            Assert.False(string.IsNullOrWhiteSpace(reopened.ProjectId.Name));
+
+            var entryRepo = reopened.ServiceLocator.GetInstance<ILexEntryRepository>();
+            Assert.True(entryRepo.Count > 0, "Expected the reopened project to contain lexical entries.");
         }
         finally
         {
@@ -42,5 +47,4 @@ public class ProjectLoadTests
             }
         }
     }
-
 }

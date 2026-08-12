@@ -1,10 +1,11 @@
 using SIL.Motif.Generator.Descriptions;
+using SIL.Motif.Generator.Descriptions.Harvest;
 using SIL.Motif.Generator.Join;
 
 namespace SIL.Motif.Generator.Checks;
 
 /// <summary>
-/// ADR 0023 decision 5, as amended 2026-08-05: every emitted kind must carry a hand-written description, and
+/// ADR 0023 decision 5: every emitted kind must carry a hand-written description, and
 /// <b>the build fails if one is missing or if it merely restates the label.</b>
 /// </summary>
 /// <remarks>
@@ -26,13 +27,37 @@ namespace SIL.Motif.Generator.Checks;
 /// unreviewed prose is a documentation risk, not a data-corruption risk, and blocking emission on a linguist's
 /// availability would make the generator hostage to a review queue.
 /// </para>
+/// <para>
+/// <b>Presence and non-restatement are not enough.</b> A batch of "draft" descriptions was 8% wrong, four of
+/// those inverted, and the check that passed them could not see it because polarity is invisible to a
+/// mechanical text check. What <i>is</i> checkable is whether the description claims a source:
+/// <see cref="KindDescription.Reviewed"/> must be one of five documented values (<c>sourced</c>,
+/// <c>hand-corrected</c>, <c>adapted</c>, <c>unsourced</c>, <c>no-source-exists</c> — the manifest README),
+/// and a row claiming any of those but <c>unsourced</c> must actually carry a
+/// <see cref="KindDescription.Source"/> and <see cref="KindDescription.SourceDetail"/> citation. This does not
+/// catch a wrong paraphrase of a real citation, but it does catch the weaker and cheaper-to-produce failure of
+/// claiming provenance that was never recorded.
+/// </para>
 /// </remarks>
 public static class DescriptionCheck
 {
+    private static readonly HashSet<string> KnownReviewedValues = new(StringComparer.Ordinal)
+    {
+        "sourced", "hand-corrected", "unsourced", DescriptionAdaptations.ReviewedValue,
+        DescriptionExemptions.ReviewedValue,
+    };
+
+    /// <summary>no-source-exists cites a search; adapted cites its sibling's SourceHash to catch drift.</summary>
+    private static readonly HashSet<string> ValuesRequiringACitation = new(StringComparer.Ordinal)
+    {
+        "sourced", "hand-corrected", DescriptionAdaptations.ReviewedValue,
+        DescriptionExemptions.ReviewedValue,
+    };
+
     /// <summary>
-    /// Requires a usable description for every row in <paramref name="rowsBeingEmitted"/>, reporting every
-    /// failure at once rather than the first — someone fixing a family's descriptions wants the whole list,
-    /// not one round trip per row.
+    /// Requires a usable, provenance-honest description for every row in <paramref name="rowsBeingEmitted"/>,
+    /// reporting every failure at once rather than the first — someone fixing a family's descriptions wants
+    /// the whole list, not one round trip per row.
     /// </summary>
     public static void CheckEmittedKinds(
         IReadOnlyList<JoinedRow> rowsBeingEmitted,
@@ -62,14 +87,28 @@ public static class DescriptionCheck
                 continue;
             }
 
-            // The bar: a description must say something the name and label do not. Compared on letters and
-            // digits only, so "Is Abstract." cannot pass as a description of "IsAbstract".
+            // The bar: says what the name/label do not; "Is Abstract" cannot pass as a description of "IsAbstract".
             if (RestatesOnly(description.Description, description.Label) ||
                 RestatesOnly(description.Description, row.Manifest.Field))
             {
                 failures.Add(
                     $"{key}: description '{description.Description}' only restates the label or field name. " +
                     "Say when an agent should reach for this operation, not what it is called.");
+            }
+
+            if (!KnownReviewedValues.Contains(description.Reviewed))
+            {
+                failures.Add(
+                    $"{key}: Reviewed value '{description.Reviewed}' is not one of sourced / hand-corrected / " +
+                    "unsourced / adapted / no-source-exists (manifest/README.md).");
+            }
+            else if (ValuesRequiringACitation.Contains(description.Reviewed) &&
+                     (string.IsNullOrWhiteSpace(description.Source) || string.IsNullOrWhiteSpace(description.SourceDetail)))
+            {
+                failures.Add(
+                    $"{key}: Reviewed is '{description.Reviewed}' but Source/SourceDetail is empty. A " +
+                    "description claiming provenance must record where it came from — " +
+                    "use 'unsourced' if there is no citation yet.");
             }
         }
 

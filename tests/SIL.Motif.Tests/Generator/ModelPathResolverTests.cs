@@ -5,8 +5,7 @@ using Xunit;
 namespace SIL.Motif.Tests.Generator;
 
 /// <summary>
-/// MOT-2's fact that must keep being true: <c>MasterLCModel.xml</c> is readable from the NuGet
-/// package cache with no liblcm source checkout (docs/plan-motif.md MOT-2).
+/// <c>MasterLCModel.xml</c> is readable from the NuGet package cache with no liblcm source checkout.
 /// </summary>
 public class ModelPathResolverTests
 {
@@ -24,9 +23,7 @@ public class ModelPathResolverTests
     [Fact]
     public void Resolve_UsesExplicitPackagesRootOverride()
     {
-        // NUGET_PACKAGES is how CI (and every dotnet build on this machine) actually locates the
-        // cache; exercising the override parameter proves the same code path without mutating the
-        // real process environment other tests might read concurrently.
+        // NUGET_PACKAGES is how CI locates the cache; the override tests the same path without mutating env.
         var realRoot = Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(
             ModelPathResolver.Resolve().Path)))!; // .../sil.lcmodel/{version}/contentFiles/MasterLCModel.xml -> .../packages
         var packagesRoot = Path.GetDirectoryName(realRoot)!;
@@ -85,9 +82,7 @@ public class ModelPathResolverTests
     [Fact]
     public void ReadPinnedPackageVersion_MatchesTheCsprojProperty()
     {
-        // The version this test expects is the plan's own verified fact (docs/plan-motif.md MOT-2),
-        // and is also what SIL.Motif.Generator.csproj's SilLCModelPackageVersion property is pinned
-        // to — the same string AssemblyMetadata carries into ReadPinnedPackageVersion.
+        // Must match SIL.Motif.Generator.csproj's SilLCModelPackageVersion, the string AssemblyMetadata carries in.
         Assert.Equal("11.0.0-beta0150", ModelPathResolver.ReadPinnedPackageVersion());
     }
 }

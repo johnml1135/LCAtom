@@ -1,7 +1,6 @@
 using System.Text.Json;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Model;
-using SIL.Motif.Host.LcmUtils;
 using SIL.Motif.Runner.Apply;
 using SIL.Motif.Runner.DryRun;
 using SIL.Motif.Runner.Operations;
@@ -14,51 +13,39 @@ using Xunit;
 namespace SIL.Motif.Tests.Runner;
 
 /// <summary>
-/// MOT-4 slice 1's round-trip proof, on a real project, for the nine fields generated alongside the
+/// Round-trip proof, on a real project, for the nine fields generated alongside the
 /// regenerated <c>setGloss</c>/<c>clearGloss</c> (covered by the untouched, pre-existing
 /// <see cref="ProposalDryRunnerTests"/>/<see cref="ProposalApplierTests"/>). One representative per
-/// LibLCM sig this slice covers — MultiUnicode, MultiString, Boolean — round-trips
-/// author -&gt; DryRun -&gt; Apply -&gt; read-back, per docs/plan-motif.md MOT-4's acceptance
-/// criterion, plus the closed-payload-schema requirement (unknown properties rejected).
+/// LibLCM sig covered — MultiUnicode, MultiString, Boolean — round-trips
+/// author -&gt; DryRun -&gt; Apply -&gt; read-back, plus the closed-payload-schema requirement (unknown
+/// properties rejected).
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
 public sealed class GeneratedBasicFieldOperationsTests : IDisposable
 {
-    private readonly string _tempRoot;
-    private readonly string _fwDataPath;
-    private readonly FwDataProjectLoader _loader = new();
-    private LcmCache _cache;
+    private readonly LcmCache _cache;
+    private readonly SeededProject _seed;
 
-    public GeneratedBasicFieldOperationsTests()
+    public GeneratedBasicFieldOperationsTests(PristineProjectFixture pristine)
     {
-        _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests.Generated", Guid.NewGuid().ToString("N"));
-        _fwDataPath = TestLangProjFixture.CopyToTempAndGetFwDataPath(_tempRoot);
-        _cache = _loader.LoadCache(_fwDataPath);
+        _cache = pristine.NewScratch();
+        _seed = pristine.Seed;
     }
 
     public void Dispose()
     {
         if (!_cache.IsDisposed) _cache.Dispose();
-        try
-        {
-            Directory.Delete(_tempRoot, recursive: true);
-        }
-        catch
-        {
-            // best-effort cleanup; a locked native handle should not fail the test
-        }
     }
 
+    /// <summary>
+    /// <c>MoForm.Form</c> feeds LexEntry headword and homograph caches. That once forced a dispose/reload
+    /// between DryRun and Apply, since a rollback left those derived caches stale. The DryRun now mutates
+    /// a copy and deletes it (ADR 0016), so this field
+    /// round-trips exactly like the MultiUnicode and boolean fields above, with no ceremony needed.
+    /// </summary>
     [Fact]
     public void SetThenClear_MoFormForm_MultiUnicode_RoundTripsThroughDryRunAndApply()
     {
-        // `MoForm.Form` feeds LexEntry headword and homograph caches, which used to make this test the
-        // most contorted in the file: the old DryRun mutated the live cache and rolled back, and
-        // rollback leaves those caches stale, so each half had to dispose the cache and reload the
-        // project between DryRun and Apply. None of that is needed now — the DryRun mutates a copy and
-        // deletes it, so this field round-trips exactly like the MultiUnicode and boolean fields above
-        // (docs/adr/0016-scratch-cache-copy-not-undo.md, amended 2026-08-06). The deleted ceremony is
-        // the evidence: what was special about this field was never the field, it was the rollback.
         var formGuid = FindEntryWithLexemeForm().LexemeFormOA.Guid;
         var target = CanonicalId.FromGuid(formGuid);
         var wsTag = _cache.WritingSystemFactory.GetStrFromWs(_cache.DefaultVernWs);
@@ -75,10 +62,7 @@ public sealed class GeneratedBasicFieldOperationsTests : IDisposable
         var setEffect = Assert.Single(setReceipt.ActualEffects);
         Assert.Equal("zzMotifTestForm", setEffect.After[wsTag]);
 
-        // --- clear ---
-        // No save and no reload between the halves: ScratchDryRun.Of saves before it copies, which is
-        // the host precondition ADR 0016 names, so the clear-side DryRun's baseline sees
-        // "zzMotifTestForm" — the state Apply just produced — rather than the original on-disk content.
+        // --- clear: no save/reload between halves -- DryRun's baseline already reflects the set. ---
         var clearProposal = BuildProposal(MoFormFormOperationKinds.ClearForm, target, new { ws = wsTag });
         var clearDryRun = ScratchDryRun.Of(_cache, clearProposal);
         var clearReceipt = ProposalApplier.Apply(_cache, clearProposal, clearDryRun.Anchor, "motif-tests");
@@ -121,10 +105,7 @@ public sealed class GeneratedBasicFieldOperationsTests : IDisposable
         var entry = FindAnyEntry();
         var target = CanonicalId.FromGuid(entry.Guid);
 
-        // Known starting state, regardless of fixture data. A direct property setter still needs an
-        // open unit of work — LibLCM enforces this on every mutating call, not just through the
-        // generated Lowering classes — so this is set up the same way the pre-existing
-        // ProposalApplierTests' own drift setup mutates outside the Motif operation surface.
+        // Known starting state: LibLCM requires an open unit of work for every mutating call, direct or not.
         var actionHandler = _cache.ServiceLocator.GetInstance<IActionHandler>();
         UndoableUnitOfWorkHelper.Do("test setup", "test setup", actionHandler, () => entry.DoNotUseForParsing = false);
 
@@ -149,10 +130,7 @@ public sealed class GeneratedBasicFieldOperationsTests : IDisposable
     [Fact]
     public void ClearGloss_TheNewVerbOnThePinnedField_RoundTripsThroughDryRunAndApply()
     {
-        // The new verb this slice adds to the pre-existing hand-written kind: setGloss's own tests
-        // (ProposalDryRunnerTests/ProposalApplierTests) stay untouched, so clearGloss is proven here
-        // instead, against the same real fixture and the same LexicalSenseOperationKinds this
-        // regenerates.
+        // clearGloss is new here; setGloss's own tests (ProposalDryRunnerTests/ProposalApplierTests) stand.
         var (sense, wsHandle, wsTag, originalGloss) = FindSenseWithKnownGloss();
         var target = CanonicalId.FromGuid(sense.Guid);
 
@@ -167,6 +145,49 @@ public sealed class GeneratedBasicFieldOperationsTests : IDisposable
         Assert.False(effect.After.ContainsKey(wsTag));
     }
 
+    // No Dry Run rolls back any more, so no field needs a hand-maintained "feeds a derived cache" list.
+
+    private ILexEntry FindAnyEntry() =>
+        _cache.ServiceLocator.GetInstance<ILexEntryRepository>().GetObject(_seed.FirstEntryId);
+
+    private ILexEntry FindEntryWithLexemeForm() =>
+        _cache.ServiceLocator.GetInstance<ILexEntryRepository>().GetObject(_seed.FirstEntryId);
+
+    private (ILexSense Sense, int WsHandle, string WsTag, string Gloss) FindSenseWithKnownGloss()
+    {
+        var sense = _cache.ServiceLocator.GetInstance<ILexSenseRepository>().GetObject(_seed.FirstSenseId);
+        var wsHandle = _cache.DefaultAnalWs;
+        var wsTag = _cache.WritingSystemFactory.GetStrFromWs(wsHandle);
+        return (sense, wsHandle, wsTag, SeededProject.FirstGloss);
+    }
+
+    private static Proposal BuildProposal(string kind, CanonicalId target, object after)
+    {
+        var afterJson = JsonSerializer.Serialize(after);
+        using var afterDocument = JsonDocument.Parse(afterJson);
+
+        var group = kind.Substring(0, kind.IndexOf('/'));
+        var operation = new OperationEnvelope(
+            operationId: CanonicalId.Mint(),
+            kind: kind,
+            target: target,
+            after: afterDocument.RootElement.Clone());
+
+        return new Proposal(
+            contractVersions: new Dictionary<string, string> { [group] = "1.0" },
+            proposalId: CanonicalId.Mint(),
+            requires: null,
+            operations: new[] { operation });
+    }
+}
+
+/// <summary>
+/// Closed-schema rejection tests for the citationForm and doNotUseForParsing payloads. Pure JSON
+/// parsing — no <c>LcmCache</c> involved, so unlike <see cref="GeneratedBasicFieldOperationsTests"/>
+/// this class needs no <see cref="PristineProjectFixture"/>.
+/// </summary>
+public sealed class GeneratedBasicFieldOperationsSchemaTests
+{
     [Fact]
     public void SetCitationForm_UnknownPayloadProperty_IsRejectedByTheClosedSchema()
     {
@@ -180,9 +201,7 @@ public sealed class GeneratedBasicFieldOperationsTests : IDisposable
     [Fact]
     public void ClearCitationForm_TextPropertyIsUnknown_IsRejectedByTheClosedSchema()
     {
-        // clear's payload is { "ws": ... } only — "text" (legal for set) is not an allowed property
-        // of clear, proving the two payload shapes are independently closed, not just "closed
-        // against a shared allow-list."
+        // "text" is legal for set but not clear: the two payload shapes are independently closed.
         var afterJson = JsonSerializer.Serialize(new { ws = "en", text = "should not be here" });
         using var afterDocument = JsonDocument.Parse(afterJson);
 
@@ -208,59 +227,5 @@ public sealed class GeneratedBasicFieldOperationsTests : IDisposable
 
         Assert.Throws<SIL.Motif.Contract.Parsing.ContractParseException>(
             () => LexEntryDoNotUseForParsingClearPayload.Parse(afterDocument.RootElement));
-    }
-
-    // A test named DerivedCachePoisoningGuard_FlagsTheTwoRealAssessPoisonsCacheFields stood here. It
-    // asserted that a hand-maintained list knew LexEntry.CitationForm and MoForm.Form feed derived
-    // caches — knowledge that cost a read of liblcm's OverridesLing_Lex.cs to establish and would have
-    // had to be re-established for every field added to the catalog, forever. Deleted with the list
-    // itself: no Dry Run rolls back any more, so nothing needs to know which fields would have
-    // suffered if one did (docs/adr/0016-scratch-cache-copy-not-undo.md, amended 2026-08-06).
-
-    private ILexEntry FindAnyEntry() =>
-        _cache.ServiceLocator.GetInstance<ILexEntryRepository>().AllInstances().First();
-
-    private ILexEntry FindEntryWithLexemeForm() =>
-        _cache.ServiceLocator.GetInstance<ILexEntryRepository>().AllInstances()
-            .First(e => e.LexemeFormOA is not null);
-
-    private (ILexSense Sense, int WsHandle, string WsTag, string Gloss) FindSenseWithKnownGloss()
-    {
-        var senseRepo = _cache.ServiceLocator.GetInstance<ILexSenseRepository>();
-
-        foreach (var sense in senseRepo.AllInstances())
-        {
-            foreach (var wsHandle in sense.Gloss.AvailableWritingSystemIds)
-            {
-                var text = sense.Gloss.get_String(wsHandle).Text;
-                if (!string.IsNullOrEmpty(text))
-                {
-                    var wsTag = _cache.WritingSystemFactory.GetStrFromWs(wsHandle);
-                    return (sense, wsHandle, wsTag, text);
-                }
-            }
-        }
-
-        throw new InvalidOperationException(
-            "Expected the real TestLangProj fixture to contain at least one LexSense with a non-empty gloss.");
-    }
-
-    private static Proposal BuildProposal(string kind, CanonicalId target, object after)
-    {
-        var afterJson = JsonSerializer.Serialize(after);
-        using var afterDocument = JsonDocument.Parse(afterJson);
-
-        var group = kind.Substring(0, kind.IndexOf('/'));
-        var operation = new OperationEnvelope(
-            operationId: CanonicalId.Mint(),
-            kind: kind,
-            target: target,
-            after: afterDocument.RootElement.Clone());
-
-        return new Proposal(
-            contractVersions: new Dictionary<string, string> { [group] = "1.0" },
-            proposalId: CanonicalId.Mint(),
-            requires: null,
-            operations: new[] { operation });
     }
 }

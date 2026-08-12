@@ -9,8 +9,7 @@ namespace SIL.Motif.Runner.Snapshotting;
 /// Reads a single-valued reference accessor's current occupant (or absence of one) into the
 /// <see cref="ReferenceFieldAlternatives"/> map shape — the reference-field analogue of
 /// <see cref="MultiAlternativesFieldSnapshotting"/>, shared by every generated <c>rel/atomic</c> field's
-/// snapshot read-back and by the hand-written <c>LexEntry.LexemeForm</c> owning/atomic slot (MOT-4
-/// slice 2).
+/// snapshot read-back and by the hand-written <c>LexEntry.LexemeForm</c> owning/atomic slot.
 /// </summary>
 internal static class ReferenceFieldSnapshotting
 {

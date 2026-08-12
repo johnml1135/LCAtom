@@ -2,17 +2,16 @@ namespace SIL.Motif.Model.Snapshot;
 
 /// <summary>
 /// Canonical field-name constants used as keys into <see cref="ObjectSnapshot.AlternativesFields"/>
-/// and as the <c>field</c> value of an expected effect. These are exactly the "field" strings shown
-/// in docs/change-set-contract.md, "Expected effects" (e.g. <c>"lexical/sense/gloss"</c>), so a
+/// and as the <c>field</c> value of an expected effect. These are exactly the "field" strings the
+/// Change Set contract's "Expected effects" section shows (e.g. <c>"lexical/sense/gloss"</c>), so a
 /// snapshot field and an effect's field always agree textually.
 /// </summary>
 /// <remarks>
 /// Stage C populated exactly one: the <see cref="LexSenseGloss"/> field behind the in-scope
-/// <c>lexical/lexSense/setGloss</c> operation. <c>partial</c> because MOT-4 adds the remaining
-/// in-scope basic <c>set|clear</c> fields in a generated sibling file
-/// (<c>SnapshotFields.Generated.g.cs</c>, emitted by <c>SIL.Motif.Generator</c> — see
-/// docs/plan-motif.md MOT-4) rather than by hand-editing this one; the snapshot/effect shapes below
-/// do not need to change to accommodate them.
+/// <c>lexical/lexSense/setGloss</c> operation. <c>partial</c> because the remaining
+/// in-scope basic <c>set|clear</c> fields are added in a generated sibling file
+/// (<c>SnapshotFields.Generated.g.cs</c>, emitted by <c>SIL.Motif.Generator</c>) rather than by
+/// hand-editing this one; the snapshot/effect shapes below do not need to change to accommodate them.
 /// </remarks>
 public static partial class SnapshotFields
 {

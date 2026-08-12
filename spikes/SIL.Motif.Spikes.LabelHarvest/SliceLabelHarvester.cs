@@ -3,9 +3,8 @@ using System.Xml.Linq;
 namespace SIL.Motif.Spikes.LabelHarvest;
 
 /// <summary>
-/// Harvests mechanism 2: the <c>.fwlayout</c> / <c>Parts/*.xml</c> slice system. See
-/// <c>docs/research/2026-08-05-fieldworks-user-facing-names.md</c> §1.2 — this is the closest thing in
-/// FieldWorks to a canonical <c>(class, field) -&gt; label [+ tooltip]</c> registry, keyed by which
+/// Harvests mechanism 2: the <c>.fwlayout</c> / <c>Parts/*.xml</c> slice system. This is the closest thing
+/// in FieldWorks to a canonical <c>(class, field) -&gt; label [+ tooltip]</c> registry, keyed by which
 /// <c>&lt;layout class="…"&gt;</c> (in <c>.fwlayout</c> files) or <c>&lt;bin class="…"&gt;</c> (in
 /// <c>Parts/*.xml</c> files) a labeled <c>&lt;part&gt;</c>/<c>&lt;slice&gt;</c> is nested under — never the
 /// bare <c>ref</c>/<c>field</c> string alone, which is reused across unrelated classes (e.g. <c>Gloss</c> on
@@ -75,9 +74,7 @@ public static class SliceLabelHarvester
             var cls = (string?)bin.Attribute("class");
             if (string.IsNullOrEmpty(cls)) continue;
 
-            // One real FieldWorks data-quality bug found while building this harvester:
-            // CellarParts.xml has <bin class="CmSemanticDomain>"> — a stray '>' baked into the attribute
-            // value. Strip it so the row still matches the real class instead of silently missing coverage.
+            // CellarParts.xml bakes a stray '>' into one class attribute; strip it rather than miss coverage.
             cls = cls.TrimEnd('>');
 
             foreach (var slice in bin.Descendants("slice"))

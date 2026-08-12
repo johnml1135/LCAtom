@@ -13,6 +13,7 @@ namespace SIL.Motif.Tests.Parser;
 /// together against the real Sena 3 project.
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
+[Trait("Fixture", "FieldWorks")]
 public sealed class GrammarCoverageFigureIntegrationTests
 {
     [RealParserFact]
@@ -20,10 +21,9 @@ public sealed class GrammarCoverageFigureIntegrationTests
     {
         var projectPath = RealProject.Sena3Path()!;
 
-        // A small cap: this test's purpose is to prove the wiring, not to time a full 6,973-word corpus
-        // (that cost is already measured in docs/research/2026-08-06-parser-timing-measured.md).
+        // Small cap: proves wiring only; full-corpus timing is in docs/research/2026-08-06-parser-timing-measured.md.
         CorpusDescriptor corpus;
-        using (var cache = new FwDataProjectLoader().LoadCache(projectPath))
+        using (var cache = new FwDataProjectLoader().LoadScratchCache(projectPath))
         {
             corpus = LcmWordformCorpus.Extract(cache, "Sena 3 (smoke sample)", limit: 8);
         }
@@ -49,8 +49,7 @@ public sealed class GrammarCoverageFigureIntegrationTests
         Assert.Equal(ParserEngine.FstPrunedByHermitCrab, figure.Engine);
         Assert.Equal(5000, figure.PerWordTimeoutMs);
 
-        // The denominator can never exceed the corpus size, and every word is accounted for one way or
-        // another (analysed, no-analysis, timed out, or skipped).
+        // The denominator can never exceed corpus size; every word is analysed, no-analysis, timed out, or skipped.
         var batch = batchResult.Analysis!;
         Assert.Equal(corpus.Words.Count, batch.Analysed + batch.NoAnalysis + batch.TimedOut + batch.Skipped);
         Assert.True(figure.Adjudicated <= corpus.Words.Count);

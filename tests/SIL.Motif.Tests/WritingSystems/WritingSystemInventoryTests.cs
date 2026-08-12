@@ -26,6 +26,7 @@ namespace SIL.Motif.Tests.WritingSystems;
 /// </para>
 /// </remarks>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
+[Trait("Fixture", "FieldWorks")]
 public sealed class WritingSystemInventoryTests : IDisposable
 {
     private readonly string _tempRoot;
@@ -35,7 +36,7 @@ public sealed class WritingSystemInventoryTests : IDisposable
     {
         _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests.Ws", Guid.NewGuid().ToString("N"));
         var fwDataPath = TestLangProjFixture.CopyToTempAndGetFwDataPath(_tempRoot);
-        _cache = new FwDataProjectLoader().LoadCache(fwDataPath);
+        _cache = new FwDataProjectLoader().LoadScratchCache(fwDataPath);
     }
 
     [Fact]
@@ -50,8 +51,7 @@ public sealed class WritingSystemInventoryTests : IDisposable
         Assert.Single(inventory.Vernacular.Where(ws => ws.IsDefaultVernacular));
         Assert.True(inventory.Vernacular[0].IsDefaultVernacular);
 
-        // And it agrees with what the parser would actually use, asked of LibLCM directly rather than
-        // re-derived from the same list this type built.
+        // Agrees with what the parser actually uses, asked of LibLCM directly, not re-derived from this list.
         var cacheDefault = _cache.ServiceLocator.WritingSystems.DefaultVernacularWritingSystem;
         Assert.Equal(cacheDefault.Id, inventory.DefaultVernacular!.Id);
     }
@@ -65,8 +65,7 @@ public sealed class WritingSystemInventoryTests : IDisposable
         Assert.Equal(first.Digest, second.Digest);
         Assert.StartsWith("sha256:", first.Digest);
 
-        // Reordering must move the digest. Computed over the same ids in a different order rather than by
-        // mutating the project, because this asserts a property of the digest, not of LibLCM.
+        // Reordering must move the digest — reorders the ids here, not the project, to test the digest itself.
         var reversed = first.Vernacular.Reverse().ToList();
         if (reversed.Count > 1)
         {
@@ -83,16 +82,14 @@ public sealed class WritingSystemInventoryTests : IDisposable
         // They are worth showing a reader: glosses live in them.
         Assert.NotEmpty(inventory.Analysis);
 
-        // But HCLoader reads them for naming only, so they cannot change what the parser matches — and a
-        // digest that moved when a gloss language was added would invalidate Assessments for no reason.
+        // HCLoader reads these for naming only; a digest that moved when a gloss language changed would be spurious.
         Assert.Equal(DigestOf(inventory.Vernacular.Select(ws => ws.Id)), inventory.Digest);
     }
 
     [Fact]
     public void TheInventoryOffersNoWayToChangeAnything_AndSaysWhereToGoInstead()
     {
-        // Enforced by reflection rather than by convention: the moment someone adds a setter or a mutating
-        // method here, Motif has quietly taken over project-wide configuration to solve a reporting problem.
+        // Enforced by reflection, not convention: a mutating method here means Motif quietly owns FieldWorks config.
         var mutators = typeof(WritingSystemInventory).GetMethods()
             .Where(m => m.Name.StartsWith("Set", StringComparison.Ordinal)
                         || m.Name.StartsWith("Add", StringComparison.Ordinal)

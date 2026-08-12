@@ -5,10 +5,10 @@ using SIL.Motif.Generator.Model;
 namespace SIL.Motif.Generator.Join;
 
 /// <summary>
-/// MOT-2's core: join <c>MasterLCModel.xml</c>'s fields to the manifest's rows on
-/// <c>(Class, Field)</c>, and fail closed — naming every offending key — on any key present on one
-/// side and absent from the other, or duplicated on either side. Today the two sides balance exactly
-/// (898 = 898, docs/plan-motif.md MOT-2); this class is what keeps that true as LibLCM and the
+/// Joins <c>MasterLCModel.xml</c>'s fields to the manifest's rows on
+/// <c>(Class, Field)</c>, and fails closed — naming every offending key — on any key present on one
+/// side and absent from the other, or duplicated on either side. The two sides balance exactly
+/// (898 = 898); this class is what keeps that true as LibLCM and the
 /// manifest evolve independently, rather than something checked once by hand.
 /// </summary>
 public static class ModelManifestJoiner
@@ -37,7 +37,7 @@ public static class ModelManifestJoiner
         if (modelOnly.Count > 0 || manifestOnly.Count > 0)
         {
             var message = new StringBuilder(
-                "The (Class, Field) join failed — MasterLCModel.xml and the manifest disagree on the key set (docs/plan-motif.md, MOT-2).");
+                "The (Class, Field) join failed — MasterLCModel.xml and the manifest disagree on the key set.");
             if (modelOnly.Count > 0)
                 message.Append($" In the model but not the manifest: {string.Join(", ", modelOnly)}.");
             if (manifestOnly.Count > 0)

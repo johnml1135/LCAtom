@@ -2,7 +2,7 @@
 
 ## Companion files
 
-Two files sit alongside `liblcm-inventory.tsv`, in the same dialect (tab-separated, double-quoted, CRLF).
+Five files sit alongside `liblcm-inventory.tsv`, in the same dialect (tab-separated, double-quoted, CRLF).
 
 **`fieldworks-labels.tsv` — harvested, not authored.** What FieldWorks already shows a linguist for a given
 `(class, field)`, scraped from `strings-en.xml`, the `.fwlayout` slice system and the Lists tool config by
@@ -11,11 +11,76 @@ labels in different layouts — `MoInflAffixSlot.Name` is "Name" in one and "Slo
 one silently would bake a view-specific label into a contract. 768 rows covering 193 of 494 in-scope fields
 (39.1%); 212 rows flagged `ambiguous`. **These are labels, not descriptions: only 20 rows carry any prose.**
 
-**`kind-descriptions.tsv` — hand-written.** One sentence per authorable field saying *when an agent should
-reach for this operation*, which is the job a two-word label cannot do. Required by
+**`kind-descriptions.tsv` — copied from a source, not written.** One sentence per authorable field saying
+*when an agent should reach for this operation*, which is the job a two-word label cannot do. Required by
 [ADR 0023](../docs/adr/0023-derived-kind-names-required-descriptions.md) decision 5 as amended: the build
-fails if a description is missing **or if it merely restates the label**. Written per family as it ships —
-currently the 14 fields of `MOT-4`'s lexical-entry family, all marked `draft` pending a linguist's review.
+fails if a description is missing **or if it merely restates the label**. Written per family as it ships;
+93 rows today.
+
+The `Reviewed` column records provenance, and [issue D8](../docs/issues.md) is why it is not optional — the
+first large batch of freely-paraphrased descriptions was 8% wrong, four of them saying the exact opposite of
+what the model means, and a backwards sentence reads just as fluently as a correct one. Five values:
+
+| `Reviewed` | Meaning | `Source`/`SourceDetail` |
+| --- | --- | --- |
+| `sourced` | copied from a cited upstream sentence, not yet reviewed by a linguist | required |
+| `hand-corrected` | corrected by a human against a cited source after an automated error; regeneration preserves the text verbatim | required |
+| `adapted` | derived from a **sibling field's** cited source by a checked-in substitution rule, for a field the model documents only once per family | required; cites the sibling, the substitution, and the licence for adapting |
+| `unsourced` | no upstream source found yet; the text is an unverified claim | must be empty |
+| `no-source-exists` | searched for exhaustively and found nowhere | `none (searched)`, with the search itself in `SourceDetail` |
+
+`SourceHash` is a `sha256:` digest of **the cited fragment** — the upstream sentence itself, not the whole
+file and not our copy of it. For a `sourced` row the two texts are the same, so the digest is merely
+convenient. It earns its place on the rows whose text deliberately differs from their source: comparing our
+prose against upstream cannot detect that upstream moved when our prose is *supposed* to differ, and
+`hand-corrected` and `adapted` rows are exactly that case. An `adapted` row stores its **sibling's** digest,
+so the two rows cannot drift apart unnoticed.
+
+Hashing the fragment rather than the file is deliberate. `MasterLCModel.xml` backs 66 of these rows, so a
+file-level digest there would flag all 66 for a change to any one of them, and a check that cries wolf 66
+times is a check nobody reads.
+
+`refresh-descriptions` (below) is what writes this file; it never invents prose, so a row it cannot source
+keeps whatever text it already had.
+
+**`fieldworks-help-descriptions.tsv` — harvested, Windows-only, checked in for exactly that reason.** The
+`Description:` row of the FieldWorks help page for each of nine fields, pulled out of
+`DistFiles/Helps/FieldWorks_Language_Explorer_Help.chm` — the only place several of these sentences exist.
+Opening a `.chm` needs `hh.exe`, which is Windows-only, so the extraction is a dev-time step whose output is
+committed: **nothing in the build, the tests, or the runtime ever touches the help file.** Re-harvest with
+`dotnet run --project src/SIL.Motif.Generator -- harvest-help` (add a path to an already-extracted help tree
+to skip the Windows-only step), then `refresh-descriptions`, then commit both files.
+
+**`ordering-evidence.tsv` — what the model says about order, for every row that claims order matters.**
+One row per in-scope field whose `ComparisonClass` is not `unordered` (64 today), carrying the sentences of
+its `MasterLCModel.xml` comment that speak to ordering, the citation, which ordering words the selection
+matched, and a `sha256:` digest of the quote. **Evidence, not authority** — `ComparisonClass` stays derived
+from `Card` ([ADR 0022](../docs/adr/0022-structure-is-derived-policy-is-five-rows.md) decision 2), and
+nothing reads this file at build time. It answers the question the derivation cannot ask about itself:
+*is the rule right for this row?* 32 of the 64 have an explicit statement; 32 rest on `card=seq` alone and
+are named in [the census](../docs/research/2026-08-11-ordering-claims-census.md). Re-harvest with
+`dotnet run --project src/SIL.Motif.Generator -- harvest-ordering-evidence` (model only — no FieldWorks
+checkout needed).
+
+**`source-pins.tsv` — the three files the descriptions are copied out of, pinned by content.** One row per
+file: `MasterLCModel.xml`, `ContextHelp.xml`, and the compiled help file, each with a `sha256:` digest of
+its bytes, plus the release it came from (liblcm by pinned package version, FieldWorks by
+`git describe --tags --long` — both repos sit some commits past a tag, so the long form is deliberate).
+
+`refresh-descriptions` **fails** rather than re-harvesting when one of those files has changed, naming the
+file and both digests; re-run with `--accept-source-move` to upgrade deliberately, which re-pins and prints
+every description whose upstream fragment drifted. That report is the point: a reworded upstream sentence
+still reads fluently, so nothing downstream would otherwise notice that the sentence a reviewer signed off
+on has been replaced.
+
+**The check is on content, not on commits** — and that is a correction, not a preference. The first version
+pinned each repository at a commit and refused to run within the hour, because the FieldWorks checkout had
+advanced by one commit adding three unrelated test files. A pin that fires on every commit to a large
+repository trains its reader to click through it. A project that moves without changing any of these three
+files is now reported and re-pinned, not treated as a reason to stop.
+
+The `.chm` is pinned even though `refresh-descriptions` never opens it: the checked-in help harvest is
+derived from it, so a changed digest there is the only thing that can say "re-run `harvest-help`".
 
 ## `liblcm-inventory.tsv` — the raw inventory (generated, checked in)
 

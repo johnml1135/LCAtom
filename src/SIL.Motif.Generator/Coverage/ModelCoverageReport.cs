@@ -4,9 +4,8 @@ using SIL.Motif.Generator.ModelSource;
 namespace SIL.Motif.Generator.Coverage;
 
 /// <summary>
-/// MOT-3's acceptance: "the generator loads all 898 joined rows, reports its own model coverage, and runs
-/// in CI without a liblcm source tree." This is that report — a plain data record plus a printable
-/// form, not a side effect, so a test can assert on the numbers directly instead of scraping text.
+/// The generator's model coverage report: a plain data record plus a printable form, not a side
+/// effect, so a test can assert on the numbers directly instead of scraping text.
 /// </summary>
 public sealed record ModelCoverageReport(
     string ModelFilePath,

@@ -9,8 +9,8 @@ namespace SIL.Motif.Host.Parser;
 /// PanGloss has three modes. <b>HC only</b> interprets the rules directly: slow and correct. <b>FST only</b>
 /// is fast and can say whether a word is valid, but it <b>over-generates</b> — it may report that something
 /// which is not a word is a word. <b>FST pruned with HC</b> has the FST propose candidates and HermitCrab
-/// confirm them, which prunes the over-generation; it is designed to agree with HC only, and measured to
-/// (<c>docs/research/2026-08-06-parser-timing-measured.md</c>).
+/// confirm them, which prunes the over-generation; it is designed to agree with HC only, and measured to:
+/// comparing outcome digests over the same corpus reported all cases unchanged between the two modes.
 /// </para>
 /// <para>
 /// <b>Motif asks whether the grammar rules are being applied properly, so an over-generating answer cannot
@@ -30,9 +30,9 @@ public enum ParserEngine
     FstPrunedByHermitCrab,
 
     /// <summary>
-    /// HermitCrab alone. **The fallback**, for the cases the owner named: a grammar that will not compile into
-    /// an FST at all (observed on a real project — the grammar overflowed the FST engine's enumeration
-    /// budget), and anything else odd enough that the FST path refuses.
+    /// HermitCrab alone. **The fallback** for a grammar that will not compile into an FST at all (observed
+    /// on a real project — the grammar overflowed the FST engine's enumeration budget), and anything else
+    /// odd enough that the FST path cannot handle it.
     /// </summary>
     HermitCrabOnly,
 }

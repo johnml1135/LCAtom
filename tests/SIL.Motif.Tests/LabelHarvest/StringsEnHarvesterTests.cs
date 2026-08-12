@@ -4,9 +4,13 @@ using Xunit;
 namespace SIL.Motif.Tests.LabelHarvest;
 
 /// <summary>
-/// Covers mechanism 1 (docs/research/2026-08-05-fieldworks-user-facing-names.md §1.1): the three
-/// class/list-level groups <c>strings-en.xml</c> carries, and the two lookups the parser needs from other
-/// sources to place each group's rows correctly.
+/// Covers FieldWorks' <c>strings-en.xml</c>, which carries class names and list-purpose names but no
+/// per-field text, in its three groups: <c>ClassNames</c> (a class id maps directly to one English
+/// string), <c>PossibilityListItemTypeNames</c> (keyed by a <c>CmPossibilityList</c>'s owning-field name
+/// rather than by class, so a caller must resolve the owning field to its real class before the row
+/// means anything), and <c>AlternativeTitles</c> (plurals and view-specific titles, prefixed with a
+/// class id that must be checked against known classes before being trusted, since some prefixes —
+/// <c>Concordance</c>, <c>PubSettings</c> — are not classes at all).
 /// </summary>
 public class StringsEnHarvesterTests
 {
@@ -60,8 +64,7 @@ public class StringsEnHarvesterTests
     [Fact]
     public void PossibilityListItemTypeNames_drops_keys_with_no_resolvable_class_rather_than_guessing()
     {
-        // ProdRestrict has no entry in ownerFieldToClass here (mirrors the real areaConfiguration.xml, where
-        // it is genuinely absent) — the harvester must not default it to CmPossibility.
+        // ProdRestrict is genuinely absent from areaConfiguration.xml; must not default to CmPossibility.
         using var file = new TestFile("strings-en.xml", Fixture);
         var ownerFieldToClass = new Dictionary<string, string> { ["ConfidenceLevels"] = "CmPossibility" };
 

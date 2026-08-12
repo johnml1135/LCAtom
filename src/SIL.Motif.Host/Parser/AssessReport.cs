@@ -21,7 +21,7 @@ public sealed record AssessedWord(string Word, string Outcome, IReadOnlyList<Par
 /// </summary>
 /// <param name="GrammarSourceSha256">
 /// The parser's hash of the grammar source it read. This is the "grammar identity" half of
-/// <c>docs/adr/0032-stem-assessment-is-pangloss-supplied-lexicon.md</c> §4's provenance requirement, and it
+/// ADR 0032 §4's provenance requirement, and it
 /// comes free — no need for Motif to hash anything itself.
 /// </param>
 /// <param name="DiagnosticCount">
@@ -45,13 +45,12 @@ public sealed record AssessReport(
 /// <b>The report interns its keys.</b> Each analysis identity carries integer indices, and a flat
 /// <c>keyTable</c> holds the strings. For a report produced from a <c>.fwdata</c> project those strings are
 /// <b>FieldWorks GUIDs</b> — which is the entire reason Motif reads projects rather than HermitCrab XML, whose
-/// keys are synthetic and cannot be tied back to the entry or rule a Proposal edited
-/// (<c>docs/research/2026-08-07-parser-seam-goes-through-the-project-file.md</c>).
+/// keys are synthetic and cannot be tied back to the entry or rule a Proposal edited.
 /// </para>
 /// <para>
 /// An index outside the table throws rather than yielding a placeholder. A silently-dropped morpheme would
 /// make an analysis look shorter than it is, and morph count is one of the things
-/// <c>docs/adr/0027-what-counts-as-the-same-word-analysis.md</c> gates equality on — so a placeholder here
+/// ADR 0027 gates equality on — so a placeholder here
 /// could make two different analyses compare equal.
 /// </para>
 /// </remarks>

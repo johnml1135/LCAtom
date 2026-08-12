@@ -12,7 +12,7 @@ namespace SIL.Motif.Model.Snapshot;
 /// </summary>
 /// <remarks>
 /// <para>
-/// MOT-4 slice 2's <c>rel/col</c>/<c>rel/seq</c> <c>addRef</c>/<c>removeRef</c> fields
+/// The <c>rel/col</c>/<c>rel/seq</c> <c>addRef</c>/<c>removeRef</c> fields
 /// (<c>LexEntry.DialectLabels</c>, <c>.DoNotPublishIn</c>, <c>.DoNotShowMainEntryIn</c>) need "the set
 /// of members this field currently holds," which has no natural single string value the way a scalar
 /// or single reference does. A map keyed by each member's own <see cref="CanonicalId"/> — with the id

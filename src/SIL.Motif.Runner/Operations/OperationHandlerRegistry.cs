@@ -28,8 +28,7 @@ public static class OperationHandlerRegistry
         if (handler is null)
             throw new ArgumentNullException(nameof(handler));
 
-        // Dictionary<TKey,TValue>.TryAdd is netstandard2.1+; the Runner multi-targets
-        // netstandard2.0 for net48 FieldWorks (ADR 0020), so this checks-then-sets instead.
+        // Dictionary.TryAdd is netstandard2.1+; this multi-targets netstandard2.0 for net48 (ADR 0020).
         if (Handlers.ContainsKey(kind))
         {
             throw new InvalidOperationException(
@@ -44,7 +43,7 @@ public static class OperationHandlerRegistry
     /// Looks up the handler for <paramref name="kind"/>, or throws <see cref="NotSupportedException"/>
     /// naming <paramref name="context"/> — the exact wording each of the three former switch
     /// statements used (e.g. <c>"Stage C dryRun does not support operation kind '...'."</c>), so
-    /// callers keep their pre-MOT-4 error messages verbatim.
+    /// callers keep their error messages verbatim.
     /// </summary>
     public static IOperationHandler Resolve(string kind, string context)
     {

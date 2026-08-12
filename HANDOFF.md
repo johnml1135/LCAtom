@@ -74,9 +74,15 @@ and `operation-catalog-plan.md`:
   change-set-JSON path, and scratch-copy export weakens the daemon's exclusive-write case while
   strengthening its cache-reuse case (measured: 3.6s warm cache load on a 61-entry project, against
   0.05s to copy the project).
-- **Manifest classification confidence** — roughly 300 of 473 in-scope rows were classified by
-  heuristic rather than citation; verify-lazily vs dedicated-audit is undecided (issues B17, B18).
-  This matters more than it did, because generation now reads those classifications directly.
+- ~~**Manifest classification confidence**~~ — **closed; this bullet was stale.** B17 was corrected
+  2026-08-03 (the guidance it said did not exist is at `MasterLCModel.xml:3578-3584`) and B18 was
+  largely retired 2026-08-05 by [ADR 0022](docs/adr/0022-structure-is-derived-policy-is-five-rows.md),
+  which made `Verbs` and `ComparisonClass` derived so a missing citation on a computed value stopped
+  being a risk. What actually survives is narrower and is now measured rather than estimated: **64
+  in-scope rows claim order carries meaning, and 32 of them rest on `card=seq` alone** — see
+  `manifest/ordering-evidence.tsv` and
+  [the census](docs/research/2026-08-11-ordering-claims-census.md). Those 32 are a bounded review,
+  not an audit.
 
 Four new issues fall out of the settled decisions and block the generator or L0: **B19** (construct
 naming is not mechanical), **B20** (17 multi-construct rows), **B21** (L0's object-creation closure is

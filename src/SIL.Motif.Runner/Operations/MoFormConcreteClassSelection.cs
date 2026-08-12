@@ -7,18 +7,18 @@ namespace SIL.Motif.Runner.Operations;
 /// <summary>
 /// The hand-written validity logic <c>LexEntry.LexemeForm</c>'s <c>create</c> kind needs because
 /// <c>MoForm</c> is <c>abstract="true"</c> — no such object can exist, so a <c>create</c> must name a
-/// concrete subclass instead (ADR 0023 decision 2; docs/plan-motif.md, MOT-4's "not emitted, because
-/// the manifest cannot know it" list explicitly calls out "enum members [that] live outside
-/// MasterLCModel.xml"). Which concrete class a lexeme form should be is exactly this kind of fact: the
+/// concrete subclass instead (ADR 0023 decision 2). The manifest cannot derive this mapping from
+/// <c>MasterLCModel.xml</c> alone, since the standard morph types are seeded data, not a model
+/// declaration it names. Which concrete class a lexeme form should be is exactly this kind of fact: the
 /// nineteen standard FieldWorks morph types (root, stem, prefix, suffix, ...) are seeded data with
 /// well-known GUIDs (<see cref="MoMorphTypeTags"/>), not a model declaration, so the mapping below is
 /// maintained by hand and closed deliberately — an unrecognized morph type fails loudly rather than
 /// guessing.
 /// </summary>
 /// <remarks>
-/// Scoped to the two concrete classes docs/plan-motif.md's MOT-4 section names for this field —
+/// Scoped to the two concrete classes this field can hold —
 /// <c>MoStemAllomorph</c> "or an affix form" — and deliberately excludes <c>MoAffixProcess</c>: per
-/// docs/api-surface-layer1.md's collapse criterion, that class is a *rule* (an <c>Input</c> pattern
+/// the layer-1 API surface's collapse criterion, that class is a *rule* (an <c>Input</c> pattern
 /// plus an <c>Output</c> action list), not a form with different fields, so it is a different
 /// construct entirely and out of scope for "create the entry's lexeme form."
 /// </remarks>
@@ -30,13 +30,7 @@ internal enum MoFormConcreteClass
 
 internal static class MoFormConcreteClassSelection
 {
-    /// <summary>
-    /// Root/stem-shaped morph types (including clitics and phrases, which LibLCM also represents as
-    /// <c>MoStemAllomorph</c>) versus affix-shaped ones (prefixes, suffixes, infixes, and the
-    /// non-contiguous affix shapes) — the same split docs/api-surface-layer1.md's "one <c>allomorph</c>,
-    /// the concrete is fully determined by the chosen morph type" describes, made concrete here as the
-    /// only two classes this <c>create</c> kind can produce.
-    /// </summary>
+    /// <summary>Root/stem-shaped morph types vs affix-shaped ones; the two classes create can produce.</summary>
     private static readonly IReadOnlyDictionary<Guid, MoFormConcreteClass> ByMorphTypeGuid =
         new Dictionary<Guid, MoFormConcreteClass>
         {
@@ -70,9 +64,9 @@ internal static class MoFormConcreteClassSelection
         throw new InvalidOperationException(
             $"'{kind}' operation: morph type '{morphType.Guid}' is not one of the standard FieldWorks " +
             "morph types Motif knows how to realize as a concrete allomorph (MoStemAllomorph or " +
-            "MoAffixAllomorph). This mapping lives outside MasterLCModel.xml and is hand-maintained " +
-            "(docs/plan-motif.md, MOT-4); add it to MoFormConcreteClassSelection before this morph " +
-            "type can be used to create a lexeme form.");
+            "MoAffixAllomorph). This mapping lives outside MasterLCModel.xml and is hand-maintained: add " +
+            $"the morph type to {nameof(MoFormConcreteClassSelection)} before it can be used to create a " +
+            "lexeme form.");
     }
 
     /// <summary>Constructs a new, empty <paramref name="concreteClass"/> instance with the given

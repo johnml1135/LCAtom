@@ -5,7 +5,7 @@ namespace SIL.Motif.Contract.Model;
 /// <summary>
 /// Helpers over an operation's <c>kind</c> string. The contract group is the leading segment of
 /// <c>kind</c> up to (not including) the first <c>/</c>; it is what <c>contractVersions</c> keys
-/// name. See docs/change-set-contract.md, "Document shape".
+/// name (the Change Set contract's "Document shape").
 /// </summary>
 public static class OperationKind
 {

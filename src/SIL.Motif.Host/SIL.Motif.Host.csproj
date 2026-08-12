@@ -9,4 +9,10 @@
     <PackageReference Include="Microsoft.ICU.ICU4C.Runtime" Version="72.1.0.3" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
   </ItemGroup>
 
+  <!-- Pins the otherwise-transitive libpalaso packages so a local override (see AGENTS.md) applies here too. -->
+  <ItemGroup Condition="'$(MotifLocalPalasoActive)' == 'true'">
+    <PackageReference Include="SIL.WritingSystems" Version="$(SilLibPalasoVersion)" />
+    <PackageReference Include="SIL.Core" Version="$(SilLibPalasoVersion)" />
+  </ItemGroup>
+
 </Project>

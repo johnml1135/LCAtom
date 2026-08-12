@@ -6,8 +6,8 @@ namespace SIL.Motif.Model.Effects;
 /// <summary>
 /// Computes the effect digest: RFC 8785 canonical JSON bytes over the effect set, then SHA-256,
 /// reusing the Contract kernel's canonicalizer and hash rendering exactly as
-/// <see cref="IntentDigest"/> does for a Proposal's intent. See docs/change-set-contract.md,
-/// "Expected effects", rule 4, and "Canonical JSON and hashes".
+/// <see cref="IntentDigest"/> does for a Proposal's intent — the Change Set contract's "Expected
+/// effects" rule 4, "hash the transition, not the destination".
 /// </summary>
 public static class ExpectedEffectSetDigest
 {

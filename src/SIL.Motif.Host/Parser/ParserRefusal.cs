@@ -45,8 +45,7 @@ public enum ParserRefusalKind
 /// </remarks>
 public static class ParserRefusalRecognizer
 {
-    // "grammar exceeds the foma-engine's eager-enumeration budget: composite lexc entries ... = 200500
-    // (limit 200000)". Anchored on the two stable-looking noun phrases rather than on the whole sentence.
+    // Anchored on PanGloss's stable noun phrases, not the whole sentence, which is more likely to change.
     private static readonly Regex BudgetExceeded = new(
         @"exceeds the foma-engine's eager-enumeration budget|composite lexc entries.*\(limit \d+\)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -72,10 +71,7 @@ public static class ParserRefusalRecognizer
         return null;
     }
 
-    /// <summary>
-    /// The refusal line itself, not the whole log. The parser also emits capability notes and per-entry
-    /// warnings, and burying the refusal among them is how a diagnostic stops being read.
-    /// </summary>
+    /// <summary>The refusal line only; buried among other notes, a diagnostic stops being read.</summary>
     private static string FirstRelevantLine(string stdErr)
     {
         var lines = stdErr.Split('\n');

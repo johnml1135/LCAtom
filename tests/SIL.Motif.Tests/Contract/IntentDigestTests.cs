@@ -6,7 +6,7 @@ namespace SIL.Motif.Tests.Contract;
 
 /// <summary>
 /// Intent digest determinism: identical authored intent always yields an identical digest; fields
-/// docs/change-set-contract.md classifies as excluded (proposalId, rationale, confidence,
+/// the Change Set contract classifies as excluded (proposalId, rationale, confidence,
 /// provenance, extensions, pretty-printing) never move it; unordered members may be authored in
 /// any order without moving it; but the authoritative operation order does move it when changed.
 /// </summary>

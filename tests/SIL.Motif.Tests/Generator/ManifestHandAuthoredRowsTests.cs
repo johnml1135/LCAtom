@@ -10,12 +10,10 @@ namespace SIL.Motif.Tests.Generator;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <c>manifest/README.md</c> used to say "rerun `classify.ps1` after any inventory regeneration rather than
-/// hand-editing the TSV." Running it on 2026-08-06 rewrote **26 rows** — every `CmAgent`, `TextTag`,
-/// `WfiAnalysis`, `WfiGloss`, `WfiMorphBundle` and `WfiWordform` row — because the script does not know
-/// about ADR 0025's analysis-approval scoping. It set `Group` to <c>system</c> and `HcReachable` to
-/// <c>unconfirmed</c>, discarding <c>analysis</c> and <c>no</c>. Nothing noticed. That is issue <c>D7</c>,
-/// and this test is its guard.
+/// <c>classify.ps1</c> does not know about ADR 0025's analysis-approval scoping: running it rewrites every
+/// `CmAgent`, `TextTag`, `WfiAnalysis`, `WfiGloss`, `WfiMorphBundle`, and `WfiWordform` row, setting `Group`
+/// to <c>system</c> and `HcReachable` to <c>unconfirmed</c> in place of the hand-authored <c>analysis</c>/
+/// <c>no</c> — silently, since nothing else checks it. This test is that check.
 /// </para>
 /// <para>
 /// The generated <c>.g.cs</c> files have <see cref="GeneratedFilesAreUpToDateTests"/> for exactly this
@@ -32,8 +30,8 @@ namespace SIL.Motif.Tests.Generator;
 /// </remarks>
 public class ManifestHandAuthoredRowsTests
 {
-    /// <summary>The count as of 2026-08-06: `CmAgent` 4, `WfiAnalysis` 9, `WfiMorphBundle` 5, `WfiWordform` 2, `WfiGloss` 1.</summary>
-    private const int ExpectedAdr0025RowCount = 21;
+    // 22 = CmAgent 4 + WfiAnalysis 9 + WfiMorphBundle 5 + WfiWordform 3 + WfiGloss 1 (all ADR 0025 rows).
+    private const int ExpectedAdr0025RowCount = 22;
 
     private static IReadOnlyList<ManifestRow> Adr0025Rows() =>
         ManifestTsvParser.Parse(RepoPaths.DefaultManifestPath())
@@ -67,12 +65,70 @@ public class ManifestHandAuthoredRowsTests
                 wrongReachability.Select(r => $"{r.Class}.{r.Field} has HcReachable='{r.HcReachable}'")));
     }
 
+    /// <summary>
+    /// This row, pinned individually rather than only counted: `WfiWordform.SpellingStatus`
+    /// carries the same hand-authored `Group='analysis'`/`HcReachable='no'` treatment its `Analyses`
+    /// and `Form` siblings do (asserted generically above), plus the one thing unique to it that
+    /// `classify.ps1` cannot derive either — the confirmed `EnumValues` mapping, which is what lets the
+    /// generated payload parser range-check a value instead of trusting LibLCM to fix it.
+    /// </summary>
+    [Fact]
+    public void WfiWordformSpellingStatus_CarriesTheMot22Treatment()
+    {
+        var row = ManifestTsvParser.Parse(RepoPaths.DefaultManifestPath())
+            .Single(r => r.Class == "WfiWordform" && r.Field == "SpellingStatus");
+
+        Assert.Equal("in", row.Scope);
+        Assert.Contains("ADR 0025", row.ScopeReason, StringComparison.Ordinal);
+        Assert.Equal("analysis", row.Group);
+        Assert.Equal("no", row.HcReachable);
+        Assert.Equal("set|clear", row.Verbs);
+        Assert.Equal("0=Undecided;1=Correct;2=Incorrect", row.EnumValues);
+    }
+
+    /// <summary>
+    /// The invariant this test guards: <b>every</b> in-scope enum field —
+    /// a basic `Integer` whose `EnumValues` column names its legal values — carries the derived
+    /// `set|clear`, with no exception anywhere in the table (ADR 0022 decision 1).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// `clear` in this manifest never means "erase to nothing"; it means "write the zero member" — ten
+    /// rows' zero members (`CenterInColumn`, `Variant`, `LeftToRightIterative`, `kpntName`, `Anywhere`,
+    /// `ShowMinorEntry`, and others) are all substantive values, not synonyms for absence. A future row
+    /// that wants an exception has to break this test first, which is the point.
+    /// </para>
+    /// <para>
+    /// A guard on the guard: if the enum-row filter stops matching anything, the count assertion below
+    /// passes vacuously. Eleven rows today — the ten named above plus `SpellingStatus` itself. (A twelfth
+    /// enum field, `CmPossibility.UnderStyle`, has `EnumValues` still reading `unknown`, so this filter
+    /// excludes it.)
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void EveryInScopeEnumField_CarriesTheDerivedSetClear()
+    {
+        var enumRows = ManifestTsvParser.Parse(RepoPaths.DefaultManifestPath())
+            .Where(r => r.Scope == "in" && r.Kind == "basic" && r.Sig == "Integer")
+            .Where(r => r.Verbs != "n/a")
+            .Where(r => !string.IsNullOrWhiteSpace(r.EnumValues) && r.EnumValues != "unknown")
+            .ToList();
+
+        var departures = enumRows.Where(r => r.Verbs != "set|clear").ToList();
+
+        Assert.True(
+            departures.Count == 0,
+            $"{departures.Count} enum row(s) depart from the derived set|clear:{Environment.NewLine}  " +
+            string.Join(Environment.NewLine + "  ",
+                departures.Select(r => $"{r.Class}.{r.Field} has Verbs='{r.Verbs}'")));
+
+        Assert.True(enumRows.Count >= 11, $"expected at least 11 enum rows, found {enumRows.Count}.");
+    }
+
     [Fact]
     public void EveryAdr0025Row_IsInScopeAndAuthorable()
     {
-        // The whole point of ADR 0025's second half is that the approval side of analysis is authorable
-        // while occurrence assignment is not. A row that drifted to Scope != in would silently drop the
-        // approval half of the parser-first slice.
+        // ADR 0025's approval side of analysis is authorable while occurrence assignment is not; Scope must stay "in".
         var notInScope = Adr0025Rows().Where(r => r.Scope != "in").ToList();
 
         Assert.True(

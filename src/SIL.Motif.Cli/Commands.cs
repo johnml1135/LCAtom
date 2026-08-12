@@ -30,25 +30,27 @@ public sealed record CommandResult(int ExitCode, string Output);
 /// directly rather than shelling out to the built executable.
 /// </summary>
 /// <remarks>
+/// <para>
 /// This class never re-implements dry-run/apply/log semantics: it calls
 /// <see cref="ProposalDryRunner.Run"/>, <see cref="ProposalApplier.Apply"/>,
 /// <see cref="ProjectAppliedLog.ReadAll"/>, and <see cref="FwDataProjectLoader"/> exactly as Stages
 /// C/D/A left them.
+/// </para>
+/// <para>
+/// The static constructor force-loads the Runner assembly's module initializers up front. Kind
+/// constants such as <c>LexicalSenseOperationKinds.SetGloss</c> are compiler-inlined literals, so a
+/// command that only ever touches Contract's <see cref="ProposalJsonParser"/> (building or
+/// finalizing a draft) would never otherwise trigger the Runner assembly to load and register its
+/// kinds, and "Unknown operation kind" would fire even though a later DryRun/Apply in the same
+/// process would have worked. Forcing it here once, up front, makes registration independent of
+/// which command runs first.
+/// </para>
 /// </remarks>
 public static class Commands
 {
     static Commands()
     {
-        // SIL.Motif.Runner.Operations.LexicalSenseOperationKinds registers "lexical/lexSense/setGloss"
-        // with the Contract kernel's OperationKindRegistry via a [ModuleInitializer] (see that
-        // type's remarks) — but a module initializer only runs once the CLR actually loads the
-        // Runner assembly, and every call site in this class that names SetGloss uses the *const*
-        // field, which the C# compiler inlines as a literal string at compile time. That means
-        // building a draft's operation JSON and finalizing it (which only ever touches Contract's
-        // ProposalJsonParser) would never otherwise force the Runner assembly to load, so
-        // "Unknown operation kind" would fire even though this same CLI process later calls
-        // ProposalDryRunner/ProposalApplier successfully. Forcing the module constructor here,
-        // once, up front, makes registration independent of which command runs first.
+        // Force the Runner assembly's module initializers to run now; see the class remarks for why.
         RuntimeHelpers.RunModuleConstructor(typeof(LexicalSenseOperationKinds).Module.ModuleHandle);
     }
 
@@ -56,19 +58,14 @@ public static class Commands
     {
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        // ManifestDocument.Anchor is a nested BoundDryRunAnchor record: System.Text.Json matches
-        // JSON properties to that record's positional-constructor parameters, and case-insensitive
-        // matching makes that robust regardless of exactly how constructor-parameter-name matching
-        // interacts with PropertyNamingPolicy across runtimes.
+        // Case-insensitive: Anchor's nested record matches JSON to ctor params, robust across runtimes.
         PropertyNameCaseInsensitive = true,
     };
 
     private static readonly JsonSerializerOptions ProposalJsonOptions = new()
     {
         WriteIndented = true,
-        // entityId is absent on most operations and DraftOperation models that as null; omit it
-        // entirely rather than writing a JSON null, since ProposalJsonParser.ParseOptionalId treats
-        // a present-but-null property as a type error ("must be a string"), not "absent".
+        // Omit null entityId entirely: ParseOptionalId treats present-but-null as a type error, not absent.
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
     };
 
@@ -187,7 +184,7 @@ public static class Commands
     /// <summary>
     /// Adds a <c>lexical/lexEntry/deleteLexemeForm</c> operation: a real, already-lowered
     /// cascading-delete operation kind (<see cref="LexEntryLexemeFormOperationKinds.DeleteLexemeForm"/>),
-    /// exposed here so MOT-18's removal analysis has a genuine cascading-delete operation to test
+    /// exposed here so the removal analysis has a genuine cascading-delete operation to test
     /// against, not a synthetic one. Its <c>after</c> payload is the empty object — an entry has at
     /// most one lexeme form, so nothing is left to disambiguate once the target entry is known.
     /// </summary>
@@ -230,9 +227,7 @@ public static class Commands
         }
     }
 
-    /// <summary>Validates that every id in <paramref name="dependsOn"/> is a canonical id already
-    /// present as an operation in <paramref name="draft"/> — the natural authoring order (the
-    /// dependency must already exist to be depended on).</summary>
+    /// <summary>Validates each dependsOn id is already a canonical operation id present in draft.</summary>
     private static bool TryResolveDependsOn(
         DraftDocument draft, IReadOnlyList<string>? dependsOn, out List<string> resolved, out string? error)
     {
@@ -329,30 +324,22 @@ public static class Commands
             var objectPath = store.ObjectPath(intentDigest);
             var manifestPath = store.ManifestPath(draft.ProposalId);
 
-            // Write-once: never overwrite an existing object (this exact content may already be
-            // committed, e.g. a no-op re-finalize), and never revisit/mutate one afterward — the
-            // content-addressed key makes that impossible by construction anyway, since any edit
-            // changes the digest and therefore the path.
+            // Write-once: never overwrite an existing object; content-addressing makes revisiting one impossible anyway.
             if (!File.Exists(objectPath))
                 File.WriteAllText(objectPath, proposalJson);
 
-            // A manifest already present under this frozen proposalId means this draft came from
-            // `reopen`: re-finalizing it is an amend (docs/stage2-change-management.md, S1/S3) —
-            // same id, a new object, the manifest's pointer moved, not created. Prior object
-            // versions are retained (never deleted or revisited).
+            // A manifest already present under this id means this draft is from reopen: re-finalizing is an amend.
             var isAmend = File.Exists(manifestPath);
             ManifestDocument manifest;
             if (isAmend)
             {
                 manifest = ReadManifest(manifestPath);
                 manifest.CurrentIntentDigest = intentDigest;
-                // Approval is effect-digest-scoped: any content change invalidates it, so amend
-                // always resets to proposed regardless of the pre-amend status.
+                // Approval is effect-digest-scoped: any content change invalidates it, so amend resets to proposed.
                 manifest.Status = ManifestStatus.Proposed;
                 manifest.Label = draft.Label ?? manifest.Label;
                 manifest.Comment = draft.Comment ?? manifest.Comment;
-                // The prior Anchor was bound to the PREVIOUS content's footprint/effect digest; an
-                // amend invalidates it just as it invalidates approval (ADR 0004, decision 3).
+                // The prior Anchor was bound to the previous content's digest; amend invalidates it too (ADR 0004 decision 3).
                 manifest.Anchor = null;
             }
             else
@@ -417,9 +404,7 @@ public static class Commands
 
             var envelope = ProposalJsonParser.Parse(File.ReadAllText(objectPath));
 
-            // Loads the committed envelope's current content into a NEW draft carrying the SAME
-            // frozen proposalId (docs/stage2-change-management.md, S3, "Reopen for editing").
-            // Re-committing (finalize) produces a new intentDigest under that id — an amend.
+            // Loads the envelope's content into a new draft with the SAME proposalId; finalize then produces an amend.
             var draft = new DraftDocument
             {
                 ProposalId = id,
@@ -479,8 +464,7 @@ public static class Commands
     /// <summary>
     /// Duplicates a committed Proposal's current content into a brand-new draft under a freshly
     /// minted <c>proposalId</c> — a distinct Proposal, not a revision of the source (contrast
-    /// <see cref="Reopen"/>, which keeps the source id and produces an amend). See MOT-18
-    /// ("duplicate, remove, split").
+    /// <see cref="Reopen"/>, which keeps the source id and produces an amend).
     /// </summary>
     public static CommandResult Duplicate(string storeDir, string sourceProposalId, string newDraftName)
     {
@@ -536,7 +520,7 @@ public static class Commands
 
     /// <summary>
     /// Removes one or more operations from a draft (created by <see cref="New"/> or reopened by
-    /// <see cref="Reopen"/>), applying ADR 0021 decision 6 (<c>J43</c>): a removal with no dependents
+    /// <see cref="Reopen"/>), applying ADR 0021 decision 6: a removal with no dependents
     /// just happens; a removal that would orphan a dependent operation warns and names every
     /// consequence, then requires <paramref name="force"/>; a removal whose consequences cannot be
     /// honestly enumerated (a cascading <c>delete</c> operation — see
@@ -580,9 +564,7 @@ public static class Commands
 
             var requestedOps = requestedIds.Select(id => byId[id]).ToList();
 
-            // Decision 6, point 4: force never means "guess". A cascading delete's true reach is
-            // discovered-only (LibLCM's ownership cascade), never declared in the Proposal, so no
-            // consequence set for removing it can be honestly stated — refuse outright.
+            // Decision 6, point 4: force never means "guess" -- a cascading delete's reach is discovered-only, so refuse.
             var unenumerable = requestedOps.FirstOrDefault(op => OperationDependencyGraph.IsCascadingDelete(op.Kind));
             if (unenumerable is not null)
             {
@@ -613,10 +595,7 @@ public static class Commands
                 return new CommandResult(1, sb.ToString());
             }
 
-            // Force accepts the full enumerated set: the requested operations AND every transitive
-            // dependent named above. Leaving a dependent behind with a dangling dependsOn/target
-            // would silently produce an inconsistent Proposal; removing it too is the honest reading
-            // of "the caller accepted this consequence set."
+            // Force accepts the full enumerated set (requested + every transitive dependent), never a partial guess.
             var toRemove = new HashSet<string>(requestedSet, StringComparer.Ordinal);
             foreach (var edge in consequences)
                 toRemove.Add(edge.DependentOperationId);
@@ -651,8 +630,8 @@ public static class Commands
 
     /// <summary>
     /// Splits a committed Proposal's current operations into several brand-new drafts, each under
-    /// its own freshly minted <c>proposalId</c> (<c>J44</c>: the unit of splitting is the individual
-    /// operation, subject to <c>requires</c>/<c>dependsOn</c>). <paramref name="groups"/> must
+    /// its own freshly minted <c>proposalId</c>. The unit of splitting is the individual operation,
+    /// subject to <c>requires</c>/<c>dependsOn</c>. <paramref name="groups"/> must
     /// partition every operation in the source exactly once. If a declared dependency (<c>dependsOn</c>
     /// or a <c>target</c> naming another operation's <c>entityId</c>) would be severed by landing its
     /// two ends in different groups, that is named as a consequence and requires
@@ -661,9 +640,8 @@ public static class Commands
     /// Proposal, so this never hits the "cannot be enumerated" refusal.
     /// </summary>
     /// <remarks>
-    /// The source Proposal is left exactly as it was — split does not supersede or discard it. MOT-10
-    /// (not yet built) is what would define a "superseded" status transition; deciding that here would
-    /// be silently picking an answer the plan does not commit to, so this intentionally does not.
+    /// The source Proposal is left exactly as it was — split does not supersede or discard it. A
+    /// "superseded" status transition is a separate concern this method intentionally does not decide.
     /// </remarks>
     public static CommandResult Split(
         string storeDir, string sourceProposalId, IReadOnlyList<SplitGroup> groups, bool force)
@@ -904,23 +882,13 @@ public static class Commands
             var fullFwDataPath = ResolveProjectPath(fwDataPath);
             var loader = new FwDataProjectLoader();
 
-            // Open the live project and hold it open for the whole command. Motif-as-CLI is a
-            // FieldWorks-class writer of this project, not a bystander reading around one: there is
-            // exactly one writer at a time, and while Motif has the project, FieldWorks must not
-            // (ADR 0006 decision 4). Holding it here is what makes the anchor mean anything — a
-            // baseline measured while someone else could still be editing is not a baseline.
+            // Hold the project open throughout: one writer at a time (ADR 0006 decision 4), or the anchor means nothing.
             cache = loader.LoadCache(fullFwDataPath);
 
-            // Save before the copy, not before the apply (ADR 0016 as amended 2026-08-06). The
-            // scratch is a copy of the FILE, so any uncommitted edit in this cache would be invisible
-            // to it and the resulting anchor would describe a state the live cache is not in — which
-            // Apply would then report as drift that never happened. Nothing is pending on a
-            // freshly-opened project, so this is cheap here; it is written out anyway because the
-            // FieldWorks host will run the identical sequence with real in-flight edits behind it.
+            // Save before the copy: the scratch copies the FILE, so an uncommitted edit is invisible to it (ADR 0016).
             loader.Save(cache);
 
-            // Mutate a throwaway copy and delete it: no rollback anywhere, so nothing can leave this
-            // cache's derived caches stale.
+            // Mutate a throwaway copy and delete it: no rollback, so nothing leaves derived caches stale.
             var scratchRoot = Path.Combine(
                 Path.GetTempPath(), "SIL.Motif.DryRun", Guid.NewGuid().ToString("N"));
             scratch = DryRunScratch.Adopt(
@@ -930,8 +898,7 @@ public static class Commands
 
             var dryRun = ProposalDryRunner.Run(scratch, envelope);
 
-            // Persist the bound-DryRun anchor (docs/adr/0004, decision 3): `apply` requires
-            // this to be present and unmoved before it will touch the project.
+            // Persist the bound-DryRun anchor (docs/adr/0004 decision 3): apply requires it present and unmoved.
             manifest.Anchor = dryRun.Anchor;
             WriteManifest(manifestPath, manifest);
 
@@ -946,10 +913,7 @@ public static class Commands
             sb.AppendLine($"  footprintDigest: {dryRun.Anchor.FootprintDigest}");
             sb.AppendLine("  (bound-DryRun anchor recorded on the manifest; 'apply' will require it)");
 
-            // State the side effect rather than performing it quietly. A dry run reads as "nothing
-            // happens", and mostly nothing does — but it saved the project to make the copy an honest
-            // picture of it (ADR 0016), and a save is the user's business even when it commits only what
-            // they had already authored.
+            // State the side effect: a dry run reads as "nothing happens", but it saved the project first (ADR 0016).
             sb.AppendLine("  (the project was saved before measuring, so the scratch copy matched it; " +
                           "the project itself was not modified by this dry run)");
             return Ok(sb);
@@ -972,6 +936,13 @@ public static class Commands
         }
     }
 
+    /// <remarks>
+    /// A failed apply rolls back, and a rollback is not an Undo: LexEntry headword/homograph and
+    /// MoStemAllomorph monomorphemic caches can be left stale, and ADR 0005's non-undoable schema
+    /// phase can survive outright. There is no field list to consult and nothing here can repair it —
+    /// the rule is unconditional (ADR 0016): a caller must discard this <see cref="LcmCache"/> and
+    /// reload the project rather than reuse it after a failed apply.
+    /// </remarks>
     public static CommandResult Apply(string storeDir, string proposalId, string fwDataPath, string user)
     {
         LcmCache? cache = null;
@@ -988,9 +959,7 @@ public static class Commands
             if (!File.Exists(objectPath))
                 return Fail(StoreInconsistencyMessage(id, manifest.CurrentIntentDigest, objectPath));
 
-            // ADR 0004, decision 3: a bare apply with no bound DryRun is a hard error. Enforced
-            // here (the CLI's own precondition, checked before even loading the project) as well as
-            // inside ProposalApplier.Apply itself (which requires a non-null anchor argument).
+            // ADR 0004 decision 3: a bare apply with no bound DryRun is a hard error, checked before loading the project.
             if (manifest.Anchor is null)
             {
                 return Fail(
@@ -1048,12 +1017,7 @@ public static class Commands
         }
         catch (Exception ex)
         {
-            // A failed apply rolled back, and a rollback is not an Undo: LexEntry headword/homograph
-            // and MoStemAllomorph monomorphemic caches can be stale afterwards, and ADR 0005's
-            // non-undoable schema phase can survive outright. There is no field list to consult and
-            // nothing to repair — the rule is unconditional and belongs to whoever holds the cache
-            // (ADR 0016, amended 2026-08-06). This process discards it either way; a caller reusing
-            // one LcmCache across several library calls has to reload, so say so rather than assume.
+            // A failed apply rolled back, not Undo: derived caches may be stale (ADR 0016) -- see the remarks above.
             return Fail(
                 ex.Message +
                 " [This LcmCache is no longer trustworthy: a failed apply rolls back, which does not " +
@@ -1097,27 +1061,14 @@ public static class Commands
         }
     }
 
-    /// <summary>
-    /// Explains a refused open in Motif's own terms. LibLCM's message for a locked project says
-    /// "FieldWorks cannot open the project ... because another program is using it", which is both
-    /// confusing (the thing that could not open it was Motif) and short of the one instruction that
-    /// resolves it.
-    /// </summary>
-    /// <remarks>
-    /// Refusing here is correct, not a limitation: exactly one program writes a project at a time, and
-    /// Motif takes the same <c>{project}.fwdata.lock</c> FieldWorks does
-    /// (docs/adr/0030-one-writer-cli-locks-like-fieldworks.md).
-    /// </remarks>
+    /// <summary>Explains a refused open: LibLCM's own message is confusing and lacks the fix (ADR 0030).</summary>
     private static string ProjectInUseMessage(string fwDataPath, string verb) =>
         $"Cannot {verb}: the project '{Path.GetFileNameWithoutExtension(fwDataPath)}' is in use by " +
         "another program — most likely FieldWorks, or another Motif command that has not finished. " +
         "Only one program may hold a FieldWorks project at a time, and Motif takes the same lock " +
         "FieldWorks does. Close the other program and try again.";
 
-    /// <summary>
-    /// Deletes a Dry Run scratch copy. Best effort by design: a leaked temp directory is a nuisance,
-    /// but failing the command over one would turn a successful Dry Run into a reported failure.
-    /// </summary>
+    /// <summary>Best-effort delete of a scratch copy: a leaked temp dir beats a reported Dry Run failure.</summary>
     private static void TryDeleteDirectory(string path)
     {
         try

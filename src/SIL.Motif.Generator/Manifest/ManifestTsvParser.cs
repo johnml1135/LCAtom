@@ -2,8 +2,8 @@ namespace SIL.Motif.Generator.Manifest;
 
 /// <summary>
 /// Parses <c>manifest/liblcm-inventory.tsv</c>: 18 columns, tab-separated, every value
-/// double-quoted, CRLF line endings (manifest/README.md and docs/plan-motif.md MOT-2). This file is
-/// read-only to the generator — never modify it, per manifest/README.md's own instruction — so this
+/// double-quoted, CRLF line endings (the manifest README). This file is
+/// read-only to the generator — never modify it, per the manifest README's own instruction — so this
 /// class only ever reads.
 /// </summary>
 public static class ManifestTsvParser
@@ -22,10 +22,7 @@ public static class ManifestTsvParser
             throw new GeneratorException($"Could not read manifest '{path}': {ex.Message}", ex);
         }
 
-        // The file is CRLF throughout (verified, docs/plan-motif.md MOT-2). Splitting on "\r\n"
-        // rather than a line-ending-agnostic reader is deliberate here: it is how the manifest is
-        // actually shipped, and a silent LF/CRLF mismatch is exactly the kind of thing that should
-        // be visible rather than quietly tolerated in a read-only, checked-in artifact.
+        // Splitting on "\r\n" rather than agnostically keeps an LF/CRLF drift visible instead of tolerated.
         var lines = text.Split("\r\n");
 
         if (lines.Length == 0 || !lines[0].StartsWith("\"Class\"", StringComparison.Ordinal))
@@ -64,11 +61,7 @@ public static class ManifestTsvParser
 
     private static string[] SplitRow(string path, int lineNumber, string line)
     {
-        // Every value is double-quoted, so a bare tab-split is safe as long as no field embeds a
-        // literal tab character inside its quotes — true of every row observed in this file, and
-        // the reason this is a straight split rather than a general CSV/TSV grammar. A field that
-        // does contain a literal '"' escapes it by doubling ("" -> "), the ordinary
-        // quoted-text-format convention; unescape that after stripping the outer quotes.
+        // A bare tab-split is safe only while no quoted field embeds a literal tab; "" unescapes to ".
         var rawColumns = line.Split('\t');
         if (rawColumns.Length != ColumnCount)
             throw new GeneratorException(

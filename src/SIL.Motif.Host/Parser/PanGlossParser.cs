@@ -26,12 +26,12 @@ public sealed record ParserRunResult(BatchAnalysis? Analysis, ParserRefusal? Ref
 /// project and needs no FieldWorks assemblies, no HermitCrab dependency and no vendored grammar extractor. It
 /// also — the reason Motif requires this route rather than preferring it — answers in **FieldWorks GUIDs**,
 /// where the HermitCrab-XML route answers in synthetic keys that cannot be tied back to the entry or rule a
-/// Proposal edited. See <c>docs/research/2026-08-07-parser-seam-goes-through-the-project-file.md</c>.
+/// Proposal edited.
 /// </para>
 /// <para>
 /// <b>Motif must save before calling this.</b> The parser reads the file, so anything uncommitted in an open
 /// cache is invisible to it — the same precondition, for the same reason, as the Dry Run's scratch copy
-/// (<c>docs/adr/0016-scratch-cache-copy-not-undo.md</c>). <see cref="FwDataProjectLoader.Save"/> waits for the
+/// (ADR 0016). <see cref="FwDataProjectLoader.Save"/> waits for the
 /// write to reach disk, which is what makes this safe to call immediately afterwards.
 /// </para>
 /// </remarks>
@@ -93,8 +93,7 @@ public class PanGlossParser
 
             if (exitCode != 0)
             {
-                // A refused FST build is a grammar fact and must trigger the fallback. Anything else is an
-                // environment or invocation fault and must not be dressed up as one.
+                // A refused FST build must trigger the fallback; anything else is an environment fault, not one.
                 var refusal = ParserRefusalRecognizer.Recognize(stdErr);
                 if (refusal is not null) return new ParserRunResult(null, refusal);
 
@@ -129,7 +128,7 @@ public class PanGlossParser
     /// <see cref="AnalyseBatch"/> answers "did it parse, and how fast"; this answers "what did it parse it
     /// <i>as</i>". Coverage needs the first; deciding whether a grammar change did what was intended needs the
     /// second, because that comparison is per morpheme against the entry and category record a Proposal
-    /// touched (docs/adr/0027-what-counts-as-the-same-word-analysis.md).
+    /// touched (ADR 0027).
     /// </remarks>
     public virtual (AssessReport? Report, ParserRefusal? Refusal) Assess(
         string projectFilePath,
@@ -180,10 +179,7 @@ public class PanGlossParser
         }
     }
 
-    /// <summary>
-    /// Keeps the parser's warnings rather than discarding them. Sena 3 produces 137 through this route, and a
-    /// grammar coverage figure computed while those were ignored is not a figure about the grammar.
-    /// </summary>
+    /// <summary>Keeps the parser's warnings, ignored elsewhere they'd taint the coverage figure.</summary>
     private static IReadOnlyList<string> ExtractWarnings(string stdErr) =>
         stdErr.Split('\n')
             .Select(l => l.Trim())

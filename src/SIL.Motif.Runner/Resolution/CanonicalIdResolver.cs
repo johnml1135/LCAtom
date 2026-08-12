@@ -5,8 +5,11 @@ namespace SIL.Motif.Runner.Resolution;
 
 /// <summary>
 /// Resolves a <see cref="CanonicalId"/> (the <c>FromGuid</c> form, for an existing object) to the
-/// live <see cref="ICmObject"/> it names, via the public identity map. See
-/// docs/change-set-contract.md, "IDs and GUID mapping".
+/// live <see cref="ICmObject"/> it names, via the public identity map. <see cref="CanonicalId.ToGuid"/>
+/// is the exact inverse of <see cref="CanonicalId.FromGuid"/>, so this recovers precisely the
+/// <c>Guid</c> the id was built from and looks it up as LibLCM's own storage key — none of the
+/// GUID-realization or collision handling that applies to a proposed, not-yet-existing entity id is
+/// involved here.
 /// </summary>
 public static class CanonicalIdResolver
 {

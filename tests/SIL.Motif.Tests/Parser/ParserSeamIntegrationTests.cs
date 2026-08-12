@@ -44,8 +44,10 @@ internal static class RealProject
 /// This is the test the route was chosen for. Motif can read a coverage percentage from any parser; what it
 /// cannot do without GUID-keyed analyses is say <i>which entry</i> or <i>which rule</i> an analysis used, and
 /// therefore whether a Proposal that edited that entry changed parsing the way it intended. The HermitCrab-XML
-/// route answers in synthetic keys (<c>mrule128</c>, <c>entry1083</c>) that name nothing Motif can look up.
-/// See <c>docs/research/2026-08-07-parser-seam-goes-through-the-project-file.md</c>.
+/// route answers in synthetic keys (<c>mrule128</c>, <c>entry1083</c>) that name nothing Motif can look up;
+/// measured side by side on the same 40 Sena 3 words, the two routes agree on every analysis — same
+/// morpheme counts, same consistent identity mapping — so the difference is purely the namespace, and
+/// only the GUID one (<c>603fc0f8-…</c>, <c>0832679c-…</c> for those same two keys) is usable.
 /// </para>
 /// <para>
 /// So the assertion is not "the parser ran" but <b>"every morpheme the parser named is an object this project
@@ -55,6 +57,7 @@ internal static class RealProject
 /// </para>
 /// </remarks>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
+[Trait("Fixture", "FieldWorks")]
 public sealed class ParserSeamIntegrationTests
 {
     // Sena words drawn from the project's own corpus. Small, because the FST build alone is ~11 s.
@@ -77,7 +80,7 @@ public sealed class ParserSeamIntegrationTests
         var analysed = report.Words.Where(w => w.Analyses.Count > 0).ToList();
         Assert.NotEmpty(analysed);
 
-        using var cache = new FwDataProjectLoader().LoadCache(projectPath);
+        using var cache = new FwDataProjectLoader().LoadScratchCache(projectPath);
         var objects = cache.ServiceLocator.GetInstance<ICmObjectRepository>();
 
         var unresolved = new List<string>();
@@ -120,8 +123,7 @@ public sealed class ParserSeamIntegrationTests
         Assert.True(pruned.Succeeded, pruned.Refusal?.Detail ?? "the pruned engine refused");
         Assert.True(hermitCrabOnly.Succeeded, hermitCrabOnly.Refusal?.Detail ?? "the fallback engine refused");
 
-        // The owner's constraint is that these two modes are equivalent, so Motif may fall back without
-        // changing the answer. Compared on which words got a verdict, not on timing, which differs by design.
+        // The two engines must agree on verdicts; compared by outcome only, since timing differs by design.
         var prunedVerdicts = pruned.Analysis!.Words
             .ToDictionary(w => w.Word, w => w.Outcome);
         var fallbackVerdicts = hermitCrabOnly.Analysis!.Words

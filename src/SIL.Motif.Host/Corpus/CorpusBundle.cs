@@ -93,9 +93,7 @@ public sealed record CorpusBundle(
                 var raw = RequiredString(d, "source");
                 var source = DocumentSource.Parse(raw);
 
-                // A relative path in a bundle means "next to the bundle", not "next to wherever the CLI
-                // happens to be running". Getting this wrong makes a bundle work on the machine that wrote
-                // it and fail everywhere else.
+                // Resolved against the bundle's own directory, not the caller's cwd, so a bundle stays portable.
                 if (source is DocumentSource.File file && !Path.IsPathRooted(file.Path))
                     source = new DocumentSource.File(Path.GetFullPath(Path.Combine(baseDirectory, file.Path)));
 

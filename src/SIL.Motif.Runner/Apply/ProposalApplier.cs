@@ -17,38 +17,49 @@ namespace SIL.Motif.Runner.Apply;
 
 /// <summary>
 /// Stage D's committing Apply: idempotent, applied-log-writing counterpart to
-/// <see cref="SIL.Motif.Runner.DryRun.ProposalDryRunner"/>. See docs/change-set-contract.md,
-/// "Application Receipt", and docs/applied-log.md.
+/// <see cref="SIL.Motif.Runner.DryRun.ProposalDryRunner"/>. Applies every operation, reads back the
+/// actual effects, and returns a <see cref="Receipt"/> — emitted only after all operations,
+/// read-back, and invariant validation succeed and the unit of work commits; no receipt is emitted
+/// for a rolled-back application.
 /// </summary>
 /// <remarks>
-/// Dispatch is by <see cref="OperationHandlerRegistry"/> lookup (MOT-4), matching
+/// Dispatch is by <see cref="OperationHandlerRegistry"/> lookup, matching
 /// <see cref="SIL.Motif.Runner.DryRun.ProposalDryRunner"/>. Apply never calls
 /// <c>LcmCache.ActionHandlerAccessor.Commit()</c>/saves the project itself — the core does not save
-/// projects (docs/change-set-contract.md, "Application Receipt"); that is
-/// <see cref="SIL.Motif.Host.LcmUtils.FwDataProjectLoader.Save"/>'s job, run by the host after this
-/// method returns.
+/// projects; that is <see cref="SIL.Motif.Host.LcmUtils.FwDataProjectLoader.Save"/>'s job, run by the
+/// host after this method returns.
 /// </remarks>
 public static class ProposalApplier
 {
-    /// <param name="cache">The already-loaded, already-exclusively-writable project (docs/adr/0006, decision 4).</param>
+    /// <param name="cache">The already-loaded, already-exclusively-writable project (ADR 0006 decision 4).</param>
     /// <param name="proposal">The Proposal to apply.</param>
     /// <param name="anchor">
     /// The <see cref="BoundDryRunAnchor"/> a prior <see cref="SIL.Motif.Runner.DryRun.ProposalDryRunner.Run"/>
-    /// call produced against this same baseline (docs/adr/0004-prerequisite-graph-stable-ids-bound-apply.md,
-    /// decision 3). Required: a bare apply with no bound DryRun is a hard error
-    /// (<see cref="ApplyPreconditionException"/>). Apply re-reads the current footprint and hard-stops
-    /// with a drift diagnostic if it no longer matches <see cref="BoundDryRunAnchor.FootprintDigest"/>.
+    /// call produced against this same baseline (ADR 0004 decision 3). Required: a bare apply with no
+    /// bound DryRun is a hard error (<see cref="ApplyPreconditionException"/>). Apply re-reads the
+    /// current footprint and hard-stops with a drift diagnostic if it no longer matches
+    /// <see cref="BoundDryRunAnchor.FootprintDigest"/>.
     /// </param>
     /// <param name="applierIdentity">
-    /// Opaque, host-supplied applier identity (docs/applied-log.md, "Applier identity"). Empty is
-    /// permitted; the runner never infers identity. Must not contain <c>|</c> or a control
-    /// character, and must be at most <see cref="AppliedLogFormat.MaxUserLength"/> characters.
+    /// Opaque, host-supplied applier identity: FieldWorks supplies its configured user when it has
+    /// one, an agent supplies its own name (for example <c>linguistic-assistant</c>), and empty is
+    /// permitted — the runner is stateless and never infers identity itself. Must not contain
+    /// <c>|</c> or a control character, and must be at most
+    /// <see cref="AppliedLogFormat.MaxUserLength"/> characters.
     /// </param>
     /// <param name="description">
-    /// Free single-line human-facing text for the applied-log entry (docs/applied-log.md, "Record
-    /// format"). May contain <c>|</c>; must not contain a control character or exceed
-    /// <see cref="AppliedLogFormat.MaxDescriptionLength"/> characters. Defaults to empty.
+    /// Free single-line human-facing text for the applied-log entry. May contain <c>|</c>; must not
+    /// contain a control character or exceed <see cref="AppliedLogFormat.MaxDescriptionLength"/>
+    /// characters. Defaults to empty.
     /// </param>
+    /// <remarks>
+    /// The whole Proposal runs inside one outer, undoable unit of work — the only rollback left in
+    /// Motif, forced by the rule that one Change Set is one atomic unit of work. A rollback can leave
+    /// derived caches stale and nothing here can repair that, so the obligation lands on the caller:
+    /// <b>if this throws, discard <paramref name="cache"/> and reload the project from the file that
+    /// was saved before the Dry Run</b> — strictly stronger than the rollback, since reload also
+    /// discards the non-undoable schema phase (ADR 0005) rollback cannot reach (ADR 0016).
+    /// </remarks>
     public static Receipt Apply(
         LcmCache cache,
         Proposal proposal,
@@ -73,26 +84,17 @@ public static class ProposalApplier
         var fullIntentDigest = ContractIntentDigest.Compute(proposal);
         var intentDigestHex = StripSha256Prefix(fullIntentDigest);
 
-        // Idempotence first: reading the applied-log is a plain property read, legal at any
-        // transaction state (docs/adr/0006, decision 1), so this check runs before any unit of
-        // work opens and, when it hits, this call does nothing else at all — no duplicate entry,
-        // no re-mutation. See docs/applied-log.md, "What presence and absence mean".
+        // Idempotence first: reading the applied-log needs no unit of work (docs/adr/0006 decision 1).
         if (ProjectAppliedLog.TryFindByProposalId(cache, proposalGuid, out var existingEntry))
         {
             return BuildAlreadyAppliedReceipt(proposal, fullIntentDigest, intentDigestHex, existingEntry!);
         }
 
-        // Drift check (docs/adr/0004, decision 3): re-read the CURRENT footprint — a pure read,
-        // legal at any transaction state (docs/adr/0006, decision 1) — and hard-stop rather than
-        // proceed if it no longer matches the anchor's baseline. This is the TOCTOU race Terraform's
-        // "apply is bound to a saved plan" default-safe workflow closes.
+        // Drift check (docs/adr/0004 decision 3): re-read footprint, hard-stop if it no longer matches the anchor.
         var currentFootprintDigest = FootprintProbe.ComputeCurrentFootprintDigest(cache, proposal);
         if (!string.Equals(currentFootprintDigest, anchor.FootprintDigest, StringComparison.Ordinal))
         {
-            // Name both sides and where each came from. An earlier version reported only the two
-            // digests, and when the real fault was a save that had not yet reached disk — so the Dry
-            // Run's scratch copy was a stale file — this message sent the investigation after the drift
-            // check instead of the save (ADR 0016, "'save' was not a save").
+            // Name both sides and where each came from, so a stale scratch copy is distinguishable from real drift.
             throw new ApplyPreconditionException(
                 "Footprint drift detected: the pre-mutation state of the objects this Proposal touches " +
                 "is not what the bound DryRun measured." + Environment.NewLine +
@@ -104,9 +106,7 @@ public static class ProposalApplier
                 "the copy was stale and nothing actually drifted.");
         }
 
-        // Build (and validate) the entry to write now, before opening any unit of work, so a bad
-        // applierIdentity/description fails fast without performing — then having to roll back — a
-        // real mutation.
+        // Build and validate the entry before opening a unit of work: bad input fails fast, nothing to roll back.
         var logEntry = new AppliedLogEntry(
             proposalGuid,
             AppliedLogFormat.CurrentFormatVersion,
@@ -120,23 +120,7 @@ public static class ProposalApplier
         var touchedTargets = new List<CanonicalId>();
         var actionHandler = cache.ServiceLocator.GetInstance<IActionHandler>();
 
-        // One outer UndoableUnitOfWorkHelper for the whole Proposal (docs/adr/0005 amends this
-        // for the customField/schema family only, which is out of scope here). Constructed
-        // directly (not the static .Do helper) so effects can be captured and the log entry written
-        // from inside the task.
-        //
-        // This is the ONLY rollback left in Motif, and it is forced rather than chosen: AGENTS.md
-        // rule 4 makes one Change Set one atomic unit of work, so a mid-proposal failure must unwind
-        // — a half-applied Proposal is worse than a stale derived cache. Nothing here tries to repair
-        // the caches that rollback leaves stale, because nothing can: the obligation lands on the
-        // host instead, unconditionally and with no field list to consult —
-        //
-        //     if Apply throws, discard this LcmCache and reload the project from the file that was
-        //     saved before the Dry Run.
-        //
-        // Reload is strictly stronger than the rollback anyway: it also discards the non-undoable
-        // schema phase of docs/adr/0005, which rollback cannot reach. See
-        // docs/adr/0016-scratch-cache-copy-not-undo.md, amended 2026-08-06.
+        // One outer unit of work for the whole Proposal; see the remarks above for the failure-recovery contract.
         using (var undoHelper = new UndoableUnitOfWorkHelper(actionHandler, "Motif apply", "Motif apply"))
         {
             foreach (var operation in proposal.Operations)
@@ -145,14 +129,10 @@ public static class ProposalApplier
                 effects.Add(handler.ApplyAndCaptureEffect(cache, operation, touchedTargets));
             }
 
-            // Exactly one applied-log entry, written inside this same unit of work
-            // (docs/change-set-contract.md, "Application Receipt"; docs/applied-log.md,
-            // "Atomicity") — so a rolled-back apply leaves no entry at all.
+            // Exactly one applied-log entry, written inside this same unit of work, so a rollback leaves none.
             ProjectAppliedLog.WriteEntry(cache, logEntry);
 
-            // Success: commit instead of the default rollback-on-Dispose. Never call Save here
-            // — the core does not save projects; that is the host's job, after this unit of
-            // work has closed. On any exception RollBack stays true and Dispose unwinds.
+            // Success: commit instead of rollback-on-Dispose. Never Save here — that is the host's job after this closes.
             undoHelper.RollBack = false;
         }
 
@@ -179,10 +159,7 @@ public static class ProposalApplier
     private static Receipt BuildAlreadyAppliedReceipt(
         Proposal proposal, string fullIntentDigest, string intentDigestHex, AppliedLogEntry existingEntry)
     {
-        // Content check (docs/applied-log.md, "What presence and absence mean"): same proposalId
-        // is "already applied" only when the recorded intent digest also matches; a differing
-        // digest is the same identity referring to different content, surfaced rather than
-        // silently reported as clean.
+        // Content check: same proposalId is "already applied" only if the digest matches too; else it's surfaced.
         var contentMatches = string.Equals(existingEntry.IntentDigest, intentDigestHex, StringComparison.Ordinal);
 
         var resultNote = contentMatches

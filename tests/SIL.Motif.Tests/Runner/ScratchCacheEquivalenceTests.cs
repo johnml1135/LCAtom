@@ -8,8 +8,7 @@ using Xunit.Abstractions;
 namespace SIL.Motif.Tests.Runner;
 
 /// <summary>
-/// Grill item <c>A1</c> / <see href="../../docs/adr/0016-scratch-cache-copy-not-undo.md">ADR 0016</see>:
-/// does a scratch cache actually work, and is it equivalent to the live cache it came from?
+/// ADR 0016: does a scratch cache actually work, and is it equivalent to the live cache it came from?
 /// </summary>
 /// <remarks>
 /// These run against the small <c>TestLangProj</c> fixture, so they assert <b>behaviour</b> and say nothing
@@ -18,6 +17,7 @@ namespace SIL.Motif.Tests.Runner;
 /// means a regression in either strategy fails the suite rather than waiting for someone to re-run a spike.
 /// </remarks>
 [Collection(LcmCacheTestCollection.Name)]
+[Trait("Fixture", "FieldWorks")]
 public class ScratchCacheEquivalenceTests : IDisposable
 {
     private readonly ITestOutputHelper _output;
@@ -31,7 +31,7 @@ public class ScratchCacheEquivalenceTests : IDisposable
         _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_tempRoot);
         _fwDataPath = TestLangProjFixture.CopyToTempAndGetFwDataPath(_tempRoot);
-        _live = new FwDataProjectLoader().LoadCache(_fwDataPath);
+        _live = new FwDataProjectLoader().LoadScratchCache(_fwDataPath);
     }
 
     [Fact]
@@ -61,8 +61,7 @@ public class ScratchCacheEquivalenceTests : IDisposable
         var sense = _live.ServiceLocator.GetInstance<ILexSenseRepository>().AllInstances().OrderBy(s => s.Guid).First();
         var originalGloss = sense.Gloss.AnalysisDefaultWritingSystem?.Text;
 
-        // Mutate the SCRATCH inside its own unit of work and commit it there. This is the whole point of
-        // ADR 0016: a dry run may mutate freely because nothing it touches is the real project.
+        // Mutate the SCRATCH: ADR 0016's whole point is that a dry run may mutate freely here.
         var scratchSense = scratch.ServiceLocator.GetInstance<ILexSenseRepository>().GetObject(sense.Guid);
         SIL.LCModel.Infrastructure.NonUndoableUnitOfWorkHelper.Do(scratch.ActionHandlerAccessor, () =>
         {
@@ -76,8 +75,7 @@ public class ScratchCacheEquivalenceTests : IDisposable
     [Fact]
     public void InMemoryCopy_CapturesUnsavedEditsFromTheLiveCache()
     {
-        // The one capability the file-copy path cannot match: the on-disk .fwdata is stale until Save, so a
-        // file copy would miss this edit entirely.
+        // The on-disk .fwdata is stale until Save, so a file copy would miss this edit entirely.
         var sense = _live.ServiceLocator.GetInstance<ILexSenseRepository>().AllInstances().OrderBy(s => s.Guid).First();
         SIL.LCModel.Infrastructure.NonUndoableUnitOfWorkHelper.Do(_live.ActionHandlerAccessor, () =>
         {
@@ -104,19 +102,19 @@ public class ScratchCacheEquivalenceTests : IDisposable
         Assert.Empty(report.SenseTextMismatches);
         Assert.Empty(report.WritingSystems.Missing);
 
-        // A normal file load attaches a real writing-system store, so every writing system should come back
-        // value-equal. If this ever fails, the fixture has drifted — not the strategy.
+        // A real writing-system store means every WS comes back value-equal; a failure means fixture drift.
         Assert.Equal(report.WritingSystems.LiveCount, report.WritingSystems.ValueEqualCount);
         Assert.True(report.IsUsableForWritingSystemSensitiveWork,
             "the file path is the control: it should be equivalent to live on every axis, including writing systems");
     }
 
+    /// <summary>
+    /// Pins the measured hazard as a test rather than a note: if liblcm ever attaches a real writing-system
+    /// store to a memory-only cache, this fails and ADR 0016's single-path decision can be revisited.
+    /// </summary>
     [Fact]
     public void InMemoryCopy_LosesWritingSystemDefinitions_WhichIsWhyStrategyChoiceMatters()
     {
-        // Pinning the measured hazard as a test rather than a note. If liblcm ever attaches a real writing
-        // system store to a memory-only cache, this fails and ADR 0016's amendment can be relaxed —
-        // which is exactly the signal worth catching automatically.
         var factory = new ScratchCacheFactory();
         using var scratch = factory.CreateInMemoryCopy(_live);
 
@@ -129,13 +127,15 @@ public class ScratchCacheEquivalenceTests : IDisposable
         Assert.NotEmpty(report.WritingSystems.Degraded);
     }
 
+    /// <summary>
+    /// The measurement that removed the choice: a memory-only copy of a FILE-LOADED scratch — one whose
+    /// writing systems are provably intact — still loses them, because the loss belongs to the target
+    /// backend rather than the source. So "build losslessly, then fan out cheaply" is not available, and
+    /// ADR 0016 settles on the file path alone.
+    /// </summary>
     [Fact]
     public void InMemoryCopy_OfALosslessScratch_IsStillLossy_WhichIsWhyThereIsOnlyOneCanonicalPath()
     {
-        // The measurement that removed the choice. A memory-only copy of a FILE-LOADED scratch — one whose
-        // writing systems are provably intact — still loses them, because the loss belongs to the target
-        // backend rather than the source. So "build losslessly, then fan out cheaply" is not available, and
-        // ADR 0016 settles on the file path alone.
         var factory = new ScratchCacheFactory();
         using var fileScratch = factory.CreateFromFileCopy(_fwDataPath, Path.Combine(_tempRoot, "file-scratch-2"));
 

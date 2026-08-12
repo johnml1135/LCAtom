@@ -17,7 +17,7 @@ namespace SIL.Motif.Tests.Apply;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <c>docs/adr/0016-scratch-cache-copy-not-undo.md</c> (amended 2026-08-06) has the Dry Run mutate a
+/// ADR 0016 has the Dry Run mutate a
 /// file copy and bind an anchor from it, then has Apply re-probe the live project and refuse on
 /// mismatch. That only works if the digest is a function of the <i>data</i>. If an hvo — LibLCM's
 /// per-cache integer object id, assigned in load order and not stable across loads — reached the
@@ -37,25 +37,25 @@ public sealed class AnchorsAreCrossCachePortableTests : IDisposable
 {
     private readonly string _tempRoot;
     private readonly LcmCache _cache;
+    private readonly SeededProject _seed;
 
-    public AnchorsAreCrossCachePortableTests()
+    public AnchorsAreCrossCachePortableTests(PristineProjectFixture pristine)
     {
+        _cache = pristine.NewScratch();
+        _seed = pristine.Seed;
         _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests.Portable", Guid.NewGuid().ToString("N"));
-        var fwDataPath = TestLangProjFixture.CopyToTempAndGetFwDataPath(_tempRoot);
-        _cache = new FwDataProjectLoader().LoadCache(fwDataPath);
+        Directory.CreateDirectory(_tempRoot);
     }
 
     [Fact]
     public void AFootprintDigestFromAFileCopy_EqualsTheOneFromTheOriginal()
     {
-        var sense = _cache.ServiceLocator.GetInstance<ILexSenseRepository>().AllInstances().First();
-        var form = _cache.ServiceLocator.GetInstance<ILexEntryRepository>()
-            .AllInstances().First(e => e.LexemeFormOA?.MorphTypeRA is not null).LexemeFormOA!;
+        var sense = _cache.ServiceLocator.GetInstance<ILexSenseRepository>().GetObject(_seed.FirstSenseId);
+        var form = _cache.ServiceLocator.GetInstance<IMoFormRepository>().GetObject(_seed.FirstLexemeFormId);
 
         var wsTag = _cache.WritingSystemFactory.GetStrFromWs(_cache.DefaultAnalWs);
 
-        // A text field and a reference field in one Proposal: the reference is the case that would
-        // break if a snapshotter ever projected an hvo instead of a guid.
+        // A reference field too: this is the case that would break if a snapshotter projected an hvo.
         var proposal = new Proposal(
             contractVersions: new Dictionary<string, string> { ["lexical"] = "1.0", ["grammar"] = "1.0" },
             proposalId: CanonicalId.Mint(),
@@ -74,10 +74,8 @@ public sealed class AnchorsAreCrossCachePortableTests : IDisposable
 
         Assert.Equal(fromOriginal, fromCopy);
 
-        // Not vacuously equal: the digest does respond to the data, so the equality above is evidence
-        // that the *data* matched rather than that the digest ignores its inputs.
-        var otherSense = _cache.ServiceLocator.GetInstance<ILexSenseRepository>()
-            .AllInstances().First(s => s.Guid != sense.Guid);
+        // Not vacuously equal: proves the digest responds to data rather than ignoring its inputs.
+        var otherSense = _cache.ServiceLocator.GetInstance<ILexSenseRepository>().GetObject(_seed.SecondSenseId);
         var differentProposal = new Proposal(
             contractVersions: new Dictionary<string, string> { ["lexical"] = "1.0" },
             proposalId: CanonicalId.Mint(),

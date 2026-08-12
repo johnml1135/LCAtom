@@ -8,14 +8,16 @@ namespace SIL.Motif.Runner.AppliedLog;
 
 /// <summary>
 /// Reads and writes Motif's applied-change log, stored as <c>CmResource</c> entries in
-/// <c>LangProject.LexDbOA.ResourcesOC</c>. See docs/applied-log.md, "Where it lives" and "Record
-/// format".
+/// <c>LangProject.LexDbOA.ResourcesOC</c>: <c>Version</c> (a <c>Guid</c>) holds the stable
+/// <c>changeSetId</c>, the field used for identity matching, and <c>Name</c> holds a packed,
+/// single-line provenance string of the form
+/// <c>Motif|&lt;format&gt;|&lt;timestamp&gt;|&lt;user&gt;|&lt;intentDigest&gt;|&lt;description&gt;</c>.
 /// </summary>
 /// <remarks>
 /// Foreign entries (no <c>Motif</c> prefix) are never read, rewritten, or deleted — they are
 /// skipped entirely by <see cref="ReadAll"/>. An <c>Motif</c>-prefixed entry that fails to parse is
 /// reported through <paramref name="onUnparseableEntry"/> (a diagnostic) and otherwise left
-/// untouched, per docs/applied-log.md, "Foreign entries".
+/// untouched.
 /// </remarks>
 public static class ProjectAppliedLog
 {
@@ -48,7 +50,9 @@ public static class ProjectAppliedLog
 
     /// <summary>
     /// The idempotence check: does the applied-change log already contain an entry for
-    /// <paramref name="proposalId"/>? See docs/applied-log.md, "What presence and absence mean".
+    /// <paramref name="proposalId"/>? Presence means Motif already applied this proposal to this
+    /// project, at some point, by some user — it does not mean the proposal's effects are still
+    /// present, only that they were applied. Absence means Motif never applied it.
     /// </summary>
     public static bool TryFindByProposalId(LcmCache cache, Guid proposalId, out AppliedLogEntry? entry)
     {

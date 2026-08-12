@@ -7,19 +7,20 @@ namespace SIL.Motif.Host.Corpus;
 /// <remarks>
 /// <para>
 /// <b>Why this is an interface at all.</b> At corpus scale, tokenisation decides most of what "unparsed"
-/// means (<c>docs/adr/0036-motif-has-its-own-data-store.md</c> decision 4): a form invented by splitting on
+/// means (ADR 0036 decision 4): a form invented by splitting on
 /// an apostrophe fails to parse and reads as a gap in the grammar rather than as the tokenisation artefact it
-/// actually is. <c>docs/issues.md</c> <c>B26</c> names SIL.Machine's <c>LatinWordTokenizer</c> as the house
-/// candidate for real use, but this project takes no dependency on SIL.Machine — this interface is the seam a
-/// SIL.Machine-backed implementation drops in behind later, in whatever project is allowed to reference it.
+/// actually is. SIL.Machine's <c>LatinWordTokenizer</c> is the house candidate for real use, but this project
+/// takes no dependency on SIL.Machine — this interface is the seam a SIL.Machine-backed implementation drops
+/// in behind later, in whatever project is allowed to reference it.
 /// <see cref="WhitespaceAndPunctuationTokeniser"/> is the BCL-only implementation available today.
 /// </para>
 /// <para>
 /// <b>Name and Version are load-bearing, not descriptive.</b> <see cref="CorpusTokenisation.ToDescriptor"/>
-/// refuses to tokenise a corpus with an implementation whose <see cref="Name"/> or <see cref="Version"/>
-/// disagrees with what the corpus's own <see cref="TokenisationRecord"/> declares — two corpora tokenised
-/// differently are not comparable even when the source text is identical, so the match is checked by value,
-/// not assumed from context.
+/// throws rather than tokenising a corpus with an implementation whose <see cref="Name"/> or
+/// <see cref="Version"/> disagrees with what the corpus's own <see cref="TokenisationRecord"/> declares
+/// (pinned by `DeclaredVsSuppliedTokeniserMismatchThrows_NamingBothTheDeclaredAndSuppliedValues`) — two
+/// corpora tokenised differently are not comparable even when the source text is identical, so the match
+/// is checked by value, not assumed from context.
 /// </para>
 /// </remarks>
 public interface IWordTokeniser

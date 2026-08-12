@@ -17,40 +17,34 @@ using Xunit;
 namespace SIL.Motif.Tests.Apply;
 
 /// <summary>
-/// Stage D proof, on a real project: <see cref="ProposalApplier.Apply"/> commits a
+/// Proof, on a real project: <see cref="ProposalApplier.Apply"/> commits a
 /// <c>lexical/lexSense/setGloss</c> Proposal, writes exactly one applied-log entry inside the same
 /// unit of work, and the result survives a real save + reopen from disk — not merely an in-memory
 /// assertion. Also proves idempotence (a second Apply of the same Proposal against the reopened
-/// project does nothing) and that a distinct Proposal adds a second, distinct log entry. See
-/// docs/change-set-contract.md, "Application Receipt", and docs/applied-log.md.
+/// project does nothing) and that a distinct Proposal adds a second, distinct log entry. Per the
+/// Change Set contract's Application Receipt, apply writes exactly one entry into the applied log
+/// inside the same unit of work as the change; per the applied log format, identity is matched on
+/// the stable Change Set GUID, which is what makes a repeat apply a no-op instead of a duplicate
+/// entry.
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
 public sealed class ProposalApplierTests : IDisposable
 {
-    private readonly string _tempRoot;
     private readonly string _fwDataPath;
     private readonly FwDataProjectLoader _loader = new();
+    private readonly SeededProject _seed;
     private LcmCache _cache;
 
-    public ProposalApplierTests()
+    public ProposalApplierTests(PristineProjectFixture pristine)
     {
-        // Never mutate the shared fixture: copy to a temp directory this test owns and cleans up.
-        _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests", Guid.NewGuid().ToString("N"));
-        _fwDataPath = TestLangProjFixture.CopyToTempAndGetFwDataPath(_tempRoot);
-        _cache = _loader.LoadCache(_fwDataPath);
+        _cache = pristine.NewScratch();
+        _seed = pristine.Seed;
+        _fwDataPath = _cache.ProjectId.Path;
     }
 
     public void Dispose()
     {
         if (!_cache.IsDisposed) _cache.Dispose();
-        try
-        {
-            Directory.Delete(_tempRoot, recursive: true);
-        }
-        catch
-        {
-            // best-effort cleanup; a locked native handle should not fail the test
-        }
     }
 
     [Fact]
@@ -60,8 +54,7 @@ public sealed class ProposalApplierTests : IDisposable
         var canonicalId = CanonicalId.FromGuid(senseGuid);
         var newGloss = originalGloss + " (revised sense, Stage D)";
 
-        // Baseline: whatever CmResource entries the real fixture already carries (foreign to
-        // Motif) must be left completely untouched by everything below.
+        // Baseline: whatever foreign CmResource entries the fixture carries must stay untouched below.
         var foreignEntriesBefore = ReadForeignResourceVersions(_cache);
 
         var proposal = BuildSetGlossProposal(canonicalId, wsTag, newGloss);
@@ -96,7 +89,7 @@ public sealed class ProposalApplierTests : IDisposable
         // --- 2. Persist, then re-open the project from disk: the actual Stage D proof. ---
         _loader.Save(_cache);
         _cache.Dispose();
-        _cache = _loader.LoadCache(_fwDataPath);
+        _cache = _loader.LoadScratchCache(_fwDataPath);
 
         var wsHandleAfterReopen = _cache.WritingSystemFactory.GetWsFromStr(wsTag);
         var senseRepoAfterReopen = _cache.ServiceLocator.GetInstance<ILexSenseRepository>();
@@ -105,8 +98,7 @@ public sealed class ProposalApplierTests : IDisposable
         // (a) The gloss really is the new value after a from-disk reload.
         Assert.Equal(newGloss, reopenedSense.Gloss.get_String(wsHandleAfterReopen).Text);
 
-        // (b) Exactly one Motif applied-log entry exists, with the right proposalId GUID, intent
-        // digest, and user.
+        // (b) Exactly one Motif applied-log entry, with the right proposalId GUID, digest, and user.
         var loggedAfterReopen = ProjectAppliedLog.ReadAll(_cache);
         var reopenedEntry = Assert.Single(loggedAfterReopen);
         Assert.Equal(proposal.ProposalId.ToGuid(), reopenedEntry.ProposalId);
@@ -120,10 +112,7 @@ public sealed class ProposalApplierTests : IDisposable
             foreignEntriesBefore.Count + 1,
             _cache.LangProject.LexDbOA.ResourcesOC.Count);
 
-        // --- 3. Idempotence: re-apply the SAME proposal against the reopened cache. Passing the
-        // ORIGINAL (now stale) anchor here deliberately proves idempotence short-circuits before the
-        // drift check ever runs: the applied-log lookup wins first (ADR 0004 §3 binds apply to an
-        // DryRun, but never re-applies/re-mutates once idempotence already says "done"). ---
+        // 3. Idempotence: the stale anchor proves the applied-log check wins before any drift check runs.
         var reapplyReceipt = ProposalApplier.Apply(_cache, proposal, dryRun.Anchor, applierIdentity, description);
 
         Assert.True(reapplyReceipt.AlreadyApplied);
@@ -167,8 +156,7 @@ public sealed class ProposalApplierTests : IDisposable
         var bogusTarget = CanonicalId.FromGuid(Guid.NewGuid());
         var proposal = BuildSetGlossProposal(bogusTarget, "en", "does not matter");
 
-        // Resolution of the bogus target fails inside Apply's footprint pre-flight, before the
-        // anchor's digest is ever compared — so a placeholder anchor is fine here.
+        // The bogus target fails in the footprint pre-flight before the anchor digest is compared.
         Assert.ThrowsAny<Exception>(() => ProposalApplier.Apply(_cache, proposal, DummyAnchor(), "motif-tests"));
 
         // The failed apply must leave no applied-log entry at all (docs/applied-log.md, "Atomicity").
@@ -214,8 +202,7 @@ public sealed class ProposalApplierTests : IDisposable
         // Run against the ORIGINAL baseline.
         var dryRun = ScratchDryRun.Of(_cache, proposal);
 
-        // The baseline moves out from underneath: someone else commits a real, different gloss
-        // change to the very same target/field before apply runs.
+        // The baseline moves: someone else commits a different gloss to the same target/field first.
         var senseRepo = _cache.ServiceLocator.GetInstance<ILexSenseRepository>();
         var sense = senseRepo.GetObject(senseGuid);
         var actionHandler = _cache.ServiceLocator.GetInstance<IActionHandler>();
@@ -239,12 +226,18 @@ public sealed class ProposalApplierTests : IDisposable
 
     /// <remarks>
     /// This is the only rollback left in Motif, and it is forced by atomicity rather than chosen
-    /// (AGENTS.md rule 4; docs/adr/0016-scratch-cache-copy-not-undo.md as amended 2026-08-06). What this
+    /// (AGENTS.md rule 4; ADR 0016). What this
     /// test no longer asserts is as important as what it does: there is no "the cache is now flagged
     /// non-reusable" check, because the flag, the field list that fed it, and the exception it threw
     /// were all deleted. The obligation moved to the host as an unconditional rule — if Apply throws,
     /// reload — which needs no per-field knowledge and is strictly stronger, since reload also discards
     /// ADR 0005's non-undoable schema phase that a rollback cannot reach.
+    /// </remarks>
+    /// <remarks>
+    /// op2's payload (not its target) is malformed, so <c>SetGlossPayload.Parse</c> throws only once the
+    /// committing apply loop reads it — the footprint pre-flight never looks at <c>after</c>, only the
+    /// target — which is exactly the "failed partway through, must roll back" scenario, and deliberately
+    /// not an unresolvable-target failure (that fails earlier; see <c>Apply_UnknownTarget_...</c>).
     /// </remarks>
     [Fact]
     public void Apply_MidProposalFailure_RollsBack_AndWritesNoAppliedLogEntry()
@@ -252,13 +245,7 @@ public sealed class ProposalApplierTests : IDisposable
         var (senseGuid, wsTag, originalGloss) = FindSenseWithKnownGloss(_cache);
         var target = CanonicalId.FromGuid(senseGuid);
 
-        // op1: a normal, valid setGloss (will succeed and mutate). op2: the SAME (valid, resolvable)
-        // target but a malformed 'after' payload (no 'text') — SetGlossPayload.Parse throws only
-        // once the real, committing apply loop actually reads the payload (the footprint pre-flight
-        // never looks at 'after' at all, only at the target), which is exactly the "failed partway
-        // through, must roll back" scenario, and deliberately NOT an unresolvable-target failure
-        // (that fails earlier, during Apply's footprint pre-flight, before any unit of work opens at
-        // all — see the companion Apply_UnknownTarget_... test).
+        // op1 is valid; op2 targets the same sense but has a malformed payload (see remarks above).
         var op1 = BuildSetGlossOperation(target, wsTag, originalGloss + " (op1, will be rolled back)");
         using var malformedAfter = JsonDocument.Parse(JsonSerializer.Serialize(new { ws = "en" })); // no 'text'
         var op2 = new OperationEnvelope(
@@ -273,8 +260,7 @@ public sealed class ProposalApplierTests : IDisposable
             requires: null,
             operations: new[] { op1, op2 });
 
-        // Both operations' targets resolve fine, so the footprint pre-flight (and thus a
-        // from-scratch anchor built from it) succeeds even though the real apply below will not.
+        // Both targets resolve fine, so the footprint pre-flight succeeds even though apply will not.
         var footprintDigest = FootprintProbe.ComputeCurrentFootprintDigest(_cache, proposal);
         var anchor = DummyAnchor() with { FootprintDigest = footprintDigest };
 
@@ -288,11 +274,7 @@ public sealed class ProposalApplierTests : IDisposable
         // No applied-log entry (docs/applied-log.md, "Atomicity").
         Assert.Empty(ProjectAppliedLog.ReadAll(_cache));
 
-        // Nothing is asserted about the failure path beyond this, because the failure path now does
-        // nothing: no invalidation attempt, no flag, no exception type of its own. That is the fix.
-        // RollbackCacheInvalidator's real defect was reaching for ILexEntryRepository.ResetHomographs
-        // as though it were cache invalidation when it renumbers every entry in the project inside its
-        // own committed unit of work — a hazard that cannot recur in code that no longer exists.
+        // Nothing else to assert: the failure path does nothing -- no invalidation attempt, no flag.
     }
 
     private static OperationEnvelope BuildSetGlossOperation(CanonicalId target, string wsTag, string text)
@@ -314,30 +296,11 @@ public sealed class ProposalApplierTests : IDisposable
         ProjectionVersion: "1",
         DryRunAtUtc: "20260101T000000Z");
 
-    /// <summary>
-    /// Enumerates senses via the real <see cref="ILexSenseRepository"/> and picks the first one
-    /// with a non-empty gloss alternative, reading the current gloss text straight back from
-    /// LibLCM (never hardcoded).
-    /// </summary>
-    private static (Guid SenseGuid, string WsTag, string Gloss) FindSenseWithKnownGloss(LcmCache cache)
+    /// <summary>The seeded first sense's identity, gloss and writing system.</summary>
+    private (Guid SenseGuid, string WsTag, string Gloss) FindSenseWithKnownGloss(LcmCache cache)
     {
-        var senseRepo = cache.ServiceLocator.GetInstance<ILexSenseRepository>();
-
-        foreach (var sense in senseRepo.AllInstances())
-        {
-            foreach (var wsHandle in sense.Gloss.AvailableWritingSystemIds)
-            {
-                var text = sense.Gloss.get_String(wsHandle).Text;
-                if (!string.IsNullOrEmpty(text))
-                {
-                    var wsTag = cache.WritingSystemFactory.GetStrFromWs(wsHandle);
-                    return (sense.Guid, wsTag, text);
-                }
-            }
-        }
-
-        throw new InvalidOperationException(
-            "Expected the real TestLangProj fixture to contain at least one LexSense with a non-empty gloss.");
+        var wsTag = cache.WritingSystemFactory.GetStrFromWs(cache.DefaultAnalWs);
+        return (_seed.FirstSenseId, wsTag, SeededProject.FirstGloss);
     }
 
     private static Proposal BuildSetGlossProposal(CanonicalId target, string wsTag, string text)

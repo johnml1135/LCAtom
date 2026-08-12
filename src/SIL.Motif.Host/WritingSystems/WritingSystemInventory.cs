@@ -29,8 +29,8 @@ public sealed record GrammarWritingSystem(
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Writing systems are grammar inputs, not display configuration.</b> This was asserted the other way round
-/// and checked against the FieldWorks source on 2026-08-09, where it failed:
+/// <b>Writing systems are grammar inputs, not display configuration.</b> This was asserted the other way
+/// round; checking it against the FieldWorks source turned up the following:
 /// </para>
 /// <list type="bullet">
 ///   <item><description>A phoneme's grapheme is stored <b>per writing system</b> — <c>PhCode.Representation</c>
@@ -59,6 +59,13 @@ public sealed record GrammarWritingSystem(
 /// <see cref="EditingIsAFieldWorksJob"/>.
 /// </para>
 /// </remarks>
+/// <param name="Digest">
+/// Hashes the <b>ordered</b> vernacular tags, and nothing else. Order is included because it decides which
+/// writing system the parser uses. <see cref="Analysis"/> writing systems are excluded because they carry
+/// glosses and labels — <c>HCLoader</c> reads them for naming only, so they cannot change what the parser
+/// matches. Valid-character counts are excluded too: they are reported for a reader, but a count is not an
+/// identity, and hashing one would make this digest move for a reason it cannot explain.
+/// </param>
 public sealed record WritingSystemInventory(
     IReadOnlyList<GrammarWritingSystem> Vernacular,
     IReadOnlyList<GrammarWritingSystem> Analysis,
@@ -77,8 +84,7 @@ public sealed record WritingSystemInventory(
     /// which is Motif's business — but it also changes which alternative every multilingual field displays
     /// first, across the dictionary, the texts and every view in the application. Handing Motif a lever over
     /// project-wide configuration in order to fix a grammar-reporting problem is the wrong-sized tool, and it
-    /// crosses the boundary
-    /// <c>docs/adr/0034-the-boundary-with-fieldworks-state-versus-change.md</c> draws: FieldWorks owns the
+    /// crosses the boundary ADR 0034 draws: FieldWorks owns the
     /// project's current state, Motif owns what a change did to it.
     /// </para>
     /// <para>
@@ -105,9 +111,7 @@ public static class WritingSystemInventoryReader
 
         var container = cache.ServiceLocator.WritingSystems;
 
-        // CurrentVernacularWritingSystems is an ordered IList and the order is the whole point — the first
-        // entry is the one the parser reads. Enumerated as-is; sorting it here would destroy the fact this
-        // type exists to record.
+        // Enumerated as-is: sorting here would destroy the very order this type exists to record.
         var vernacular = container.CurrentVernacularWritingSystems
             .Select((ws, index) => Describe(ws, isDefaultVernacular: index == 0))
             .ToList();
@@ -130,8 +134,7 @@ public static class WritingSystemInventoryReader
         }
         catch
         {
-            // A writing system with no valid-character list, or an unparseable one, is ordinary rather than
-            // exceptional — report "none declared" instead of failing a whole inventory over one entry.
+            // Missing or unparseable valid-characters is ordinary: report none declared, don't fail the inventory.
             validCharacterCount = null;
         }
 
@@ -142,16 +145,7 @@ public static class WritingSystemInventoryReader
             ValidCharacterCount: validCharacterCount);
     }
 
-    /// <summary>
-    /// Digests the <b>ordered</b> vernacular tags, and nothing else.
-    /// </summary>
-    /// <remarks>
-    /// Order is included because it decides which writing system the parser uses. The analysis writing systems
-    /// are excluded because they carry glosses and labels — <c>HCLoader</c> reads them for naming only, so they
-    /// cannot change what the parser matches. Valid-character counts are excluded too: they are reported for a
-    /// reader but a count is not an identity, and hashing one would make this digest move for a reason it
-    /// cannot explain.
-    /// </remarks>
+    /// <summary>See <see cref="WritingSystemInventory.Digest"/>'s own doc for what this hashes and why.</summary>
     private static string ComputeDigest(IReadOnlyList<GrammarWritingSystem> vernacular)
     {
         var joined = string.Join("\n", vernacular.Select(ws => ws.Id));

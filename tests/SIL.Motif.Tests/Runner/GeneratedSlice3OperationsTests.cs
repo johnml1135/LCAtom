@@ -1,7 +1,6 @@
 using System.Text.Json;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Model;
-using SIL.Motif.Host.LcmUtils;
 using SIL.Motif.Runner.Apply;
 using SIL.Motif.Runner.Operations;
 using SIL.Motif.Tests.TestFixtures;
@@ -13,46 +12,34 @@ using Xunit;
 namespace SIL.Motif.Tests.Runner;
 
 /// <summary>
-/// MOT-4 slice 3's round-trip proof, on a real project, for a representative field per shape
+/// Round-trip proof, on a real project, for a representative field per shape
 /// <see cref="SIL.Motif.Generator.Emit.Slice3CatalogWriter"/> emits: basic MultiUnicode
 /// (<c>CmPossibility.Abbreviation</c>), basic Boolean (<c>MoInflAffixSlot.Optional</c>),
 /// <c>rel/atomic</c> (<c>MoStemMsa.PartOfSpeech</c>), <c>rel/col</c> (<c>MoStemMsa.FromPartsOfSpeech</c>),
-/// and <c>rel/seq</c> (<c>MoInflAffixTemplate.PrefixSlots</c>) — the same shapes slices 1/2 already
-/// proved, now exercised on grammar classes rather than only the lexical-entry family.
+/// and <c>rel/seq</c> (<c>MoInflAffixTemplate.PrefixSlots</c>) — the same shapes already proved on the
+/// lexical-entry family, now exercised on grammar classes as well.
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
 public sealed class GeneratedSlice3OperationsTests : IDisposable
 {
-    private readonly string _tempRoot;
-    private readonly string _fwDataPath;
-    private readonly FwDataProjectLoader _loader = new();
-    private LcmCache _cache;
+    private readonly LcmCache _cache;
+    private readonly SeededProject _seed;
 
-    public GeneratedSlice3OperationsTests()
+    public GeneratedSlice3OperationsTests(PristineProjectFixture pristine)
     {
-        _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests.Slice3", Guid.NewGuid().ToString("N"));
-        _fwDataPath = TestLangProjFixture.CopyToTempAndGetFwDataPath(_tempRoot);
-        _cache = _loader.LoadCache(_fwDataPath);
+        _cache = pristine.NewScratch();
+        _seed = pristine.Seed;
     }
 
     public void Dispose()
     {
         if (!_cache.IsDisposed) _cache.Dispose();
-        try
-        {
-            Directory.Delete(_tempRoot, recursive: true);
-        }
-        catch
-        {
-            // best-effort cleanup; a locked native handle should not fail the test
-        }
     }
 
     [Fact]
     public void SetThenClear_CmPossibilityAbbreviation_MultiUnicode_RoundTripsThroughDryRunAndApply()
     {
-        // A part of speech IS-A CmPossibility (ADR 0023's own example), so a real, already-seeded
-        // IPartOfSpeech is a perfectly good target for a field declared on the base class.
+        // A part of speech IS-A CmPossibility (ADR 0023), so it's a valid target for a base-class field.
         var pos = FindAnyPartOfSpeech();
         var target = CanonicalId.FromGuid(pos.Guid);
         var wsTag = _cache.WritingSystemFactory.GetStrFromWs(_cache.DefaultAnalWs);
@@ -101,7 +88,7 @@ public sealed class GeneratedSlice3OperationsTests : IDisposable
         var newPos = CreatePartOfSpeech();
         var target = CanonicalId.FromGuid(msa.Guid);
 
-        // Known starting state, regardless of what the fixture's own senses already carry.
+        // Known starting state, asserted rather than assumed from the seed.
         UndoableUnitOfWorkHelper.Do(
             "test setup", "test setup", _cache.ServiceLocator.GetInstance<IActionHandler>(),
             () => msa.PartOfSpeechRA = null);
@@ -180,7 +167,7 @@ public sealed class GeneratedSlice3OperationsTests : IDisposable
     }
 
     private IPartOfSpeech FindAnyPartOfSpeech() =>
-        (IPartOfSpeech)_cache.LangProject.PartsOfSpeechOA.PossibilitiesOS.First();
+        (IPartOfSpeech)_cache.ServiceLocator.GetInstance<ICmObjectRepository>().GetObject(_seed.PartOfSpeechId);
 
     private IPartOfSpeech CreatePartOfSpeech()
     {
@@ -206,7 +193,8 @@ public sealed class GeneratedSlice3OperationsTests : IDisposable
     }
 
     private IMoStemMsa FindAnyStemMsa() =>
-        _cache.ServiceLocator.GetInstance<IMoStemMsaRepository>().AllInstances().First();
+        (IMoStemMsa)_cache.ServiceLocator.GetInstance<ILexSenseRepository>()
+            .GetObject(_seed.FirstSenseId).MorphoSyntaxAnalysisRA!;
 
     private static Proposal BuildProposal(string kind, CanonicalId target, object after)
     {

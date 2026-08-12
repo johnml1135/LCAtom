@@ -5,9 +5,10 @@ namespace SIL.Motif.Tests.Contract;
 
 /// <summary>
 /// Fixed RFC 8785 canonicalization vectors exercising the JCS reference implementation wrapper
-/// (<see cref="CanonicalJson"/>): object member sorting, escaping, and ES6 number formatting. See
-/// docs/change-set-contract.md "Canonical JSON and hashes" and
-/// docs/adr/0007-cross-language-digest-determinism.md decision 3.
+/// (<see cref="CanonicalJson"/>): object member names sorted by UTF-16 code-unit order rather than
+/// a native <c>sorted()</c> (ADR 0007 decision 3), string escaping, and ES6 number formatting via
+/// ECMAScript <c>Number::toString</c>, then hashed as canonicalization bytes with SHA-256 per the
+/// Change Set contract's "Canonical JSON and hashes" rule.
 /// </summary>
 public class CanonicalJsonTests
 {
@@ -20,8 +21,7 @@ public class CanonicalJsonTests
     [Fact]
     public void ObjectMembers_NumericLookingKeys_SortLexicographicallyNotNumerically()
     {
-        // "1" < "10" < "2" under RFC 8785's UTF-16 code-unit member-name ordering, unlike a
-        // numeric sort where 2 < 10.
+        // RFC 8785 UTF-16 code-unit order: "1" < "10" < "2", not the numeric order 2 < 10.
         Assert.Equal(
             """{"1":"one","10":"ten","2":"two"}""",
             CanonicalJson.Canonicalize("""{"2":"two","1":"one","10":"ten"}"""));

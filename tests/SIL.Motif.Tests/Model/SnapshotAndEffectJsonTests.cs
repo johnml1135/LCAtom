@@ -7,9 +7,13 @@ using Xunit;
 namespace SIL.Motif.Tests.Model;
 
 /// <summary>
-/// LibLCM-free unit tests for the Stage C snapshot/effect JSON rendering and digest: fast checks
+/// LibLCM-free unit tests for snapshot/effect JSON rendering and digest: fast checks
 /// that complement <see cref="SIL.Motif.Tests.Runner.ProposalDryRunnerTests"/>'s real-project
-/// proof. See docs/change-set-contract.md, "Canonical Semantic Snapshot" and "Expected effects".
+/// proof. Per the Change Set contract, the snapshot set is keyed by canonical id, never a storage
+/// GUID, and a field with no populated alternative is omitted rather than written as an empty
+/// value; the effect digest hashes the full set of <c>(canonicalId, field, before, after)</c>
+/// deltas, so a changed <c>before</c> moves the digest even when <c>after</c> is unchanged, and the
+/// digest is stable under reordering because it is a hash of a set, not a sequence.
 /// </summary>
 public class SnapshotAndEffectJsonTests
 {
@@ -29,16 +33,13 @@ public class SnapshotAndEffectJsonTests
         var json = ObjectSnapshotJsonWriter.WriteJson(new[] { snapshot });
         using var document = JsonDocument.Parse(json);
 
-        // The multi-snapshot writer's outer object member name IS the canonical id (the "keyed by
-        // canonical id" projection); its value is that snapshot's fields map directly — no
-        // redundant nested "fields" wrapper, since the outer key already carries identity. Contrast
-        // the single-snapshot overload below, which has no outer key to carry identity and so
-        // states "canonicalId" and "fields" explicitly.
+        // Multi-snapshot: outer key IS the canonical id, so no redundant nested "fields" wrapper.
         Assert.True(document.RootElement.TryGetProperty(SenseId.Value, out var bySenseId));
         Assert.Equal(
             "run quickly on foot",
             bySenseId.GetProperty(SnapshotFields.LexSenseGloss).GetProperty("en").GetString());
 
+        // Single-snapshot: no outer key to carry identity, so "canonicalId" and "fields" are explicit.
         var singleJson = ObjectSnapshotJsonWriter.WriteJson(snapshot);
         using var singleDocument = JsonDocument.Parse(singleJson);
         Assert.Equal(SenseId.Value, singleDocument.RootElement.GetProperty("canonicalId").GetString());
@@ -51,8 +52,7 @@ public class SnapshotAndEffectJsonTests
     [Fact]
     public void ObjectSnapshotJsonWriter_OmitsFieldsWithNoPopulatedAlternatives()
     {
-        // "Additive-stable": a field absent from MultiUnicodeFields entirely (never an empty-string
-        // alternative) is how "no populated alternative" is represented.
+        // "No populated alternative" means the field is absent entirely, never an empty-string alternative.
         var emptySnapshot = ObjectSnapshot.Empty(SenseId);
 
         var json = ObjectSnapshotJsonWriter.WriteJson(emptySnapshot);
@@ -83,10 +83,7 @@ public class SnapshotAndEffectJsonTests
     [Fact]
     public void ExpectedEffectSetDigest_ChangesWhenBeforeDiffersEvenIfAfterIsTheSame()
     {
-        // docs/change-set-contract.md, "Expected effects", rule 4: hash the transition, not the
-        // destination — a changed `before` on a touched field must move the digest even when the
-        // `after` is unchanged, or a stored approval would silently carry to an unreviewed
-        // transition.
+        // Hash the transition, not the destination: a changed `before` must move the digest too.
         var after = new Dictionary<string, string> { ["en"] = "move quickly on foot" };
 
         var digestA = ExpectedEffectSetDigest.Compute(new[]
@@ -107,9 +104,7 @@ public class SnapshotAndEffectJsonTests
     [Fact]
     public void ExpectedEffectSetDigest_IsOrderIndependentOverTheEffectSet()
     {
-        // The effect set is semantically a set (rule 4), so two effects presented in a different
-        // authored order must still digest identically; the writer is responsible for the
-        // canonical presort, not the caller.
+        // The effect set is semantically a set: authored order must not affect the digest.
         var otherId = CanonicalId.FromGuid(Guid.ParseExact("10111213-1415-1617-1819-1a1b1c1d1e1f", "D"));
 
         var effectOne = new ExpectedEffect(

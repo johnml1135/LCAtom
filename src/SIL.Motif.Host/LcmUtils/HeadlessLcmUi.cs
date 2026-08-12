@@ -1,6 +1,4 @@
-// Adapted from FwDataMiniLcmBridge, Copyright (c) SIL Global, licensed under the MIT License.
-// Source: languageforge-lexbox/backend/FwLite/FwDataMiniLcmBridge/LcmUtils/LcmUi.cs
-// https://github.com/sillsdev/languageforge-lexbox
+// Adapted from languageforge-lexbox's FwDataMiniLcmBridge/LcmUtils/LcmUi.cs (SIL Global, MIT License).
 
 using System.ComponentModel;
 using SIL.LCModel;

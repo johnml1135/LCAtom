@@ -6,8 +6,8 @@ namespace SIL.Motif.Contract.Canonicalization;
 
 /// <summary>
 /// Computes the Proposal intent digest: RFC 8785 canonical JSON bytes over the intent
-/// projection, then SHA-256, rendered as <c>sha256:</c> + 64 lowercase hex characters. See
-/// docs/change-set-contract.md, "Canonical JSON and hashes".
+/// projection, then SHA-256, rendered as <c>sha256:</c> + 64 lowercase hex characters — the Change
+/// Set contract's "Canonical JSON and hashes" rule.
 /// </summary>
 public static class IntentDigest
 {

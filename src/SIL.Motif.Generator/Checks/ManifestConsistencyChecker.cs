@@ -12,19 +12,19 @@ namespace SIL.Motif.Generator.Checks;
 /// manifest's <c>Group</c>/domain column, which it deliberately never reads.
 /// </summary>
 /// <remarks>
-/// This check earned its keep the first time it ran against the real manifest: ADR 0022's prose
-/// asserts "exactly five" <c>ComparisonClass</c> exceptions, but the real, current manifest has
+/// ADR 0022's prose asserts "exactly five" <c>ComparisonClass</c> exceptions, but the manifest has
 /// seven — <c>PhPhonData.Contexts</c> and <c>.FeatConstraints</c> are two more, a documented
-/// pooled-storage case (issue B9, docs/issues.md) the ADR's count predates. A fail-closed check
-/// caught a case the specification asserted did not exist; an advisory warning would not have been
-/// read. See the class remarks on <see cref="ComparisonClassDerivation"/> for the full citation.
+/// pooled-storage case the ADR's count predates. This check is fail-closed rather than advisory
+/// specifically because of that gap: a specification's stated count is not proof against the data
+/// disagreeing with it. See the class remarks on <see cref="ComparisonClassDerivation"/> for the
+/// full citation.
 /// </remarks>
 public static class ManifestConsistencyChecker
 {
     /// <summary>
     /// Checks every in-scope row's <c>Verbs</c> and <c>ComparisonClass</c> against the derivation.
-    /// <c>Scope != in</c> rows carry empty policy columns (manifest/README.md) and are skipped
-    /// entirely; <c>Verbs == "n/a"</c> rows are unauthorable (docs/plan-motif.md MOT-2) and skip only
+    /// <c>Scope != in</c> rows carry empty policy columns (the manifest README) and are skipped
+    /// entirely; <c>Verbs == "n/a"</c> rows are unauthorable and skip only
     /// the verb half of the check — their <c>ComparisonClass</c> is still populated (order still
     /// means something even for a field nobody may author yet) and is still checked.
     /// </summary>

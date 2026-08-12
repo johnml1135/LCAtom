@@ -7,7 +7,7 @@ namespace SIL.Motif.Runner.Snapshotting;
 /// <summary>
 /// Reads every populated writing-system alternative of a MultiUnicode/MultiString accessor into a
 /// ws-tag -&gt; text map — the read half of <see cref="Operations.MultiAlternativesFieldLowering"/>,
-/// generalized from <c>LexSenseSnapshotter.ReadMultiUnicode</c>'s pre-MOT-4 body (see that type's own
+/// generalized from <c>LexSenseSnapshotter.ReadMultiUnicode</c> (see that type's own
 /// remarks for the "empty is indistinguishable from absent" rule this preserves verbatim).
 /// </summary>
 internal static class MultiAlternativesFieldSnapshotting

@@ -8,8 +8,8 @@ namespace SIL.Motif.Runner.Operations;
 /// <summary>
 /// Resolve-and-type-check plus the one LibLCM write every <c>rel/atomic</c> <c>set|clear</c> kind
 /// performs — the reference-field analogue of <see cref="MultiAlternativesFieldLowering"/>, shared by
-/// every generated <c>*Lowering</c> class for a single-valued reference field (MOT-4 slice 2;
-/// <c>MoForm.MorphType</c> today). Also used by the hand-written <c>LexEntry.LexemeForm</c>
+/// every generated <c>*Lowering</c> class for a single-valued reference field
+/// (<c>MoForm.MorphType</c> today). Also used by the hand-written <c>LexEntry.LexemeForm</c>
 /// <c>create</c>/<c>delete</c> kind to resolve the payload's <c>morphType</c> reference, since that is
 /// exactly the same "resolve one <see cref="CanonicalId"/>, check its runtime type" preamble.
 /// </summary>

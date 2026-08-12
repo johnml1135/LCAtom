@@ -1,6 +1,4 @@
-// Adapted from FwDataMiniLcmBridge, Copyright (c) SIL Global, licensed under the MIT License.
-// Source: languageforge-lexbox/backend/FwLite/FwDataMiniLcmBridge/LcmUtils/LcmDirectories.cs
-// https://github.com/sillsdev/languageforge-lexbox
+// Adapted from languageforge-lexbox's FwDataMiniLcmBridge/LcmUtils/LcmDirectories.cs (SIL Global, MIT).
 
 using SIL.LCModel;
 

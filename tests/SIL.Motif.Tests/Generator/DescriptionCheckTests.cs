@@ -33,7 +33,7 @@ public class DescriptionCheckTests
         EnumValues: "", Rationale: "test fixture");
 
     private static KindDescription Desc(string cls, string field, string label, string description) =>
-        new(cls, field, label, description, "draft");
+        new(cls, field, label, description, "unsourced");
 
     [Fact]
     public void AUsableDescription_Passes()
@@ -132,16 +132,66 @@ public class DescriptionCheckTests
     }
 
     [Fact]
-    public void ADraftDescription_Passes_BecauseReviewTracksButDoesNotGate()
+    public void AnUnsourcedDescription_Passes_BecauseReviewTracksButDoesNotGate()
     {
         DescriptionCheck.CheckEmittedKinds(
             new[] { Row("LexSense", "Gloss") },
-            new[] { new KindDescription("LexSense", "Gloss", "Gloss", "Set the sense's short meaning.", "draft") });
+            new[] { new KindDescription("LexSense", "Gloss", "Gloss", "Set the sense's short meaning.", "unsourced") });
     }
 
     /// <summary>
-    /// The 14 descriptions shipped for MOT-4's family must all clear the bar. This is the real file, so it
-    /// fails if someone adds a row that restates its label.
+    /// Presence was never the whole bar: a description that claims provenance it does not have is the
+    /// exact failure mode a missing-source column exists to catch.
+    /// </summary>
+    [Fact]
+    public void AnUnrecognizedReviewedValue_Fails()
+    {
+        var ex = Assert.Throws<GeneratorException>(() =>
+            DescriptionCheck.CheckEmittedKinds(
+                new[] { Row("LexSense", "Gloss") },
+                new[] { new KindDescription("LexSense", "Gloss", "Gloss", "Set the sense's short meaning.", "draft") }));
+
+        Assert.Contains("not one of sourced / hand-corrected / unsourced", ex.Message);
+    }
+
+    [Fact]
+    public void SourcedWithNoCitation_Fails()
+    {
+        var ex = Assert.Throws<GeneratorException>(() =>
+            DescriptionCheck.CheckEmittedKinds(
+                new[] { Row("LexSense", "Gloss") },
+                new[] { new KindDescription("LexSense", "Gloss", "Gloss", "Set the sense's short meaning.", "sourced") }));
+
+        Assert.Contains("Source/SourceDetail is empty", ex.Message);
+    }
+
+    [Fact]
+    public void HandCorrectedWithNoCitation_Fails()
+    {
+        var ex = Assert.Throws<GeneratorException>(() =>
+            DescriptionCheck.CheckEmittedKinds(
+                new[] { Row("LexSense", "Gloss") },
+                new[] { new KindDescription("LexSense", "Gloss", "Gloss", "Set the sense's short meaning.", "hand-corrected") }));
+
+        Assert.Contains("Source/SourceDetail is empty", ex.Message);
+    }
+
+    [Fact]
+    public void SourcedWithACitation_Passes()
+    {
+        DescriptionCheck.CheckEmittedKinds(
+            new[] { Row("LexSense", "Gloss") },
+            new[]
+            {
+                new KindDescription(
+                    "LexSense", "Gloss", "Gloss", "Set the sense's short meaning.", "sourced",
+                    "liblcm/MasterLCModel.xml", "line 42, <basic id=\"Gloss\"> under <class id=\"LexSense\">"),
+            });
+    }
+
+    /// <summary>
+    /// The 14 shipped descriptions must all clear the bar. This is the real file, so it fails if someone
+    /// adds a row that restates its label.
     /// </summary>
     [Fact]
     public void TheShippedDescriptionsFile_ParsesAndEveryRowClearsTheBar()
@@ -158,9 +208,9 @@ public class DescriptionCheckTests
     public void DuplicateDescriptionsForOneField_AreRejectedByTheParser()
     {
         const string text =
-            "\"Class\"\t\"Field\"\t\"Label\"\t\"Description\"\t\"Reviewed\"\r\n" +
-            "\"LexSense\"\t\"Gloss\"\t\"Gloss\"\t\"First sentence about the gloss.\"\t\"draft\"\r\n" +
-            "\"LexSense\"\t\"Gloss\"\t\"Gloss\"\t\"Second, conflicting sentence.\"\t\"draft\"\r\n";
+            "\"Class\"\t\"Field\"\t\"Label\"\t\"Description\"\t\"Reviewed\"\t\"Source\"\t\"SourceDetail\"\t\"SourceHash\"\r\n" +
+            "\"LexSense\"\t\"Gloss\"\t\"Gloss\"\t\"First sentence about the gloss.\"\t\"unsourced\"\t\"\"\t\"\"\t\"\"\r\n" +
+            "\"LexSense\"\t\"Gloss\"\t\"Gloss\"\t\"Second, conflicting sentence.\"\t\"unsourced\"\t\"\"\t\"\"\t\"\"\r\n";
 
         var ex = Assert.Throws<GeneratorException>(() => KindDescriptionTsvParser.ParseText("test.tsv", text));
 

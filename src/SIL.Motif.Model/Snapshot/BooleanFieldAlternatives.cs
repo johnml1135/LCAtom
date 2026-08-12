@@ -14,7 +14,7 @@ namespace SIL.Motif.Model.Snapshot;
 /// <c>IReadOnlyDictionary&lt;string, string&gt;</c>, and existing tests
 /// (<c>SnapshotAndEffectJsonTests</c>, <c>ProposalDryRunnerTests</c>) index them by writing-system
 /// tag — <c>effect.Before[wsTag]</c> — so that type cannot change without breaking already-shipped
-/// call sites MOT-4's regeneration gate requires to keep compiling unmodified. Rather than widen
+/// call sites a regeneration gate requires to keep compiling unmodified. Rather than widen
 /// <see cref="SIL.Motif.Model.Effects.ExpectedEffect"/> to a discriminated value type, a scalar
 /// Boolean borrows the identical map shape via one well-known key, <see cref="Key"/> — the
 /// representation is "an alternatives map with exactly one entry," which costs nothing structurally
