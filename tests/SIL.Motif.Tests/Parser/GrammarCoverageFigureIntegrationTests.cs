@@ -23,7 +23,7 @@ public sealed class GrammarCoverageFigureIntegrationTests
 
         // Small cap: proves wiring only; full-corpus timing is in docs/research/2026-08-06-parser-timing-measured.md.
         CorpusDescriptor corpus;
-        using (var cache = new FwDataProjectLoader().LoadCache(projectPath))
+        using (var cache = new FwDataProjectLoader().LoadScratchCache(projectPath))
         {
             corpus = LcmWordformCorpus.Extract(cache, "Sena 3 (smoke sample)", limit: 8);
         }

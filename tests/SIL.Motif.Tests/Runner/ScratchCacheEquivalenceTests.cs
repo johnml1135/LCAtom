@@ -31,7 +31,7 @@ public class ScratchCacheEquivalenceTests : IDisposable
         _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_tempRoot);
         _fwDataPath = TestLangProjFixture.CopyToTempAndGetFwDataPath(_tempRoot);
-        _live = new FwDataProjectLoader().LoadCache(_fwDataPath);
+        _live = new FwDataProjectLoader().LoadScratchCache(_fwDataPath);
     }
 
     [Fact]

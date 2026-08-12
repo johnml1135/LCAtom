@@ -36,7 +36,7 @@ public sealed class WritingSystemInventoryTests : IDisposable
     {
         _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests.Ws", Guid.NewGuid().ToString("N"));
         var fwDataPath = TestLangProjFixture.CopyToTempAndGetFwDataPath(_tempRoot);
-        _cache = new FwDataProjectLoader().LoadCache(fwDataPath);
+        _cache = new FwDataProjectLoader().LoadScratchCache(fwDataPath);
     }
 
     [Fact]

@@ -19,7 +19,7 @@ public sealed class LcmWordformCorpusTests
     [RealParserFact]
     public void Extract_ProducesTheSameDescriptorAsHashingExtractFormsDirectly()
     {
-        using var cache = new FwDataProjectLoader().LoadCache(RealProject.Sena3Path()!);
+        using var cache = new FwDataProjectLoader().LoadScratchCache(RealProject.Sena3Path()!);
 
         var viaExtract = LcmWordformCorpus.Extract(cache, "Sena 3", limit: 25);
         var viaFormsThenCreate = CorpusDescriptor.Create("Sena 3", LcmWordformCorpus.ExtractForms(cache).Take(25));
@@ -32,7 +32,7 @@ public sealed class LcmWordformCorpusTests
     [RealParserFact]
     public void Extract_TheLimitCapsHowManyFormsAreHashed()
     {
-        using var cache = new FwDataProjectLoader().LoadCache(RealProject.Sena3Path()!);
+        using var cache = new FwDataProjectLoader().LoadScratchCache(RealProject.Sena3Path()!);
 
         var capped = LcmWordformCorpus.Extract(cache, "Sena 3 (capped)", limit: 5);
         var uncapped = LcmWordformCorpus.Extract(cache, "Sena 3 (whole)");
@@ -46,7 +46,7 @@ public sealed class LcmWordformCorpusTests
     [RealParserFact]
     public void Extract_EveryFormIsNonEmptyText()
     {
-        using var cache = new FwDataProjectLoader().LoadCache(RealProject.Sena3Path()!);
+        using var cache = new FwDataProjectLoader().LoadScratchCache(RealProject.Sena3Path()!);
 
         var descriptor = LcmWordformCorpus.Extract(cache, "Sena 3", limit: 100);
 

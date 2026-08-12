@@ -65,7 +65,7 @@ public static class Program
         Directory.CreateDirectory(workingRoot);
         var (workingFwData, copyToWorkingMs) = Timed(() => CopyProject(sourceFwData, workingRoot));
 
-        var (live, loadMs) = Timed(() => new FwDataProjectLoader().LoadCache(workingFwData));
+        var (live, loadMs) = Timed(() => new FwDataProjectLoader().LoadScratchCache(workingFwData));
         try
         {
             var objectCount = live.ServiceLocator.GetInstance<ICmObjectRepository>().Count;

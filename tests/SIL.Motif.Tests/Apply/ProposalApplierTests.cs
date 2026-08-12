@@ -89,7 +89,7 @@ public sealed class ProposalApplierTests : IDisposable
         // --- 2. Persist, then re-open the project from disk: the actual Stage D proof. ---
         _loader.Save(_cache);
         _cache.Dispose();
-        _cache = _loader.LoadCache(_fwDataPath);
+        _cache = _loader.LoadScratchCache(_fwDataPath);
 
         var wsHandleAfterReopen = _cache.WritingSystemFactory.GetWsFromStr(wsTag);
         var senseRepoAfterReopen = _cache.ServiceLocator.GetInstance<ILexSenseRepository>();

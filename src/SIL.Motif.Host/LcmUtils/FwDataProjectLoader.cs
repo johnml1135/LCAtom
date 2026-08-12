@@ -57,6 +57,10 @@ public class FwDataProjectLoader
     /// Folder LibLCM expects to exist for new-project templates. Its contents are not needed to
     /// open an existing project; defaults to a scratch folder under the temp path.
     /// </param>
+    /// <remarks>
+    /// Which one do I want? If the caller does not own the project and intend to persist it — a
+    /// copy, a temp project, a read-only analysis — use <see cref="LoadScratchCache"/> instead.
+    /// </remarks>
     public virtual LcmCache LoadCache(string fwDataFilePath, string? templatesFolder = null)
     {
         Init();

@@ -80,7 +80,7 @@ public sealed class ParserSeamIntegrationTests
         var analysed = report.Words.Where(w => w.Analyses.Count > 0).ToList();
         Assert.NotEmpty(analysed);
 
-        using var cache = new FwDataProjectLoader().LoadCache(projectPath);
+        using var cache = new FwDataProjectLoader().LoadScratchCache(projectPath);
         var objects = cache.ServiceLocator.GetInstance<ICmObjectRepository>();
 
         var unresolved = new List<string>();

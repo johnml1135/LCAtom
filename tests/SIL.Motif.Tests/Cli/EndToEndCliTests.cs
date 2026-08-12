@@ -153,7 +153,7 @@ public sealed class EndToEndCliTests
 
     private void AssertGlossOnDisk(Guid senseGuid, string wsTag, string expectedGloss)
     {
-        using var cache = new FwDataProjectLoader().LoadCache(_fwDataPath);
+        using var cache = new FwDataProjectLoader().LoadScratchCache(_fwDataPath);
         var wsHandle = cache.WritingSystemFactory.GetWsFromStr(wsTag);
         var senseRepo = cache.ServiceLocator.GetInstance<ILexSenseRepository>();
         Assert.Equal(expectedGloss, senseRepo.GetObject(senseGuid).Gloss.get_String(wsHandle).Text);
@@ -161,7 +161,7 @@ public sealed class EndToEndCliTests
 
     private void AssertAppliedLogEntryCount(int expectedCount)
     {
-        using var cache = new FwDataProjectLoader().LoadCache(_fwDataPath);
+        using var cache = new FwDataProjectLoader().LoadScratchCache(_fwDataPath);
         Assert.Equal(expectedCount, ProjectAppliedLog.ReadAll(cache).Count);
     }
 

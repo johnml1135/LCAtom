@@ -91,7 +91,7 @@ public sealed class LexEntryLexemeFormOperationsTests : IDisposable
         var dryRun = ScratchDryRun.Of(_cache, proposal);
         var fwDataPath = _cache.ProjectId.Path;
         _cache.Dispose();
-        _cache = _loader.LoadCache(fwDataPath);
+        _cache = _loader.LoadScratchCache(fwDataPath);
         ProposalApplier.Apply(_cache, proposal, dryRun.Anchor, "motif-tests");
 
         var entry = _cache.ServiceLocator.GetInstance<ILexEntryRepository>().GetObject(entryGuid);
@@ -115,7 +115,7 @@ public sealed class LexEntryLexemeFormOperationsTests : IDisposable
 
         var fwDataPath = _cache.ProjectId.Path;
         _cache.Dispose();
-        _cache = _loader.LoadCache(fwDataPath);
+        _cache = _loader.LoadScratchCache(fwDataPath);
         ProposalApplier.Apply(_cache, proposal, dryRun.Anchor, "motif-tests");
 
         var entry = _cache.ServiceLocator.GetInstance<ILexEntryRepository>().GetObject(entryGuid);

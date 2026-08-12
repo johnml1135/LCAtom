@@ -68,7 +68,9 @@ one-sided version while removing the `using` block along with the comment above 
    plan.
 2. A generated LibLCM Mutation Plan is output-only. It may be previewed and recorded, but never
    accepted as canonical input.
-3. The caller supplies an already-loaded `LcmCache` and owns project lifecycle and persistence.
+3. The caller supplies an already-loaded `LcmCache` and owns project lifecycle and persistence. If
+   the caller does not own the project and intend to persist it, `FwDataProjectLoader.LoadScratchCache`
+   is the one to call, not `LoadCache`.
 4. One complete Change Set is one atomic LibLCM unit of work. Individual operation methods never
    commit or open independent transactions.
 5. **Order is authoritative only where it is declared.** The runner honours declared dependencies
