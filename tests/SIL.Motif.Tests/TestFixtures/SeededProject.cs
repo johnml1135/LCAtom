@@ -1,4 +1,6 @@
 using SIL.LCModel;
+using SIL.LCModel.Core.Cellar;
+using SIL.LCModel.DomainServices;
 using SIL.LCModel.Infrastructure;
 
 namespace SIL.Motif.Tests.TestFixtures;
@@ -27,7 +29,9 @@ public sealed record SeededProject(
     Guid SecondLexemeFormId,
     Guid FirstSenseId,
     Guid SecondSenseId,
-    Guid PartOfSpeechId)
+    Guid PartOfSpeechId,
+    int NoteFieldFlid,
+    int PriorityFieldFlid)
 {
     /// <summary>The vernacular form written into the first entry's lexeme form.</summary>
     public const string FirstForm = "motifa";
@@ -41,10 +45,23 @@ public sealed record SeededProject(
     /// <summary>The analysis-language gloss on the second sense.</summary>
     public const string SecondGloss = "second seeded gloss";
 
+    /// <summary>The LibLCM class both seeded custom fields are defined on.</summary>
+    public const string CustomFieldOwnerClass = "LexEntry";
+
+    /// <summary>A <c>MultiUnicode</c> custom field, analysis-writing-system selector.</summary>
+    public const string NoteFieldName = "MotifSeededNote";
+
+    /// <summary>An <c>Integer</c> custom field, sharing <see cref="CustomFieldOwnerClass"/> with <see cref="NoteFieldName"/>.</summary>
+    public const string PriorityFieldName = "MotifSeededPriority";
+
     /// <summary>
-    /// Writes the seed into <paramref name="cache"/> in one non-undoable unit of work, and returns the
-    /// identity of everything it made.
+    /// Writes the seed into <paramref name="cache"/> and returns the identity of everything it made.
     /// </summary>
+    /// <remarks>
+    /// Two phases, mirroring ADR 0005: the custom-field definitions go in their own non-undoable unit of
+    /// work first, then the lexical data in a second, so the schema mutation is never left inside an open
+    /// task the way Flexicon's was.
+    /// </remarks>
     public static SeededProject Seed(LcmCache cache)
     {
         var services = cache.ServiceLocator;
@@ -53,6 +70,20 @@ public sealed record SeededProject(
 
         var stemType = services.GetInstance<IMoMorphTypeRepository>()
             .GetObject(MoMorphTypeTags.kguidMorphStem);
+
+        var mdc = (IFwMetaDataCacheManaged)cache.MetaDataCacheAccessor;
+        int noteFlid = 0;
+        int priorityFlid = 0;
+
+        NonUndoableUnitOfWorkHelper.Do(cache.ActionHandlerAccessor, () =>
+        {
+            // Both on the same owning class so a flid drift in the second field's slot is possible to detect.
+            noteFlid = mdc.AddCustomField(
+                CustomFieldOwnerClass, NoteFieldName, CellarPropertyType.MultiUnicode, 0,
+                string.Empty, WritingSystemServices.kwsAnal, Guid.Empty);
+            priorityFlid = mdc.AddCustomField(
+                CustomFieldOwnerClass, PriorityFieldName, CellarPropertyType.Integer, 0);
+        });
 
         ILexEntry first = null!;
         ILexEntry second = null!;
@@ -75,7 +106,9 @@ public sealed record SeededProject(
             SecondLexemeFormId: second.LexemeFormOA!.Guid,
             FirstSenseId: first.SensesOS[0].Guid,
             SecondSenseId: second.SensesOS[0].Guid,
-            PartOfSpeechId: pos.Guid);
+            PartOfSpeechId: pos.Guid,
+            NoteFieldFlid: noteFlid,
+            PriorityFieldFlid: priorityFlid);
     }
 
     private static ILexEntry MakeEntry(

@@ -1,4 +1,5 @@
 using SIL.LCModel;
+using SIL.LCModel.Infrastructure;
 using SIL.Motif.Host.LcmUtils;
 
 namespace SIL.Motif.Tests.TestFixtures;
@@ -26,8 +27,15 @@ public static class NewLangProjFixture
     /// <summary>LibLCM expects the project folder and the <c>.fwdata</c> file to share a name.</summary>
     public const string ProjectName = "MotifTestProj";
 
-    /// <summary>The vernacular writing system every seeded form is written in.</summary>
+    /// <summary>The vernacular writing system every seeded form is written in, and the default (first).</summary>
     public const string VernacularTag = "fr";
+
+    /// <summary>
+    /// A second vernacular writing system, added after the blank project is created. Exists so a test
+    /// exercising vernacular-order behaviour (reordering, "first" vs. "only") has something to reorder;
+    /// see <see cref="SIL.Motif.Tests.WritingSystems.WritingSystemInventoryTests"/>.
+    /// </summary>
+    public const string SecondVernacularTag = "es";
 
     /// <summary>The analysis writing system every seeded gloss is written in.</summary>
     public const string AnalysisTag = "en";
@@ -49,7 +57,7 @@ public static class NewLangProjFixture
         var fwDataPath = Path.Combine(projectFolder, ProjectName + ".fwdata");
         var progress = new LcmThreadedProgress();
 
-        return LcmCache.CreateCacheWithNewBlankLangProj(
+        var cache = LcmCache.CreateCacheWithNewBlankLangProj(
             new LocalProjectId(fwDataPath),
             AnalysisTag,
             VernacularTag,
@@ -57,6 +65,16 @@ public static class NewLangProjFixture
             new HeadlessLcmUi(progress.SynchronizeInvoke),
             new LcmDirectories(tempRoot, templatesFolder),
             new LcmSettings());
+
+        NonUndoableUnitOfWorkHelper.Do(cache.ActionHandlerAccessor, () =>
+        {
+            cache.ServiceLocator.WritingSystemManager.GetOrSet(SecondVernacularTag, out var secondVernWs);
+            var writingSystems = cache.ServiceLocator.WritingSystems;
+            writingSystems.VernacularWritingSystems.Add(secondVernWs);
+            writingSystems.CurrentVernacularWritingSystems.Add(secondVernWs);
+        });
+
+        return cache;
     }
 
     /// <summary>The <c>.fwdata</c> path a cache from <see cref="CreateCache"/> is backed by.</summary>

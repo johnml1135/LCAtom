@@ -17,7 +17,6 @@ namespace SIL.Motif.Tests.Runner;
 /// means a regression in either strategy fails the suite rather than waiting for someone to re-run a spike.
 /// </remarks>
 [Collection(LcmCacheTestCollection.Name)]
-[Trait("Fixture", "FieldWorks")]
 public class ScratchCacheEquivalenceTests : IDisposable
 {
     private readonly ITestOutputHelper _output;
@@ -25,13 +24,13 @@ public class ScratchCacheEquivalenceTests : IDisposable
     private readonly string _fwDataPath;
     private readonly LcmCache _live;
 
-    public ScratchCacheEquivalenceTests(ITestOutputHelper output)
+    public ScratchCacheEquivalenceTests(PristineProjectFixture pristine, ITestOutputHelper output)
     {
         _output = output;
         _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_tempRoot);
-        _fwDataPath = TestLangProjFixture.CopyToTempAndGetFwDataPath(_tempRoot);
-        _live = new FwDataProjectLoader().LoadScratchCache(_fwDataPath);
+        _live = pristine.NewScratch();
+        _fwDataPath = _live.ProjectId.Path;
     }
 
     [Fact]
