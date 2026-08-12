@@ -21,16 +21,18 @@ where the project is — a comment duplicating any of those three will eventuall
 | Check | Standard |
 |---|---|
 | Implementation comment (`//`, or `///` on a `private` member) | **one line, at most 110 characters** — reflowing a paragraph onto one long line is not compliance |
-| API doc (`///` on a `public`/`internal` type or member, an interface member, or an enum member) | long form as appropriate, and **complete**: no `docs/…md` path, because a tooltip cannot open one. Cite an ADR by number, name a contract in prose, inline the fact — or give a URL |
-| Plan and issue references — `MOT-22`, `docs/issues.md D8`, `issue B18` | **banned**; state the constraint instead |
+| API doc (`///` on a `public`/`internal` type or member, an interface member, or an enum member) | long form as appropriate, and **complete**: no repo-relative `…md` path — `manifest/README.md` no more than `docs/…` — because a tooltip cannot open one. Cite an ADR by number, name a contract in prose, inline the fact — or give a URL |
+| Plan and issue references — `MOT-22`, `docs/issues.md D8`, and the bare `D8`, `A1`, `J44` | **banned**, in string literals as well as comments; state the constraint instead |
 | ADR citations | **allowed** — an ADR number is immutable; cite it for a decision, never for a status |
 | Dates, slice/wiring status, history narrative, agent attribution | **banned** |
-| A claim about another entity's behaviour | cite the pinning test — ``pinned by `TestName` `` — or quote a `docs/*.md`, or reword |
+| A claim about another entity's behaviour | cite the pinning test — ``pinned by `TestName` `` — or reword |
 | A `//` inside an emitter's raw-string template | scanned for banned references; exempt from the length rule, being a generated file's banner |
+| A `///` inside an emitter's raw-string template | length-exempt, but **completeness still applies**: it lands in a public class and is read from a tooltip |
 | `<see cref="X"/>` | keep; the C# compiler resolves it (CS1574), unlike Rust's intra-doc links |
 
 Zero tolerance, no baseline: a baseline records the current count as acceptable, and re-baselining
-after a rule change relabels old debt as the new normal.
+after a rule change relabels old debt as the new normal. `src/`, `tests/`, `spikes/` and `tools/` are
+all scanned on the same terms — exempting a directory is a baseline wearing a different hat.
 
 Run `tools/verify-comment-only.ps1` after a comment sweep. It requires every line the diff **adds and
 removes** to be a comment — the symmetric check, because a pure deletion satisfies the obvious

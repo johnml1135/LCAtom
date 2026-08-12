@@ -33,9 +33,19 @@ eventually contradict its source.
 Delete these on sight, in any file you touch, whether or not you are otherwise working on it. Do not
 "correct" them — remove them.
 
+**Plan and issue references are banned in string literals too, not only in comments.** An exception
+message travels further from the code than any comment does: it reaches someone holding the message
+and nothing else. `"...which is the defect docs/issues.md D9 records"` tells that reader nothing they
+can act on, and goes stale on exactly the same schedule. Say the constraint instead, and name the type
+to edit with `nameof` so the refusal is a hand-off rather than a dead end.
+
+A repo-relative Markdown path is *not* banned from a message string. The two bans have different
+reasons — an issue reference **rots**, while a `docs/…md` path is merely **unopenable from a tooltip**
+— and the reader of a generator's exception is standing in a checkout, so a path helps them.
+
 | Forbidden | Why | Instead |
 |---|---|---|
-| Plan and issue references — `docs/plan-motif.md`, `MOT-22`, `docs/issues.md D8`, `issue B18`, `Q16`, `E12` | A pointer into memory you do not own. Issues get closed, renumbered, superseded; the comment survives and misleads. `MOT-22` appears in code here describing work that shipped | State the constraint itself. See the ADR carve-out below for the one project artifact that is stable enough to cite |
+| Plan and issue references — `docs/plan-motif.md`, `MOT-22`, `docs/issues.md D8`, `issue B18`, and the **bare** register id on its own: `D8`, `A1`, `J44`, `Q16`, `E12` | A pointer into memory you do not own. Issues get closed, renumbered, superseded; the comment survives and misleads. The bare form is the one that survives a sweep — it reads as a word, not a citation, so "D8's rule is…" sat unnoticed through a full pass | State the constraint itself. See the ADR carve-out below for the one project artifact that is stable enough to cite |
 | Slice and wiring status — "slice 4 is the fourth shape", "not wired into X yet", "today exactly one field", "a later increment widens this" | True the day it is written, false the day the next slice lands, and nothing checks it | Say what the type OWNS. Let a test assert the count if the count matters |
 | Dates — "verified 2026-08-11", "corrected 2026-08-05", "as of today" | Git has the date and is never wrong about it | Nothing. If a measurement matters, put the number in a test or an evidence doc |
 | History and changelog narrative — "MOT-22 first shipped this as set-only", "the first version pinned commits and tripped within the hour", "this used to read…" | Describes code that no longer exists. A reader cannot tell the live claim from the dead one | Nothing. `git log -p` answers it better. Keep the resulting *rule*, drop the story |
@@ -92,7 +102,7 @@ behaviour**, and that is the class that costs the most, because it looks maintai
 | Tier | Looks like | What to do | Who checks it |
 |---|---|---|---|
 | **Executable** | "an out-of-range value is rejected rather than clamped" | a test, cited as ``pinned by `TestName` `` | `dotnet test`; the checker verifies the name exists in the tree |
-| **Quoted contract** | a verbatim sentence from a contract document | quote it, name the document in prose, and cite the test that settles it | never reword a quotation to dodge a claim verb — cite instead |
+| **Quoted contract** | a verbatim sentence from a contract document or data file | quote it, name the document in prose, and cite the test that settles it | never reword a quotation to dodge a claim verb — cite instead |
 | **Resolved** | any reference to another type or member | `<see cref="Foo"/>` | the C# compiler (CS1574) |
 | **Durable external** | a paper, an algorithm, an upstream issue, LibLCM or HermitCrab behaviour with a `file:line` | keep it | nothing needed — it does not rot on our side |
 | **Project state** | plans, issues, dates, slice status, history | delete | the hygiene checker |
@@ -121,9 +131,11 @@ points there. An **API doc may not point there at all** — see below.
 
 ## An API doc must be complete, or cite a URL
 
-`docs/…md` paths are banned from `///` on public surface (checker: `api-doc-defers-offline`). The
-reason is where an API doc is actually read: an IDE tooltip, or the compiled XML documentation. In
-neither place can the reader open a path that resolves only inside a checkout of this repo.
+**Repo-relative Markdown paths** are banned from `///` on public surface (checker:
+`api-doc-defers-offline`). The reason is where an API doc is actually read: an IDE tooltip, or the
+compiled XML documentation. In neither place can the reader open a path that resolves only inside a
+checkout of this repo. The rule is about the reader's position, not about which top directory the path
+starts in — `manifest/README.md` is exactly as unopenable as `docs/plan-motif.md`.
 
 So an API doc either says the thing, or points at something anyone can open:
 
@@ -132,6 +144,7 @@ So an API doc either says the thing, or points at something anyone can open:
 | `docs/adr/0016-scratch-cache-copy-not-undo.md` | `ADR 0016` — the number is the stable coordinate; the path is not |
 | `docs/change-set-contract.md` | "the Change Set contract" |
 | `docs/applied-log.md` | "the applied log format" |
+| `manifest/README.md` | "the manifest README" |
 | `See docs/research/2026-08-06-parser-timing-measured.md` | the measurement itself, in a sentence |
 | a URL | a URL — this is the one pointer that always works |
 
@@ -161,6 +174,11 @@ is caught by the line-level rules — a plan reference typed into a template shi
 exactly like one typed anywhere else. **The length rule does not apply inside a template**: the long
 block there is the generated file's `<auto-generated>` banner, and that file is length-exempt in
 full.
+
+**Length is the only thing a template escapes.** A `///` line inside one still has to be complete: it
+lands in a public class and is read from a tooltip like any other API doc, so a `docs/…md` path there
+is the same defect one directory further from where anyone would look for it. Two of them survived a
+whole sweep this way.
 
 **The gap that remains:** a template whose comment text is assembled by concatenation or
 interpolation, rather than written literally at the start of a line, is invisible to the checker.
