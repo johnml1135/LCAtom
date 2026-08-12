@@ -145,6 +145,49 @@ public sealed class GeneratedBasicFieldOperationsTests : IDisposable
         Assert.False(effect.After.ContainsKey(wsTag));
     }
 
+    // No Dry Run rolls back any more, so no field needs a hand-maintained "feeds a derived cache" list.
+
+    private ILexEntry FindAnyEntry() =>
+        _cache.ServiceLocator.GetInstance<ILexEntryRepository>().GetObject(_seed.FirstEntryId);
+
+    private ILexEntry FindEntryWithLexemeForm() =>
+        _cache.ServiceLocator.GetInstance<ILexEntryRepository>().GetObject(_seed.FirstEntryId);
+
+    private (ILexSense Sense, int WsHandle, string WsTag, string Gloss) FindSenseWithKnownGloss()
+    {
+        var sense = _cache.ServiceLocator.GetInstance<ILexSenseRepository>().GetObject(_seed.FirstSenseId);
+        var wsHandle = _cache.DefaultAnalWs;
+        var wsTag = _cache.WritingSystemFactory.GetStrFromWs(wsHandle);
+        return (sense, wsHandle, wsTag, SeededProject.FirstGloss);
+    }
+
+    private static Proposal BuildProposal(string kind, CanonicalId target, object after)
+    {
+        var afterJson = JsonSerializer.Serialize(after);
+        using var afterDocument = JsonDocument.Parse(afterJson);
+
+        var group = kind.Substring(0, kind.IndexOf('/'));
+        var operation = new OperationEnvelope(
+            operationId: CanonicalId.Mint(),
+            kind: kind,
+            target: target,
+            after: afterDocument.RootElement.Clone());
+
+        return new Proposal(
+            contractVersions: new Dictionary<string, string> { [group] = "1.0" },
+            proposalId: CanonicalId.Mint(),
+            requires: null,
+            operations: new[] { operation });
+    }
+}
+
+/// <summary>
+/// Closed-schema rejection tests for the citationForm and doNotUseForParsing payloads. Pure JSON
+/// parsing — no <c>LcmCache</c> involved, so unlike <see cref="GeneratedBasicFieldOperationsTests"/>
+/// this class needs no <see cref="PristineProjectFixture"/>.
+/// </summary>
+public sealed class GeneratedBasicFieldOperationsSchemaTests
+{
     [Fact]
     public void SetCitationForm_UnknownPayloadProperty_IsRejectedByTheClosedSchema()
     {
@@ -184,40 +227,5 @@ public sealed class GeneratedBasicFieldOperationsTests : IDisposable
 
         Assert.Throws<SIL.Motif.Contract.Parsing.ContractParseException>(
             () => LexEntryDoNotUseForParsingClearPayload.Parse(afterDocument.RootElement));
-    }
-
-    // No Dry Run rolls back any more, so no field needs a hand-maintained "feeds a derived cache" list.
-
-    private ILexEntry FindAnyEntry() =>
-        _cache.ServiceLocator.GetInstance<ILexEntryRepository>().GetObject(_seed.FirstEntryId);
-
-    private ILexEntry FindEntryWithLexemeForm() =>
-        _cache.ServiceLocator.GetInstance<ILexEntryRepository>().GetObject(_seed.FirstEntryId);
-
-    private (ILexSense Sense, int WsHandle, string WsTag, string Gloss) FindSenseWithKnownGloss()
-    {
-        var sense = _cache.ServiceLocator.GetInstance<ILexSenseRepository>().GetObject(_seed.FirstSenseId);
-        var wsHandle = _cache.DefaultAnalWs;
-        var wsTag = _cache.WritingSystemFactory.GetStrFromWs(wsHandle);
-        return (sense, wsHandle, wsTag, SeededProject.FirstGloss);
-    }
-
-    private static Proposal BuildProposal(string kind, CanonicalId target, object after)
-    {
-        var afterJson = JsonSerializer.Serialize(after);
-        using var afterDocument = JsonDocument.Parse(afterJson);
-
-        var group = kind.Substring(0, kind.IndexOf('/'));
-        var operation = new OperationEnvelope(
-            operationId: CanonicalId.Mint(),
-            kind: kind,
-            target: target,
-            after: afterDocument.RootElement.Clone());
-
-        return new Proposal(
-            contractVersions: new Dictionary<string, string> { [group] = "1.0" },
-            proposalId: CanonicalId.Mint(),
-            requires: null,
-            operations: new[] { operation });
     }
 }

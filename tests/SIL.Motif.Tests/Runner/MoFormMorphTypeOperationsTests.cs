@@ -118,24 +118,6 @@ public sealed class MoFormMorphTypeOperationsTests : IDisposable
     }
 
     [Fact]
-    public void SetPayload_UnknownProperty_IsRejectedByTheClosedSchema()
-    {
-        var afterJson = JsonSerializer.Serialize(new { @ref = CanonicalId.Mint().Value, extra = 1 });
-        using var afterDocument = JsonDocument.Parse(afterJson);
-
-        Assert.Throws<ContractParseException>(() => MoFormMorphTypeSetPayload.Parse(afterDocument.RootElement));
-    }
-
-    [Fact]
-    public void ClearPayload_AnyProperty_IsRejectedByTheClosedSchema()
-    {
-        var afterJson = JsonSerializer.Serialize(new { @ref = CanonicalId.Mint().Value });
-        using var afterDocument = JsonDocument.Parse(afterJson);
-
-        Assert.Throws<ContractParseException>(() => MoFormMorphTypeClearPayload.Parse(afterDocument.RootElement));
-    }
-
-    [Fact]
     public void Set_ReferencingAnObjectOfTheWrongType_ThrowsNamingTheMismatch()
     {
         var form = FindStemAllomorph();
@@ -193,4 +175,30 @@ public sealed class MoFormMorphTypeOperationsTests : IDisposable
         LibLcmVersion: "test",
         ProjectionVersion: "1",
         DryRunAtUtc: "20260101T000000Z");
+}
+
+/// <summary>
+/// Closed-schema rejection tests for the <c>MoForm.MorphType</c> set/clear payloads — no
+/// <c>LcmCache</c> involved, so unlike <see cref="MoFormMorphTypeOperationsTests"/> this class needs
+/// no <see cref="PristineProjectFixture"/>.
+/// </summary>
+public sealed class MoFormMorphTypeSchemaTests
+{
+    [Fact]
+    public void SetPayload_UnknownProperty_IsRejectedByTheClosedSchema()
+    {
+        var afterJson = JsonSerializer.Serialize(new { @ref = CanonicalId.Mint().Value, extra = 1 });
+        using var afterDocument = JsonDocument.Parse(afterJson);
+
+        Assert.Throws<ContractParseException>(() => MoFormMorphTypeSetPayload.Parse(afterDocument.RootElement));
+    }
+
+    [Fact]
+    public void ClearPayload_AnyProperty_IsRejectedByTheClosedSchema()
+    {
+        var afterJson = JsonSerializer.Serialize(new { @ref = CanonicalId.Mint().Value });
+        using var afterDocument = JsonDocument.Parse(afterJson);
+
+        Assert.Throws<ContractParseException>(() => MoFormMorphTypeClearPayload.Parse(afterDocument.RootElement));
+    }
 }

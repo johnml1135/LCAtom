@@ -197,39 +197,6 @@ public sealed class LexEntryLexemeFormOperationsTests : IDisposable
         Assert.Empty(ProjectAppliedLog.ReadAll(_cache));
     }
 
-    [Fact]
-    public void CreatePayload_MissingMorphType_IsRejectedByTheClosedSchema()
-    {
-        var afterJson = JsonSerializer.Serialize(new { ws = "en", text = "x" });
-        using var afterDocument = JsonDocument.Parse(afterJson);
-
-        Assert.Throws<ContractParseException>(
-            () => LexEntryLexemeFormCreatePayload.Parse(afterDocument.RootElement));
-    }
-
-    [Fact]
-    public void CreatePayload_UnknownProperty_IsRejectedByTheClosedSchema()
-    {
-        var afterJson = JsonSerializer.Serialize(new
-        {
-            morphType = CanonicalId.Mint().Value, ws = "en", text = "x", extra = "not allowed",
-        });
-        using var afterDocument = JsonDocument.Parse(afterJson);
-
-        Assert.Throws<ContractParseException>(
-            () => LexEntryLexemeFormCreatePayload.Parse(afterDocument.RootElement));
-    }
-
-    [Fact]
-    public void DeletePayload_AnyProperty_IsRejectedByTheClosedSchema()
-    {
-        var afterJson = JsonSerializer.Serialize(new { reason = "cleanup" });
-        using var afterDocument = JsonDocument.Parse(afterJson);
-
-        Assert.Throws<ContractParseException>(
-            () => LexEntryLexemeFormDeletePayload.Parse(afterDocument.RootElement));
-    }
-
     /// <summary>
     /// A canonical id naming no real object throws straight out of <c>ICmObjectRepository.GetObject</c>,
     /// the same behaviour <c>TargetResolution</c> already has for an operation's own target — this proves
@@ -356,4 +323,45 @@ public sealed class LexEntryLexemeFormOperationsTests : IDisposable
         LibLcmVersion: "test",
         ProjectionVersion: "1",
         DryRunAtUtc: "20260101T000000Z");
+}
+
+/// <summary>
+/// Closed-schema rejection tests for the <c>LexEntry.LexemeForm</c> create/delete payloads — no
+/// <c>LcmCache</c> involved, so unlike <see cref="LexEntryLexemeFormOperationsTests"/> this class
+/// needs no <see cref="PristineProjectFixture"/>.
+/// </summary>
+public sealed class LexEntryLexemeFormSchemaTests
+{
+    [Fact]
+    public void CreatePayload_MissingMorphType_IsRejectedByTheClosedSchema()
+    {
+        var afterJson = JsonSerializer.Serialize(new { ws = "en", text = "x" });
+        using var afterDocument = JsonDocument.Parse(afterJson);
+
+        Assert.Throws<ContractParseException>(
+            () => LexEntryLexemeFormCreatePayload.Parse(afterDocument.RootElement));
+    }
+
+    [Fact]
+    public void CreatePayload_UnknownProperty_IsRejectedByTheClosedSchema()
+    {
+        var afterJson = JsonSerializer.Serialize(new
+        {
+            morphType = CanonicalId.Mint().Value, ws = "en", text = "x", extra = "not allowed",
+        });
+        using var afterDocument = JsonDocument.Parse(afterJson);
+
+        Assert.Throws<ContractParseException>(
+            () => LexEntryLexemeFormCreatePayload.Parse(afterDocument.RootElement));
+    }
+
+    [Fact]
+    public void DeletePayload_AnyProperty_IsRejectedByTheClosedSchema()
+    {
+        var afterJson = JsonSerializer.Serialize(new { reason = "cleanup" });
+        using var afterDocument = JsonDocument.Parse(afterJson);
+
+        Assert.Throws<ContractParseException>(
+            () => LexEntryLexemeFormDeletePayload.Parse(afterDocument.RootElement));
+    }
 }

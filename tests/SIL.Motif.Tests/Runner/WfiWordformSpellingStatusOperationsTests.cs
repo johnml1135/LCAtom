@@ -51,6 +51,110 @@ public sealed class WfiWordformSpellingStatusOperationsTests : IDisposable
     }
 
     [Fact]
+    public void DryRun_SetSpellingStatus_ExpectedEffectReportsBeforeAndAfterValues()
+    {
+        var wordform = _wordform;
+        var target = CanonicalId.FromGuid(wordform.Guid);
+
+        // Known starting state, asserted rather than assumed from the factory default.
+        UndoableUnitOfWorkHelper.Do(
+            "test setup", "test setup", _cache.ServiceLocator.GetInstance<IActionHandler>(),
+            () => wordform.SpellingStatus = 0);
+
+        var proposal = BuildProposal(WfiWordformSpellingStatusOperationKinds.SetSpellingStatus, target, new { value = 2 });
+        var dryRun = ScratchDryRun.Of(_cache, proposal);
+
+        var effect = Assert.Single(dryRun.ExpectedEffects);
+        Assert.Equal("0", effect.Before["value"]);
+        Assert.Equal("2", effect.After["value"]);
+
+        // The dry run must not have mutated the live cache (ADR 0016).
+        Assert.Equal(0, wordform.SpellingStatus);
+    }
+
+    [Fact]
+    public void SetSpellingStatus_RoundTripsThroughDryRunAndApply()
+    {
+        var wordform = _wordform;
+        var target = CanonicalId.FromGuid(wordform.Guid);
+
+        UndoableUnitOfWorkHelper.Do(
+            "test setup", "test setup", _cache.ServiceLocator.GetInstance<IActionHandler>(),
+            () => wordform.SpellingStatus = 0);
+
+        var proposal = BuildProposal(WfiWordformSpellingStatusOperationKinds.SetSpellingStatus, target, new { value = 2 });
+        var dryRun = ScratchDryRun.Of(_cache, proposal);
+        var receipt = ProposalApplier.Apply(_cache, proposal, dryRun.Anchor, "motif-tests");
+
+        Assert.False(receipt.AlreadyApplied);
+        Assert.Equal(2, wordform.SpellingStatus);
+
+        var effect = Assert.Single(receipt.ActualEffects);
+        Assert.Equal("0", effect.Before["value"]);
+        Assert.Equal("2", effect.After["value"]);
+    }
+
+    /// <summary>
+    /// The behaviour the manifest's rationale claims: clearing retracts a judgement by writing the zero
+    /// member, <c>Undecided</c>. It is a different act from asserting <c>Correct</c>, which is why this
+    /// field keeps the derived <c>clear</c> rather than making a caller spell it <c>set 0</c>.
+    /// </summary>
+    [Fact]
+    public void ClearSpellingStatus_RoundTripsThroughDryRunAndApply_WritingUndecided()
+    {
+        var wordform = _wordform;
+        var target = CanonicalId.FromGuid(wordform.Guid);
+
+        UndoableUnitOfWorkHelper.Do(
+            "test setup", "test setup", _cache.ServiceLocator.GetInstance<IActionHandler>(),
+            () => wordform.SpellingStatus = 2);
+
+        var proposal = BuildProposal(WfiWordformSpellingStatusOperationKinds.ClearSpellingStatus, target, new { });
+        var dryRun = ScratchDryRun.Of(_cache, proposal);
+
+        var expected = Assert.Single(dryRun.ExpectedEffects);
+        Assert.Equal("2", expected.Before["value"]);
+        Assert.Equal("0", expected.After["value"]);
+        Assert.Equal(2, wordform.SpellingStatus); // the dry run left the live cache alone (ADR 0016)
+
+        var receipt = ProposalApplier.Apply(_cache, proposal, dryRun.Anchor, "motif-tests");
+
+        Assert.False(receipt.AlreadyApplied);
+        Assert.Equal(0, wordform.SpellingStatus);
+
+        var actual = Assert.Single(receipt.ActualEffects);
+        Assert.Equal("2", actual.Before["value"]);
+        Assert.Equal("0", actual.After["value"]);
+    }
+
+    private static Proposal BuildProposal(string kind, CanonicalId target, object after)
+    {
+        var afterJson = JsonSerializer.Serialize(after);
+        using var afterDocument = JsonDocument.Parse(afterJson);
+
+        var group = kind.Substring(0, kind.IndexOf('/'));
+        var operation = new OperationEnvelope(
+            operationId: CanonicalId.Mint(),
+            kind: kind,
+            target: target,
+            after: afterDocument.RootElement.Clone());
+
+        return new Proposal(
+            contractVersions: new Dictionary<string, string> { [group] = "1.0" },
+            proposalId: CanonicalId.Mint(),
+            requires: null,
+            operations: new[] { operation });
+    }
+}
+
+/// <summary>
+/// Registry and payload-parsing tests for <c>setSpellingStatus</c>/<c>clearSpellingStatus</c> — no
+/// <c>LcmCache</c> involved, so unlike <see cref="WfiWordformSpellingStatusOperationsTests"/> this
+/// class needs no <see cref="PristineProjectFixture"/>.
+/// </summary>
+public sealed class WfiWordformSpellingStatusSchemaTests
+{
+    [Fact]
     public void BothKinds_AreRegistered()
     {
         Assert.Equal("analysis/wfiWordform/setSpellingStatus", WfiWordformSpellingStatusOperationKinds.SetSpellingStatus);
@@ -113,50 +217,6 @@ public sealed class WfiWordformSpellingStatusOperationsTests : IDisposable
     }
 
     [Fact]
-    public void DryRun_SetSpellingStatus_ExpectedEffectReportsBeforeAndAfterValues()
-    {
-        var wordform = _wordform;
-        var target = CanonicalId.FromGuid(wordform.Guid);
-
-        // Known starting state, asserted rather than assumed from the factory default.
-        UndoableUnitOfWorkHelper.Do(
-            "test setup", "test setup", _cache.ServiceLocator.GetInstance<IActionHandler>(),
-            () => wordform.SpellingStatus = 0);
-
-        var proposal = BuildProposal(WfiWordformSpellingStatusOperationKinds.SetSpellingStatus, target, new { value = 2 });
-        var dryRun = ScratchDryRun.Of(_cache, proposal);
-
-        var effect = Assert.Single(dryRun.ExpectedEffects);
-        Assert.Equal("0", effect.Before["value"]);
-        Assert.Equal("2", effect.After["value"]);
-
-        // The dry run must not have mutated the live cache (ADR 0016).
-        Assert.Equal(0, wordform.SpellingStatus);
-    }
-
-    [Fact]
-    public void SetSpellingStatus_RoundTripsThroughDryRunAndApply()
-    {
-        var wordform = _wordform;
-        var target = CanonicalId.FromGuid(wordform.Guid);
-
-        UndoableUnitOfWorkHelper.Do(
-            "test setup", "test setup", _cache.ServiceLocator.GetInstance<IActionHandler>(),
-            () => wordform.SpellingStatus = 0);
-
-        var proposal = BuildProposal(WfiWordformSpellingStatusOperationKinds.SetSpellingStatus, target, new { value = 2 });
-        var dryRun = ScratchDryRun.Of(_cache, proposal);
-        var receipt = ProposalApplier.Apply(_cache, proposal, dryRun.Anchor, "motif-tests");
-
-        Assert.False(receipt.AlreadyApplied);
-        Assert.Equal(2, wordform.SpellingStatus);
-
-        var effect = Assert.Single(receipt.ActualEffects);
-        Assert.Equal("0", effect.Before["value"]);
-        Assert.Equal("2", effect.After["value"]);
-    }
-
-    [Fact]
     public void ClearSpellingStatusPayload_RejectsAnyProperty_IncludingTheSetVerbsOwn()
     {
         using var empty = JsonDocument.Parse("{}");
@@ -165,57 +225,5 @@ public sealed class WfiWordformSpellingStatusOperationsTests : IDisposable
         using var withValue = JsonDocument.Parse(JsonSerializer.Serialize(new { value = 0 }));
         Assert.Throws<ContractParseException>(
             () => WfiWordformSpellingStatusClearPayload.Parse(withValue.RootElement));
-    }
-
-    /// <summary>
-    /// The behaviour the manifest's rationale claims: clearing retracts a judgement by writing the zero
-    /// member, <c>Undecided</c>. It is a different act from asserting <c>Correct</c>, which is why this
-    /// field keeps the derived <c>clear</c> rather than making a caller spell it <c>set 0</c>.
-    /// </summary>
-    [Fact]
-    public void ClearSpellingStatus_RoundTripsThroughDryRunAndApply_WritingUndecided()
-    {
-        var wordform = _wordform;
-        var target = CanonicalId.FromGuid(wordform.Guid);
-
-        UndoableUnitOfWorkHelper.Do(
-            "test setup", "test setup", _cache.ServiceLocator.GetInstance<IActionHandler>(),
-            () => wordform.SpellingStatus = 2);
-
-        var proposal = BuildProposal(WfiWordformSpellingStatusOperationKinds.ClearSpellingStatus, target, new { });
-        var dryRun = ScratchDryRun.Of(_cache, proposal);
-
-        var expected = Assert.Single(dryRun.ExpectedEffects);
-        Assert.Equal("2", expected.Before["value"]);
-        Assert.Equal("0", expected.After["value"]);
-        Assert.Equal(2, wordform.SpellingStatus); // the dry run left the live cache alone (ADR 0016)
-
-        var receipt = ProposalApplier.Apply(_cache, proposal, dryRun.Anchor, "motif-tests");
-
-        Assert.False(receipt.AlreadyApplied);
-        Assert.Equal(0, wordform.SpellingStatus);
-
-        var actual = Assert.Single(receipt.ActualEffects);
-        Assert.Equal("2", actual.Before["value"]);
-        Assert.Equal("0", actual.After["value"]);
-    }
-
-    private static Proposal BuildProposal(string kind, CanonicalId target, object after)
-    {
-        var afterJson = JsonSerializer.Serialize(after);
-        using var afterDocument = JsonDocument.Parse(afterJson);
-
-        var group = kind.Substring(0, kind.IndexOf('/'));
-        var operation = new OperationEnvelope(
-            operationId: CanonicalId.Mint(),
-            kind: kind,
-            target: target,
-            after: afterDocument.RootElement.Clone());
-
-        return new Proposal(
-            contractVersions: new Dictionary<string, string> { [group] = "1.0" },
-            proposalId: CanonicalId.Mint(),
-            requires: null,
-            operations: new[] { operation });
     }
 }
