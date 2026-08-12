@@ -3,7 +3,7 @@ namespace SIL.Motif.Generator.Descriptions;
 /// <summary>
 /// Parses <c>manifest/kind-descriptions.tsv</c>: eight columns, tab-separated, every value double-quoted,
 /// CRLF line endings — the same dialect as <c>liblcm-inventory.tsv</c> so one set of habits reads both
-/// (manifest/README.md, "Companion files").
+/// (the manifest README, "Companion files").
 /// </summary>
 /// <remarks>
 /// <para>

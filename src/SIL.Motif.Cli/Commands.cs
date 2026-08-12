@@ -630,8 +630,8 @@ public static class Commands
 
     /// <summary>
     /// Splits a committed Proposal's current operations into several brand-new drafts, each under
-    /// its own freshly minted <c>proposalId</c> (<c>J44</c>: the unit of splitting is the individual
-    /// operation, subject to <c>requires</c>/<c>dependsOn</c>). <paramref name="groups"/> must
+    /// its own freshly minted <c>proposalId</c>. The unit of splitting is the individual operation,
+    /// subject to <c>requires</c>/<c>dependsOn</c>. <paramref name="groups"/> must
     /// partition every operation in the source exactly once. If a declared dependency (<c>dependsOn</c>
     /// or a <c>target</c> naming another operation's <c>entityId</c>) would be severed by landing its
     /// two ends in different groups, that is named as a consequence and requires

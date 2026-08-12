@@ -7,7 +7,7 @@ namespace SIL.Motif.Tests.Generator;
 /// <summary>
 /// Parses both a small synthetic fixture (to pin the exact quoting/escaping/CRLF rules) and the
 /// real, read-only <c>manifest/liblcm-inventory.tsv</c> (899 lines: header + 898 rows,
-/// manifest/README.md).
+/// the manifest README).
 /// </summary>
 public class ManifestTsvParserTests
 {

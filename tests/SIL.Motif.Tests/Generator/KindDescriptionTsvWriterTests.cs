@@ -5,7 +5,7 @@ namespace SIL.Motif.Tests.Generator;
 
 /// <summary>
 /// <see cref="KindDescriptionTsvWriter"/> must round-trip through <see cref="KindDescriptionTsvParser"/> —
-/// the two are opposite ends of the same dialect (manifest/README.md, "Companion files").
+/// the two are opposite ends of the same dialect (the manifest README, "Companion files").
 /// </summary>
 public class KindDescriptionTsvWriterTests
 {

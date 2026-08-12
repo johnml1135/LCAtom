@@ -150,7 +150,7 @@ public class FwDataProjectLoader
                 "CompleteAllCommits() to wait on, so Save cannot guarantee the .fwdata file is current. " +
                 "Refusing rather than returning from a save that has not saved: a Dry Run copies the " +
                 "file immediately afterwards, and a stale copy produces a false 'footprint drift' " +
-                "report on apply. See docs/adr/0016-scratch-cache-copy-not-undo.md.");
+                "report on apply (ADR 0016).");
         }
 
         flush.Invoke(backend, null);

@@ -17,7 +17,7 @@ namespace SIL.Motif.Generator.Descriptions;
 /// bear it) got through review undetected.
 /// </param>
 /// <param name="Reviewed">
-/// One of four values (documented in manifest/README.md):
+/// One of four values (documented in the manifest README):
 /// <list type="bullet">
 /// <item><c>sourced</c> — copied or closely adapted from a cited upstream source, not yet reviewed by a
 /// linguist.</item>

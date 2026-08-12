@@ -2,8 +2,8 @@ namespace SIL.Motif.Generator.Manifest;
 
 /// <summary>
 /// Parses <c>manifest/liblcm-inventory.tsv</c>: 18 columns, tab-separated, every value
-/// double-quoted, CRLF line endings (manifest/README.md). This file is
-/// read-only to the generator — never modify it, per manifest/README.md's own instruction — so this
+/// double-quoted, CRLF line endings (the manifest README). This file is
+/// read-only to the generator — never modify it, per the manifest README's own instruction — so this
 /// class only ever reads.
 /// </summary>
 public static class ManifestTsvParser

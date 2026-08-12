@@ -64,9 +64,9 @@ internal static class MoFormConcreteClassSelection
         throw new InvalidOperationException(
             $"'{kind}' operation: morph type '{morphType.Guid}' is not one of the standard FieldWorks " +
             "morph types Motif knows how to realize as a concrete allomorph (MoStemAllomorph or " +
-            "MoAffixAllomorph). This mapping lives outside MasterLCModel.xml and is hand-maintained " +
-            "(docs/plan-motif.md, MOT-4); add it to MoFormConcreteClassSelection before this morph " +
-            "type can be used to create a lexeme form.");
+            "MoAffixAllomorph). This mapping lives outside MasterLCModel.xml and is hand-maintained: add " +
+            $"the morph type to {nameof(MoFormConcreteClassSelection)} before it can be used to create a " +
+            "lexeme form.");
     }
 
     /// <summary>Constructs a new, empty <paramref name="concreteClass"/> instance with the given

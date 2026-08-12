@@ -11,7 +11,7 @@ namespace SIL.Motif.Generator.Emit;
 /// <c>DeclaringClass + FieldName</c>, matching <see cref="BasicFieldSpec"/>'s collision-resistance
 /// rationale.</param>
 /// <param name="EnumMembers">Every <c>value=Name</c> pair from the manifest's <c>EnumValues</c> column
-/// (manifest/README.md), in ascending value order — e.g. <c>[(0, "Undecided"), (1, "Correct"),
+/// (the manifest README), in ascending value order — e.g. <c>[(0, "Undecided"), (1, "Correct"),
 /// (2, "Incorrect")]</c> for <c>WfiWordform.SpellingStatus</c>. Drives both the payload's range check
 /// and the values named in a validation failure message — the point being that an out-of-range value
 /// fails loudly rather than reaching LibLCM's own (unrelied-upon) validation.</param>

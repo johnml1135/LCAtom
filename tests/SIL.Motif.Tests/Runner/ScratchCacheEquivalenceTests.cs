@@ -8,8 +8,7 @@ using Xunit.Abstractions;
 namespace SIL.Motif.Tests.Runner;
 
 /// <summary>
-/// Grill item <c>A1</c> / ADR 0016:
-/// does a scratch cache actually work, and is it equivalent to the live cache it came from?
+/// ADR 0016: does a scratch cache actually work, and is it equivalent to the live cache it came from?
 /// </summary>
 /// <remarks>
 /// These run against the small <c>TestLangProj</c> fixture, so they assert <b>behaviour</b> and say nothing

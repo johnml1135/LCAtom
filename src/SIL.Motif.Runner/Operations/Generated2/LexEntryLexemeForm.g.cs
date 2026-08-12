@@ -90,19 +90,21 @@ public static class LexEntryLexemeFormDeletePayload
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Never delete-plus-create</b> (docs/change-set-contract.md's change-class contract): this performs
+/// <b>Never delete-plus-create</b>, which is the Change Set contract's change-class rule: this performs
 /// exactly one owning-atomic assignment. If the slot is already occupied, that single assignment is
-/// LibLCM's own "create-into-occupied, with implicit detach" semantics
-/// (docs/api-surface-layer1.md, "Totality: owning/atomic replacement resolved") -- verified empirically
-/// against a real occupied <c>LexemeFormOA</c> slot in <c>TestLangProj</c> rather than assumed. What was
-/// NOT verified to hold is the contract's further claim that the displaced occupant survives as an
-/// orphan needing an explicit disclosure/delete decision (docs/change-set-contract.md, "Owning-atomic
-/// replacement"): in this LibLCM version the previous occupant is fully removed from the object
-/// repository by the assignment itself (confirmed by <c>MoStemAllomorph</c>/total <c>CmObject</c> counts
-/// being unchanged across a replace-one-add-one, and by the old GUID no longer resolving at all) --
-/// there is no surviving orphan for this slice to disclose or refuse over.
+/// LibLCM's own "create-into-occupied, with implicit detach" semantics, verified empirically against a
+/// real occupied <c>LexemeFormOA</c> slot in <c>TestLangProj</c> rather than assumed.
 /// </para>
-/// <para>Must run inside an already-open unit of work (docs/adr/0006, decision 5).</para>
+/// <para>
+/// <b>No orphan is disclosed, because none is produced.</b> The contract originally reasoned that the
+/// displaced occupant survives and needs an explicit disclosure/delete decision; it does not. The
+/// previous occupant is fully removed from the object repository by the assignment itself -- pinned by
+/// `OverwritingAnOwningAtomicSlot_DestroysTheIncumbent_RatherThanLeavingAnOrphan`, and consistent with
+/// LibLCM ownership being exclusive and total, so an owned object its owner lets go of has nowhere left
+/// to live. The refuse-unless-disposed rule was written for de-referencing a <c>rel</c>, where the
+/// target genuinely does survive; over ownership it guards nothing.
+/// </para>
+/// <para>Must run inside an already-open unit of work (ADR 0006 decision 5).</para>
 /// </remarks>
 public static class LexEntryLexemeFormCreateLowering
 {

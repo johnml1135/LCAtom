@@ -23,7 +23,7 @@ public static class ManifestConsistencyChecker
 {
     /// <summary>
     /// Checks every in-scope row's <c>Verbs</c> and <c>ComparisonClass</c> against the derivation.
-    /// <c>Scope != in</c> rows carry empty policy columns (manifest/README.md) and are skipped
+    /// <c>Scope != in</c> rows carry empty policy columns (the manifest README) and are skipped
     /// entirely; <c>Verbs == "n/a"</c> rows are unauthorable and skip only
     /// the verb half of the check — their <c>ComparisonClass</c> is still populated (order still
     /// means something even for a field nobody may author yet) and is still checked.

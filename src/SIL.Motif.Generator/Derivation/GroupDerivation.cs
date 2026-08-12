@@ -25,7 +25,7 @@ namespace SIL.Motif.Generator.Derivation;
 /// feature-structure classes, <c>lexical</c> for the dictionary, <c>lists</c> for the
 /// <c>CmPossibility</c> family) plus <c>system</c> for administrative/import/Scripture machinery and
 /// <c>analysis</c> for the word-analysis family ADR 0025 brought into scope — mirroring the five
-/// values manifest/README.md documents for its own (differently-sourced) <c>Group</c>/domain column,
+/// values the manifest README documents for its own (differently-sourced) <c>Group</c>/domain column,
 /// without being derived from it.
 /// </para>
 /// </remarks>

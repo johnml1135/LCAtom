@@ -90,7 +90,7 @@ public sealed class DryRunScratch : IDisposable
                 "A Dry Run scratch is single-use and this one has already been used " +
                 $"(provenance: {Provenance}). Its project now contains the previous run's mutations, so a " +
                 "second Dry Run here would compute a baseline the live project was never in. Discard this " +
-                "scratch and make another (docs/adr/0016-scratch-cache-copy-not-undo.md, amended 2026-08-06).");
+                "scratch and make another (ADR 0016).");
         }
 
         _consumed = true;

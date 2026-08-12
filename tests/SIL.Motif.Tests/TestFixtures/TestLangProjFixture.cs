@@ -33,7 +33,8 @@ internal static class TestLangProjFixture
         if (!Directory.Exists(testLangProj))
         {
             throw new InvalidOperationException(
-                $"Expected the read-only test project at '{testLangProj}' (see docs/build-stages.md).");
+                $"Expected the read-only test project at '{testLangProj}': clone FieldWorks as a sibling " +
+                "of this repository, so that its TestLangProj sample project is available to the tests.");
         }
 
         return testLangProj;

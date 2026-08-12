@@ -59,7 +59,7 @@ public static class ComparisonClassDerivation
         // "Pooled-but-private storage ... never by pool position" (liblcm-inventory.tsv, Contexts row).
         [new FieldKey("PhPhonData", "Contexts")] = "unordered",
 
-        // "Correction E3: index-as-identity mislocated ... semantically inert" (liblcm-inventory.tsv, FeatConstraints).
+        // "a move on this pool is semantically inert" (liblcm-inventory.tsv, FeatConstraints).
         [new FieldKey("PhPhonData", "FeatConstraints")] = "unordered",
     };
 

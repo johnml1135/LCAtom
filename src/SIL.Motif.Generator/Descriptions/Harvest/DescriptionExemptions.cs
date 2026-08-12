@@ -7,7 +7,7 @@ namespace SIL.Motif.Generator.Descriptions.Harvest;
 /// </summary>
 /// <remarks>
 /// <para>
-/// D8's rule is that a description is copied from a source, never written. That leaves one honest outcome
+/// The sourcing rule is that a description is copied from a source, never written. That leaves one honest outcome
 /// the <c>sourced</c>/<c>hand-corrected</c>/<c>unsourced</c> vocabulary could not express: a field somebody
 /// has searched for exhaustively and found nothing for. Leaving such a row <c>unsourced</c> forever is a
 /// standing to-do that nobody can close; marking it <c>sourced</c> is a lie. So it gets its own value,
@@ -25,7 +25,7 @@ namespace SIL.Motif.Generator.Descriptions.Harvest;
 /// </remarks>
 public static class DescriptionExemptions
 {
-    /// <summary>The <c>Reviewed</c> value an exempt row carries (manifest/README.md).</summary>
+    /// <summary>The <c>Reviewed</c> value an exempt row carries (the manifest README).</summary>
     public const string ReviewedValue = "no-source-exists";
 
     /// <summary>The <c>Source</c> value an exempt row carries: not a file, a search.</summary>

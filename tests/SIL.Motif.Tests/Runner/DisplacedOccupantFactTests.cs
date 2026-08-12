@@ -57,6 +57,8 @@ public sealed class DisplacedOccupantFactTests : IDisposable
 
         Assert.True(objects.IsValidObjectId(incumbentGuid), "precondition: the incumbent exists");
 
+        var objectCountBefore = objects.Count;
+
         // The plainest expression of the question: one owning-atomic assignment via LibLCM's own factory.
         NonUndoableUnitOfWorkHelper.Do(_cache.ActionHandlerAccessor, () =>
         {
@@ -66,12 +68,16 @@ public sealed class DisplacedOccupantFactTests : IDisposable
 
         var incumbentSurvives = objects.IsValidObjectId(incumbentGuid);
 
+        // Net zero: one added, one gone. Resolving the GUID asks "reachable"; the count asks "anywhere at all".
+        Assert.Equal(objectCountBefore, objects.Count);
+
         Assert.False(
             incumbentSurvives,
-            "The displaced occupant survived the overwrite, so change-set-contract.md's 'implicit detach, " +
-            "not cascade delete' is correct and MOT-4 slice 2's create-into-occupied is silently orphaning " +
-            "it — the SetPartOfSpeech/MSA bug class the contract exists to prevent. The contract requires the " +
-            "orphan be disclosed as an effect and the apply refused unless the Change Set disposes of it.");
+            "The displaced occupant survived the overwrite, so the Change Set contract's 'implicit detach, " +
+            "not cascade delete' is correct after all, and create-into-occupied is silently orphaning it — " +
+            "the SetPartOfSpeech/MSA bug class the contract exists to prevent. The contract would then " +
+            "require the orphan be disclosed as an effect, and the apply refused unless the Change Set " +
+            "disposes of it.");
     }
 
     public void Dispose()

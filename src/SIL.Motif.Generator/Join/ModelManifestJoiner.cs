@@ -37,7 +37,7 @@ public static class ModelManifestJoiner
         if (modelOnly.Count > 0 || manifestOnly.Count > 0)
         {
             var message = new StringBuilder(
-                "The (Class, Field) join failed — MasterLCModel.xml and the manifest disagree on the key set (docs/plan-motif.md, MOT-2).");
+                "The (Class, Field) join failed — MasterLCModel.xml and the manifest disagree on the key set.");
             if (modelOnly.Count > 0)
                 message.Append($" In the model but not the manifest: {string.Join(", ", modelOnly)}.");
             if (manifestOnly.Count > 0)

@@ -3,9 +3,9 @@ using System.Xml.Linq;
 namespace SIL.Motif.Spikes.LabelHarvest;
 
 /// <summary>
-/// Harvests mechanism 1 from <c>strings-en.xml</c>: class names and possibility-list "kind" names. See
-/// <c>docs/research/2026-08-05-fieldworks-user-facing-names.md</c> §1.1 — this file carries no per-field
-/// group at all, so every record from here is class-level (<see cref="RawLabel.Field"/> is empty).
+/// Harvests mechanism 1 from <c>strings-en.xml</c>: class names and possibility-list "kind" names. That
+/// file carries no per-field group at all, so every record from here is class-level
+/// (<see cref="RawLabel.Field"/> is empty).
 /// </summary>
 public static class StringsEnHarvester
 {
@@ -45,9 +45,7 @@ public static class StringsEnHarvester
             }
         }
 
-        // PossibilityListItemTypeNames: keyed by the CmPossibilityList's owning field (e.g.
-        // "ConfidenceLevels"), not by class. Resolve to the class actually filed under that owning field via
-        // areaConfiguration.xml; drop keys we cannot resolve rather than assume CmPossibility.
+        // Keyed by owning field, not class: resolve via areaConfiguration.xml, and drop what will not resolve.
         var listItemTypeNames = root.Elements("group").FirstOrDefault(g => (string?)g.Attribute("id") == "PossibilityListItemTypeNames");
         if (listItemTypeNames is not null)
         {
@@ -63,9 +61,7 @@ public static class StringsEnHarvester
             }
         }
 
-        // AlternativeTitles: ids are "ClassName-Suffix" (plural/view-specific titles) or bare UI-only ids.
-        // Only keep entries whose prefix is a class the manifest actually knows about, to avoid manufacturing
-        // "classes" out of UI concepts like "Concordance" or "PubSettings".
+        // Keep only ids prefixed by a known class, so UI concepts like "Concordance" cannot become classes.
         var alternativeTitles = root.Elements("group").FirstOrDefault(g => (string?)g.Attribute("id") == "AlternativeTitles");
         if (alternativeTitles is not null)
         {

@@ -28,7 +28,7 @@ public static class MotifModelLoader
     /// <param name="manifestPath">Defaults to <c>manifest/liblcm-inventory.tsv</c> under the repo
     /// root (<see cref="RepoPaths.DefaultManifestPath"/>). Overridable so tests can point at a
     /// fixture with an injected extra/missing/mismatched row without touching the read-only real
-    /// file (manifest/README.md: "never modify it").</param>
+    /// file (the manifest README: "never modify it").</param>
     /// <param name="packagesRootOverride">Forwarded to <see cref="ModelPathResolver.Resolve"/>.</param>
     /// <param name="libLcmCheckoutRoot">Forwarded to <see cref="ModelPathResolver.Resolve"/>.</param>
     public static LoadedMotifModel Load(

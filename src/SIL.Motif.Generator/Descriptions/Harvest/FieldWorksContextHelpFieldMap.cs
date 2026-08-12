@@ -15,8 +15,9 @@ namespace SIL.Motif.Generator.Descriptions.Harvest;
 /// same generic control (a bare <c>PartOfSpeech</c> id is reused for at least
 /// <c>MoStemMsa.PartOfSpeech</c>/<c>MoDerivAffMsa.FromPartOfSpeech</c>/<c>MoUnclassifiedAffixMsa.PartOfSpeech</c>
 /// and reads as stem-specific wording — "The category of this stem or root" — that would misdescribe an
-/// affix). Assuming id-equals-field would import that ambiguity silently, exactly the failure D8 exists to
-/// stop. Every entry below was checked against a concrete <c>field="..."</c> slice binding in
+/// affix). Assuming id-equals-field would import that ambiguity silently — a description attached to the
+/// wrong field is worse than none, because nothing downstream can tell it is wrong. Every entry below was
+/// checked against a concrete <c>field="..."</c> slice binding in
 /// <c>FieldWorks/DistFiles/Language Explorer/Configuration/Parts/*.xml</c> (see <see cref="Entry.VerifiedAgainst"/>),
 /// except the one flagged <c>ambiguous-wiring</c>, which is included with that caveat spelled out rather than
 /// silently promoted to <c>exact</c>.

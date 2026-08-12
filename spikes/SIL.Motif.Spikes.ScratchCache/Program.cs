@@ -5,8 +5,8 @@ using SIL.Motif.Host.LcmUtils;
 namespace SIL.Motif.Spikes.ScratchCache;
 
 /// <summary>
-/// Spike harness for grill item <c>A1</c>. Times both candidate scratch strategies and compares each
-/// resulting cache against the live one.
+/// Spike harness for ADR 0016. Times both candidate scratch strategies and compares each resulting cache
+/// against the live one.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -55,7 +55,7 @@ public static class Program
         var factory = new ScratchCacheFactory();
         var fileInfo = new FileInfo(sourceFwData);
 
-        Header($"A1 spike — scratch cache cost and equivalence");
+        Header("scratch cache: cost and equivalence");
         Console.WriteLine($"project : {sourceFwData}");
         Console.WriteLine($"size    : {fileInfo.Length / 1024.0 / 1024.0:N1} MB");
         Console.WriteLine();
@@ -80,15 +80,11 @@ public static class Program
                 ("open the copy (cold load)", loadMs, "the cost every project open already pays"),
             };
 
-            // --- Strategy A, from a cold cache -------------------------------------------------
-            // Only the objects LibLCM itself fluffed during startup are hot, so this is the best case
-            // for CreateCacheCopy.
+            // --- Strategy A, from a COLD cache: only startup-fluffed objects are hot, so it is the best case.
             var (coldScratch, coldCopyMs) = Timed(() => factory.CreateInMemoryCopy(live, "scratch-from-cold"));
             timings.Add(("A: in-memory copy from a COLD live cache", coldCopyMs, "few objects fluffed yet"));
 
-            // --- Strategy A, fanned out from the pristine scratch ------------------------------
-            // ADR 0016's whole premise: this should be markedly cheaper than copying from a hot cache,
-            // because the pristine scratch's surrogates still hold their raw XML bytes.
+            // --- Strategy A, fanned out: should beat copying from HOT, pristine surrogates holding raw XML.
             var (derivedScratch, derivedCopyMs) = Timed(() => factory.CreateInMemoryCopy(coldScratch, "scratch-derived"));
             timings.Add(("A: derived copy from the PRISTINE scratch", derivedCopyMs, "ADR 0016's cheap fan-out"));
 
@@ -104,11 +100,7 @@ public static class Program
             var (fileScratch, filePathMs) = Timed(() => factory.CreateFromFileCopy(workingFwData, fileScratchRoot));
             timings.Add(("B: file copy + open (the XML path)", filePathMs, "loses unsaved edits; real writing systems"));
 
-            // --- The question that decides whether one canonical path is possible -----------------
-            // If a memory-only copy taken from a FILE-LOADED scratch keeps that scratch's real writing
-            // systems, we can have the cheap fan-out and lossless writing systems at once. If it does not,
-            // the loss is a property of every kMemoryOnly cache and no amount of choosing a better source
-            // fixes it.
+            // --- Can a copy of a FILE-loaded scratch keep writing systems, or is the loss inherent to kMemoryOnly?
             var (derivedFromFile, derivedFromFileMs) = Timed(() => factory.CreateInMemoryCopy(fileScratch, "derived-from-file"));
             timings.Add(("A-on-B: in-memory copy of the FILE-loaded scratch", derivedFromFileMs, "can fan-out inherit real writing systems?"));
 
@@ -133,8 +125,7 @@ public static class Program
             derivedFromFile.Dispose();
             fileScratch.Dispose();
 
-            // Exit non-zero only on a text-fidelity failure. Degraded writing systems are an expected,
-            // documented property of the in-memory strategy, not a harness failure.
+            // Non-zero only on text fidelity: degraded writing systems are expected, not a harness failure.
             return reports.All(r => r.IsUsableForTextFidelity) ? 0 : 1;
         }
         finally
@@ -175,10 +166,7 @@ public static class Program
         Console.WriteLine();
     }
 
-    /// <summary>
-    /// States the three falsification criteria from the research note explicitly, so a run either clears
-    /// them or does not — rather than producing numbers someone has to interpret later.
-    /// </summary>
+    // States ADR 0016's three falsification criteria, so a run either clears them or does not.
     private static void PrintVerdict(List<(string Label, double Ms, string Note)> timings, ScratchComparison.ComparisonReport[] reports)
     {
         double Ms(string fragment) => timings.First(t => t.Label.Contains(fragment, StringComparison.Ordinal)).Ms;
@@ -193,9 +181,7 @@ public static class Program
         var ratio = derived <= 0 ? double.PositiveInfinity : hot / derived;
         Console.WriteLine($"1. fan-out is cheaper than re-copying from hot : {(ratio > 2 ? "HOLDS" : "FAILS")}  (hot/derived = {ratio:N1}x)");
 
-        // Comparing only the HOT copy to the file path would be unfair to strategy A: a real session never
-        // has every object fluffed. A's cost scales with how much of the live cache is hot, so report the
-        // range and the break-even point rather than one verdict.
+        // A's cost scales with how hot the live cache is, so report a range and break-even, not one verdict.
         var beatsWhenCold = cold < filePath;
         var beatsWhenHot = hot < filePath;
         var crossover = hot > cold ? (filePath - cold) / (hot - cold) : double.NaN;

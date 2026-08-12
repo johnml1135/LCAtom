@@ -4,10 +4,9 @@ namespace SIL.Motif.Spikes.LabelHarvest;
 
 /// <summary>
 /// Harvests mechanism 3: tool labels from <c>Lists/Edit/toolConfiguration.xml</c>, joined to their
-/// <c>(className, ownerClass, ownerField)</c> key from <c>Lists/areaConfiguration.xml</c>. See
-/// <c>docs/research/2026-08-05-fieldworks-user-facing-names.md</c> §1.3 — the tool's label is keyed by the
-/// tool, which is in turn keyed by <c>(ownerClass, ownerField)</c>; <c>className</c> is often the generic
-/// base class (<c>CmPossibility</c>), so these records are class-level, not field-level.
+/// <c>(className, ownerClass, ownerField)</c> key from <c>Lists/areaConfiguration.xml</c>. The tool's label
+/// is keyed by the tool, which is in turn keyed by <c>(ownerClass, ownerField)</c>; <c>className</c> is
+/// often the generic base class (<c>CmPossibility</c>), so these records are class-level, not field-level.
 /// </summary>
 public static class ToolConfigHarvester
 {
@@ -54,8 +53,7 @@ public static class ToolConfigHarvester
             var ownerField = (string?)parameters.Attribute("ownerField");
             if (string.IsNullOrEmpty(className) || string.IsNullOrEmpty(ownerField)) continue;
 
-            // Keep the first mapping seen; a handful of owner fields (e.g. "Status") appear twice for two
-            // different tools (senseStatusEdit and statusEdit) but always agree on className.
+            // First wins: e.g. "Status" appears under senseStatusEdit and statusEdit, agreeing on className.
             map.TryAdd(ownerField, className);
         }
 

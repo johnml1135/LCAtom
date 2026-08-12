@@ -94,7 +94,8 @@ public class ParserOutputTests
             () => BatchTsvParser.Parse("0\tword\t5\tSOMETHING_NEW\t-\n"));
 
         Assert.Contains("SOMETHING_NEW", ex.Message);
-        Assert.Contains("D9", ex.Message);
+        // The message must name where to add the status, or the refusal is a dead end rather than a hand-off.
+        Assert.Contains(nameof(BatchTsvParser), ex.Message);
     }
 
     [Fact]

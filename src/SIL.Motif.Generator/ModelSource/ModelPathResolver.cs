@@ -59,7 +59,7 @@ public static class ModelPathResolver
             (checkoutPath is null
                 ? " and no MOTIF_LIBLCM_CHECKOUT fallback was set."
                 : $" and the liblcm checkout fallback at '{checkoutPath}'.") +
-            " See docs/plan-motif.md, MOT-2.");
+            " Restore the SIL.LCModel package, or point MOTIF_LIBLCM_CHECKOUT at a liblcm checkout.");
     }
 
     /// <summary>

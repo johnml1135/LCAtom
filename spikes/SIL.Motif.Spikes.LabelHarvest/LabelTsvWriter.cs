@@ -36,8 +36,7 @@ public static class LabelTsvWriter
 
     private static void AppendQuoted(StringBuilder sb, string value)
     {
-        // Match liblcm-inventory.tsv's dialect: wrap every field in double quotes, and escape an embedded
-        // quote by doubling it (the standard CSV/TSV-with-quoting convention).
+        // Match liblcm-inventory.tsv's dialect: quote every field, and escape a quote by doubling it.
         sb.Append('"');
         sb.Append(value.Replace("\"", "\"\""));
         sb.Append('"');

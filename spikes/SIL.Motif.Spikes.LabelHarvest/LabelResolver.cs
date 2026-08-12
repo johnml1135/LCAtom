@@ -8,9 +8,7 @@ namespace SIL.Motif.Spikes.LabelHarvest;
 /// </summary>
 public static class LabelResolver
 {
-    /// <summary>Occurrences of the same (class, field, label) beyond this count collapse into a "+N more"
-    /// note in <c>SourceDetail</c> rather than listing every one — some generic labels like "Name" recur
-    /// dozens of times across unrelated layouts.</summary>
+    // Beyond this, SourceDetail collapses to "+N more": a label like "Name" recurs across dozens of layouts.
     private const int MaxSourceDetailExamples = 5;
 
     public static IReadOnlyList<LabelRow> Resolve(IEnumerable<RawLabel> raw)

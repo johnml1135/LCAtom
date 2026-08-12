@@ -7,10 +7,10 @@ namespace SIL.Motif.Spikes.LabelHarvest;
 /// composite <c>Parts/*.xml</c> part definition instead, whose id embeds the real field plus a
 /// writing-system-scope suffix (e.g. <c>MoInflAffixSlot-Detail-NameAllA</c> wraps
 /// <c>&lt;slice field="Name"&gt;</c>; the fwlayout ref is <c>NameAllA</c>, not <c>Name</c>). Confirmed by
-/// direct inspection while building this harvester — MoInflAffixSlot's own "Name" vs "Slot Name" example
-/// from <c>docs/adr/0023-derived-kind-names-required-descriptions.md</c> only round-trips to the real field
-/// once this indirection is resolved; without it, <c>NameAllA</c> is recorded as a synthetic pseudo-field
-/// distinct from <c>Name</c>, silently hiding the exact per-view conflict the ADR describes.
+/// direct inspection while building this harvester — ADR 0023's own "Name" vs "Slot Name" example on
+/// MoInflAffixSlot only round-trips to the real field once this indirection is resolved; without it,
+/// <c>NameAllA</c> is recorded as a synthetic pseudo-field distinct from <c>Name</c>, silently hiding the
+/// exact per-view conflict the ADR describes.
 /// <para>
 /// Every part id sampled across the tree has exactly three hyphen-delimited segments:
 /// <c>ClassName-TypeSegment-Suffix</c> (1,210 ids checked, all exactly 3 segments). The type segment
@@ -41,8 +41,7 @@ public static class PartIdFieldResolver
                     var field = (string?)part.Descendants("slice").FirstOrDefault()?.Attribute("field");
                     if (string.IsNullOrEmpty(field)) continue;
 
-                    // First writer wins; a handful of suffixes are defined more than once and every
-                    // instance sampled agreed on the underlying field.
+                    // First writer wins: a few suffixes are defined more than once, and every sample agreed.
                     map.TryAdd((cls, suffix), field);
                 }
             }

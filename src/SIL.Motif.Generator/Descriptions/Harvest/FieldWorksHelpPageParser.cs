@@ -45,8 +45,8 @@ public static class FieldWorksHelpPageParser
             throw new GeneratorException(
                 $"FieldWorks help page '{relativePath}' has no 'Description:' row. Either the page is not a " +
                 "field-description topic, or RoboHelp's output shape changed — check the page by hand rather " +
-                "than relaxing this parser, because a description invented to fill the gap is the failure " +
-                "docs/issues.md D8 exists to prevent.");
+                "than relaxing this parser, because a description invented to fill the gap breaks the rule " +
+                "that every description is copied from a source and never written.");
         }
 
         var description = CollapseToText(descriptionMatch.Groups["body"].Value);

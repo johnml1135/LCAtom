@@ -32,7 +32,7 @@ namespace SIL.Motif.Generator.Checks;
 /// those inverted, and the check that passed them could not see it because polarity is invisible to a
 /// mechanical text check. What <i>is</i> checkable is whether the description claims a source:
 /// <see cref="KindDescription.Reviewed"/> must be one of five documented values (<c>sourced</c>,
-/// <c>hand-corrected</c>, <c>adapted</c>, <c>unsourced</c>, <c>no-source-exists</c> — manifest/README.md),
+/// <c>hand-corrected</c>, <c>adapted</c>, <c>unsourced</c>, <c>no-source-exists</c> — the manifest README),
 /// and a row claiming any of those but <c>unsourced</c> must actually carry a
 /// <see cref="KindDescription.Source"/> and <see cref="KindDescription.SourceDetail"/> citation. This does not
 /// catch a wrong paraphrase of a real citation, but it does catch the weaker and cheaper-to-produce failure of
@@ -107,7 +107,7 @@ public static class DescriptionCheck
             {
                 failures.Add(
                     $"{key}: Reviewed is '{description.Reviewed}' but Source/SourceDetail is empty. A " +
-                    "description claiming provenance must record where it came from (docs/issues.md D8) — " +
+                    "description claiming provenance must record where it came from — " +
                     "use 'unsourced' if there is no citation yet.");
             }
         }

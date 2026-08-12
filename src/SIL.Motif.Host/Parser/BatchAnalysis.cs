@@ -111,6 +111,6 @@ public static class BatchTsvParser
         _ => throw new InvalidOperationException(
             $"Unrecognised parser status '{status}' (signature '{signature}'). Add it to " +
             $"{nameof(BatchTsvParser)} deliberately: bucketing an unknown status as a failure would move " +
-            "grammar coverage numbers silently, which is the defect docs/issues.md D9 records."),
+            "grammar coverage numbers silently."),
     };
 }

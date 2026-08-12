@@ -5,13 +5,13 @@ namespace SIL.Motif.Generator.Tsv;
 /// <summary>
 /// The one TSV dialect every checked-in manifest artifact in this repo uses: tab-separated, every value
 /// double-quoted with <c>""</c> escaping, CRLF line endings, UTF-8 with no BOM
-/// (manifest/README.md, "Companion files").
+/// (the manifest README, "Companion files").
 /// </summary>
 /// <remarks>
 /// <see cref="Manifest.ManifestTsvParser"/> and <see cref="Descriptions.KindDescriptionTsvParser"/> predate
 /// this and keep their own hand-rolled readers, because each carries column-specific validation and a
-/// row-shaped record that a generic reader cannot produce. This exists so the *next* artifact — the harvest
-/// outputs added for D8 — does not become a third and fourth copy of the same quoting rules.
+/// row-shaped record that a generic reader cannot produce. This exists so the *next* artifact — the
+/// description-harvest outputs — does not become a third and fourth copy of the same quoting rules.
 /// </remarks>
 public static class QuotedTsv
 {

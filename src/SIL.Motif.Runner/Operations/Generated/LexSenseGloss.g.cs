@@ -75,8 +75,7 @@ public static class ClearGlossPayload
 /// LibLCM write it performs: <c>sense.Gloss.set_String(wsHandle, ...)</c>.
 /// </summary>
 /// <remarks>
-/// Must run inside an already-open unit of work (see
-/// docs/adr/0006-engine-reality-apply-readback-preflight.md, decision 5) — the caller owns
+/// Must run inside an already-open unit of work (ADR 0006 decision 5) — the caller owns
 /// opening and closing/rolling back that unit of work.
 /// </remarks>
 public static class SetGlossLowering

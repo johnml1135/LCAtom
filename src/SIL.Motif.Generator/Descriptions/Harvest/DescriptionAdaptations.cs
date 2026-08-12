@@ -32,7 +32,7 @@ namespace SIL.Motif.Generator.Descriptions.Harvest;
 /// </remarks>
 public static class DescriptionAdaptations
 {
-    /// <summary>The <c>Reviewed</c> value an adapted row carries (manifest/README.md).</summary>
+    /// <summary>The <c>Reviewed</c> value an adapted row carries (the manifest README).</summary>
     public const string ReviewedValue = "adapted";
 
     /// <param name="SourceClass">The sibling whose cited source text is adapted.</param>
