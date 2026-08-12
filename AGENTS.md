@@ -71,10 +71,12 @@ where the project is — a comment duplicating any of those three will eventuall
 | A trailing `// note` sharing a line with code | scanned like any implementation comment — one line by construction, so **at most 110 characters** |
 | Comment text assembled in a literal — `$"/// …"` | scanned as the comment it becomes. Only the interpolated *value* is beyond a static pass |
 | `<see cref="X"/>` | keep; the C# compiler resolves it (CS1574), unlike Rust's intra-doc links |
+| `<!-- -->` in `.csproj`/`.props`/`.targets` | line-level bans apply (plan/issue, dates, slice status, history, attribution); length cap and api-doc completeness do not — see SKILL.md |
 
 Zero tolerance, no baseline: a baseline records the current count as acceptable, and re-baselining
 after a rule change relabels old debt as the new normal. `src/`, `tests/`, `spikes/` and `tools/` are
-all scanned on the same terms — exempting a directory is a baseline wearing a different hat.
+all scanned on the same terms — exempting a directory is a baseline wearing a different hat. So are
+`.csproj`, `.props` and `.targets` files there and at the repo root, alongside `.cs` and `.ps1`.
 
 Run `tools/verify-comment-only.ps1` after a comment sweep. It requires every line the diff **adds and
 removes** to be a comment — the symmetric check, because a pure deletion satisfies the obvious

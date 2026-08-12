@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    Spike harness for grill item A1 / ADR 0016 — not a product deliverable.
+    Spike harness for ADR 0016's scratch-cache-copy decision — not a product deliverable.
 
     It exists to answer two questions with measurements instead of inference: how much a scratch cache
     costs by each candidate strategy, and whether either strategy produces a cache that is actually

@@ -189,6 +189,15 @@ code — are scanned too, for the same reason and by the same machinery.
 anything at run time and no static pass will see it. The literal text around the hole is read; what
 flows through the hole is not. Apply these rules by hand to whatever feeds it.
 
+## Project files (`.csproj`, `.props`, `.targets`)
+
+`<!-- -->` blocks in these are committed source, and a plan or issue reference rots there exactly as
+it does in a `//`. The checker applies the line-level bans above line-by-line inside them: plan/issue
+references, dates, slice/wiring status, history prose, attribution. It does **not** apply the length
+cap or `api-doc-defers-offline` — an XML comment is neither a `//` nor an API doc, and nobody reads a
+`.csproj` comment in a tooltip, so a `docs/…md` path there is openable by its reader, the same
+distinction the string-literal rule draws above.
+
 ## When you find a violation
 
 Remove it in the same commit as whatever you were already doing. Do not open a task, do not annotate

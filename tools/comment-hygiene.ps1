@@ -1,6 +1,6 @@
 <#
   .SYNOPSIS
-  Counts comment-hygiene violations in this repo's C# and fails if any remain.
+  Counts comment-hygiene violations in this repo's C#, PowerShell and MSBuild files, and fails if any remain.
 
   .DESCRIPTION
   ZERO TOLERANCE. Every violation is reported and every one is meant to go; there is no accepted
@@ -51,6 +51,21 @@
   A repo-relative Markdown path is NOT banned from a message string. The two bans have different
   reasons: an issue reference rots, while a `docs/...md` path is merely unopenable from a tooltip. The
   reader of a generator's exception is standing in a checkout, so a path helps them.
+
+  PROJECT FILES are the fifth family. `.csproj`, `.props` and `.targets` are committed source that
+  people read, and an `<!-- -->` block in one rots exactly like a `//` block does. Only the LINE-LEVEL
+  family applies there:
+
+    - not the length rule, because an XML comment is neither a `//` nor an API doc, and MSBuild files
+      legitimately carry longer explanatory blocks;
+    - not api-doc-defers-offline, because nobody reads a `.csproj` comment in a tooltip, so a
+      `docs/...md` path is openable by its reader -- the same distinction STRING LITERALS draws above.
+
+  A project file is scanned whole-file rather than line-by-line, because `<!-- -->` can span lines and
+  can share a line with markup; each physical line inside a comment block is still scored on its own,
+  the same as a `//` or `#` line elsewhere. It is never scanned for literals: this script is itself a
+  `.ps1`, never a `.csproj`, so the self-reference problem the bullet above solves for PowerShell does
+  not even arise here.
 
   The C# port differs from PanGloss's Rust original in two ways that matter:
 
@@ -154,12 +169,21 @@ $literalCategories = [ordered]@{
     'issue-reference' = '(?-i:\bMOT-\d+)|docs/issues|issues\.md|(?-i:\b(?:issue|issues)\s+[A-Z]\d+)'
 }
 
+# .csproj/.props/.targets carry <!-- --> comments; scanned on the same directories as .cs and .ps1.
+$projectFilePatterns = @('*.csproj', '*.props', '*.targets')
+
 $sourceFiles = @(
     Get-ChildItem -Path (Join-Path $repoRoot 'src') -Filter '*.cs' -Recurse -File -ErrorAction SilentlyContinue
     Get-ChildItem -Path (Join-Path $repoRoot 'tests') -Filter '*.cs' -Recurse -File -ErrorAction SilentlyContinue
     Get-ChildItem -Path (Join-Path $repoRoot 'spikes') -Filter '*.cs' -Recurse -File -ErrorAction SilentlyContinue
     Get-ChildItem -Path (Join-Path $repoRoot 'tools') -Filter '*.ps1' -Recurse -File -ErrorAction SilentlyContinue
     Get-ChildItem -Path $repoRoot -Filter '*.ps1' -File -ErrorAction SilentlyContinue
+    foreach ($dir in 'src', 'tests', 'spikes', 'tools') {
+        Get-ChildItem -Path (Join-Path $repoRoot $dir) -Include $projectFilePatterns -Recurse -File -ErrorAction SilentlyContinue
+    }
+    foreach ($pattern in $projectFilePatterns) {
+        Get-ChildItem -Path $repoRoot -Filter $pattern -File -ErrorAction SilentlyContinue
+    }
 ) | Where-Object {
     $_.FullName -notmatch '\\(bin|obj)\\' -and $_.Name -notmatch '\.g\.cs$'
 }
@@ -292,7 +316,32 @@ function Get-EnclosingTypeVisibility {
     return 'private'
 }
 
+# <!-- --> can span lines or share a line with markup; scanned whole-file, line-level families only.
+function Test-ProjectFileComments {
+    param([string] $FilePath)
+
+    $text = [System.IO.File]::ReadAllText($FilePath)
+    foreach ($m in [regex]::Matches($text, '<!--([\s\S]*?)-->')) {
+        $startLine = ($text.Substring(0, $m.Index) -split "`n").Count
+        $bodyLines = $m.Groups[1].Value -split "`r?`n"
+        for ($li = 0; $li -lt $bodyLines.Count; $li++) {
+            $lineText = $bodyLines[$li]
+            foreach ($cat in $script:categories.Keys) {
+                if ($null -eq $script:categories[$cat]) { continue }
+                if ($lineText -match $script:categories[$cat]) {
+                    Add-Hit $cat $FilePath ($startLine + $li) $lineText
+                }
+            }
+        }
+    }
+}
+
 foreach ($file in $sourceFiles) {
+    if ($file.Extension -in '.csproj', '.props', '.targets') {
+        Test-ProjectFileComments -FilePath $file.FullName
+        continue
+    }
+
     $lines = [System.IO.File]::ReadAllLines($file.FullName)
     $isPowerShell = $file.Extension -eq '.ps1'
 
