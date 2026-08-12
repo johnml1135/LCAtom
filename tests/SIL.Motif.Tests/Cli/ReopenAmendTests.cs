@@ -3,9 +3,7 @@ using System.IO;
 using SIL.Motif.Cli;
 using SIL.Motif.Cli.Store;
 using SIL.Motif.Contract.Ids;
-using SIL.Motif.Host.LcmUtils;
 using SIL.Motif.Tests.TestFixtures;
-using SIL.LCModel;
 using Xunit;
 
 namespace SIL.Motif.Tests.Cli;
@@ -18,36 +16,29 @@ namespace SIL.Motif.Tests.Cli;
 /// (ADR 0004, decision 2).
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
-[Trait("Fixture", "FieldWorks")]
-public sealed class ReopenAmendTests : IDisposable
+public sealed class ReopenAmendTests
 {
-    private readonly string _tempRoot;
+    private readonly SeededProject _seed;
     private readonly string _fwDataPath;
     private readonly string _storeDir;
 
-    public ReopenAmendTests()
+    public ReopenAmendTests(PristineProjectFixture pristine)
     {
-        _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests.Reopen", Guid.NewGuid().ToString("N"));
-        _fwDataPath = TestLangProjFixture.CopyToTempAndGetFwDataPath(_tempRoot);
-        _storeDir = Path.Combine(_tempRoot, ".motif-store");
-    }
+        _seed = pristine.Seed;
+        using var scratch = pristine.NewScratch();
+        _fwDataPath = scratch.ProjectId.Path;
 
-    public void Dispose()
-    {
-        try
-        {
-            Directory.Delete(_tempRoot, recursive: true);
-        }
-        catch
-        {
-            // best-effort cleanup; a locked native handle should not fail the test
-        }
+        // The scratch root is the project folder's parent -- a sibling location for the CLI's own store.
+        var scratchRoot = Path.GetDirectoryName(Path.GetDirectoryName(_fwDataPath))!;
+        _storeDir = Path.Combine(scratchRoot, ".motif-store");
     }
 
     [Fact]
     public void Commit_Reopen_Amend_KeepsId_MovesDigest_RetainsBothObjectVersions_ResetsStatusToProposed()
     {
-        var (senseGuid, wsTag, originalGloss) = FindSenseWithKnownGloss();
+        var senseGuid = _seed.FirstSenseId;
+        var wsTag = NewLangProjFixture.AnalysisTag;
+        var originalGloss = SeededProject.FirstGloss;
         var canonicalId = CanonicalId.FromGuid(senseGuid);
 
         // --- commit v1 ---
@@ -129,28 +120,6 @@ public sealed class ReopenAmendTests : IDisposable
         var result = Commands.Reopen(_storeDir, "some-draft", bogusId);
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("not found", result.Output, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private (Guid SenseGuid, string WsTag, string Gloss) FindSenseWithKnownGloss()
-    {
-        using var cache = new FwDataProjectLoader().LoadCache(_fwDataPath);
-        var senseRepo = cache.ServiceLocator.GetInstance<ILexSenseRepository>();
-
-        foreach (var sense in senseRepo.AllInstances())
-        {
-            foreach (var wsHandle in sense.Gloss.AvailableWritingSystemIds)
-            {
-                var text = sense.Gloss.get_String(wsHandle).Text;
-                if (!string.IsNullOrEmpty(text))
-                {
-                    var wsTag = cache.WritingSystemFactory.GetStrFromWs(wsHandle);
-                    return (sense.Guid, wsTag, text);
-                }
-            }
-        }
-
-        throw new InvalidOperationException(
-            "Expected the real TestLangProj fixture to contain at least one LexSense with a non-empty gloss.");
     }
 
     private static string ExtractProposalId(string output)

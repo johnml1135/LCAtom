@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Linq;
 using SIL.Motif.Cli;
 using SIL.Motif.Cli.Store;
 using SIL.Motif.Host.LcmUtils;
@@ -19,37 +18,29 @@ namespace SIL.Motif.Tests.Cli;
 /// end to end.
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
-[Trait("Fixture", "FieldWorks")]
-public sealed class EndToEndCliTests : IDisposable
+public sealed class EndToEndCliTests
 {
-    private readonly string _tempRoot;
+    private readonly SeededProject _seed;
     private readonly string _fwDataPath;
     private readonly string _storeDir;
 
-    public EndToEndCliTests()
+    public EndToEndCliTests(PristineProjectFixture pristine)
     {
-        // Never mutate the shared fixture: copy to a temp directory this test owns and cleans up.
-        _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests.Cli", Guid.NewGuid().ToString("N"));
-        _fwDataPath = TestLangProjFixture.CopyToTempAndGetFwDataPath(_tempRoot);
-        _storeDir = Path.Combine(_tempRoot, ".motif-store");
-    }
+        _seed = pristine.Seed;
+        using var scratch = pristine.NewScratch();
+        _fwDataPath = scratch.ProjectId.Path;
 
-    public void Dispose()
-    {
-        try
-        {
-            Directory.Delete(_tempRoot, recursive: true);
-        }
-        catch
-        {
-            // best-effort cleanup; a locked native handle should not fail the test
-        }
+        // The scratch root is the project folder's parent -- a sibling location for the CLI's own store.
+        var scratchRoot = Path.GetDirectoryName(Path.GetDirectoryName(_fwDataPath))!;
+        _storeDir = Path.Combine(scratchRoot, ".motif-store");
     }
 
     [Fact]
     public void FullLoop_New_AddSetGloss_Finalize_DryRun_Apply_Log_DrivesRealProjectEndToEnd()
     {
-        var (senseGuid, wsTag, originalGloss) = FindSenseWithKnownGloss();
+        var senseGuid = _seed.FirstSenseId;
+        var wsTag = NewLangProjFixture.AnalysisTag;
+        var originalGloss = SeededProject.FirstGloss;
         var canonicalId = SIL.Motif.Contract.Ids.CanonicalId.FromGuid(senseGuid);
         var newGloss = originalGloss + " (revised sense, Stage E CLI)";
         const string draftName = "stage-e-demo";
@@ -154,31 +145,10 @@ public sealed class EndToEndCliTests : IDisposable
         Assert.NotEqual(0, missingProposal.ExitCode);
         Assert.Contains("not found", missingProposal.Output, StringComparison.OrdinalIgnoreCase);
 
-        var missingProject = Commands.Log(Path.Combine(_tempRoot, "does-not-exist.fwdata"));
+        var missingProjectPath = Path.Combine(Path.GetDirectoryName(_fwDataPath)!, "does-not-exist.fwdata");
+        var missingProject = Commands.Log(missingProjectPath);
         Assert.NotEqual(0, missingProject.ExitCode);
         Assert.Contains("not found", missingProject.Output, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private (Guid SenseGuid, string WsTag, string Gloss) FindSenseWithKnownGloss()
-    {
-        using var cache = new FwDataProjectLoader().LoadCache(_fwDataPath);
-        var senseRepo = cache.ServiceLocator.GetInstance<ILexSenseRepository>();
-
-        foreach (var sense in senseRepo.AllInstances())
-        {
-            foreach (var wsHandle in sense.Gloss.AvailableWritingSystemIds)
-            {
-                var text = sense.Gloss.get_String(wsHandle).Text;
-                if (!string.IsNullOrEmpty(text))
-                {
-                    var wsTag = cache.WritingSystemFactory.GetStrFromWs(wsHandle);
-                    return (sense.Guid, wsTag, text);
-                }
-            }
-        }
-
-        throw new InvalidOperationException(
-            "Expected the real TestLangProj fixture to contain at least one LexSense with a non-empty gloss.");
     }
 
     private void AssertGlossOnDisk(Guid senseGuid, string wsTag, string expectedGloss)

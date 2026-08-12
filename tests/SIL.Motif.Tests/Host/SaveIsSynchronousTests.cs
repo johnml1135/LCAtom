@@ -27,25 +27,24 @@ namespace SIL.Motif.Tests.Host;
 /// </para>
 /// </remarks>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
-[Trait("Fixture", "FieldWorks")]
 public sealed class SaveIsSynchronousTests : IDisposable
 {
-    private readonly string _tempRoot;
     private readonly string _fwDataPath;
     private readonly FwDataProjectLoader _loader = new();
     private readonly LcmCache _cache;
+    private readonly SeededProject _seed;
 
-    public SaveIsSynchronousTests()
+    public SaveIsSynchronousTests(PristineProjectFixture pristine)
     {
-        _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests.Save", Guid.NewGuid().ToString("N"));
-        _fwDataPath = TestLangProjFixture.CopyToTempAndGetFwDataPath(_tempRoot);
-        _cache = _loader.LoadCache(_fwDataPath);
+        _cache = pristine.NewScratch();
+        _seed = pristine.Seed;
+        _fwDataPath = _cache.ProjectId.Path;
     }
 
     [Fact]
     public void AfterSaveReturns_AFreshCopyOfTheFileAlreadyContainsTheChange()
     {
-        var entry = _cache.ServiceLocator.GetInstance<ILexEntryRepository>().AllInstances().First();
+        var entry = _cache.ServiceLocator.GetInstance<ILexEntryRepository>().GetObject(_seed.FirstEntryId);
         var entryGuid = entry.Guid;
         var wsHandle = _cache.DefaultAnalWs;
         const string marker = "zzSaveIsSynchronous";
@@ -56,7 +55,8 @@ public sealed class SaveIsSynchronousTests : IDisposable
         _loader.Save(_cache);
 
         // No sleeping or retrying: copy immediately, exactly what a Dry Run does — waiting would hide the defect.
-        var copyRoot = Path.Combine(_tempRoot, "copy-immediately-after-save");
+        var scratchRoot = Path.GetDirectoryName(Path.GetDirectoryName(_fwDataPath))!;
+        var copyRoot = Path.Combine(scratchRoot, "copy-immediately-after-save");
         using var copy = new ScratchCacheFactory(_loader).CreateFromFileCopy(_fwDataPath, copyRoot);
 
         var copiedEntry = copy.ServiceLocator.GetInstance<ILexEntryRepository>().GetObject(entryGuid);
@@ -69,7 +69,5 @@ public sealed class SaveIsSynchronousTests : IDisposable
     public void Dispose()
     {
         if (!_cache.IsDisposed) _cache.Dispose();
-        try { Directory.Delete(_tempRoot, recursive: true); }
-        catch { /* best effort */ }
     }
 }

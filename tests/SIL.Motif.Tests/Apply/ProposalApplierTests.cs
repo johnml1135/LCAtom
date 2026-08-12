@@ -28,33 +28,23 @@ namespace SIL.Motif.Tests.Apply;
 /// entry.
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
-[Trait("Fixture", "FieldWorks")]
 public sealed class ProposalApplierTests : IDisposable
 {
-    private readonly string _tempRoot;
     private readonly string _fwDataPath;
     private readonly FwDataProjectLoader _loader = new();
+    private readonly SeededProject _seed;
     private LcmCache _cache;
 
-    public ProposalApplierTests()
+    public ProposalApplierTests(PristineProjectFixture pristine)
     {
-        // Never mutate the shared fixture: copy to a temp directory this test owns and cleans up.
-        _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests", Guid.NewGuid().ToString("N"));
-        _fwDataPath = TestLangProjFixture.CopyToTempAndGetFwDataPath(_tempRoot);
-        _cache = _loader.LoadCache(_fwDataPath);
+        _cache = pristine.NewScratch();
+        _seed = pristine.Seed;
+        _fwDataPath = _cache.ProjectId.Path;
     }
 
     public void Dispose()
     {
         if (!_cache.IsDisposed) _cache.Dispose();
-        try
-        {
-            Directory.Delete(_tempRoot, recursive: true);
-        }
-        catch
-        {
-            // best-effort cleanup; a locked native handle should not fail the test
-        }
     }
 
     [Fact]
@@ -306,26 +296,11 @@ public sealed class ProposalApplierTests : IDisposable
         ProjectionVersion: "1",
         DryRunAtUtc: "20260101T000000Z");
 
-    /// <summary>Picks the first sense with a non-empty gloss, read straight back from LibLCM.</summary>
-    private static (Guid SenseGuid, string WsTag, string Gloss) FindSenseWithKnownGloss(LcmCache cache)
+    /// <summary>The seeded first sense's identity, gloss and writing system.</summary>
+    private (Guid SenseGuid, string WsTag, string Gloss) FindSenseWithKnownGloss(LcmCache cache)
     {
-        var senseRepo = cache.ServiceLocator.GetInstance<ILexSenseRepository>();
-
-        foreach (var sense in senseRepo.AllInstances())
-        {
-            foreach (var wsHandle in sense.Gloss.AvailableWritingSystemIds)
-            {
-                var text = sense.Gloss.get_String(wsHandle).Text;
-                if (!string.IsNullOrEmpty(text))
-                {
-                    var wsTag = cache.WritingSystemFactory.GetStrFromWs(wsHandle);
-                    return (sense.Guid, wsTag, text);
-                }
-            }
-        }
-
-        throw new InvalidOperationException(
-            "Expected the real TestLangProj fixture to contain at least one LexSense with a non-empty gloss.");
+        var wsTag = cache.WritingSystemFactory.GetStrFromWs(cache.DefaultAnalWs);
+        return (_seed.FirstSenseId, wsTag, SeededProject.FirstGloss);
     }
 
     private static Proposal BuildSetGlossProposal(CanonicalId target, string wsTag, string text)

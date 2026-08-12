@@ -33,25 +33,25 @@ namespace SIL.Motif.Tests.Apply;
 /// </para>
 /// </remarks>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
-[Trait("Fixture", "FieldWorks")]
 public sealed class AnchorsAreCrossCachePortableTests : IDisposable
 {
     private readonly string _tempRoot;
     private readonly LcmCache _cache;
+    private readonly SeededProject _seed;
 
-    public AnchorsAreCrossCachePortableTests()
+    public AnchorsAreCrossCachePortableTests(PristineProjectFixture pristine)
     {
+        _cache = pristine.NewScratch();
+        _seed = pristine.Seed;
         _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests.Portable", Guid.NewGuid().ToString("N"));
-        var fwDataPath = TestLangProjFixture.CopyToTempAndGetFwDataPath(_tempRoot);
-        _cache = new FwDataProjectLoader().LoadCache(fwDataPath);
+        Directory.CreateDirectory(_tempRoot);
     }
 
     [Fact]
     public void AFootprintDigestFromAFileCopy_EqualsTheOneFromTheOriginal()
     {
-        var sense = _cache.ServiceLocator.GetInstance<ILexSenseRepository>().AllInstances().First();
-        var form = _cache.ServiceLocator.GetInstance<ILexEntryRepository>()
-            .AllInstances().First(e => e.LexemeFormOA?.MorphTypeRA is not null).LexemeFormOA!;
+        var sense = _cache.ServiceLocator.GetInstance<ILexSenseRepository>().GetObject(_seed.FirstSenseId);
+        var form = _cache.ServiceLocator.GetInstance<IMoFormRepository>().GetObject(_seed.FirstLexemeFormId);
 
         var wsTag = _cache.WritingSystemFactory.GetStrFromWs(_cache.DefaultAnalWs);
 
@@ -75,8 +75,7 @@ public sealed class AnchorsAreCrossCachePortableTests : IDisposable
         Assert.Equal(fromOriginal, fromCopy);
 
         // Not vacuously equal: proves the digest responds to data rather than ignoring its inputs.
-        var otherSense = _cache.ServiceLocator.GetInstance<ILexSenseRepository>()
-            .AllInstances().First(s => s.Guid != sense.Guid);
+        var otherSense = _cache.ServiceLocator.GetInstance<ILexSenseRepository>().GetObject(_seed.SecondSenseId);
         var differentProposal = new Proposal(
             contractVersions: new Dictionary<string, string> { ["lexical"] = "1.0" },
             proposalId: CanonicalId.Mint(),
