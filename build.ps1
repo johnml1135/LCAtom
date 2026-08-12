@@ -46,6 +46,13 @@ function Write-Step {
     Write-Host "==> $Text" -ForegroundColor Cyan
 }
 
+if ($env:LOCAL_NUGET_REPO -and (Test-Path $env:LOCAL_NUGET_REPO)) {
+    Write-Host "==> Local libpalaso override active: LOCAL_NUGET_REPO=$env:LOCAL_NUGET_REPO (see AGENTS.md)" -ForegroundColor Yellow
+}
+elseif ($env:LOCAL_NUGET_REPO) {
+    Write-Host "==> LOCAL_NUGET_REPO is set but '$env:LOCAL_NUGET_REPO' does not exist -- ignoring" -ForegroundColor Yellow
+}
+
 if ($SkipHygiene) {
     Write-Step 'comment hygiene -- SKIPPED (-SkipHygiene)'
 }

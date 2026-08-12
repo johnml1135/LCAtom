@@ -22,6 +22,24 @@ never did. They carry `[Trait("Fixture", "FieldWorks")]`; CI runs `-Filter 'Fixt
 says so in the step name. **A test needing anything outside this repo must carry that trait**, or it
 passes here and fails in CI.
 
+## Building against a local libpalaso (opt-in, off by default)
+
+`SIL.WritingSystems`/`SIL.Core` are pinned transitively via `SIL.LCModel` (`SilVersions.props`).
+To build against a local libpalaso checkout instead — e.g. to pick up a fix before it ships in a
+package — pack it and point motif at the result:
+
+```
+$env:LOCAL_NUGET_REPO = 'C:\localnugetpackages'
+./tools/Manage-LocalLibraries.ps1 -PalasoPath C:\path\to\libpalaso
+./build.ps1
+```
+
+`Manage-LocalLibraries.ps1` packs only `SIL.Core` and `SIL.WritingSystems` (not the whole libpalaso
+solution), writes the produced version into `SilVersions.props`, and clears any stale copy from the
+NuGet cache. `./build.ps1` prints a line when `LOCAL_NUGET_REPO` is active. With it unset (the
+default), nothing changes — CI never sets it, and neither does an unconfigured dev machine. To
+revert: `git checkout SilVersions.props` and unset `LOCAL_NUGET_REPO`.
+
 Read `CONTEXT.md` first — it is the canonical glossary, and its terms are binding in code, comments,
 CLI verbs, and prose. Then `README.md` and the documents in `docs/`.
 

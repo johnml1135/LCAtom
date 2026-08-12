@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup Label="SIL Ecosystem Versions">
+    <!-- Pinned version of SIL.WritingSystems/SIL.Core, both resolved transitively via SIL.LCModel. -->
+    <SilLibPalasoVersion>17.0.0-beta0097</SilLibPalasoVersion>
+  </PropertyGroup>
+</Project>
