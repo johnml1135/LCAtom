@@ -1,5 +1,4 @@
 using SIL.Motif.Host.Analysis;
-using SIL.Motif.Host.LcmUtils;
 using SIL.Motif.Tests.TestFixtures;
 using SIL.LCModel;
 using SIL.LCModel.Core.Text;
@@ -19,23 +18,20 @@ namespace SIL.Motif.Tests.Analysis;
 /// than inventing a new one.
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
-[Trait("Fixture", "FieldWorks")]
 public sealed class AnalysisAggregateReaderRealProjectTests : IDisposable
 {
-    private readonly string _tempRoot;
     private readonly LcmCache _cache;
+    private readonly SeededProject _seed;
 
-    public AnalysisAggregateReaderRealProjectTests()
+    public AnalysisAggregateReaderRealProjectTests(PristineProjectFixture pristine)
     {
-        _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests.AnalysisAggregate", Guid.NewGuid().ToString("N"));
-        var fwDataPath = TestLangProjFixture.CopyToTempAndGetFwDataPath(_tempRoot);
-        _cache = new FwDataProjectLoader().LoadCache(fwDataPath);
+        _cache = pristine.NewScratch();
+        _seed = pristine.Seed;
     }
 
     public void Dispose()
     {
         if (!_cache.IsDisposed) _cache.Dispose();
-        try { Directory.Delete(_tempRoot, recursive: true); } catch { /* best-effort cleanup */ }
     }
 
     [Fact]
@@ -43,12 +39,9 @@ public sealed class AnalysisAggregateReaderRealProjectTests : IDisposable
     {
         var vernWs = _cache.DefaultVernWs;
 
-        var forms = _cache.ServiceLocator.GetInstance<ILexEntryRepository>().AllInstances()
-            .Where(e => e.LexemeFormOA is not null)
-            .Select(e => e.LexemeFormOA)
-            .Take(2)
-            .ToList();
-        Assert.True(forms.Count == 2, "The TestLangProj fixture is expected to carry at least two lexeme forms.");
+        var formRepo = _cache.ServiceLocator.GetInstance<IMoFormRepository>();
+        var firstForm = formRepo.GetObject(_seed.FirstLexemeFormId);
+        var secondForm = formRepo.GetObject(_seed.SecondLexemeFormId);
         var msa = _cache.ServiceLocator.GetInstance<IMoStemMsaRepository>().AllInstances().First();
 
         IWfiWordform wordform = null!;
@@ -62,14 +55,14 @@ public sealed class AnalysisAggregateReaderRealProjectTests : IDisposable
             wordform.AnalysesOC.Add(first);
             var firstBundle = _cache.ServiceLocator.GetInstance<IWfiMorphBundleFactory>().Create();
             first.MorphBundlesOS.Add(firstBundle);
-            firstBundle.MorphRA = forms[0];
+            firstBundle.MorphRA = firstForm;
             firstBundle.MsaRA = msa;
 
             var second = _cache.ServiceLocator.GetInstance<IWfiAnalysisFactory>().Create();
             wordform.AnalysesOC.Add(second);
             var secondBundle = _cache.ServiceLocator.GetInstance<IWfiMorphBundleFactory>().Create();
             second.MorphBundlesOS.Add(secondBundle);
-            secondBundle.MorphRA = forms[1]; // a different allomorph -> a different content digest
+            secondBundle.MorphRA = secondForm; // a different allomorph -> a different content digest
             secondBundle.MsaRA = msa;
 
             _cache.LangProject.DefaultUserAgent.SetEvaluation(first, Opinions.approves);
@@ -95,8 +88,7 @@ public sealed class AnalysisAggregateReaderRealProjectTests : IDisposable
     public void ADisapprovedAnalysis_DoesNotAppearAmongTheApprovedSet()
     {
         var vernWs = _cache.DefaultVernWs;
-        var form = _cache.ServiceLocator.GetInstance<ILexEntryRepository>().AllInstances()
-            .First(e => e.LexemeFormOA is not null).LexemeFormOA;
+        var form = _cache.ServiceLocator.GetInstance<IMoFormRepository>().GetObject(_seed.FirstLexemeFormId);
         var msa = _cache.ServiceLocator.GetInstance<IMoStemMsaRepository>().AllInstances().First();
 
         IWfiWordform wordform = null!;

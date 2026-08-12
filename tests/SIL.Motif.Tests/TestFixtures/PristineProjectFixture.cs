@@ -38,6 +38,8 @@ public sealed class PristineProjectFixture : IDisposable
 
     public PristineProjectFixture()
     {
+        GuardAgainstStaleWritingSystemStashFiles();
+
         _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests.Pristine", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_tempRoot);
 
@@ -56,6 +58,37 @@ public sealed class PristineProjectFixture : IDisposable
 
     /// <summary>Identity of everything <see cref="SeededProject"/> wrote, valid in every copy.</summary>
     public SeededProject Seed { get; }
+
+    // A leftover WS stash file silently adds ~1.85s to every LcmCache.Dispose() in the run (message below).
+    private static void GuardAgainstStaleWritingSystemStashFiles()
+    {
+        string[] staleFiles;
+        try
+        {
+            var repoDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                "SIL", "WritingSystemRepository", "3");
+            if (!Directory.Exists(repoDir)) return;
+            staleFiles = Directory.GetFiles(repoDir, "*.localrepoupdate");
+        }
+        catch
+        {
+            return; // an unreadable directory is not evidence of the fault this guard checks for
+        }
+
+        if (staleFiles.Length == 0) return;
+
+        throw new InvalidOperationException(
+            $"Found {staleFiles.Length} stale '*.localrepoupdate' file(s) in the machine-wide writing-system " +
+            "repository:\n  " + string.Join("\n  ", staleFiles) + "\n\n" +
+            "These are stash files GlobalWritingSystemRepository's WsStasher leaves behind when a process " +
+            "dies between its constructor (which copies the live LDML aside) and its Dispose() (which moves " +
+            "it back). Their mere presence makes every later WritingSystemManager.Save() — which every " +
+            "LcmCache.Dispose() triggers — collide on the copy, retry 10 times at 200 ms apart, fail, and " +
+            "have that failure swallowed silently. That is about 1.85 seconds added to EVERY cache disposal " +
+            "in this run, with no error printed anywhere.\n\n" +
+            "Delete the file(s) listed above, then re-run.");
+    }
 
     /// <summary>
     /// Opens a private, file-backed copy of the seeded project. The caller disposes the cache; the
