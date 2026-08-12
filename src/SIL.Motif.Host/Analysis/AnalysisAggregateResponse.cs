@@ -20,9 +20,16 @@ public sealed record AnalysisAssessmentProvenance(string CorpusId, string Corpus
 /// all (ADR 0038 decision 5). When not <c>null</c>, names the corpus and grammar the automatic side
 /// describes, exactly as <see cref="Parser.GrammarCoverageFigure"/> already requires for a coverage figure.
 /// </param>
+/// <param name="UnanalysedReach">
+/// ADR 0038 decision 7's one counted figure about word forms nobody has analysed — see
+/// <see cref="UnanalysedReachFigure"/>. <c>null</c> under exactly the same condition as
+/// <see cref="Assessment"/> being <c>null</c>: with no Assessment on record, whether the grammar parses any
+/// given word form is not knowable, so there is nothing to count.
+/// </param>
 public sealed record AnalysisAggregateResponse(
     IReadOnlyList<WordFormAnalysisAggregate> WordForms,
-    AnalysisAssessmentProvenance? Assessment)
+    AnalysisAssessmentProvenance? Assessment,
+    UnanalysedReachFigure? UnanalysedReach = null)
 {
     /// <summary>Whether an Assessment was on record at all, independent of whether it is still current.</summary>
     public bool HasAssessment => Assessment is not null;
