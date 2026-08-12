@@ -22,7 +22,7 @@ namespace SIL.Motif.Tests.Runner;
 /// properties rejected).
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
-[Trait("Fixture", "TestLangProj")]
+[Trait("Fixture", "FieldWorks")]
 public sealed class GeneratedBasicFieldOperationsTests : IDisposable
 {
     private readonly string _tempRoot;

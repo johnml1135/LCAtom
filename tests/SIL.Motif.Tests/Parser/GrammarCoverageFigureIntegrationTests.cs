@@ -13,7 +13,7 @@ namespace SIL.Motif.Tests.Parser;
 /// together against the real Sena 3 project.
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
-[Trait("Fixture", "TestLangProj")]
+[Trait("Fixture", "FieldWorks")]
 public sealed class GrammarCoverageFigureIntegrationTests
 {
     [RealParserFact]

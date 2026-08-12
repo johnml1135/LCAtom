@@ -18,7 +18,7 @@ namespace SIL.Motif.Tests.Cli;
 /// (ADR 0004, decision 2).
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
-[Trait("Fixture", "TestLangProj")]
+[Trait("Fixture", "FieldWorks")]
 public sealed class ReopenAmendTests : IDisposable
 {
     private readonly string _tempRoot;

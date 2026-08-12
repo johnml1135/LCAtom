@@ -27,7 +27,7 @@ namespace SIL.Motif.Tests.Host;
 /// </para>
 /// </remarks>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
-[Trait("Fixture", "TestLangProj")]
+[Trait("Fixture", "FieldWorks")]
 public sealed class SaveIsSynchronousTests : IDisposable
 {
     private readonly string _tempRoot;

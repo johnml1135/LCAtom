@@ -11,7 +11,7 @@ namespace SIL.Motif.Tests;
 /// public <see cref="ILexEntryRepository"/>.
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
-[Trait("Fixture", "TestLangProj")]
+[Trait("Fixture", "FieldWorks")]
 public class ProjectLoadTests
 {
     [Fact]

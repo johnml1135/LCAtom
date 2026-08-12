@@ -15,10 +15,12 @@ first, so one green run means clean comments, a clean compile, and a passing sui
 CI runs the same two scripts (`.github/workflows/ci.yml`), so anything they reject locally is
 rejected there too — and anything they let through is not a CI surprise.
 
-**`./test.ps1` needs a FieldWorks sibling checkout.** Much of the suite drives a real LibLCM cache
-loaded from `../FieldWorks/TestLangProj`. Those tests fail rather than skip when it is absent, on
-purpose: a suite that quietly shrinks reports success for work it never did. CI has no sibling
-checkout, so it runs a named subset and says so.
+**`./test.ps1` needs a FieldWorks sibling checkout.** Much of the suite reads `../FieldWorks` —
+`TestLangProj` for a live LibLCM cache, `DistFiles` for `ContextHelp.xml`. Those tests fail rather
+than skip when it is absent, on purpose: a suite that quietly shrinks reports success for work it
+never did. They carry `[Trait("Fixture", "FieldWorks")]`; CI runs `-Filter 'Fixture!=FieldWorks'` and
+says so in the step name. **A test needing anything outside this repo must carry that trait**, or it
+passes here and fails in CI.
 
 Read `CONTEXT.md` first — it is the canonical glossary, and its terms are binding in code, comments,
 CLI verbs, and prose. Then `README.md` and the documents in `docs/`.

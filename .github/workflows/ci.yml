@@ -9,7 +9,8 @@ on:
 
 jobs:
   build-and-test:
-    # Windows because the repo targets net48 alongside net10.0, and nuget.config uses %USERPROFILE%.
+    # Windows because nuget.config resolves a source through %USERPROFILE%, and because LibLCM's native
+    # ICU comes from a Windows-only package. Nothing in the code itself requires it.
     runs-on: windows-latest
 
     steps:
@@ -28,9 +29,9 @@ jobs:
         shell: pwsh
         run: ./build.ps1 -Configuration Release
 
-      # The rest of the suite drives a real LibLCM cache from ../FieldWorks/TestLangProj, a sibling
-      # checkout that does not exist here. Those tests fail rather than skip when it is missing, which
-      # is deliberate, so they are excluded by name instead of being allowed to fail quietly.
+      # The rest of the suite reads a real ../FieldWorks sibling checkout -- TestLangProj for a live LibLCM
+      # cache, DistFiles for ContextHelp.xml. Those tests fail rather than skip when it is absent, which is
+      # deliberate, so they are excluded by trait instead of being allowed to fail quietly.
       - name: Test (the subset needing no FieldWorks checkout)
         shell: pwsh
-        run: ./test.ps1 -Configuration Release -SkipBuild -Filter 'Fixture!=TestLangProj'
+        run: ./test.ps1 -Configuration Release -SkipBuild -Filter 'Fixture!=FieldWorks'

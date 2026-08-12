@@ -55,11 +55,12 @@ public class FieldWorksPathResolverTests
 
     /// <summary>
     /// This repo's own convention (spikes/SIL.Motif.Spikes.LabelHarvest's FindDefault does the same walk):
-    /// .../repos/motif next to .../repos/FieldWorks. Exercised here, unlike the two tests above, because
-    /// that sibling checkout is exactly what this environment provides — proving the default path works,
-    /// not just the override.
+    /// .../repos/motif next to .../repos/FieldWorks. Exercised here, unlike the two tests above, to prove
+    /// the default path works and not just the override — which is why it is the one test in this class
+    /// that needs the sibling checkout to be real, and so carries the trait CI filters out.
     /// </summary>
     [Fact]
+    [Trait("Fixture", "FieldWorks")]
     public void ResolveContextHelpPath_FindsTheRealSiblingCheckout()
     {
         var path = FieldWorksPathResolver.ResolveContextHelpPath();

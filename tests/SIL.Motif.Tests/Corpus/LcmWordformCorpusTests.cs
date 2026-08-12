@@ -13,7 +13,7 @@ namespace SIL.Motif.Tests.Corpus;
 /// duplicating that discovery for one test class is not worth a second attribute.
 /// </summary>
 [Collection(LcmCacheTestCollection.Name)]
-[Trait("Fixture", "TestLangProj")]
+[Trait("Fixture", "FieldWorks")]
 public sealed class LcmWordformCorpusTests
 {
     [RealParserFact]

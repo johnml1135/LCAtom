@@ -23,7 +23,7 @@ namespace SIL.Motif.Tests.Runner;
 /// rather than erasing anything.
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
-[Trait("Fixture", "TestLangProj")]
+[Trait("Fixture", "FieldWorks")]
 public sealed class WfiWordformSpellingStatusOperationsTests : IDisposable
 {
     private readonly string _tempRoot;

@@ -22,7 +22,7 @@ namespace SIL.Motif.Tests.Runner;
 /// live cache at all.
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
-[Trait("Fixture", "TestLangProj")]
+[Trait("Fixture", "FieldWorks")]
 public sealed class LexEntryReferenceCollectionOperationsTests : IDisposable
 {
     private const string MemberKey = "member";
