@@ -767,8 +767,11 @@ Two inherited constraints:
 - **Preconditions live in the Proposal, never in the operation.** Baseline evidence is an observation
   carried by the envelope, evaluated at review and apply time and surfaced as drift. What crosses into
   the applied record is unconditional.
-- Construct naming is **not mechanical** (issue B19), and 17 manifest rows are multi-construct (B20).
-  Both block this item and neither is resolved by the generator.
+- Both of the naming blockers this item once carried are resolved by
+  [ADR 0023](adr/0023-derived-kind-names-required-descriptions.md). The kind identifier is derived
+  rather than named, and human meaning moved to a required `description`; the multi-construct cell
+  turned out to be asking for a runtime fact in a schema-time name, so fields are named where they are
+  declared instead. Nothing about construct naming blocks this item now.
 
 **Acceptance:** one construct authored, dry-run, reviewed, applied, saved, and round-tripped through
 Chorus Send/Receive without the applied log being corrupted — see
