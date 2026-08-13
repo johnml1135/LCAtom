@@ -6,6 +6,7 @@ using SIL.Motif.Cli;
 using SIL.Motif.Cli.Store;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Model.DryRun;
+using SIL.Motif.Projection.Store;
 using Xunit;
 
 namespace SIL.Motif.Tests.Cli;

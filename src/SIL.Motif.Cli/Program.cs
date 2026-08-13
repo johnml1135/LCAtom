@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using SIL.Motif.Cli;
+using SIL.Motif.Projection.Usage;
 
 // Thin dispatcher: verbs call straight into Commands, so tests exercise the same handlers without shelling out.
 
@@ -21,14 +22,18 @@ try
         ? Path.GetFullPath(storeOverride)
         : Path.Combine(Directory.GetCurrentDirectory(), ".motif");
 
+    // Every migrated read surface renders both ways from one projection (ADR 0021 decision 2).
+    var asJson = flags.ContainsKey("json");
+    var usage = new UsageLog();
+
     CommandResult result;
 
     switch (verb)
     {
         case "open":
             if (positionals.Count != 1)
-                return Usage("Usage: motif open <path-to-.fwdata>");
-            result = Commands.Open(positionals[0]);
+                return Usage("Usage: motif open <path-to-.fwdata> [--json]");
+            result = asJson ? Commands.OpenJson(positionals[0], usage) : Commands.Open(positionals[0], usage);
             break;
 
         case "new":
@@ -125,19 +130,23 @@ try
             break;
 
         case "list":
-            result = Commands.List(storeDir);
+            result = asJson ? Commands.ListJson(storeDir, usage) : Commands.List(storeDir, usage);
             break;
 
         case "show":
             if (positionals.Count != 1)
-                return Usage("Usage: motif show <proposalId>");
-            result = Commands.Show(storeDir, positionals[0]);
+                return Usage("Usage: motif show <proposalId> [--json]");
+            result = asJson
+                ? Commands.ShowJson(storeDir, positionals[0], usage)
+                : Commands.Show(storeDir, positionals[0], usage);
             break;
 
         case "dry-run":
             if (positionals.Count != 1 || !flags.TryGetValue("project", out var dryRunProject))
-                return Usage("Usage: motif dry-run <proposalId> --project <fwdata>");
-            result = Commands.DryRun(storeDir, positionals[0], dryRunProject);
+                return Usage("Usage: motif dry-run <proposalId> --project <fwdata> [--json]");
+            result = asJson
+                ? Commands.DryRunJson(storeDir, positionals[0], dryRunProject, usage)
+                : Commands.DryRun(storeDir, positionals[0], dryRunProject, usage);
             break;
 
         case "apply":
@@ -145,15 +154,17 @@ try
                 !flags.TryGetValue("project", out var applyProject) ||
                 !flags.TryGetValue("user", out var applyUser))
             {
-                return Usage("Usage: motif apply <proposalId> --project <fwdata> --user <name>");
+                return Usage("Usage: motif apply <proposalId> --project <fwdata> --user <name> [--json]");
             }
-            result = Commands.Apply(storeDir, positionals[0], applyProject, applyUser);
+            result = asJson
+                ? Commands.ApplyJson(storeDir, positionals[0], applyProject, applyUser, usage)
+                : Commands.Apply(storeDir, positionals[0], applyProject, applyUser, usage);
             break;
 
         case "log":
             if (!flags.TryGetValue("project", out var logProject))
-                return Usage("Usage: motif log --project <fwdata>");
-            result = Commands.Log(logProject);
+                return Usage("Usage: motif log --project <fwdata> [--json]");
+            result = asJson ? Commands.LogJson(logProject, usage) : Commands.Log(logProject, usage);
             break;
 
         case "add-corpus":
@@ -229,6 +240,10 @@ try
             return 1;
     }
 
+    // One process is one call; appending to a local file is what accumulates a session (ADR 0021 decision 4).
+    foreach (var entry in usage.Entries)
+        UsageLogFile.Append(Path.Combine(storeDir, "usage.jsonl"), entry);
+
     var stream = result.ExitCode == 0 ? Console.Out : Console.Error;
     stream.Write(result.Output);
     return result.ExitCode;
@@ -250,7 +265,7 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine("Usage: motif <command> [options]");
     writer.WriteLine();
     writer.WriteLine("Commands:");
-    writer.WriteLine("  open <fwdata>");
+    writer.WriteLine("  open <fwdata> [--json]");
     writer.WriteLine("  new --draft <name> [--label <text>]");
     writer.WriteLine(
         "  add-set-gloss --draft <name> --target <canonicalId> --ws <wsTag> --text <text> " +
@@ -264,11 +279,11 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine("  remove-operations --draft <name> <operationId> [<operationId>...] [--force]");
     writer.WriteLine(
         "  split <proposalId> <draftName>=<opId>[,<opId>...] [<draftName>=<opId>[,<opId>...] ...] [--force]");
-    writer.WriteLine("  list");
-    writer.WriteLine("  show <proposalId>");
-    writer.WriteLine("  dry-run <proposalId> --project <fwdata>");
-    writer.WriteLine("  apply <proposalId> --project <fwdata> --user <name>");
-    writer.WriteLine("  log --project <fwdata>");
+    writer.WriteLine("  list [--json]");
+    writer.WriteLine("  show <proposalId> [--json]");
+    writer.WriteLine("  dry-run <proposalId> --project <fwdata> [--json]");
+    writer.WriteLine("  apply <proposalId> --project <fwdata> --user <name> [--json]");
+    writer.WriteLine("  log --project <fwdata> [--json]");
     writer.WriteLine();
     writer.WriteLine("Corpus (text Motif measures against; never part of the FieldWorks project):");
     writer.WriteLine(
@@ -282,7 +297,8 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine("  corpora");
     writer.WriteLine("  show-corpus <corpusId>");
     writer.WriteLine();
-    writer.WriteLine("Global option: --store <dir>  (default: ./.motif)");
+    writer.WriteLine("Global options: --store <dir>  (default: ./.motif)");
+    writer.WriteLine("                --json         (structured output; supported by open/list/show/dry-run/apply/log)");
 }
 
 /// <summary>Whether the caller said anything at all about what a licence permits.</summary>

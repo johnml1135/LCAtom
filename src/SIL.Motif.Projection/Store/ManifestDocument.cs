@@ -1,6 +1,6 @@
 using SIL.Motif.Model.DryRun;
 
-namespace SIL.Motif.Cli.Store;
+namespace SIL.Motif.Projection.Store;
 
 /// <summary>
 /// The on-disk shape of <c>manifests/&lt;proposalId&gt;.json</c>: the mutable review state for a
@@ -11,6 +11,12 @@ namespace SIL.Motif.Cli.Store;
 /// <c>finalize</c> (including an amend) writes a new object and moves this manifest's pointer rather
 /// than renaming or rewriting the object.
 /// </summary>
+/// <remarks>
+/// Lives here rather than beside <c>SIL.Motif.Cli.Store.ProposalStore</c> so a projection (List,
+/// Show, the anchor a DryRun binds, the status an Apply writes) can be built from a manifest without
+/// the projection layer depending on the CLI project — the dependency runs the other way, from CLI
+/// to here, so a future Avalonia consumer can read the same store shape without pulling in the CLI.
+/// </remarks>
 public sealed class ManifestDocument
 {
     public string ProposalId { get; set; } = "";
