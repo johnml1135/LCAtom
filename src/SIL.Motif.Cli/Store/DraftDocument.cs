@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Text.Json;
 
 namespace SIL.Motif.Cli.Store;
 
@@ -23,6 +24,14 @@ public sealed class DraftDocument
     public string? Comment { get; set; }
 
     public List<DraftOperation> Operations { get; set; } = new();
+
+    /// <summary>
+    /// One entry per Layer-1 composer call that contributed operations to this draft — the composer's
+    /// name and its exact authored input, folded into the committed Proposal's <c>extensions</c> at
+    /// <c>finalize</c> (ADR 0009 decision 1). Non-hashed: it round-trips as provenance for a reviewer,
+    /// never as an input the intent digest depends on.
+    /// </summary>
+    public List<JsonElement> ComposerProvenance { get; set; } = new();
 }
 
 /// <summary>One authored operation inside a draft.</summary>
@@ -48,7 +57,11 @@ public sealed class DraftOperation
     /// </summary>
     public List<string> DependsOn { get; set; } = new();
 
-    /// <summary>The <c>after</c> payload. For <c>setGloss</c> this is <c>{"ws": "...", "text": "..."}</c>; for
-    /// <c>deleteLexemeForm</c> this is the empty object.</summary>
-    public Dictionary<string, string> After { get; set; } = new();
+    /// <summary>
+    /// The <c>after</c> payload, one <see cref="JsonElement"/> per property so a boolean or numeric
+    /// value round-trips as itself rather than as its stringified text — a composer-produced operation
+    /// (e.g. <c>setIsAbstract</c>'s <c>{"value":true}</c>) carries a payload this shape, not only the
+    /// string-valued ones the hand-authored CLI verbs build.
+    /// </summary>
+    public Dictionary<string, JsonElement> After { get; set; } = new();
 }
