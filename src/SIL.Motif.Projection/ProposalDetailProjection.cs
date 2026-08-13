@@ -27,7 +27,8 @@ public sealed record ProposalDetailProjection(
     string CurrentIntentDigest,
     IReadOnlyList<ProposalOperationView> Operations,
     DecisionView? Decision = null,
-    string? SupersededBy = null);
+    string? SupersededBy = null,
+    string? ExtensionsJson = null);
 
 /// <summary>Shapes a manifest and its current object content into a <see cref="ProposalDetailProjection"/>.</summary>
 public static class ProposalDetailProjectionBuilder
@@ -48,6 +49,6 @@ public static class ProposalDetailProjectionBuilder
 
         return new ProposalDetailProjection(
             proposalId, manifest.Status, manifest.Label, manifest.Comment, manifest.CurrentIntentDigest, operations,
-            decision, manifest.SupersededBy);
+            decision, manifest.SupersededBy, envelope.Extensions?.GetRawText());
     }
 }

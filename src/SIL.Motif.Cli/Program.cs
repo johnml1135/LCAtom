@@ -79,6 +79,22 @@ try
             result = Commands.ComposeAuthorLexemeForm(storeDir, composeDraftName, composeProject, composeIntent);
             break;
 
+        case "promote-gloss":
+            if (!flags.TryGetValue("draft", out var promoteDraftName) ||
+                !flags.TryGetValue("target", out var promoteTarget) ||
+                !flags.TryGetValue("ws", out var promoteWs) ||
+                !flags.TryGetValue("text", out var promoteText) ||
+                !flags.TryGetValue("corpus", out var promoteCorpus))
+            {
+                return Usage(
+                    "Usage: motif promote-gloss --draft <name> --target <canonicalId> --ws <wsTag> " +
+                    "--text <text> --corpus <corpusId> [--document <docId>]");
+            }
+            result = Commands.PromoteGloss(
+                storeDir, promoteDraftName, promoteTarget, promoteWs, promoteText, promoteCorpus,
+                flags.GetValueOrDefault("document"));
+            break;
+
         case "label":
             if (!flags.TryGetValue("draft", out var labelDraftName) || positionals.Count != 1)
                 return Usage("Usage: motif label --draft <name> <text>");
@@ -322,6 +338,9 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine(
         "  compose-author-lexeme-form --draft <name> --project <fwdata> --intent " +
         "'{\"entry\":...,\"morphType\":...,\"ws\":...,\"text\":...}'");
+    writer.WriteLine(
+        "  promote-gloss --draft <name> --target <canonicalId> --ws <wsTag> --text <text> " +
+        "--corpus <corpusId> [--document <docId>]");
     writer.WriteLine("  label --draft <name> <text>");
     writer.WriteLine("  comment --draft <name> <text>");
     writer.WriteLine("  finalize --draft <name>");

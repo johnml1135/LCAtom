@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Text;
+using System.Text.Json;
 
 namespace SIL.Motif.Projection.Rendering;
 
@@ -52,6 +53,11 @@ public static class CommandTextRenderer
         }
         if (projection.SupersededBy is not null)
             sb.AppendLine($"  supersededBy:        {projection.SupersededBy}");
+        if (projection.ExtensionsJson is not null)
+        {
+            using var extensions = JsonDocument.Parse(projection.ExtensionsJson);
+            sb.AppendLine($"  extensions:          {JsonSerializer.Serialize(extensions.RootElement)}");
+        }
         sb.AppendLine($"  operations ({projection.Operations.Count}):");
         foreach (var op in projection.Operations)
         {
