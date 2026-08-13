@@ -28,14 +28,12 @@ namespace SIL.Motif.Tests.Composers;
 /// <see cref="AllThreeOperations_DryRunAgainstARealProject_ProduceTheCorrectEffects"/> proves it — but
 /// <see cref="ProposalApplier.Apply"/>'s pre-flight drift check
 /// (<see cref="FootprintProbe.ComputeCurrentFootprintDigest"/>) reads every operation's <em>current
-/// live</em> footprint before any operation has run, including one whose target does not exist yet
-/// because an earlier operation in the same Proposal is what creates it, and that read throws. This
-/// is a pre-existing Runner gap in the entity-creation-then-same-target-chaining path, not something
-/// introduced or worked around here, and not a claim this construct's design can settle unilaterally.
-/// <see cref="Authored_Lowered_DryRun_Applied_Saved_RoundTripsOnARealProject"/> therefore proves the
-/// full authored-to-saved loop with a construct instance that does not chain a target onto a
-/// same-Proposal <c>entityId</c> — <c>setGloss</c> targets the sense, which already exists — so it
-/// exercises exactly the part of the pipeline this Runner gap does not block.
+/// live</em> footprint before any operation has run, so an operation whose target an earlier one in the
+/// same Proposal mints once had nothing to read and threw. A target the Proposal itself creates is now
+/// excluded from the footprint on both sides of the drift check, because it has no prior state to have
+/// drifted from — see <see cref="SIL.Motif.Model.Effects.FootprintPlan"/>.
+/// <see cref="TheChainedShape_TargetingAFormThisProposalMints_AppliesAndSaves"/> is the case that was
+/// blocked, and applies now.
 /// </remarks>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
 public sealed class AuthorLexemeFormEndToEndTests
@@ -142,6 +140,36 @@ public sealed class AuthorLexemeFormEndToEndTests
         Assert.Equal(glossText, sense.Gloss.get_String(analWsHandle).Text);
 
         Assert.Single(ProjectAppliedLog.ReadAll(reloaded));
+    }
+
+    /// <summary>
+    /// The chained shape, whose <c>setIsAbstract</c> targets the form <c>createLexemeForm</c> mints in the
+    /// same Proposal. Apply's pre-flight once read every target before any operation ran and threw here,
+    /// so this is the case that proves a minted target no longer blocks apply.
+    /// </summary>
+    [Fact]
+    public void TheChainedShape_TargetingAFormThisProposalMints_AppliesAndSaves()
+    {
+        var entryId = CanonicalId.FromGuid(_seed.FirstEntryId);
+        const string formText = "zzMotifChainedForm";
+
+        var intent = new AuthorLexemeFormIntent(
+            entryId, CanonicalId.FromGuid(MoMorphTypeTags.kguidMorphStem), "fr", formText, IsAbstract: true);
+
+        using var session = CliSession.Open(_fwDataPath);
+        var operations = AuthorLexemeFormComposer.Build(session.LiveCache, intent);
+        Assert.Equal(2, operations.Count);
+        var newFormId = operations[0].EntityId!.Value;
+
+        var proposal = BuildProposal(operations);
+        var dryRun = session.DryRun(proposal);
+        var receipt = session.Apply(proposal, dryRun.Anchor, "motif-tests", "chained construct");
+        Assert.False(receipt.AlreadyApplied);
+
+        using var reloaded = new FwDataProjectLoader().LoadScratchCache(_fwDataPath);
+        var form = reloaded.ServiceLocator.GetInstance<IMoFormRepository>().GetObject(newFormId.ToGuid());
+        Assert.True(form.IsAbstract);
+        Assert.Equal(formText, form.Form.get_String(reloaded.WritingSystemFactory.GetWsFromStr("fr")).Text);
     }
 
     private static Proposal BuildProposal(IReadOnlyList<OperationEnvelope> operations) => new(

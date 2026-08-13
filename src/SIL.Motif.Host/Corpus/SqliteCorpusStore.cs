@@ -85,6 +85,24 @@ public sealed class SqliteCorpusStore : ICorpusStore
             corpusCommand.ExecuteNonQuery();
         }
 
+        // Save replaces: a document dropped from the corpus must stop being readable, not merely stop being upserted.
+        using (var pruneCommand = connection.CreateCommand())
+        {
+            var keptParameters = corpus.Documents
+                .Select((_, i) => "$keep" + i.ToString(CultureInfo.InvariantCulture))
+                .ToList();
+
+            pruneCommand.Transaction = transaction;
+            pruneCommand.CommandText = keptParameters.Count == 0
+                ? "DELETE FROM CorpusDocuments WHERE CorpusId = $corpusId;"
+                : $"DELETE FROM CorpusDocuments WHERE CorpusId = $corpusId AND DocumentId NOT IN ({string.Join(", ", keptParameters)});";
+            pruneCommand.Parameters.AddWithValue("$corpusId", corpus.CorpusId);
+            for (var i = 0; i < corpus.Documents.Count; i++)
+                pruneCommand.Parameters.AddWithValue(keptParameters[i], corpus.Documents[i].DocumentId);
+
+            pruneCommand.ExecuteNonQuery();
+        }
+
         for (var i = 0; i < corpus.Documents.Count; i++)
         {
             var document = corpus.Documents[i];

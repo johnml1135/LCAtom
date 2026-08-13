@@ -14,8 +14,24 @@ namespace SIL.Motif.Host.Store;
 /// holding one open for the store's lifetime, matching how <see cref="Corpus.FileCorpusStore"/> opens and closes a
 /// file handle per call — a store here is a path, not a session.
 /// </remarks>
+/// <remarks>
+/// <para>
+/// <b>Every connection opens in WAL mode with a busy timeout, and both are needed.</b> WAL lets a
+/// reader run while a write is in flight, which the default journal does not; the timeout makes a
+/// second writer wait for the first instead of failing. With neither, two concurrent calls — not
+/// merely two saves — collide, and the caller sees a raw "database is locked" only after the driver's
+/// own long default has elapsed, which reads as a hang followed by an unexplained error.
+/// </para>
+/// <para>
+/// The window is real rather than theoretical: an assessment is inserted row by row inside a single
+/// transaction, so the write lock is held for as long as that takes.
+/// </para>
+/// </remarks>
 internal static class SqliteMotifDatabase
 {
+    // Long enough to outlast a bulk assessment insert, short enough that a real deadlock still surfaces.
+    private const int BusyTimeoutMilliseconds = 15000;
+
     private const string Schema = """
         CREATE TABLE IF NOT EXISTS Corpora (
             CorpusId TEXT PRIMARY KEY,
@@ -96,7 +112,10 @@ internal static class SqliteMotifDatabase
 
         using (var pragma = connection.CreateCommand())
         {
-            pragma.CommandText = "PRAGMA foreign_keys = ON;";
+            // See the class remarks for why WAL and a busy timeout are both required, not either alone.
+            pragma.CommandText =
+                "PRAGMA journal_mode = WAL; PRAGMA busy_timeout = " + BusyTimeoutMilliseconds + "; " +
+                "PRAGMA foreign_keys = ON;";
             pragma.ExecuteNonQuery();
         }
 

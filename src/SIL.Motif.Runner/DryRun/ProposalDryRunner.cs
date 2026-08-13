@@ -56,6 +56,7 @@ public static class ProposalDryRunner
         var intentDigest = ContractIntentDigest.Compute(proposal);
         var effects = new List<ExpectedEffect>();
         var touchedTargets = new List<CanonicalId>();
+        var mintedTargets = FootprintPlan.TargetsMintedWithinProposal(proposal);
 
         var actionHandler = cache.ServiceLocator.GetInstance<IActionHandler>();
 
@@ -81,7 +82,8 @@ public static class ProposalDryRunner
         // Binds a subsequent Apply to exactly this evaluated baseline (docs/adr/0004, decision 3).
         var anchor = new BoundDryRunAnchor(
             IntentDigest: intentDigest,
-            FootprintDigest: FootprintDigest.Compute(effects),
+            FootprintDigest: FootprintDigest.Compute(
+                effects.Where(e => !mintedTargets.Contains(e.CanonicalId))),
             EffectDigest: effectDigest,
             RunnerVersion: typeof(ProposalDryRunner).Assembly.GetName().Version?.ToString() ?? "0.0.0.0",
             LibLcmVersion: typeof(LcmCache).Assembly.GetName().Version?.ToString() ?? "unknown",
