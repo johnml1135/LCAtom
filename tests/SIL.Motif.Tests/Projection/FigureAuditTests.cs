@@ -54,6 +54,35 @@ public sealed class FigureAuditTests
     }
 
     [Fact]
+    public void AnUnquotedLabeledWordTheJsonDoesNotCarry_IsCaught()
+    {
+        const string text = "  status:              applied";
+        const string json = """{"status":"proposed"}""";
+
+        Assert.ThrowsAny<Xunit.Sdk.XunitException>(
+            () => FigureAudit.AssertEveryTextFigureAppearsInJson(text, json));
+    }
+
+    [Fact]
+    public void AnUnquotedLabeledWordTheJsonAgreesWith_Passes()
+    {
+        const string text = "  status:              proposed";
+        const string json = """{"status":"proposed"}""";
+
+        FigureAudit.AssertEveryTextFigureAppearsInJson(text, json);
+    }
+
+    [Fact]
+    public void AnUnquotedMultiWordPhrase_StaysOutsideTheSweep()
+    {
+        // "wrong value" is not a JSON leaf, but a space-containing value can't be told apart from prose.
+        const string text = "  baseline:     wrong value\n  status:       proposed";
+        const string json = """{"baseline":"footprint-scoped baseline","status":"proposed"}""";
+
+        FigureAudit.AssertEveryTextFigureAppearsInJson(text, json);
+    }
+
+    [Fact]
     public void ADigestWithItsAlgorithmPrefix_IsOneFigure_NotAStrayTokenAfterTheColon()
     {
         var digest = "sha256:" + new string('a', 64);
