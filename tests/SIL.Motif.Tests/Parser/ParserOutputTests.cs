@@ -10,7 +10,7 @@ namespace SIL.Motif.Tests.Parser;
 /// <remarks>
 /// <para>
 /// The fixtures under <c>Fixtures/</c> are verbatim output from real runs: the batch rows come from parsing
-/// the 56 MB <c>Sena 3.fwdata</c> and from an Amharic run that genuinely timed out, and the refusal text is
+/// a real 56 MB project and from an Amharic run that genuinely timed out, and the refusal text is
 /// the exact message a real project produced when its grammar overflowed the FST enumeration budget. Invented
 /// fixtures would test this code against my assumptions about the parser rather than against the parser.
 /// </para>

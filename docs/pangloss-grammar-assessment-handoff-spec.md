@@ -201,17 +201,17 @@ implementation as long as the semantics and compatibility tests remain.
 {
   "schema": "pangloss.assessment-suite",
   "schemaVersion": 1,
-  "suiteId": "sena-regression",
+  "suiteId": "testlang-regression",
   "suiteRevision": "01J...",
   "analysisIdentityProfile": "machine-word-analysis-v1",
   "metadata": {
-    "title": "Sena curated morphology regression suite"
+    "title": "Testlang curated morphology regression suite"
   },
   "cases": [
     {
       "caseId": "01JCASE...",
       "input": "word",
-      "languageTag": "seh",
+      "languageTag": "tst",
       "tags": ["regression", "noun"],
       "sourceReferences": [
         {

@@ -26,7 +26,7 @@ public class CorpusTokenisationTests
 {
     private static CorpusProvenance Provenance(CorpusQualification? qualification = null) => new(
         new CorpusOrigin(
-            Description: "eBible, Sena",
+            Description: "eBible, Testlang",
             Uri: "https://github.com/BibleNLP/ebible",
             RetrievedUtc: new DateTimeOffset(2026, 8, 9, 0, 0, 0, TimeSpan.Zero),
             Licence: "CC-BY-SA-4.0"),
@@ -100,8 +100,8 @@ public class CorpusTokenisationTests
     [Fact]
     public void AnEmptyDocumentSelectionIsRefusedRatherThanMeasured()
     {
-        var corpus = new StoredCorpus("ebible-seh", Provenance(),
-            new[] { Document("sehNT", "mbali nyumba") });
+        var corpus = new StoredCorpus("ebible-tst", Provenance(),
+            new[] { Document("tstNT", "mbali nyumba") });
 
         var ex = Assert.Throws<ArgumentException>(() =>
             CorpusTokenisation.ToDescriptor(corpus, new WhitespaceAndPunctuationTokeniser(), Array.Empty<string>()));
@@ -181,7 +181,7 @@ public class CorpusTokenisationTests
     [Fact]
     public void ProvenanceFlowsThrough_AndAnUnattestedCorpusStillCannotSupportAccuracyAfterTheBridge()
     {
-        var corpus = StoredCorpus.Create("seh-wikipedia", Provenance())
+        var corpus = StoredCorpus.Create("tst-wikipedia", Provenance())
             .With(Document("d", "mbali nyumba"));
 
         var descriptor = CorpusTokenisation.ToDescriptor(corpus, new WhitespaceAndPunctuationTokeniser());
@@ -213,7 +213,7 @@ public class CorpusTokenisationTests
     public void DeclaredVsSuppliedTokeniserMismatchThrows_NamingBothTheDeclaredAndSuppliedValues()
     {
         var declaredElsewhere = new CorpusProvenance(
-            new CorpusOrigin("eBible, Sena", null, new DateTimeOffset(2026, 8, 9, 0, 0, 0, TimeSpan.Zero), "CC-BY-SA-4.0"),
+            new CorpusOrigin("eBible, Testlang", null, new DateTimeOffset(2026, 8, 9, 0, 0, 0, TimeSpan.Zero), "CC-BY-SA-4.0"),
             new TokenisationRecord("SIL.Machine LatinWordTokenizer", "3.6.2", "A different tokeniser's notes."));
         var corpus = StoredCorpus.Create("c", declaredElsewhere).With(Document("d", "mbali"));
 
@@ -231,18 +231,18 @@ public class CorpusTokenisationTests
     [Fact]
     public void ADocumentSubsetProducesALabelThatDoesNotImplyTheWholeCorpus()
     {
-        var corpus = StoredCorpus.Create("ebible-seh", Provenance())
-            .With(Document("sehNT", "mbali"))
-            .With(Document("sehPD", "nyumba"));
+        var corpus = StoredCorpus.Create("ebible-tst", Provenance())
+            .With(Document("tstNT", "mbali"))
+            .With(Document("tstPD", "nyumba"));
 
         var whole = CorpusTokenisation.ToDescriptor(corpus, new WhitespaceAndPunctuationTokeniser());
         var subset = CorpusTokenisation.ToDescriptor(
-            corpus, new WhitespaceAndPunctuationTokeniser(), documentIds: new[] { "sehNT" });
+            corpus, new WhitespaceAndPunctuationTokeniser(), documentIds: new[] { "tstNT" });
 
         // Following LcmWordformCorpus.Extract's precedent: a label must not claim to cover more than it measured.
-        Assert.Equal("ebible-seh", whole.CorpusId);
-        Assert.NotEqual("ebible-seh", subset.CorpusId);
-        Assert.Contains("sehNT", subset.CorpusId);
+        Assert.Equal("ebible-tst", whole.CorpusId);
+        Assert.NotEqual("ebible-tst", subset.CorpusId);
+        Assert.Contains("tstNT", subset.CorpusId);
         Assert.Equal(new[] { "mbali" }, subset.Words);
     }
 

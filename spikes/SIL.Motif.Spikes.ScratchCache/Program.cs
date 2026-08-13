@@ -14,9 +14,8 @@ namespace SIL.Motif.Spikes.ScratchCache;
 /// </para>
 /// <para>
 /// The project is copied to a temp directory first and every measurement runs against the copy, so the
-/// source project is never opened, locked, or modified. Point it at
-/// <c>../FieldWorks/DistFiles/Projects/Sena 3/Sena 3.fwdata</c> for real scale (152k objects); note that a
-/// 50-object stub under %TEMP% reuses the name "Sena 3" and is not a scale fixture.
+/// source project is never opened, locked, or modified. Point it at any real <c>.fwdata</c> project for
+/// realistic scale (tens of thousands of objects or more); a small unit-test fixture is not a scale fixture.
 /// </para>
 /// </remarks>
 public static class Program
@@ -26,7 +25,7 @@ public static class Program
         if (args.Length < 1)
         {
             Console.Error.WriteLine("usage: SIL.Motif.Spikes.ScratchCache <path to .fwdata>");
-            Console.Error.WriteLine("  e.g. \"../FieldWorks/DistFiles/Projects/Sena 3/Sena 3.fwdata\"");
+            Console.Error.WriteLine("  e.g. \"C:\\path\\to\\MyProject\\MyProject.fwdata\"");
             return 2;
         }
 

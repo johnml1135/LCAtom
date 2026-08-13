@@ -35,9 +35,22 @@ namespace SIL.Motif.Host.Analysis;
 /// <c>AutomaticAnalyses = null</c> ("not covered"), never an empty list ("covered, parser found nothing") —
 /// see <see cref="WordFormAnalysisAggregate.AutomaticAnalyses"/>.
 /// </para>
+/// <para>
+/// <b><see cref="AnalysisAggregateResponse.UnanalysedReach"/> is folded from the same pass</b>, not a
+/// second traversal: every word form with zero manually-approved analyses and a
+/// <c>SpellingStatus</c> other than <c>Incorrect</c> contributes to
+/// <see cref="UnanalysedReachFigure.UnanalysedCount"/>, and contributes to
+/// <see cref="UnanalysedReachFigure.ParsedCount"/> too when its automatic side is non-empty. Only present
+/// when an Assessment was supplied, for the same reason the automatic side of every
+/// <see cref="WordFormAnalysisAggregate"/> is <c>null</c> without one: whether the grammar parses a given
+/// word form is not knowable without a parser run already on record.
+/// </para>
 /// </remarks>
 public static class AnalysisAggregateReader
 {
+    /// SpellingStatus's Incorrect member (0=Undecided;1=Correct;2=Incorrect); only this value is excluded.
+    private const int IncorrectSpellingStatus = 2;
+
     /// <param name="cache">The live project to read. Never mutated and never saved.</param>
     /// <param name="assessment">
     /// A parser run already produced elsewhere, paired with the corpus it covered — omit when no
@@ -52,6 +65,8 @@ public static class AnalysisAggregateReader
 
         var wordformRepository = cache.ServiceLocator.GetInstance<IWfiWordformRepository>();
         var wordforms = new List<WordFormAnalysisAggregate>();
+        var unanalysedCount = 0;
+        var unanalysedParsedCount = 0;
 
         foreach (var wordform in wordformRepository.AllInstances())
         {
@@ -74,6 +89,12 @@ public static class AnalysisAggregateReader
                 Form: form,
                 ManualAnalyses: manual,
                 AutomaticAnalyses: automatic));
+
+            if (manual.Count == 0 && wordform.SpellingStatus != IncorrectSpellingStatus)
+            {
+                unanalysedCount++;
+                if (automatic is { Count: > 0 }) unanalysedParsedCount++;
+            }
         }
 
         var provenance = assessment is null
@@ -81,7 +102,11 @@ public static class AnalysisAggregateReader
             : new AnalysisAssessmentProvenance(
                 assessment.Corpus.CorpusId, assessment.Corpus.Sha256, assessment.Report.GrammarSourceSha256);
 
-        return new AnalysisAggregateResponse(wordforms, provenance);
+        var unanalysedReach = assessment is null
+            ? null
+            : new UnanalysedReachFigure(unanalysedCount, unanalysedParsedCount);
+
+        return new AnalysisAggregateResponse(wordforms, provenance, unanalysedReach);
     }
 
     private static ApprovedAnalysis BuildApproved(IWfiAnalysis analysis)

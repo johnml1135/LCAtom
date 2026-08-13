@@ -25,7 +25,7 @@ Measured this week and extrapolated to 100,000 word forms, which is the scale th
 
 | grammar profile | engine | 20 cores | 4 cores |
 | --- | --- | --- | --- |
-| Sena-like | FST | ~1.2 min | ~5 min |
+| concatenative | FST | ~1.2 min | ~5 min |
 | Amharic-like | FST | ~6 min | **~29 min** |
 | Amharic-like | HermitCrab fallback | ~1.8 h | ~9 h |
 

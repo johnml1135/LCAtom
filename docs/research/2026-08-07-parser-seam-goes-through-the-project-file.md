@@ -1,8 +1,8 @@
 # Measured 2026-08-07 — the parser seam goes through the project file, not through FieldWorks
 
 **In plain terms:** to find out what a grammar change did to parsing, we do **not** need any FieldWorks code.
-PanGloss reads a real `.fwdata` project file directly — 253 ms to load and compile a grammar out of the 56 MB
-Sena 3 project — and it answers in **FieldWorks GUIDs**, which is exactly what Motif needs to tie a parse
+PanGloss reads a real `.fwdata` project file directly — 253 ms to load and compile a grammar out of a 56 MB,
+152,222-object project — and it answers in **FieldWorks GUIDs**, which is exactly what Motif needs to tie a parse
 result back to the entry or rule a proposal touched. The other available route, handing PanGloss a HermitCrab
 XML file, produces the same linguistic answers under invented names that cannot be tied to anything. So the
 route is settled, and it is the cheaper one.
@@ -14,8 +14,8 @@ yields GUIDs today is the command-line tool, not the in-process library.
 ## What was checked, and how
 
 `pangloss batch` / `assess` / `compare` from a release build, against real projects rather than fixtures:
-the 56 MB `Sena 3.fwdata` from the FieldWorks checkout, and PanGloss's own `aweti.fwdata` and
-`sena-hc.xml` samples.
+the 56 MB, 152,222-object project from the FieldWorks checkout, and PanGloss's own `aweti.fwdata` and
+checked-in HC XML samples.
 
 ## 1. There is no FieldWorks dependency, and that was not obvious
 
@@ -33,13 +33,13 @@ extraction and maintaining the fork.
 | `.json` | `pg_snapshot::Snapshot::from_json` → `pg_grammar::compile_project` |
 | anything else | `pg_grammar::load` — HermitCrab XML |
 
-So a real project file goes straight to a compiled grammar in Rust. Measured on `Sena 3.fwdata`:
+So a real project file goes straight to a compiled grammar in Rust. Measured on the 152,222-object project:
 **`grammar_load_ms=252.9`**, then a 10.7 s FST build, then 40 words at a mean of 15 ms — against 12 ms for
 the same language via the checked-in HC XML. Same performance, no FieldWorks assemblies.
 
 ## 2. The routes are not interchangeable, and only one of them is usable by Motif
 
-`assess` on both grammar sources for the same 40 Sena words, then `compare`:
+`assess` on both grammar sources for the same 40 words, then `compare`:
 
 ```
 outcomeDigestsAgree : false
@@ -93,12 +93,12 @@ first real project tried, and the fallback did not save it.
   analysis never produced a line.
 
 So on that project **neither mode is usable as configured**, and a coverage report would have nothing to say.
-Sena 3 is fine on both. Whether Aweti is pathological by construction — it is a test sample — or
+The 152,222-object project is fine on both. Whether Aweti is pathological by construction — it is a test sample — or
 representative of a class of real projects is unknown and worth knowing, because it decides whether "fall
 back to HermitCrab" is a sufficient answer or merely the second thing to try.
 
 Also noted without conclusion: the project-file route reported **137 compiler warnings and one out-of-scope
-reference** on Sena 3 where the HC XML route reported none, plus a skipped entry for *"circumfix cross-product
+reference** on the project where the HC XML route reported none, plus a skipped entry for *"circumfix cross-product
 allomorphs … not implemented"*. That may mean the XML was pre-cleaned, or that the file route surfaces real
 problems the XML route silently dropped. A coverage report must carry these through either way — a number
 computed while 137 warnings were ignored is not a number about the grammar.

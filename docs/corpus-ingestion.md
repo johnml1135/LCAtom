@@ -1,6 +1,6 @@
 # Getting text into Motif
 
-**In plain terms:** before Motif can say "this grammar reaches 62% of real Sena text", it needs the real Sena
+**In plain terms:** before Motif can say "this grammar reaches 62% of real Testlang text", it needs the real Testlang
 text. This is how that text arrives, where it comes from, and what stops Motif publishing something it is not
 allowed to.
 
@@ -27,9 +27,9 @@ The fetching tool writes one small JSON file beside the text it produced. Motif 
 
 ```json
 {
-  "corpusId": "ebible-seh",
+  "corpusId": "ebible-tst",
   "origin": {
-    "description": "eBible, Sena translations",
+    "description": "eBible, Testlang translations",
     "uri": "https://github.com/BibleNLP/ebible",
     "retrievedUtc": "2026-08-09T10:30:00Z",
     "licence": "mixed; see per-document",
@@ -48,16 +48,16 @@ The fetching tool writes one small JSON file beside the text it produced. Motif 
   "qualification": null,
   "documents": [
     {
-      "documentId": "sehNT",
-      "title": "Sena New Testament",
-      "source": "sehNT.txt",
+      "documentId": "tstNT",
+      "title": "Testlang New Testament",
+      "source": "tstNT.txt",
       "licence": "CC-BY-NC-ND-4.0",
-      "attributes": { "copyrightHolder": "Wycliffe Bible Translators", "isoCode": "seh" }
+      "attributes": { "copyrightHolder": "Wycliffe Bible Translators", "isoCode": "tst" }
     },
     {
-      "documentId": "sehPD",
-      "title": "Sena, public domain",
-      "source": "sehPD.txt",
+      "documentId": "tstPD",
+      "title": "Testlang, public domain",
+      "source": "tstPD.txt",
       "licence": "public domain",
       "capabilities": {
         "mayRedistribute": true, "mayDerive": true, "mayUseCommercially": true,
@@ -129,18 +129,18 @@ claim: it looks like somebody checked.
 For a single file, without a bundle:
 
 ```
-motif add-corpus --id seh-wikipedia \
-  --description "Wikipedia, Sena edition" \
-  --uri https://seh.wikipedia.org/ \
+motif add-corpus --id tst-wikipedia \
+  --description "Wikipedia, Testlang edition" \
+  --uri https://tst.wikipedia.org/ \
   --licence CC-BY-SA-4.0 \
   --may-derive true --may-redistribute true --requires-attribution true \
   --licence-basis "Wikipedia site-wide licence" \
   --tokeniser fieldworks-word-forming --tokeniser-version 1
 
-motif add-document --corpus seh-wikipedia --doc dump-2026-08 \
-  --source ./seh-wiki-2026-08.txt --title "Sena Wikipedia, August 2026 dump"
+motif add-document --corpus tst-wikipedia --doc dump-2026-08 \
+  --source ./tst-wiki-2026-08.txt --title "Testlang Wikipedia, August 2026 dump"
 
-motif show-corpus seh-wikipedia
+motif show-corpus tst-wikipedia
 ```
 
 Omitting every licence flag records "nothing established", which blocks derived works and says so. That is

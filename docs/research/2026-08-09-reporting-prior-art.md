@@ -252,8 +252,8 @@ caution the approach "may not be effective for real-time or other software that 
 sequences." No study of a natural-language grammar's feature-interaction space was found — the closest
 published adjacent domain is combinatorial testing of software product-line feature models, itself only an
 analogy the researching agent drew, not a claim any source makes. **This is an open question, not a settled
-transfer**, and it is worth testing pairwise sufficiency empirically against Sena 3's actual attested
-combinations rather than assuming the software-configuration numbers hold for morphology.
+transfer**, and it is worth testing pairwise sufficiency empirically against the 152,222-object project's
+actual attested combinations rather than assuming the software-configuration numbers hold for morphology.
 
 **How covering-array results are reported [verified against NIST's own paper]:** Kuhn, Dominguez Mendoza,
 Kacker & Lei, "Combinatorial Coverage Measurement Concepts and Applications" (NIST/IWCT 2013), documents
@@ -401,7 +401,7 @@ sides of the merge and borrowing it costs nothing.
   Kuhn et al.'s numbers come entirely from software-configuration systems; no study of a linguistic grammar's
   combinatorics was found, and the authors' own paper says the pattern needs "many more data sets" before
   generalizing even within software. This can only be answered by checking pairwise sufficiency against
-  Sena 3's actual attested combinations, not by more literature search.
+  the project's actual attested combinations, not by more literature search.
 - **Whether Motif has (or will have) any actual gate to game.** Every gaming/gating lesson in §3 and §2 comes
   from teams whose merges are blocked by a threshold. ADR 0034 makes Motif a recorder of change rather than a
   gatekeeper of state, and it isn't settled from the documents read for this note whether any review surface

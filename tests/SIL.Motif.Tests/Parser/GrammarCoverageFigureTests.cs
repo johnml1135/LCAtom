@@ -82,7 +82,7 @@ public class GrammarCoverageFigureTests
     public void Compute_CitesTheFullProvenanceSetAdr0032Requires()
     {
         var batch = Batch(("mbali", WordOutcome.Analysed));
-        var corpus = CorpusDescriptor.Create("Sena 3", new[] { "mbali" });
+        var corpus = CorpusDescriptor.Create("test-corpus-3", new[] { "mbali" });
         var grammarHash = "sha256:" + new string('b', 64);
 
         var figure = GrammarCoverageFigure.Compute(batch, corpus, grammarHash);
@@ -131,7 +131,7 @@ public class GrammarCoverageFigureTests
     private static GrammarCoverageFigure Figure(
         string corpusSha = "sha256:aaaaaaaaaaaabbbb", string grammarSha = "sha256:ccccccccccccdddd",
         int analysed = 620, int adjudicated = 1000, int timedOut = 0, int? cap = null) =>
-        new("seh-wikipedia", corpusSha, grammarSha, ParserEngine.FstPrunedByHermitCrab, cap, timedOut,
+        new("tst-wikipedia", corpusSha, grammarSha, ParserEngine.FstPrunedByHermitCrab, cap, timedOut,
             analysed, adjudicated);
 
     /// <summary>
@@ -155,7 +155,7 @@ public class GrammarCoverageFigureTests
                      figure.Describe("sha256:aaaaaaaaaaaabbbb", "sha256:8888888888887777"), // grammar moved
                  })
         {
-            Assert.Contains("seh-wikipedia", sentence);
+            Assert.Contains("tst-wikipedia", sentence);
             Assert.Contains("aaaaaaaaaaaa", sentence);   // the corpus this was measured over
             Assert.Contains("cccccccccccc", sentence);   // the grammar this was measured under
         }

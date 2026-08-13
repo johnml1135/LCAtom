@@ -25,7 +25,7 @@ public sealed record AssessedWord(string Word, string Outcome, IReadOnlyList<Par
 /// comes free — no need for Motif to hash anything itself.
 /// </param>
 /// <param name="DiagnosticCount">
-/// How many warnings the parser raised. Non-zero is normal — Sena 3 produces 137 — but a grammar coverage figure
+/// How many warnings the parser raised. Non-zero is normal — one measured project produced 137 — but a grammar coverage figure
 /// computed while these were ignored is not a figure about the grammar, so the count travels with the report.
 /// </param>
 public sealed record AssessReport(

@@ -16,8 +16,8 @@ remaining authorities are `Scope`, `Construct` (what ships together) and `domain
 | 📐 **Spike** | 1 active, 2 deferred | `A1` is in this repo and on the path. `E19` and `F26a` are other-repo and scope 2. |
 | ❓ **Yours** | ~29 | Genuinely a decision. This is the grill. |
 
-**All research and the one on-path spike have landed.** `A1` was measured against real Sena 3 on 2026-08-05
-and closed; `E19` and `F26a` are deferred by decision.
+**All research and the one on-path spike have landed.** `A1` was measured against a real 152,222-object
+project on 2026-08-05 and closed; `E19` and `F26a` are deferred by decision.
 
 **Sequencing changed, 2026-08-05** ([ADR 0020](adr/0020-cli-first-fieldworks-planned-not-built.md)):
 scope 1 is the LibLCM seams proved through the CLI with an AI agent as author; scope 2 is the FieldWorks
@@ -76,12 +76,12 @@ is on the critical path, and it is the only one in this repository.
 
 | Spike | Whose code | Needs | Scope | Status |
 | --- | --- | --- | --- | --- |
-| `A1` — `CreateCacheCopy` cost **and equivalence** | **motif** — `spikes/SIL.Motif.Spikes.ScratchCache` | Sena 3 from the FieldWorks checkout | 1 | ✅ **DONE 2026-08-05 — measured; ADR 0016 amended** |
+| `A1` — `CreateCacheCopy` cost **and equivalence** | **motif** — `spikes/SIL.Motif.Spikes.ScratchCache` | a real ~152k-object project | 1 | ✅ **DONE 2026-08-05 — measured; ADR 0016 amended** |
 | `A3` — `IProjectIdentifier` for `kMemoryOnly` | **motif** — ~15 lines | nothing | 1 | `A1`'s prerequisite |
 | `E19` — Chorus applied-log merge | languageforge-lexbox (`FwHeadless`) + Chorus packages **absent from the local NuGet cache** | a restored feed, a disposable project | 2 | **Deferred by decision** |
 | `F26a` — FieldWorks command-layer seam | FieldWorks | a FieldWorks checkout | 2 | **Deferred by decision** |
 
-**`A1` is closed — measured, not inferred, and it settled on one path.** Sena 3, 152,222 objects. The
+**`A1` is closed — measured, not inferred, and it settled on one path.** 152,222 objects. The
 in-memory fan-out is fast (140 ms vs 4,445 ms from a hot cache) but **measurably lossy: 0 of 4 writing systems
 value-equal**, including when copied from a file-loaded scratch whose writing systems were intact — the loss
 belongs to the `kMemoryOnly` target, not the source. The file path returned **4 of 4** and no findings at all.
@@ -102,8 +102,7 @@ speed:*
   object of every project open, so only the cache-to-cache path is untested.
 - **The harness already exists** — `git -C ../FieldWorks show f0d837288^:Samples/ImportExport/ImportExport.cs`,
   average-of-N mode included. Don't write it from scratch.
-- **Fixture trap:** real Sena 3 (152,222 objects) is in the FieldWorks checkout; a 50-object `%TEMP%` stub
-  reuses the name. The only existing test used 688 objects.
+- **The only existing test used 688 objects** — far short of the ~152k-object scale a real project reaches.
 
 `A2` is largely answered (two caches coexist, no unsafe statics, and the scratch must keep
 `Path`/`ProjectFolder` empty to avoid the one global singleton) — only scale remains, and it rides along.

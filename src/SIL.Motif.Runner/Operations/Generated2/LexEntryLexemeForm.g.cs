@@ -93,7 +93,8 @@ public static class LexEntryLexemeFormDeletePayload
 /// <b>Never delete-plus-create</b>, which is the Change Set contract's change-class rule: this performs
 /// exactly one owning-atomic assignment. If the slot is already occupied, that single assignment is
 /// LibLCM's own "create-into-occupied, with implicit detach" semantics, verified empirically against a
-/// real occupied <c>LexemeFormOA</c> slot in <c>TestLangProj</c> rather than assumed.
+/// real occupied <c>LexemeFormOA</c> slot -- pinned by
+/// `OverwritingAnOwningAtomicSlot_DestroysTheIncumbent_RatherThanLeavingAnOrphan` -- rather than assumed.
 /// </para>
 /// <para>
 /// <b>No orphan is disclosed, because none is produced.</b> The contract originally reasoned that the

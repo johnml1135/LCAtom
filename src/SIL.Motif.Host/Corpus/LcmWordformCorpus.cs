@@ -15,7 +15,7 @@ namespace SIL.Motif.Host.Corpus;
 /// skipped rather than represented as an empty word.
 /// </para>
 /// <para>
-/// <b>Streamed and cappable on purpose.</b> Sena 3 has about 6,973 word forms;
+/// <b>Streamed and cappable on purpose.</b> A mid-size project has about 7,000 word forms;
 /// a larger project must not force every form
 /// into memory before a caller can decide it only wants a bounded sample. <see cref="ExtractForms"/> yields
 /// lazily from <c>IWfiWordformRepository.AllInstances()</c>, and <see cref="Extract"/> applies an optional
@@ -48,7 +48,7 @@ public static class LcmWordformCorpus
     /// <param name="corpusId">
     /// The label the resulting descriptor carries — see <see cref="CorpusDescriptor.CorpusId"/>. Not
     /// derived from the cache automatically; a caller extracting a capped sample should say so here (for
-    /// example <c>"Sena 3 (first 1000)"</c>) rather than let the label imply the whole project.
+    /// example <c>"my-project (first 1000)"</c>) rather than let the label imply the whole project.
     /// </param>
     /// <param name="limit">
     /// Caps how many forms are pulled from the live enumeration before sorting and hashing. Omit for the

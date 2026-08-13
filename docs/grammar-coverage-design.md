@@ -63,7 +63,7 @@ and keep the design able to escalate specific combinations to 3-way — the obvi
 where third-factor effects are exactly what `feeding` means.
 
 **And the transfer to morphology is unverified.** No study of a natural-language grammar's feature-interaction
-space was found; these are software-configuration numbers. Worth measuring against Sena 3's attested
+space was found; these are software-configuration numbers. Worth measuring against a real project's attested
 combinations rather than assumed.
 
 PanGloss reached pairwise independently for its own compiler and adds a refinement worth copying: **prune by
@@ -133,7 +133,7 @@ over-reporting is not.
 
 Added 2026-08-08 ([ADR 0034](adr/0034-the-boundary-with-fieldworks-state-versus-change.md) decision 3). The
 exercised side may be built from **every analysis in the project, whatever produced it** — machine or hand.
-Absence is absence. That puts Sena 3's denominator at ~760 analyses rather than the 8 carrying a human
+Absence is absence. That puts the larger project's denominator at ~760 analyses rather than the 8 carrying a human
 evaluation, so this design is far better supplied than first recorded.
 
 **But the asymmetry is strict.** All analyses may establish that a combination is *unused*; only human

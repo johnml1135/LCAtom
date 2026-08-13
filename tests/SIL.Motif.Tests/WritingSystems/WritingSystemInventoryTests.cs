@@ -1,4 +1,3 @@
-using SIL.Motif.Host.LcmUtils;
 using SIL.Motif.Host.WritingSystems;
 using SIL.Motif.Tests.TestFixtures;
 using SIL.LCModel;
@@ -26,17 +25,13 @@ namespace SIL.Motif.Tests.WritingSystems;
 /// </para>
 /// </remarks>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
-[Trait("Fixture", "FieldWorks")]
 public sealed class WritingSystemInventoryTests : IDisposable
 {
-    private readonly string _tempRoot;
     private readonly LcmCache _cache;
 
-    public WritingSystemInventoryTests()
+    public WritingSystemInventoryTests(PristineProjectFixture pristine)
     {
-        _tempRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests.Ws", Guid.NewGuid().ToString("N"));
-        var fwDataPath = TestLangProjFixture.CopyToTempAndGetFwDataPath(_tempRoot);
-        _cache = new FwDataProjectLoader().LoadScratchCache(fwDataPath);
+        _cache = pristine.NewScratch();
     }
 
     [Fact]
@@ -48,7 +43,7 @@ public sealed class WritingSystemInventoryTests : IDisposable
         Assert.NotNull(inventory.DefaultVernacular);
 
         // Exactly one is flagged, and it is the first — not merely "one of them is".
-        Assert.Single(inventory.Vernacular.Where(ws => ws.IsDefaultVernacular));
+        Assert.Single(inventory.Vernacular, ws => ws.IsDefaultVernacular);
         Assert.True(inventory.Vernacular[0].IsDefaultVernacular);
 
         // Agrees with what the parser actually uses, asked of LibLCM directly, not re-derived from this list.
@@ -65,13 +60,12 @@ public sealed class WritingSystemInventoryTests : IDisposable
         Assert.Equal(first.Digest, second.Digest);
         Assert.StartsWith("sha256:", first.Digest);
 
-        // Reordering must move the digest — reorders the ids here, not the project, to test the digest itself.
+        // A real precondition, not a guard that silently no-ops the reorder assertion below.
+        Assert.True(first.Vernacular.Count > 1, "fixture must seed at least two vernacular writing systems");
+        // Reorders the ids here, not the project, to test the digest itself.
         var reversed = first.Vernacular.Reverse().ToList();
-        if (reversed.Count > 1)
-        {
-            var reorderedDigest = DigestOf(reversed.Select(ws => ws.Id));
-            Assert.NotEqual(DigestOf(first.Vernacular.Select(ws => ws.Id)), reorderedDigest);
-        }
+        var reorderedDigest = DigestOf(reversed.Select(ws => ws.Id));
+        Assert.NotEqual(DigestOf(first.Vernacular.Select(ws => ws.Id)), reorderedDigest);
     }
 
     [Fact]
@@ -116,7 +110,5 @@ public sealed class WritingSystemInventoryTests : IDisposable
     public void Dispose()
     {
         if (!_cache.IsDisposed) _cache.Dispose();
-        try { Directory.Delete(_tempRoot, recursive: true); }
-        catch { /* best effort */ }
     }
 }

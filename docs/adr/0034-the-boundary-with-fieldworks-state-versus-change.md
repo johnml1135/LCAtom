@@ -86,8 +86,8 @@ The owner's parenthesis — *"either in passive/auto or manual analysis"* — co
 [ADR 0033](0033-three-systems-and-who-owns-which-measure.md) decision 2 and materially improves the design.
 
 That ADR treated thin human-judgement data as a limit on the whole measurement programme: two sampled projects
-hold **8** agent evaluations between them. But for **gap-finding, provenance does not matter.** Sena 3 holds
-**760** analyses. If a declared combination appears in none of them — machine-produced or hand-made — it is
+hold **8** agent evaluations between them. But for **gap-finding, provenance does not matter.** The
+152,222-object project holds **760** analyses. If a declared combination appears in none of them — machine-produced or hand-made — it is
 unexercised, and that is a fact about the corpus and the grammar regardless of who or what wrote the analyses.
 **So the denominator for coverage is ~760, not 8.** The programme is far better supplied than decision 2
 assumed.
@@ -105,8 +105,8 @@ homework, and precisely the trap the owner's distinction between the two over-ge
 
 ## Consequences
 
-- **Coverage work is unblocked and better supplied than recorded.** Gap-finding runs against all 760 Sena 3
-  analyses rather than waiting on human judgement.
+- **Coverage work is unblocked and better supplied than recorded.** Gap-finding runs against all 760 analyses
+  in the larger project rather than waiting on human judgement.
 - **Every report must state its evidence class.** A figure derived from all analyses answers a different
   question from one derived from human-judged analyses, and a reader who cannot tell which will draw the wrong
   conclusion from the stronger-sounding one.

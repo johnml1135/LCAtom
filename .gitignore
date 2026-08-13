@@ -1,3 +1,14 @@
+## Language project data. Never committed here, in any form, for any reason.
+## Motif operates on somebody else's project; it does not carry one. Every test that needs a live
+## LcmCache builds a blank project from the SIL.LCModel package at run time and throws it away.
+*.fwdata
+*.fwdata.*
+*.ldml
+*.ldml.*
+*.chm
+WritingSystemStore/
+TestLangProj/
+
 ## .NET build output
 bin/
 obj/

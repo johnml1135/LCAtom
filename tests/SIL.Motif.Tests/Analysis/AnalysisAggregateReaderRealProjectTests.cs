@@ -115,4 +115,39 @@ public sealed class AnalysisAggregateReaderRealProjectTests : IDisposable
         // Opinions is tri-state; disapproved is not "no opinion". Mirrors IWfiWordform.HumanApprovedAnalyses.
         Assert.Empty(read.ManualAnalyses);
     }
+
+    [Fact]
+    public void WithNoStoredAssessment_ReadStillReturnsTheManualSide_AndReportsNoAssessmentRatherThanParsing()
+    {
+        var vernWs = _cache.DefaultVernWs;
+        var form = _cache.ServiceLocator.GetInstance<IMoFormRepository>().GetObject(_seed.FirstLexemeFormId);
+        var msa = _cache.ServiceLocator.GetInstance<IMoStemMsaRepository>().AllInstances().First();
+
+        IWfiWordform wordform = null!;
+        NonUndoableUnitOfWorkHelper.Do(_cache.ActionHandlerAccessor, () =>
+        {
+            wordform = _cache.ServiceLocator.GetInstance<IWfiWordformFactory>()
+                .Create(TsStringUtils.MakeString("zzMotifNoAssessmentWord", vernWs));
+
+            var analysis = _cache.ServiceLocator.GetInstance<IWfiAnalysisFactory>().Create();
+            wordform.AnalysesOC.Add(analysis);
+            var bundle = _cache.ServiceLocator.GetInstance<IWfiMorphBundleFactory>().Create();
+            analysis.MorphBundlesOS.Add(bundle);
+            bundle.MorphRA = form;
+            bundle.MsaRA = msa;
+
+            _cache.LangProject.DefaultUserAgent.SetEvaluation(analysis, Opinions.approves);
+        });
+
+        // No StoredAssessment argument at all - ADR 0038 decision 5: this must not fall back to parsing.
+        var response = AnalysisAggregateReader.Read(_cache);
+
+        Assert.False(response.HasAssessment);
+        Assert.Null(response.UnanalysedReach);
+        Assert.Contains("No assessment is on record", response.DescribeAssessmentState("sha256:a", "sha256:b"));
+
+        var read = response.WordForms.Single(w => w.WordformGuid == wordform.Guid.ToString());
+        Assert.Single(read.ManualAnalyses); // the manual side - the test suite - needs no parser at all
+        Assert.Null(read.AutomaticAnalyses); // "not known", never "known to be empty"
+    }
 }

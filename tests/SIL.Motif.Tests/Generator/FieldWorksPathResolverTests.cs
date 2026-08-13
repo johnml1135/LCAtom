@@ -55,16 +55,31 @@ public class FieldWorksPathResolverTests
 
     /// <summary>
     /// This repo's own convention (spikes/SIL.Motif.Spikes.LabelHarvest's FindDefault does the same walk):
-    /// .../repos/motif next to .../repos/FieldWorks. Exercised here, unlike the two tests above, to prove
-    /// the default path works and not just the override — which is why it is the one test in this class
-    /// that needs the sibling checkout to be real, and so carries the trait CI filters out.
+    /// .../repos/motif next to .../repos/FieldWorks. Exercised here, unlike the two tests above, against a
+    /// synthetic sibling pair built under a temp folder rather than a real FieldWorks checkout — proving the
+    /// default upward walk itself works, with no override, is independent of what the checkout contains.
     /// </summary>
     [Fact]
-    [Trait("Fixture", "FieldWorks")]
-    public void ResolveContextHelpPath_FindsTheRealSiblingCheckout()
+    public void ResolveContextHelpPath_WalksUpToASiblingCheckout_WhenNoOverrideIsGiven()
     {
-        var path = FieldWorksPathResolver.ResolveContextHelpPath();
+        var reposRoot = Path.Combine(Path.GetTempPath(), "motif-tests", Guid.NewGuid().ToString("N"));
+        var motifBinDir = Path.Combine(reposRoot, "motif", "bin", "Debug", "net10.0");
+        var configDir = Path.Combine(reposRoot, "FieldWorks", "DistFiles", "Language Explorer", "Configuration");
+        Directory.CreateDirectory(motifBinDir);
+        Directory.CreateDirectory(configDir);
+        File.WriteAllText(Path.Combine(configDir, "ContextHelp.xml"), "<strings/>");
 
-        Assert.True(File.Exists(path));
+        try
+        {
+            // startDirectory stands in for AppContext.BaseDirectory: somewhere deep inside the "motif" checkout.
+            var path = FieldWorksPathResolver.ResolveContextHelpPath(startDirectory: motifBinDir);
+
+            Assert.True(File.Exists(path));
+            Assert.EndsWith("ContextHelp.xml", path);
+        }
+        finally
+        {
+            Directory.Delete(reposRoot, recursive: true);
+        }
     }
 }

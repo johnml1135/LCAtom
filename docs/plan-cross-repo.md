@@ -68,27 +68,27 @@ makes an AI-centric workflow affordable. Where it actually stands:
 [research note](research/2026-08-06-parser-timing-measured.md). Grammar load on a 1 MB grammar is
 **~0.1 s including process startup**, so no incremental-add API is warranted on load-cost grounds, for
 either loop. Corpus reanalysis is the opposite of what this section expected: **1 ms per word on Indonesian,
-151 ms on Sena, 1,327 ms on Amharic** — a thousandfold spread set by the language's morphology, not by
-anything we control. For Sena 3's 6,973 wordforms that is roughly **7.5 minutes** of wall time on 20 cores;
+151 ms on a mid-profile grammar, 1,327 ms on Amharic** — a thousandfold spread set by the language's morphology, not by
+anything we control. For a mid-size project's 6,973 wordforms that is roughly **7.5 minutes** of wall time on 20 cores;
 an Amharic-profile grammar would be **~29 minutes with about a sixth of words abandoned at a 5-second cap.**
 
-~~So a grammar author can iterate against a full corpus on a Sena-profile language and cannot on an
+~~So a grammar author can iterate against a full corpus on a mid-profile language and cannot on an
 Amharic-profile one; sampling is the answer there.~~ **Corrected within the hour by measuring the other
-engine.** `--engine=foma` costs a one-off FST compile (0.13 s Indonesian, 4.9 s Amharic, 12.1 s Sena) and
+engine.** `--engine=foma` costs a one-off FST compile (0.13 s Indonesian, 4.9 s Amharic, 12.1 s mid-profile) and
 then analyses **12–19× faster with no timeouts at all**: a full 6,973-wordform corpus is **~16 s** on a
-Sena-profile grammar and **~29 s** on an Amharic-profile one, against 7.5 and 29 minutes. **The answer is
+mid-profile grammar and **~29 s** on an Amharic-profile one, against 7.5 and 29 minutes. **The answer is
 the engine, not a smaller corpus**, and the compile is the loop's floor rather than its ceiling since every
 rule change invalidates the FST anyway.
 
 ~~**The open question is agreement, not speed.**~~ **Answered the same day: they agree exactly.**
-`pangloss compare` over two `assess` runs on Sena's first 40 words reports `outcomeDigestsAgree: true` and 40
+`pangloss compare` over two `assess` runs on the mid-profile grammar's first 40 words reports `outcomeDigestsAgree: true` and 40
 of 40 cases unchanged, with the pipeline name the only difference recorded. The speed-up costs nothing in
 agreement on that sample — though agreement on a harder grammar, and specifically on the 7 Amharic words
 HermitCrab abandoned, is still unestablished.
 
 **The operational rule that fell out of it.** For 40 words HermitCrab beat the FST pipeline (2.3 s against
 12.3 s) because the compile had nothing to amortise. Compile divided by per-word saving gives the crossover:
-the FST engine wins above **~87 words on Sena** and above **~4 on Amharic**. So a corpus run uses the FST
+the FST engine wins above **~87 words on the mid-profile grammar** and above **~4 on Amharic**. So a corpus run uses the FST
 engine and a single-word check while authoring uses the default one — and on a hard grammar the FST engine is
 right for nearly everything.
 
@@ -140,7 +140,7 @@ still be the right thing for other consumers; Motif no longer needs it.
 
 **A second, better-evidenced upstream ask, found by measurement 2026-08-05:** a `kMemoryOnly` cache
 re-synthesizes its writing systems from the bare language tag, losing collation rules, valid-character
-sets, fonts and keyboards — 0 of 4 value-equal on Sena 3. `useMemoryWsManager` is hardwired true for that
+sets, fonts and keyboards — 0 of 4 value-equal on a ~152k-object project. `useMemoryWsManager` is hardwired true for that
 backend (`BackendProvider.cs:263-265`), so no caller can opt out. **An in-memory backend that can carry the
 source's writing systems would make a cheap in-memory scratch viable**; without it, ADR 0016 pays ~600 ms
 per scratch instead of ~120 ms. Not blocking, well characterised, and cheap to describe upstream — see

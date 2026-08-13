@@ -1,44 +1,35 @@
 <#
   .SYNOPSIS
-  The test gate: everything build.ps1 checks, then the test suite.
+  The test gate: everything build.ps1 checks, then the whole test suite.
 
   .DESCRIPTION
   Use this instead of a bare `dotnet test`. It runs build.ps1 first so that a green test run always
   implies clean comments and a clean compile -- one command whose success means the whole thing is
   good, rather than three that have to be remembered in order.
 
-  ON THE EXTERNAL FIXTURE. Much of this suite reads a FieldWorks SIBLING checkout that is not vendored
-  here: `TestLangProj` for a live LibLCM cache, and `DistFiles` for `ContextHelp.xml`. Without it those
-  tests fail rather than skip, which is deliberate -- a suite that quietly shrinks when a fixture goes
-  missing reports success for work it never did.
+  There is no filter parameter, deliberately. This script exists so that one green run means one
+  thing, and a subset cannot mean it. The filter that used to live here excluded every test needing a
+  FieldWorks checkout, which is exactly how that dependency survived unexamined for so long: a filter
+  nobody questions is where the next one hides. Run `dotnet test --filter` directly when narrowing a
+  hunt -- knowing that it skips this gate, which is the point.
 
-  Every one of them carries `[Trait("Fixture", "FieldWorks")]`, which is what makes them selectable.
-  The trait is named for the checkout rather than for `TestLangProj`, because one of them wants a file
-  from `DistFiles` instead, and a filter that reads as a lie is how the next one gets missed.
-
-  That is why -Filter exists. CI has no sibling checkout, so it runs the subset needing none and says
-  so in its own step name. A filtered run is not a full run and nothing here pretends otherwise: the
-  count printed at the end is the count that actually executed.
+  The suite needs no project or checkout from outside this repo: every LibLCM project it exercises is
+  built at run time by `NewLangProjFixture` and seeded by `SeededProject`. The one external dependency
+  that remains is the `pangloss` executable, a separate Rust build gated by `RealParserFactAttribute`
+  -- those tests skip, rather than fail, when it is not built.
 
   .PARAMETER Configuration
   MSBuild configuration. Must match what build.ps1 produced, since the suite runs with --no-build.
-
-  .PARAMETER Filter
-  Passed through to `dotnet test --filter`. Empty means the whole suite.
 
   .PARAMETER SkipBuild
   Reuse the existing binaries and skip the build gate. For re-running a suite you just built.
 
   .EXAMPLE
   ./test.ps1
-
-  .EXAMPLE
-  ./test.ps1 -Filter 'Fixture!=FieldWorks'
 #>
 [CmdletBinding()]
 param(
     [string] $Configuration = 'Debug',
-    [string] $Filter = '',
     [switch] $SkipBuild
 )
 
@@ -62,16 +53,8 @@ else {
     if ($LASTEXITCODE -ne 0) { exit 1 }
 }
 
-$arguments = @($solution, '--configuration', $Configuration, '--nologo', '--no-build')
-if ($Filter) {
-    Write-Step "dotnet test (filtered: $Filter)"
-    $arguments += @('--filter', $Filter)
-}
-else {
-    Write-Step 'dotnet test (full suite)'
-}
-
-& dotnet test @arguments
+Write-Step 'dotnet test (full suite)'
+& dotnet test $solution --configuration $Configuration --nologo --no-build
 if ($LASTEXITCODE -ne 0) {
     Write-Host ''
     Write-Host 'Tests failed.' -ForegroundColor Red
@@ -79,10 +62,5 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host ''
-if ($Filter) {
-    Write-Host "Tests OK -- FILTERED run, not the full suite: $Filter" -ForegroundColor Yellow
-}
-else {
-    Write-Host 'Tests OK: full suite.' -ForegroundColor Green
-}
+Write-Host 'Tests OK: full suite.' -ForegroundColor Green
 exit 0

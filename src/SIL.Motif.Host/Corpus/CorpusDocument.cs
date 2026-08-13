@@ -24,7 +24,7 @@ namespace SIL.Motif.Host.Corpus;
 /// </para>
 /// </remarks>
 /// <param name="DocumentId">Stable identity within the corpus. Supplied by the ingester, not invented here.</param>
-/// <param name="Title">What a person would call it — <c>"Sena New Testament (sehNT)"</c>.</param>
+/// <param name="Title">What a person would call it — <c>"Testlang New Testament (tstNT)"</c>.</param>
 /// <param name="Source">Where the bytes came from, recorded whether they were fetched or handed over.</param>
 /// <param name="Text">The text itself, in order.</param>
 /// <param name="ContentSha256">

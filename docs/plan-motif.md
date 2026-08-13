@@ -329,18 +329,18 @@ exercised before — round-trip author → DryRun → Apply → read-back agains
 > now **disposes and reloads the entire project twice in a single test** to survive its own Dry Run
 > (`tests/SIL.Motif.Tests/Runner/GeneratedBasicFieldOperationsTests.cs:74`, `:97`).
 >
-> Tolerable in a test on a small fixture. Fatal to the product: a reload is ~1.8 s on Sena 3, and the whole
+> Tolerable in a test on a small fixture. Fatal to the product: a reload is ~1.8 s at ~152k objects, and the whole
 > premise of the agent loop is many Dry Runs against one open project. The measured XML-path scratch is ~600 ms
 > **and does not poison the live cache at all**, so the live cache stays usable and no reload is forced. That
 > makes this the next thing to build, not a later cleanup.
 
 Implement [ADR 0016](adr/0016-scratch-cache-copy-not-undo.md) **as amended 2026-08-05: one canonical path —
-copy the project's files and open the copy** (~50 ms + ~550 ms at Sena-3 scale). A live-cache footprint probe
+copy the project's files and open the copy** (~50 ms + ~550 ms at ~152k-object scale). A live-cache footprint probe
 gates rebuilding it. Apply stays on the live cache.
 
 **`CreateCacheCopy` and the in-memory fan-out are withdrawn.** They were ~5× faster and measurably lossy:
-every `kMemoryOnly` cache re-synthesizes its writing systems from the bare language tag, so Sena 3's
-vernacular lost its collation rules and all four writing systems lost their valid-character sets — including
+every `kMemoryOnly` cache re-synthesizes its writing systems from the bare language tag, so the larger
+project's vernacular lost its collation rules and all four writing systems lost their valid-character sets — including
 when the copy was taken from a file-loaded scratch whose writing systems were intact. One path, no
 per-operation judgement call about whether collation matters.
 
@@ -361,8 +361,8 @@ one thing it needs is to be **visible to the user** — a save commits in-flight
 
 1. The scratch lifecycle, including a prerequisite-DAG mode that applies a topologically-sorted
    closure of un-applied Proposals to one derived scratch.
-2. ~~Two measurements before the design is built on.~~ **Done, 2026-08-05** — `A1` is measured against real
-   Sena 3 (152,222 objects). Harness: `spikes/SIL.Motif.Spikes.ScratchCache`; equivalence assertions live in
+2. ~~Two measurements before the design is built on.~~ **Done, 2026-08-05** — `A1` is measured against
+   a real 152,222-object project. Harness: `spikes/SIL.Motif.Spikes.ScratchCache`; equivalence assertions live in
    `tests/SIL.Motif.Tests/Runner/ScratchCacheEquivalenceTests.cs`. Results and the resulting amendment are
    in [ADR 0016](adr/0016-scratch-cache-copy-not-undo.md) and the
    [research note](research/2026-08-05-createcachecopy-provenance-and-hazards.md#10-measured--the-spike-was-built-and-run).
@@ -795,7 +795,7 @@ build refusal is recognised as a *grammar fact* and returned for the caller to f
 with a missing or broken parser.
 
 Tested at both levels: eight unit tests over **captured real parser output** rather than invented fixtures,
-and two integration tests against the real 56 MB Sena 3 project, of which the load-bearing one asserts that
+and two integration tests against a real 56 MB project, of which the load-bearing one asserts that
 **every morpheme GUID the parser names resolves to an object that project actually contains.** That is the
 assertion the whole route was chosen for, and without it correlation could fail silently while coverage
 numbers kept working.
@@ -809,7 +809,7 @@ the second step turned out not to need writing.
   **FieldWorks**, not liblcm (`Src/LexText/ParserCore/HCLoader.cs`), and drags in
   `SIL.Machine.Morphology.HermitCrab`. Taking that route means depending on application code from scope 1, or
   porting and maintaining a fork. **PanGloss reads `.fwdata` directly instead** — 253 ms to compile a grammar
-  out of the 56 MB Sena 3 project.
+  out of the 56 MB project.
 - **HC XML's identities are unusable here, as this plan already suspected — and it is worse than "Hvo drift".**
   Measured: the two routes produce *structurally identical* analyses under different names, HC XML in synthetic
   keys (`mrule128`, `entry1083`) and the project route in GUIDs. So the cheap step yields correct linguistics

@@ -25,12 +25,12 @@ that block M2, then M4, then M5. IDs are stable; do not renumber.
 
 ## A — Measure before deciding (blocks M2)
 
-**A1. [CLOSED 2026-08-05 — measured against real Sena 3; ADR 0016 amended]**
+**A1. [CLOSED 2026-08-05 — measured against a real 152,222-object project; ADR 0016 amended]**
 Harness: `spikes/SIL.Motif.Spikes.ScratchCache` plus equivalence assertions in
 `tests/SIL.Motif.Tests/Runner/ScratchCacheEquivalenceTests.cs` (5 tests, passing; suite now 86/86).
 [Results](research/2026-08-05-createcachecopy-provenance-and-hazards.md#10-measured--the-spike-was-built-and-run).
 
-| | Sena 3 (152,222 objects) |
+| | 152,222 objects |
 | --- | ---: |
 | file copy (control) | 49 ms |
 | in-memory copy, cold live cache | 209 ms |
@@ -43,8 +43,8 @@ Harness: `spikes/SIL.Motif.Spikes.ScratchCache` plus equivalence assertions in
 - **"In-memory is cheaper" DEPENDS** — break-even at ~**9% of objects fluffed**. In a live session the XML
   path is likely cheaper, the opposite of what ADR 0016 assumed.
 - **Equivalence is the decider: 0 of 4 writing systems value-equal** on *every* in-memory variant (valid
-  character sets 2 → 0, fonts replaced, `seh` lost its collation rules); the file path returned **4 of 4**
-  and no findings. Text, object counts, entry counts and custom-field flids matched on both paths.
+  character sets 2 → 0, fonts replaced, the vernacular lost its collation rules); the file path returned
+  **4 of 4** and no findings. Text, object counts, entry counts and custom-field flids matched on both paths.
 - **The hybrid does not exist.** An in-memory copy *of the file-loaded scratch* — whose writing systems are
   provably intact — still came back 0 of 4. The loss belongs to the `kMemoryOnly` target, not the source
   (`useMemoryWsManager` is hardwired, `BackendProvider.cs:263-265`). Cheap fan-out and lossless cannot both
@@ -64,7 +64,7 @@ precondition is simply *save before dry-running*.
 [ADR 0016](adr/0016-scratch-cache-copy-not-undo.md)'s entire value is the ratio between one copy from
 a hot live cache and N copies from a pristine scratch. Both are asserted from the code path
 (`ToXmlString()` per reconstituted object versus a surrogate copy-construct), neither is measured, and
-`CreateCacheCopy` has **zero callers** in liblcm or FieldWorks. If a copy from a hot Sena-3-scale cache
+`CreateCacheCopy` has **zero callers** in liblcm or FieldWorks. If a copy from a hot ~152k-object-scale cache
 takes ten seconds, the warm-scratch strategy changes shape. **Nothing in `MOT-11` should be designed
 before this is settled.**
 
@@ -88,11 +88,10 @@ before this is settled.**
   `HashSet` whose enumeration order is not contractual. Motif is safe on both today — no `flid` anywhere in
   `src/`, and writing systems resolved per cache by tag — and ADR 0016 now states those as invariants
   rather than luck.
-- **Fixture trap:** the genuine Sena 3 (152,222 objects, 55.9 MB) is in the FieldWorks checkout; a 50-object
-  stub in `%TEMP%` reuses the same name. The only test ever to exercise this path used a 688-object blank
-  project — 221× smaller.
+- **The only test ever to exercise this path used a 688-object blank project** — 221× smaller than the
+  ~152k-object scale a real project reaches.
 
-**What the spike must now do:** measure the hot-copy and scratch-derived-copy ratio at Sena-3 scale, **and**
+**What the spike must now do:** measure the hot-copy and scratch-derived-copy ratio at ~152k-object scale, **and**
 round-trip a project with ≥2 custom fields on one class plus a customized writing system, comparing flids
 and writing-system state live vs. scratch. The three falsification criteria are in the findings note §9.
 Criterion 3 is the one that would change the architecture rather than its parameters.
@@ -106,7 +105,7 @@ genuinely shared singleton, `CoreGlobalWritingSystemRepository`, is only touched
 `ProjectId.ProjectFolder` is non-empty — so **a memory-only scratch must keep `Path`/`ProjectFolder`
 empty**, which is now a design requirement rather than a detail (see `A3`).
 
-What remains is scale only: coexistence is proven with a 688-object blank project, not at Sena-3 scale
+What remains is scale only: coexistence is proven with a 688-object blank project, not at ~152k-object scale
 inside a live FieldWorks process. That rides along with `A1`'s spike.
 
 **A3. [R→answered: yes, write ~15 lines]**

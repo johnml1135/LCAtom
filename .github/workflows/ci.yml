@@ -29,9 +29,6 @@ jobs:
         shell: pwsh
         run: ./build.ps1 -Configuration Release
 
-      # The rest of the suite reads a real ../FieldWorks sibling checkout -- TestLangProj for a live LibLCM
-      # cache, DistFiles for ContextHelp.xml. Those tests fail rather than skip when it is absent, which is
-      # deliberate, so they are excluded by trait instead of being allowed to fail quietly.
-      - name: Test (the subset needing no FieldWorks checkout)
+      - name: Test (full suite)
         shell: pwsh
-        run: ./test.ps1 -Configuration Release -SkipBuild -Filter 'Fixture!=FieldWorks'
+        run: ./test.ps1 -Configuration Release -SkipBuild
