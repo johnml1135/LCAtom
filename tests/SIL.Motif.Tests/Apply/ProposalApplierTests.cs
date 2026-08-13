@@ -13,6 +13,7 @@ using SIL.LCModel;
 using SIL.LCModel.Core.KernelInterfaces;
 using SIL.LCModel.Infrastructure;
 using Xunit;
+using ContractIntentDigest = SIL.Motif.Contract.Canonicalization.IntentDigest;
 
 namespace SIL.Motif.Tests.Apply;
 
@@ -156,11 +157,55 @@ public sealed class ProposalApplierTests : IDisposable
         var bogusTarget = CanonicalId.FromGuid(Guid.NewGuid());
         var proposal = BuildSetGlossProposal(bogusTarget, "en", "does not matter");
 
-        // The bogus target fails in the footprint pre-flight before the anchor digest is compared.
-        Assert.ThrowsAny<Exception>(() => ProposalApplier.Apply(_cache, proposal, DummyAnchor(), "motif-tests"));
+        // The bogus target fails in the footprint pre-flight before the footprint digest is compared.
+        Assert.ThrowsAny<Exception>(() => ProposalApplier.Apply(_cache, proposal, DummyAnchor(proposal), "motif-tests"));
 
         // The failed apply must leave no applied-log entry at all (docs/applied-log.md, "Atomicity").
         Assert.Empty(ProjectAppliedLog.ReadAll(_cache));
+    }
+
+    // --- One-use apply authorization: an anchor binds to the exact Proposal content it evaluated. ---
+
+    /// <remarks>
+    /// Proposal A and Proposal B target the same sense and field, so before either applies their
+    /// footprints are identical -- <see cref="SIL.Motif.Model.Effects.FootprintDigest"/> deliberately
+    /// hashes only the pre-mutation "before" state, not what either proposal intends to write. Without the intent-digest
+    /// binding this is exactly the gap: A's anchor would satisfy B's footprint check even though B's
+    /// content was never dry-run. Proves the mismatch is caught before mutation, not merely reported.
+    /// </remarks>
+    [Fact]
+    public void Apply_AnchorFromADifferentProposal_IsRejected_BeforeMutation_EvenWhenFootprintsMatch()
+    {
+        var (senseGuid, wsTag, originalGloss) = FindSenseWithKnownGloss(_cache);
+        var target = CanonicalId.FromGuid(senseGuid);
+
+        var proposalA = BuildSetGlossProposal(target, wsTag, originalGloss + " (proposal A)");
+        var proposalB = BuildSetGlossProposal(target, wsTag, originalGloss + " (proposal B, never dry-run)");
+
+        var dryRunA = ScratchDryRun.Of(_cache, proposalA);
+
+        // Same target and field, neither yet applied: the footprints are identical by construction.
+        var footprintForA = FootprintProbe.ComputeCurrentFootprintDigest(_cache, proposalA);
+        var footprintForB = FootprintProbe.ComputeCurrentFootprintDigest(_cache, proposalB);
+        Assert.Equal(footprintForA, footprintForB);
+
+        var ex = Assert.Throws<ApplyPreconditionException>(
+            () => ProposalApplier.Apply(_cache, proposalB, dryRunA.Anchor, "motif-tests"));
+
+        Assert.Contains("not bound to the Proposal presented", ex.Message, StringComparison.OrdinalIgnoreCase);
+
+        // Before mutation: proposal B's text is absent from the live cache, and nothing was logged.
+        var wsHandle = _cache.WritingSystemFactory.GetWsFromStr(wsTag);
+        var senseRepo = _cache.ServiceLocator.GetInstance<ILexSenseRepository>();
+        Assert.Equal(originalGloss, senseRepo.GetObject(senseGuid).Gloss.get_String(wsHandle).Text);
+        Assert.Empty(ProjectAppliedLog.ReadAll(_cache));
+
+        // Proposal A's own anchor still authorizes proposal A: the binding blocks only a substitute.
+        var receiptA = ProposalApplier.Apply(_cache, proposalA, dryRunA.Anchor, "motif-tests");
+        Assert.False(receiptA.AlreadyApplied);
+        Assert.Equal(
+            originalGloss + " (proposal A)",
+            senseRepo.GetObject(senseGuid).Gloss.get_String(wsHandle).Text);
     }
 
     // --- Defect 2 (ADR 0004 §3): apply is bound to a prior DryRun. ---
@@ -262,7 +307,7 @@ public sealed class ProposalApplierTests : IDisposable
 
         // Both targets resolve fine, so the footprint pre-flight succeeds even though apply will not.
         var footprintDigest = FootprintProbe.ComputeCurrentFootprintDigest(_cache, proposal);
-        var anchor = DummyAnchor() with { FootprintDigest = footprintDigest };
+        var anchor = DummyAnchor(proposal) with { FootprintDigest = footprintDigest };
 
         Assert.ThrowsAny<Exception>(() => ProposalApplier.Apply(_cache, proposal, anchor, "motif-tests"));
 
@@ -288,7 +333,9 @@ public sealed class ProposalApplierTests : IDisposable
             after: afterDocument.RootElement.Clone());
     }
 
-    private static BoundDryRunAnchor DummyAnchor() => new(
+    /// <summary>An anchor bound to <paramref name="proposal"/> with an otherwise placeholder footprint.</summary>
+    private static BoundDryRunAnchor DummyAnchor(Proposal proposal) => new(
+        IntentDigest: ContractIntentDigest.Compute(proposal),
         FootprintDigest: "sha256:" + new string('0', 64),
         EffectDigest: "sha256:" + new string('0', 64),
         RunnerVersion: "test",

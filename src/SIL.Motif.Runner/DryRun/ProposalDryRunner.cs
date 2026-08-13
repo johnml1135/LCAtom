@@ -80,6 +80,7 @@ public static class ProposalDryRunner
 
         // Binds a subsequent Apply to exactly this evaluated baseline (docs/adr/0004, decision 3).
         var anchor = new BoundDryRunAnchor(
+            IntentDigest: intentDigest,
             FootprintDigest: FootprintDigest.Compute(effects),
             EffectDigest: effectDigest,
             RunnerVersion: typeof(ProposalDryRunner).Assembly.GetName().Version?.ToString() ?? "0.0.0.0",

@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -25,6 +26,7 @@
     <ProjectReference Include="..\..\src\SIL.Motif.Model\SIL.Motif.Model.csproj" />
     <ProjectReference Include="..\..\src\SIL.Motif.Runner\SIL.Motif.Runner.csproj" />
     <ProjectReference Include="..\..\src\SIL.Motif.Cli\SIL.Motif.Cli.csproj" />
+    <ProjectReference Include="..\..\src\SIL.Motif.Projection\SIL.Motif.Projection.csproj" />
     <ProjectReference Include="..\..\src\SIL.Motif.Generator\SIL.Motif.Generator.csproj" />
     <!-- Scratch-cache spike: the equivalence comparison is shared with the console timing harness. -->
     <ProjectReference Include="..\..\spikes\SIL.Motif.Spikes.ScratchCache\SIL.Motif.Spikes.ScratchCache.csproj" />

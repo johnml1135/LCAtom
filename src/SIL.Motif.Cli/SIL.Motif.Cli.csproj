@@ -13,6 +13,7 @@
     <ProjectReference Include="..\SIL.Motif.Runner\SIL.Motif.Runner.csproj" />
     <ProjectReference Include="..\SIL.Motif.Contract\SIL.Motif.Contract.csproj" />
     <ProjectReference Include="..\SIL.Motif.Model\SIL.Motif.Model.csproj" />
+    <ProjectReference Include="..\SIL.Motif.Projection\SIL.Motif.Projection.csproj" />
   </ItemGroup>
 
 </Project>

@@ -24,9 +24,14 @@ namespace SIL.Motif.Cli;
 /// </remarks>
 public static class CorpusCommands
 {
-    /// <summary>Corpora live beside the proposals, under the same store root.</summary>
-    public static FileCorpusStore StoreFor(string storeDir) =>
-        new(Path.Combine(storeDir, "corpora"));
+    /// <summary>
+    /// Corpora live beside the proposals, under the same store root — in the embedded database ADR 0036
+    /// decision 6 assigns them to. A corpus already on disk under the older <see cref="FileCorpusStore"/>
+    /// layout (<c>corpora/</c>) is untouched by this and stays readable there; <see cref="CorpusStoreMigration"/>
+    /// is the one-time path to bring it into the database this method now points at.
+    /// </summary>
+    public static ICorpusStore StoreFor(string storeDir) =>
+        new SqliteCorpusStore(Path.Combine(storeDir, "motif.db"));
 
     /// <summary>Create an empty Corpus with its origin and tokenisation recorded.</summary>
     public static CommandResult AddCorpus(

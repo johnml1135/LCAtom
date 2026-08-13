@@ -10,7 +10,10 @@ using SIL.Motif.Contract.Canonicalization;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Parsing;
 using SIL.Motif.Host.LcmUtils;
-using SIL.Motif.Model.Effects;
+using SIL.Motif.Projection;
+using SIL.Motif.Projection.Rendering;
+using SIL.Motif.Projection.Store;
+using SIL.Motif.Projection.Usage;
 using SIL.Motif.Runner.Apply;
 using SIL.Motif.Runner.AppliedLog;
 using SIL.Motif.Runner.DryRun;
@@ -69,23 +72,35 @@ public static class Commands
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
     };
 
-    public static CommandResult Open(string fwDataPath)
+    public static CommandResult Open(string fwDataPath, UsageLog? usage = null)
+    {
+        usage?.Record("open", new[] { UsageArgumentShape.Text("fwDataPath") });
+        var (exitCode, projection, error) = BuildProjectSummary(fwDataPath);
+        return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : new CommandResult(exitCode, error!);
+    }
+
+    /// <summary>The <c>open</c> report as JSON — the same <see cref="ProjectSummaryProjection"/> <see cref="Open"/> renders as text.</summary>
+    public static CommandResult OpenJson(string fwDataPath, UsageLog? usage = null)
+    {
+        usage?.Record("open", new[] { UsageArgumentShape.Text("fwDataPath") });
+        var (exitCode, projection, error) = BuildProjectSummary(fwDataPath);
+        return projection is not null ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
+            : new CommandResult(exitCode, error!);
+    }
+
+    private static (int ExitCode, ProjectSummaryProjection? Projection, string? Error) BuildProjectSummary(
+        string fwDataPath)
     {
         try
         {
             var fullPath = ResolveProjectPath(fwDataPath);
             var loader = new FwDataProjectLoader();
             using var cache = loader.LoadCache(fullPath);
-
-            var entryRepo = cache.ServiceLocator.GetInstance<ILexEntryRepository>();
-            var sb = new StringBuilder();
-            sb.AppendLine($"Project: {cache.ProjectId.Name}");
-            sb.AppendLine($"Lexical entries: {entryRepo.Count}");
-            return Ok(sb);
+            return (0, ProjectSummaryReader.Read(cache), null);
         }
         catch (Exception ex)
         {
-            return Fail(ex.Message);
+            return (1, null, FailText(ex.Message));
         }
     }
 
@@ -791,43 +806,61 @@ public static class Commands
     private static string DescribeOperationIds(IReadOnlyList<string> ids) =>
         ids.Count == 1 ? $"operation '{ids[0]}'" : $"operations {string.Join(", ", ids.Select(i => $"'{i}'"))}";
 
-    public static CommandResult List(string storeDir)
+    public static CommandResult List(string storeDir, UsageLog? usage = null)
+    {
+        usage?.Record("list", new[] { UsageArgumentShape.Text("storeDir") });
+        var (exitCode, projection, error) = BuildProposalList(storeDir);
+        return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : new CommandResult(exitCode, error!);
+    }
+
+    /// <summary>The <c>list</c> report as JSON — the same <see cref="ProposalListProjection"/> <see cref="List"/> renders as text.</summary>
+    public static CommandResult ListJson(string storeDir, UsageLog? usage = null)
+    {
+        usage?.Record("list", new[] { UsageArgumentShape.Text("storeDir") });
+        var (exitCode, projection, error) = BuildProposalList(storeDir);
+        return projection is not null ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
+            : new CommandResult(exitCode, error!);
+    }
+
+    private static (int ExitCode, ProposalListProjection? Projection, string? Error) BuildProposalList(string storeDir)
     {
         try
         {
             var store = new ProposalStore(storeDir);
-            var sb = new StringBuilder();
-
             if (!Directory.Exists(store.ManifestsDirectory))
-            {
-                sb.AppendLine("No proposals in store.");
-                return Ok(sb);
-            }
+                return (0, new ProposalListProjection(Array.Empty<ProposalListItem>()), null);
 
-            var manifestFiles = Directory.GetFiles(store.ManifestsDirectory, "*.json")
+            var manifests = Directory.GetFiles(store.ManifestsDirectory, "*.json")
                 .OrderBy(f => f, StringComparer.Ordinal)
+                .Select(ReadManifest)
                 .ToList();
 
-            if (manifestFiles.Count == 0)
-            {
-                sb.AppendLine("No proposals in store.");
-                return Ok(sb);
-            }
-
-            foreach (var file in manifestFiles)
-            {
-                var manifest = ReadManifest(file);
-                sb.AppendLine($"{manifest.ProposalId}  {manifest.Status,-8}  {manifest.Label}");
-            }
-            return Ok(sb);
+            return (0, ProposalListProjectionBuilder.Build(manifests), null);
         }
         catch (Exception ex)
         {
-            return Fail(ex.Message);
+            return (1, null, FailText(ex.Message));
         }
     }
 
-    public static CommandResult Show(string storeDir, string proposalId)
+    public static CommandResult Show(string storeDir, string proposalId, UsageLog? usage = null)
+    {
+        usage?.Record("show", new[] { UsageArgumentShape.Text("storeDir"), UsageArgumentShape.Text("proposalId") });
+        var (exitCode, projection, error) = BuildProposalDetail(storeDir, proposalId);
+        return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : new CommandResult(exitCode, error!);
+    }
+
+    /// <summary>The <c>show</c> report as JSON — the same <see cref="ProposalDetailProjection"/> <see cref="Show"/> renders as text.</summary>
+    public static CommandResult ShowJson(string storeDir, string proposalId, UsageLog? usage = null)
+    {
+        usage?.Record("show", new[] { UsageArgumentShape.Text("storeDir"), UsageArgumentShape.Text("proposalId") });
+        var (exitCode, projection, error) = BuildProposalDetail(storeDir, proposalId);
+        return projection is not null ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
+            : new CommandResult(exitCode, error!);
+    }
+
+    private static (int ExitCode, ProposalDetailProjection? Projection, string? Error) BuildProposalDetail(
+        string storeDir, string proposalId)
     {
         try
         {
@@ -835,32 +868,46 @@ public static class Commands
             var id = NormalizeId(proposalId);
             var manifestPath = store.ManifestPath(id);
             if (!File.Exists(manifestPath))
-                return Fail(ProposalNotFoundMessage(store, id));
+                return (1, null, FailText(ProposalNotFoundMessage(store, id)));
 
             var manifest = ReadManifest(manifestPath);
             var objectPath = store.ObjectPath(manifest.CurrentIntentDigest);
             if (!File.Exists(objectPath))
-                return Fail(StoreInconsistencyMessage(id, manifest.CurrentIntentDigest, objectPath));
+                return (1, null, FailText(StoreInconsistencyMessage(id, manifest.CurrentIntentDigest, objectPath)));
 
-            var objectJson = File.ReadAllText(objectPath);
-
-            var sb = new StringBuilder();
-            sb.AppendLine($"Proposal {id}");
-            sb.AppendLine($"  status:              {manifest.Status}");
-            sb.AppendLine($"  label:               {manifest.Label}");
-            sb.AppendLine($"  comment:             {manifest.Comment}");
-            sb.AppendLine($"  currentIntentDigest: {manifest.CurrentIntentDigest}");
-            sb.AppendLine();
-            sb.AppendLine(objectJson.TrimEnd());
-            return Ok(sb);
+            var envelope = ProposalJsonParser.Parse(File.ReadAllText(objectPath));
+            return (0, ProposalDetailProjectionBuilder.Build(id, manifest, envelope), null);
         }
         catch (Exception ex)
         {
-            return Fail(ex.Message);
+            return (1, null, FailText(ex.Message));
         }
     }
 
-    public static CommandResult DryRun(string storeDir, string proposalId, string fwDataPath)
+    public static CommandResult DryRun(string storeDir, string proposalId, string fwDataPath, UsageLog? usage = null)
+    {
+        RecordDryRunUsage(usage, "storeDir", "proposalId", "fwDataPath");
+        var (exitCode, projection, error) = BuildFileDryRunProjection(storeDir, proposalId, fwDataPath);
+        if (projection is null) return new CommandResult(exitCode, error!);
+
+        var sb = new StringBuilder(CommandTextRenderer.Render(projection));
+        // State the side effect: a dry run reads as "nothing happens", but it saved the project first (ADR 0016).
+        sb.AppendLine("  (the project was saved before measuring, so the scratch copy matched it; " +
+                      "the project itself was not modified by this dry run)");
+        return Ok(sb);
+    }
+
+    /// <summary>The <c>dry-run</c> report as JSON — the same <see cref="DryRunProjection"/> <see cref="DryRun(string,string,string,UsageLog)"/> renders as text.</summary>
+    public static CommandResult DryRunJson(string storeDir, string proposalId, string fwDataPath, UsageLog? usage = null)
+    {
+        RecordDryRunUsage(usage, "storeDir", "proposalId", "fwDataPath");
+        var (exitCode, projection, error) = BuildFileDryRunProjection(storeDir, proposalId, fwDataPath);
+        return projection is not null ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
+            : new CommandResult(exitCode, error!);
+    }
+
+    private static (int ExitCode, DryRunProjection? Projection, string? Error) BuildFileDryRunProjection(
+        string storeDir, string proposalId, string fwDataPath)
     {
         LcmCache? cache = null;
         DryRunScratch? scratch = null;
@@ -870,12 +917,12 @@ public static class Commands
             var id = NormalizeId(proposalId);
             var manifestPath = store.ManifestPath(id);
             if (!File.Exists(manifestPath))
-                return Fail(ProposalNotFoundMessage(store, id));
+                return (1, null, FailText(ProposalNotFoundMessage(store, id)));
 
             var manifest = ReadManifest(manifestPath);
             var objectPath = store.ObjectPath(manifest.CurrentIntentDigest);
             if (!File.Exists(objectPath))
-                return Fail(StoreInconsistencyMessage(id, manifest.CurrentIntentDigest, objectPath));
+                return (1, null, FailText(StoreInconsistencyMessage(id, manifest.CurrentIntentDigest, objectPath)));
 
             var envelope = ProposalJsonParser.Parse(File.ReadAllText(objectPath));
 
@@ -902,29 +949,15 @@ public static class Commands
             manifest.Anchor = dryRun.Anchor;
             WriteManifest(manifestPath, manifest);
 
-            var sb = new StringBuilder();
-            sb.AppendLine($"DryRun of Proposal {id}");
-            sb.AppendLine($"  intentDigest: {dryRun.IntentDigest}");
-            sb.AppendLine($"  baseline:     {dryRun.BaselineNote}");
-            sb.AppendLine($"  effects ({dryRun.ExpectedEffects.Count}):");
-            foreach (var effect in dryRun.ExpectedEffects)
-                AppendEffect(sb, effect);
-            sb.AppendLine($"  effectDigest: {dryRun.EffectDigest}");
-            sb.AppendLine($"  footprintDigest: {dryRun.Anchor.FootprintDigest}");
-            sb.AppendLine("  (bound-DryRun anchor recorded on the manifest; 'apply' will require it)");
-
-            // State the side effect: a dry run reads as "nothing happens", but it saved the project first (ADR 0016).
-            sb.AppendLine("  (the project was saved before measuring, so the scratch copy matched it; " +
-                          "the project itself was not modified by this dry run)");
-            return Ok(sb);
+            return (0, DryRunProjectionBuilder.Build(id, dryRun), null);
         }
         catch (LcmFileLockedException)
         {
-            return Fail(ProjectInUseMessage(fwDataPath, "dry-run"));
+            return (1, null, FailText(ProjectInUseMessage(fwDataPath, "dry-run")));
         }
         catch (Exception ex)
         {
-            return Fail(ex.Message);
+            return (1, null, FailText(ex.Message));
         }
         finally
         {
@@ -936,6 +969,9 @@ public static class Commands
         }
     }
 
+    private static void RecordDryRunUsage(UsageLog? usage, params string[] names) =>
+        usage?.Record("dry-run", names.Select(UsageArgumentShape.Text).ToList());
+
     /// <remarks>
     /// A failed apply rolls back, and a rollback is not an Undo: LexEntry headword/homograph and
     /// MoStemAllomorph monomorphemic caches can be left stale, and ADR 0005's non-undoable schema
@@ -943,7 +979,24 @@ public static class Commands
     /// the rule is unconditional (ADR 0016): a caller must discard this <see cref="LcmCache"/> and
     /// reload the project rather than reuse it after a failed apply.
     /// </remarks>
-    public static CommandResult Apply(string storeDir, string proposalId, string fwDataPath, string user)
+    public static CommandResult Apply(string storeDir, string proposalId, string fwDataPath, string user, UsageLog? usage = null)
+    {
+        RecordApplyUsage(usage, "storeDir", "proposalId", "fwDataPath", "user");
+        var (exitCode, projection, error) = BuildFileApplyProjection(storeDir, proposalId, fwDataPath, user);
+        return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : new CommandResult(exitCode, error!);
+    }
+
+    /// <summary>The <c>apply</c> report as JSON — the same <see cref="ApplyProjection"/> <see cref="Apply(string,string,string,string,UsageLog)"/> renders as text.</summary>
+    public static CommandResult ApplyJson(string storeDir, string proposalId, string fwDataPath, string user, UsageLog? usage = null)
+    {
+        RecordApplyUsage(usage, "storeDir", "proposalId", "fwDataPath", "user");
+        var (exitCode, projection, error) = BuildFileApplyProjection(storeDir, proposalId, fwDataPath, user);
+        return projection is not null ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
+            : new CommandResult(exitCode, error!);
+    }
+
+    private static (int ExitCode, ApplyProjection? Projection, string? Error) BuildFileApplyProjection(
+        string storeDir, string proposalId, string fwDataPath, string user)
     {
         LcmCache? cache = null;
         try
@@ -952,19 +1005,19 @@ public static class Commands
             var id = NormalizeId(proposalId);
             var manifestPath = store.ManifestPath(id);
             if (!File.Exists(manifestPath))
-                return Fail(ProposalNotFoundMessage(store, id));
+                return (1, null, FailText(ProposalNotFoundMessage(store, id)));
 
             var manifest = ReadManifest(manifestPath);
             var objectPath = store.ObjectPath(manifest.CurrentIntentDigest);
             if (!File.Exists(objectPath))
-                return Fail(StoreInconsistencyMessage(id, manifest.CurrentIntentDigest, objectPath));
+                return (1, null, FailText(StoreInconsistencyMessage(id, manifest.CurrentIntentDigest, objectPath)));
 
             // ADR 0004 decision 3: a bare apply with no bound DryRun is a hard error, checked before loading the project.
             if (manifest.Anchor is null)
             {
-                return Fail(
+                return (1, null, FailText(
                     $"Proposal {id} has no bound DryRun recorded. Run " +
-                    $"'dry-run {id} --project <fwdata>' first, then 'apply'.");
+                    $"'dry-run {id} --project <fwdata>' first, then 'apply'."));
             }
 
             var envelope = ProposalJsonParser.Parse(File.ReadAllText(objectPath));
@@ -977,34 +1030,39 @@ public static class Commands
                 var description = manifest.Label ?? "";
                 var receipt = ProposalApplier.Apply(cache, envelope, manifest.Anchor, user, description);
 
-                var sb = new StringBuilder();
-                if (receipt.AlreadyApplied)
+                // The core never saves; the host does, only after the unit of work has closed.
+                if (!receipt.AlreadyApplied)
                 {
-                    sb.AppendLine($"Proposal {id} was already applied (idempotent; no mutation performed).");
-                    sb.AppendLine($"  {receipt.ResultNote}");
-                }
-                else
-                {
-                    // The core never saves; the host does, only after the unit of work has closed.
-                    loader.Save(cache);
-
-                    sb.AppendLine($"Applied Proposal {id}.");
-                    sb.AppendLine($"  {receipt.ResultNote}");
-                    sb.AppendLine($"  effects ({receipt.ActualEffects.Count}):");
-                    foreach (var effect in receipt.ActualEffects)
-                        AppendEffect(sb, effect);
-                    sb.AppendLine($"  effectDigest: {receipt.EffectDigest}");
+                    try { loader.Save(cache); }
+                    catch (Exception ex)
+                    {
+                        throw new NeedsReconciliationException(
+                            ReconciliationBoundary.Save,
+                            $"Proposal {id} committed to the live project, but saving it to the .fwdata " +
+                            "file failed partway through. This is not a rollback: the file's on-disk " +
+                            "state is not guaranteed intact. Do not retry automatically -- inspect the " +
+                            "project file before doing anything else with it.",
+                            ex);
+                    }
                 }
 
-                sb.AppendLine(
-                    $"  applied-log entry: proposalId={receipt.AppliedLogEntry.ProposalId:D} " +
-                    $"timestamp={receipt.AppliedLogEntry.TimestampUtc} user='{receipt.AppliedLogEntry.User}' " +
-                    $"intentDigest={receipt.AppliedLogEntry.IntentDigest}");
+                try
+                {
+                    manifest.Status = ManifestStatus.Applied;
+                    WriteManifest(manifestPath, manifest);
+                }
+                catch (Exception ex)
+                {
+                    throw new NeedsReconciliationException(
+                        ReconciliationBoundary.ReceiptRecording,
+                        $"Proposal {id} was applied and saved to the project, but recording that in the " +
+                        $"proposal store failed: manifest '{manifestPath}' was not updated. The project " +
+                        "and the store now disagree about whether this Proposal is applied. Do not retry " +
+                        "automatically -- inspect the manifest before doing anything else with it.",
+                        ex);
+                }
 
-                manifest.Status = ManifestStatus.Applied;
-                WriteManifest(manifestPath, manifest);
-
-                return Ok(sb);
+                return (0, ApplyProjectionBuilder.Build(id, receipt), null);
             }
             finally
             {
@@ -1013,26 +1071,51 @@ public static class Commands
         }
         catch (LcmFileLockedException)
         {
-            return Fail(ProjectInUseMessage(fwDataPath, "apply"));
+            return (1, null, FailText(ProjectInUseMessage(fwDataPath, "apply")));
+        }
+        catch (NeedsReconciliationException ex)
+        {
+            // Distinct from the rollback wording below: the mutation may already be durable.
+            return (1, null, FailText(ex.Message));
         }
         catch (Exception ex)
         {
             // A failed apply rolled back, not Undo: derived caches may be stale (ADR 0016) -- see the remarks above.
-            return Fail(
+            return (1, null, FailText(
                 ex.Message +
                 " [This LcmCache is no longer trustworthy: a failed apply rolls back, which does not " +
-                "refresh LibLCM's derived caches. Discard it and reload the project.]");
+                "refresh LibLCM's derived caches. Discard it and reload the project.]"));
         }
     }
 
+    private static void RecordApplyUsage(UsageLog? usage, params string[] names) =>
+        usage?.Record("apply", names.Select(UsageArgumentShape.Text).ToList());
+
     /// <summary>
-    /// Session-backed counterpart to <see cref="DryRun(string,string,string)"/>: dry-runs against
+    /// Session-backed counterpart to <see cref="DryRun(string,string,string,UsageLog)"/>: dry-runs against
     /// <paramref name="session"/>'s already-open live cache and footprint-gated pristine scratch
     /// instead of loading and disposing a fresh <see cref="LcmCache"/> per call, so N calls against one
     /// session cost at most one live project load (<see cref="CliSession.Open"/>) plus footprint-gated
     /// scratch rebuilds (<see cref="CliSession.PristineRebuildCount"/>).
     /// </summary>
-    public static CommandResult DryRun(CliSession session, string storeDir, string proposalId)
+    public static CommandResult DryRun(CliSession session, string storeDir, string proposalId, UsageLog? usage = null)
+    {
+        RecordDryRunUsage(usage, "storeDir", "proposalId");
+        var (exitCode, projection, error) = BuildSessionDryRunProjection(session, storeDir, proposalId);
+        return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : new CommandResult(exitCode, error!);
+    }
+
+    /// <summary>The <c>dry-run</c> report as JSON, session-backed — see <see cref="DryRun(CliSession,string,string,UsageLog)"/>.</summary>
+    public static CommandResult DryRunJson(CliSession session, string storeDir, string proposalId, UsageLog? usage = null)
+    {
+        RecordDryRunUsage(usage, "storeDir", "proposalId");
+        var (exitCode, projection, error) = BuildSessionDryRunProjection(session, storeDir, proposalId);
+        return projection is not null ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
+            : new CommandResult(exitCode, error!);
+    }
+
+    private static (int ExitCode, DryRunProjection? Projection, string? Error) BuildSessionDryRunProjection(
+        CliSession session, string storeDir, string proposalId)
     {
         if (session is null) throw new ArgumentNullException(nameof(session));
         try
@@ -1041,7 +1124,7 @@ public static class Commands
                     storeDir, proposalId, out var manifest, out var manifestPath, out var id,
                     out var envelope, out var failure))
             {
-                return failure!;
+                return (failure!.ExitCode, null, failure.Output);
             }
 
             var dryRun = session.DryRun(envelope);
@@ -1050,31 +1133,39 @@ public static class Commands
             manifest.Anchor = dryRun.Anchor;
             WriteManifest(manifestPath, manifest);
 
-            var sb = new StringBuilder();
-            sb.AppendLine($"DryRun of Proposal {id}");
-            sb.AppendLine($"  intentDigest: {dryRun.IntentDigest}");
-            sb.AppendLine($"  baseline:     {dryRun.BaselineNote}");
-            sb.AppendLine($"  effects ({dryRun.ExpectedEffects.Count}):");
-            foreach (var effect in dryRun.ExpectedEffects)
-                AppendEffect(sb, effect);
-            sb.AppendLine($"  effectDigest: {dryRun.EffectDigest}");
-            sb.AppendLine($"  footprintDigest: {dryRun.Anchor.FootprintDigest}");
-            sb.AppendLine("  (bound-DryRun anchor recorded on the manifest; 'apply' will require it)");
-            return Ok(sb);
+            return (0, DryRunProjectionBuilder.Build(id, dryRun), null);
         }
         catch (Exception ex)
         {
-            return Fail(ex.Message);
+            return (1, null, FailText(ex.Message));
         }
     }
 
     /// <summary>
-    /// Session-backed counterpart to <see cref="Apply(string,string,string,string)"/>: applies against
+    /// Session-backed counterpart to <see cref="Apply(string,string,string,string,UsageLog)"/>: applies against
     /// <paramref name="session"/>'s live cache and saves through it, rather than loading and disposing a
     /// fresh <see cref="LcmCache"/>. On failure <see cref="CliSession.Apply"/> has already discarded the
     /// session's live cache (ADR 0016); the caller must open a new session rather than reuse this one.
     /// </summary>
-    public static CommandResult Apply(CliSession session, string storeDir, string proposalId, string user)
+    public static CommandResult Apply(CliSession session, string storeDir, string proposalId, string user, UsageLog? usage = null)
+    {
+        RecordApplyUsage(usage, "storeDir", "proposalId", "user");
+        var (exitCode, projection, error) = BuildSessionApplyProjection(session, storeDir, proposalId, user);
+        return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : new CommandResult(exitCode, error!);
+    }
+
+    /// <summary>The <c>apply</c> report as JSON, session-backed — see <see cref="Apply(CliSession,string,string,string,UsageLog)"/>.</summary>
+    public static CommandResult ApplyJson(CliSession session, string storeDir, string proposalId, string user, UsageLog? usage = null)
+    {
+        RecordApplyUsage(usage, "storeDir", "proposalId", "user");
+        var (exitCode, projection, error) = BuildSessionApplyProjection(session, storeDir, proposalId, user);
+        return projection is not null ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
+            : new CommandResult(exitCode, error!);
+    }
+
+    // On failure the session already discarded its live cache (ADR 0016); the caller must open a new one.
+    private static (int ExitCode, ApplyProjection? Projection, string? Error) BuildSessionApplyProjection(
+        CliSession session, string storeDir, string proposalId, string user)
     {
         if (session is null) throw new ArgumentNullException(nameof(session));
         try
@@ -1083,53 +1174,50 @@ public static class Commands
                     storeDir, proposalId, out var manifest, out var manifestPath, out var id,
                     out var envelope, out var failure))
             {
-                return failure!;
+                return (failure!.ExitCode, null, failure.Output);
             }
 
             // ADR 0004 decision 3: a bare apply with no bound DryRun is a hard error, checked before applying.
             if (manifest.Anchor is null)
             {
-                return Fail(
+                return (1, null, FailText(
                     $"Proposal {id} has no bound DryRun recorded. Run " +
-                    $"'dry-run {id} --project <fwdata>' first, then 'apply'.");
+                    $"'dry-run {id} --project <fwdata>' first, then 'apply'."));
             }
 
             var description = manifest.Label ?? "";
             var receipt = session.Apply(envelope, manifest.Anchor, user, description);
 
-            var sb = new StringBuilder();
-            if (receipt.AlreadyApplied)
+            try
             {
-                sb.AppendLine($"Proposal {id} was already applied (idempotent; no mutation performed).");
-                sb.AppendLine($"  {receipt.ResultNote}");
+                manifest.Status = ManifestStatus.Applied;
+                WriteManifest(manifestPath, manifest);
             }
-            else
+            catch (Exception ex)
             {
-                sb.AppendLine($"Applied Proposal {id}.");
-                sb.AppendLine($"  {receipt.ResultNote}");
-                sb.AppendLine($"  effects ({receipt.ActualEffects.Count}):");
-                foreach (var effect in receipt.ActualEffects)
-                    AppendEffect(sb, effect);
-                sb.AppendLine($"  effectDigest: {receipt.EffectDigest}");
+                throw new NeedsReconciliationException(
+                    ReconciliationBoundary.ReceiptRecording,
+                    $"Proposal {id} was applied and saved to the project, but recording that in the " +
+                    $"proposal store failed: manifest '{manifestPath}' was not updated. The project and " +
+                    "the store now disagree about whether this Proposal is applied. Do not retry " +
+                    "automatically -- inspect the manifest before doing anything else with it.",
+                    ex);
             }
 
-            sb.AppendLine(
-                $"  applied-log entry: proposalId={receipt.AppliedLogEntry.ProposalId:D} " +
-                $"timestamp={receipt.AppliedLogEntry.TimestampUtc} user='{receipt.AppliedLogEntry.User}' " +
-                $"intentDigest={receipt.AppliedLogEntry.IntentDigest}");
-
-            manifest.Status = ManifestStatus.Applied;
-            WriteManifest(manifestPath, manifest);
-
-            return Ok(sb);
+            return (0, ApplyProjectionBuilder.Build(id, receipt), null);
+        }
+        catch (NeedsReconciliationException ex)
+        {
+            // Distinct from the rollback wording below: the mutation may already be durable.
+            return (1, null, FailText(ex.Message));
         }
         catch (Exception ex)
         {
             // A failed apply rolled back, not Undo: the session already discarded its live cache above.
-            return Fail(
+            return (1, null, FailText(
                 ex.Message +
                 " [This session's live cache is no longer trustworthy: a failed apply rolls back, which " +
-                "does not refresh LibLCM's derived caches. Open a new session rather than reuse this one.]");
+                "does not refresh LibLCM's derived caches. Open a new session rather than reuse this one.]"));
         }
     }
 
@@ -1164,7 +1252,23 @@ public static class Commands
         return true;
     }
 
-    public static CommandResult Log(string fwDataPath)
+    public static CommandResult Log(string fwDataPath, UsageLog? usage = null)
+    {
+        usage?.Record("log", new[] { UsageArgumentShape.Text("fwDataPath") });
+        var (exitCode, projection, error) = BuildAppliedLog(fwDataPath);
+        return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : new CommandResult(exitCode, error!);
+    }
+
+    /// <summary>The <c>log</c> report as JSON — the same <see cref="AppliedLogProjection"/> <see cref="Log(string,UsageLog)"/> renders as text.</summary>
+    public static CommandResult LogJson(string fwDataPath, UsageLog? usage = null)
+    {
+        usage?.Record("log", new[] { UsageArgumentShape.Text("fwDataPath") });
+        var (exitCode, projection, error) = BuildAppliedLog(fwDataPath);
+        return projection is not null ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
+            : new CommandResult(exitCode, error!);
+    }
+
+    private static (int ExitCode, AppliedLogProjection? Projection, string? Error) BuildAppliedLog(string fwDataPath)
     {
         try
         {
@@ -1177,26 +1281,11 @@ public static class Commands
                 cache,
                 (name, error) => diagnostics.Add($"  [unparseable Motif entry] name='{name}' error='{error}'"));
 
-            var sb = new StringBuilder();
-            sb.AppendLine(
-                $"Applied-change log for '{fullFwDataPath}' " +
-                $"({entries.Count} Motif entr{(entries.Count == 1 ? "y" : "ies")}):");
-
-            foreach (var entry in entries.OrderBy(e => e.TimestampUtc, StringComparer.Ordinal))
-            {
-                sb.AppendLine(
-                    $"  {entry.ProposalId:D}  ts={entry.TimestampUtc}  user='{entry.User}'  " +
-                    $"intentDigest={entry.IntentDigest}  description=\"{entry.Description}\"");
-            }
-
-            foreach (var diagnostic in diagnostics)
-                sb.AppendLine(diagnostic);
-
-            return Ok(sb);
+            return (0, AppliedLogProjectionBuilder.Build(fullFwDataPath, entries, diagnostics), null);
         }
         catch (Exception ex)
         {
-            return Fail(ex.Message);
+            return (1, null, FailText(ex.Message));
         }
     }
 
@@ -1218,27 +1307,6 @@ public static class Commands
         {
             // A still-locked native handle must not fail a dry run that already succeeded.
         }
-    }
-
-    private static void AppendEffect(StringBuilder sb, ExpectedEffect effect)
-    {
-        sb.AppendLine($"    {effect.CanonicalId.Value}  field={effect.Field}");
-
-        var wsKeys = effect.Before.Keys.Union(effect.After.Keys).OrderBy(k => k, StringComparer.Ordinal);
-        var any = false;
-        foreach (var ws in wsKeys)
-        {
-            var before = effect.Before.TryGetValue(ws, out var b) ? b : "(absent)";
-            var after = effect.After.TryGetValue(ws, out var a) ? a : "(absent)";
-            if (string.Equals(before, after, StringComparison.Ordinal))
-                continue;
-
-            sb.AppendLine($"      [{ws}] \"{before}\" -> \"{after}\"");
-            any = true;
-        }
-
-        if (!any)
-            sb.AppendLine("      (no observable before/after change)");
     }
 
     private static string BuildProposalJson(DraftDocument draft)
@@ -1303,5 +1371,10 @@ public static class Commands
 
     private static CommandResult Ok(StringBuilder sb) => new(0, sb.ToString());
 
-    private static CommandResult Fail(string message) => new(1, "error: " + message + Environment.NewLine);
+    private static CommandResult Ok(string text) => new(0, text);
+
+    private static CommandResult Fail(string message) => new(1, FailText(message));
+
+    // Same rendering as Fail, for a Build* helper returning a bare string rather than a CommandResult.
+    private static string FailText(string message) => "error: " + message + Environment.NewLine;
 }

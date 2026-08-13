@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text.Json;
 using SIL.Motif.Cli;
 using SIL.Motif.Contract.Ids;
@@ -126,6 +127,46 @@ public sealed class CliSessionTests
         session.Dispose();
         using var reopened = new FwDataProjectLoader().LoadCache(_fwDataPath);
         Assert.False(string.IsNullOrWhiteSpace(reopened.ProjectId.Name));
+    }
+
+    /// <remarks>
+    /// This is the save boundary: <c>ProposalApplier.Apply</c> already committed the mutation to the
+    /// live cache (a real, non-idempotent apply, not a no-op) before the injected failure happens, so
+    /// this is not a rollback and must not be reported as one -- see
+    /// <see cref="NeedsReconciliationException"/> and <see cref="CliSession.Apply"/>'s remarks.
+    /// </remarks>
+    [Fact]
+    public void Apply_SaveFails_AfterACommittedMutation_ThrowsNeedsReconciliation_NotRollback()
+    {
+        var proposal = BuildSetGlossProposal(_seed.FirstSenseId, "revised, then save fails");
+        var loader = new SaveThrowingFwDataProjectLoader();
+
+        using var session = CliSession.Open(_fwDataPath, loader);
+        // The dry run's own pristine-scratch rebuild also saves; let that one succeed, arm only for Apply.
+        var dryRun = session.DryRun(proposal);
+        loader.ArmedToThrow = true;
+
+        var ex = Assert.Throws<NeedsReconciliationException>(
+            () => session.Apply(proposal, dryRun.Anchor, "session-tests"));
+
+        Assert.Equal(ReconciliationBoundary.Save, ex.Boundary);
+        Assert.IsType<IOException>(ex.InnerException);
+
+        // The live cache is no longer trustworthy either way: further use fails clearly.
+        Assert.Throws<ObjectDisposedException>(() => session.DryRun(proposal));
+    }
+
+    /// <summary>Throws from <see cref="Save"/> once armed, so setup saves behave normally first.</summary>
+    private sealed class SaveThrowingFwDataProjectLoader : FwDataProjectLoader
+    {
+        public bool ArmedToThrow { get; set; }
+
+        public override void Save(LcmCache cache)
+        {
+            if (ArmedToThrow)
+                throw new IOException("Injected: the project file could not be written.");
+            base.Save(cache);
+        }
     }
 
     private static void AssertEffectsEqual(

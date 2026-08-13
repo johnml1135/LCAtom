@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>SIL.Motif.Projection</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SIL.Motif.Contract\SIL.Motif.Contract.csproj" />
+    <ProjectReference Include="..\SIL.Motif.Model\SIL.Motif.Model.csproj" />
+    <ProjectReference Include="..\SIL.Motif.Runner\SIL.Motif.Runner.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Every reader here takes an already-open LcmCache; this project never loads or saves one. -->
+    <PackageReference Include="SIL.LCModel" Version="11.0.0-beta0150" />
+    <PackageReference Include="Microsoft.ICU.ICU4C.Runtime" Version="72.1.0.3" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
+  </ItemGroup>
+
+  <!-- Pins the otherwise-transitive libpalaso packages so a local override (see AGENTS.md) applies here too. -->
+  <ItemGroup Condition="'$(MotifLocalPalasoActive)' == 'true'">
+    <PackageReference Include="SIL.WritingSystems" Version="$(SilLibPalasoVersion)" />
+    <PackageReference Include="SIL.Core" Version="$(SilLibPalasoVersion)" />
+  </ItemGroup>
+
+</Project>

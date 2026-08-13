@@ -41,7 +41,9 @@ namespace SIL.Motif.Cli;
 /// trustworthy. <see cref="Apply"/> discards it before rethrowing, and every subsequent call that needs
 /// <see cref="LiveCache"/> fails clearly instead of silently reusing a suspect cache. The caller must
 /// open a new session; <see cref="Dispose"/> still tears down whatever remains (the pristine scratch,
-/// and the live cache if the discard above never ran).
+/// and the live cache if the discard above never ran). A failure in the <em>save</em> that follows a
+/// successful apply is reported differently -- see <see cref="Apply"/>'s remarks: it is not a rollback,
+/// so it throws <see cref="NeedsReconciliationException"/> rather than reusing the rollback wording.
 /// </para>
 /// <para>
 /// <b>The Runner is unchanged.</b> A session only decides which cache <see cref="ProposalDryRunner.Run"/>
@@ -140,24 +142,54 @@ public sealed class CliSession : IDisposable
     /// Applies <paramref name="proposal"/> to the live cache and saves on success. On failure the live
     /// cache is discarded before the exception propagates -- see the class remarks.
     /// </summary>
+    /// <remarks>
+    /// Two distinct boundaries can fail here, and they recover differently, so this does not report
+    /// them alike. A throw from <see cref="ProposalApplier.Apply"/> itself rolls back its own unit of
+    /// work (ADR 0016) -- nothing is durable, so discarding this cache and opening a new session is a
+    /// complete, safe recovery. A throw from the <em>save</em> that follows a successful, non-idempotent
+    /// apply is different: the mutation already committed, and <c>Save</c>'s own remarks document that
+    /// its background commit thread can fail partway, leaving the <c>.fwdata</c> file's on-disk state
+    /// unconfirmed. That is not a rollback, and reporting it as one would tell a caller it is safe to
+    /// just re-open the project when the file itself might not be intact -- so it surfaces as
+    /// <see cref="NeedsReconciliationException"/> instead, naming <see cref="ReconciliationBoundary.Save"/>.
+    /// </remarks>
     public Receipt Apply(
         Proposal proposal, BoundDryRunAnchor anchor, string applierIdentity, string description = "")
     {
         if (proposal is null) throw new ArgumentNullException(nameof(proposal));
         ThrowIfDisposed();
 
+        Receipt receipt;
         try
         {
-            var receipt = ProposalApplier.Apply(LiveCache, proposal, anchor, applierIdentity, description);
-            if (!receipt.AlreadyApplied)
-                _loader.Save(LiveCache);
-            return receipt;
+            receipt = ProposalApplier.Apply(LiveCache, proposal, anchor, applierIdentity, description);
         }
         catch
         {
             DiscardLiveCache();
             throw;
         }
+
+        if (receipt.AlreadyApplied)
+            return receipt;
+
+        try
+        {
+            _loader.Save(LiveCache);
+        }
+        catch (Exception ex)
+        {
+            DiscardLiveCache();
+            throw new NeedsReconciliationException(
+                ReconciliationBoundary.Save,
+                $"Proposal {proposal.ProposalId.Value} committed to the live project, but saving it to " +
+                "the .fwdata file failed partway through. This is not a rollback: the file's on-disk " +
+                "state is not guaranteed intact. Do not retry automatically -- inspect the project file " +
+                "before doing anything else with it.",
+                ex);
+        }
+
+        return receipt;
     }
 
     private void EnsurePristineIsFresh(Proposal proposal)
