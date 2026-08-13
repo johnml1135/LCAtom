@@ -67,6 +67,18 @@ try
             result = Commands.AddDeleteLexemeForm(storeDir, addDelDraftName, addDelTarget);
             break;
 
+        case "compose-author-lexeme-form":
+            if (!flags.TryGetValue("draft", out var composeDraftName) ||
+                !flags.TryGetValue("project", out var composeProject) ||
+                !flags.TryGetValue("intent", out var composeIntent))
+            {
+                return Usage(
+                    "Usage: motif compose-author-lexeme-form --draft <name> --project <fwdata> --intent " +
+                    "'{\"entry\":...,\"morphType\":...,\"ws\":...,\"text\":...}'");
+            }
+            result = Commands.ComposeAuthorLexemeForm(storeDir, composeDraftName, composeProject, composeIntent);
+            break;
+
         case "label":
             if (!flags.TryGetValue("draft", out var labelDraftName) || positionals.Count != 1)
                 return Usage("Usage: motif label --draft <name> <text>");
@@ -307,6 +319,9 @@ static void PrintUsage(TextWriter writer)
         "  add-set-gloss --draft <name> --target <canonicalId> --ws <wsTag> --text <text> " +
         "[--depends-on <opId>[,<opId>...]]");
     writer.WriteLine("  add-delete-lexeme-form --draft <name> --target <canonicalId>");
+    writer.WriteLine(
+        "  compose-author-lexeme-form --draft <name> --project <fwdata> --intent " +
+        "'{\"entry\":...,\"morphType\":...,\"ws\":...,\"text\":...}'");
     writer.WriteLine("  label --draft <name> <text>");
     writer.WriteLine("  comment --draft <name> <text>");
     writer.WriteLine("  finalize --draft <name>");

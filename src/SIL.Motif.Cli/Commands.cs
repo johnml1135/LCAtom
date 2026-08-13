@@ -16,6 +16,7 @@ using SIL.Motif.Projection.Store;
 using SIL.Motif.Projection.Usage;
 using SIL.Motif.Runner.Apply;
 using SIL.Motif.Runner.AppliedLog;
+using SIL.Motif.Runner.Composers;
 using SIL.Motif.Runner.DryRun;
 using SIL.Motif.Runner.Operations;
 using SIL.LCModel;
@@ -175,7 +176,11 @@ public static class Commands
                 Kind = LexicalSenseOperationKinds.SetGloss,
                 Target = targetId.Value,
                 DependsOn = resolvedDependsOn,
-                After = new Dictionary<string, string> { ["ws"] = ws, ["text"] = text },
+                After = new Dictionary<string, JsonElement>
+                {
+                    ["ws"] = JsonSerializer.SerializeToElement(ws),
+                    ["text"] = JsonSerializer.SerializeToElement(text),
+                },
             });
 
             WriteDraft(draftPath, draft);
@@ -223,7 +228,7 @@ public static class Commands
                 OperationId = operationId.Value,
                 Kind = LexEntryLexemeFormOperationKinds.DeleteLexemeForm,
                 Target = targetId.Value,
-                After = new Dictionary<string, string>(),
+                After = new Dictionary<string, JsonElement>(),
             });
 
             WriteDraft(draftPath, draft);
@@ -233,6 +238,62 @@ public static class Commands
                 $"Added operation '{operationId.Value}' ({LexEntryLexemeFormOperationKinds.DeleteLexemeForm}) " +
                 $"to draft '{draftName}'.");
             sb.AppendLine($"  target: {targetId.Value}");
+            sb.AppendLine($"Draft now has {draft.Operations.Count} operation(s).");
+            return Ok(sb);
+        }
+        catch (Exception ex)
+        {
+            return Fail(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Runs <see cref="AuthorLexemeFormComposer"/> against a live project and appends the operations
+    /// it resolves to a draft — the CLI's first Layer-1 authoring surface (ADR 0009 decision 1). The
+    /// agent authors one intent rather than enumerating up to three operations by hand; the intent
+    /// itself is recorded as non-hashed provenance on the eventual Proposal, never entering its intent
+    /// digest.
+    /// </summary>
+    /// <param name="intentJson">
+    /// <c>{ "entry": "...", "morphType": "...", "ws": "...", "text": "...", "isAbstract": false,
+    /// "sense": "...", "glossWs": "...", "glossText": "..." }</c> — see
+    /// <see cref="AuthorLexemeFormIntentParser"/> for the exact closed schema.
+    /// </param>
+    public static CommandResult ComposeAuthorLexemeForm(
+        string storeDir, string draftName, string fwDataPath, string intentJson)
+    {
+        try
+        {
+            var store = new ProposalStore(storeDir);
+            var draftPath = store.DraftPath(draftName);
+            if (!File.Exists(draftPath))
+                return Fail(DraftNotFoundMessage(store, draftName));
+
+            using var intentDocument = JsonDocument.Parse(intentJson);
+            var intent = AuthorLexemeFormIntentParser.Parse(intentDocument.RootElement);
+
+            var fullPath = ResolveProjectPath(fwDataPath);
+            var loader = new FwDataProjectLoader();
+            IReadOnlyList<SIL.Motif.Contract.Model.OperationEnvelope> operations;
+            using (var cache = loader.LoadCache(fullPath))
+                operations = AuthorLexemeFormComposer.Build(cache, intent);
+
+            var draft = ReadDraft(draftPath);
+            foreach (var operation in operations)
+                draft.Operations.Add(ToDraftOperation(operation));
+
+            var provenanceJson = JsonSerializer.Serialize(
+                new { composer = "AuthorLexemeForm", input = intentDocument.RootElement });
+            using var provenanceDocument = JsonDocument.Parse(provenanceJson);
+            draft.ComposerProvenance.Add(provenanceDocument.RootElement.Clone());
+
+            WriteDraft(draftPath, draft);
+
+            var sb = new StringBuilder();
+            sb.AppendLine(
+                $"Composed 'AuthorLexemeForm' against draft '{draftName}': {operations.Count} operation(s) added.");
+            foreach (var operation in operations)
+                sb.AppendLine($"  {operation.OperationId.Value}  ({operation.Kind})");
             sb.AppendLine($"Draft now has {draft.Operations.Count} operation(s).");
             return Ok(sb);
         }
@@ -431,6 +492,7 @@ public static class Commands
                 Label = manifest.Label,
                 Comment = manifest.Comment,
                 Operations = envelope.Operations.Select(ToDraftOperation).ToList(),
+                ComposerProvenance = ExtractComposerProvenance(envelope.Extensions),
             };
 
             store.EnsureDirectoriesExist();
@@ -562,6 +624,20 @@ public static class Commands
         }
     }
 
+    /// <summary>Recovers composer provenance from a committed Proposal's <c>extensions</c>.</summary>
+    private static List<JsonElement> ExtractComposerProvenance(JsonElement? extensions)
+    {
+        if (extensions is not { } present ||
+            present.ValueKind != JsonValueKind.Object ||
+            !present.TryGetProperty("composers", out var composers) ||
+            composers.ValueKind != JsonValueKind.Array)
+        {
+            return new List<JsonElement>();
+        }
+
+        return composers.EnumerateArray().Select(e => e.Clone()).ToList();
+    }
+
     private static DraftOperation ToDraftOperation(SIL.Motif.Contract.Model.OperationEnvelope operation)
     {
         if (operation.Target is not { } target)
@@ -576,8 +652,8 @@ public static class Commands
                 $"Reopen does not yet support an operation with no 'after' payload (kind '{operation.Kind}').");
         }
 
-        var afterDict = JsonSerializer.Deserialize<Dictionary<string, string>>(after.GetRawText())
-            ?? new Dictionary<string, string>();
+        var afterDict = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(after.GetRawText())
+            ?? new Dictionary<string, JsonElement>();
 
         return new DraftOperation
         {
@@ -629,6 +705,7 @@ public static class Commands
                 Label = manifest.Label,
                 Comment = manifest.Comment,
                 Operations = envelope.Operations.Select(ToDraftOperation).ToList(),
+                ComposerProvenance = ExtractComposerProvenance(envelope.Extensions),
             };
 
             store.EnsureDirectoriesExist();
@@ -1439,6 +1516,9 @@ public static class Commands
                 dependsOn = op.DependsOn,
                 after = op.After,
             }).ToList(),
+            extensions = draft.ComposerProvenance.Count > 0
+                ? (object?)new { composers = draft.ComposerProvenance }
+                : null,
         };
 
         return JsonSerializer.Serialize(document, ProposalJsonOptions);
