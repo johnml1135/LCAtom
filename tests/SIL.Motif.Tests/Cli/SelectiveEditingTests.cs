@@ -76,6 +76,7 @@ public sealed class SelectiveEditingTests : IDisposable
         var manifestPath = store.ManifestPath(proposalId);
         var manifest = JsonSerializer.Deserialize<ManifestDocument>(File.ReadAllText(manifestPath), ManifestJsonOptions)!;
         manifest.Anchor = new BoundDryRunAnchor(
+            IntentDigest: "sha256:" + new string('c', 64),
             FootprintDigest: "sha256:" + new string('a', 64),
             EffectDigest: "sha256:" + new string('b', 64),
             RunnerVersion: "1.0.0.0",

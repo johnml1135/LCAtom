@@ -1,11 +1,24 @@
 namespace SIL.Motif.Model.DryRun;
 
 /// <summary>
-/// Binds a subsequent Apply to the specific evaluated baseline a prior <see cref="DryRun"/> read.
-/// Apply is bound to a prior DryRun (ADR 0004 decision 3): a bare apply with no bound DryRun is a
-/// hard error, and a moved footprint (this anchor's <see cref="FootprintDigest"/> no longer matching
-/// the live project) stops apply with a drift diagnostic rather than proceeding.
+/// Binds a subsequent Apply to the specific evaluated baseline a prior <see cref="DryRun"/> read, and
+/// to the specific Proposal content that DryRun evaluated. Apply is bound to a prior DryRun (ADR 0004
+/// decision 3): a bare apply with no bound DryRun is a hard error, an anchor whose
+/// <see cref="IntentDigest"/> does not match the Proposal presented at apply time is a hard error
+/// (this anchor was never bound to that content), and a moved footprint (this anchor's
+/// <see cref="FootprintDigest"/> no longer matching the live project) stops apply with a drift
+/// diagnostic rather than proceeding.
 /// </summary>
+/// <param name="IntentDigest">
+/// The full <c>sha256:</c>-prefixed intent digest (see
+/// <see cref="SIL.Motif.Contract.Canonicalization.IntentDigest"/>) of the Proposal this DryRun
+/// evaluated. <see cref="FootprintDigest"/> alone is deliberately Proposal-content-independent — it
+/// hashes only the pre-mutation "before" state, so two Proposals that touch the same targets and
+/// fields but write different content produce the same footprint digest (see
+/// <see cref="Effects.FootprintDigest"/>'s remarks). This field is what stops such a second Proposal
+/// from being applied under the first one's authorization: apply requires this to match the Proposal
+/// it is given, not merely a plausible-looking footprint.
+/// </param>
 /// <param name="FootprintDigest">
 /// A digest of exactly the pre-mutation state of every target this Proposal's operations touch —
 /// the "before" half of <see cref="Effects.ExpectedEffect"/>, not the full expected effect set. Apply
@@ -29,6 +42,7 @@ namespace SIL.Motif.Model.DryRun;
 /// convention) of when this DryRun ran.
 /// </param>
 public sealed record BoundDryRunAnchor(
+    string IntentDigest,
     string FootprintDigest,
     string EffectDigest,
     string RunnerVersion,

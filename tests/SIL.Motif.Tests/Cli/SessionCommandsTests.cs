@@ -78,6 +78,56 @@ public sealed class SessionCommandsTests
         Assert.False(string.IsNullOrWhiteSpace(reopened.ProjectId.Name));
     }
 
+    /// <remarks>
+    /// The session-backed counterpart to
+    /// <see cref="EndToEndCliTests.Apply_ManifestWriteFails_AfterAGenuineCommitAndSave_ReportsReconciliation_NotRollback"/>:
+    /// the same receipt boundary, reached through <see cref="Commands.Apply(CliSession,string,string,string,UsageLog)"/>
+    /// instead of the per-invocation path. <see cref="CliSession.Apply"/>'s own commit and save succeed
+    /// normally here; only the manifest write that follows fails.
+    /// </remarks>
+    [Fact]
+    public void Apply_ManifestWriteFails_AfterASessionCommitAndSave_ReportsReconciliation_NotRollback()
+    {
+        var senseGuid = _seed.FirstSenseId;
+        var wsTag = NewLangProjFixture.AnalysisTag;
+        var originalGloss = SeededProject.FirstGloss;
+        var canonicalId = SIL.Motif.Contract.Ids.CanonicalId.FromGuid(senseGuid);
+        var newGloss = originalGloss + " (session receipt boundary test)";
+        const string draftName = "session-receipt-boundary-demo";
+        const string applier = "session-commands-tests";
+
+        Assert.Equal(0, Commands.New(_storeDir, draftName, null).ExitCode);
+        Assert.Equal(
+            0, Commands.AddSetGloss(_storeDir, draftName, canonicalId.Value, wsTag, newGloss).ExitCode);
+        var finalizeResult = Commands.Finalize(_storeDir, draftName);
+        Assert.Equal(0, finalizeResult.ExitCode);
+        var proposalId = ExtractProposalId(finalizeResult.Output);
+        var manifestPath = Path.Combine(_storeDir, "manifests", proposalId + ".json");
+
+        using (var session = CliSession.Open(_fwDataPath))
+        {
+            Assert.Equal(0, Commands.DryRun(session, _storeDir, proposalId).ExitCode);
+
+            File.SetAttributes(manifestPath, FileAttributes.ReadOnly);
+            try
+            {
+                var applyResult = Commands.Apply(session, _storeDir, proposalId, applier);
+
+                Assert.NotEqual(0, applyResult.ExitCode);
+                Assert.Contains("proposal store failed", applyResult.Output, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain("rolled back", applyResult.Output, StringComparison.OrdinalIgnoreCase);
+            }
+            finally
+            {
+                File.SetAttributes(manifestPath, FileAttributes.Normal);
+            }
+        }
+
+        // The load-bearing proof: the mutation genuinely committed and saved despite the report above.
+        AssertGlossOnDisk(senseGuid, wsTag, newGloss);
+        Assert.Contains("\"status\": \"proposed\"", File.ReadAllText(manifestPath));
+    }
+
     private void AssertGlossOnDisk(Guid senseGuid, string wsTag, string expectedGloss)
     {
         using var cache = new FwDataProjectLoader().LoadScratchCache(_fwDataPath);

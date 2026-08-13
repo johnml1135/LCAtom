@@ -13,6 +13,7 @@ using SIL.LCModel;
 using SIL.LCModel.Core.KernelInterfaces;
 using SIL.LCModel.Infrastructure;
 using Xunit;
+using ContractIntentDigest = SIL.Motif.Contract.Canonicalization.IntentDigest;
 
 namespace SIL.Motif.Tests.Runner;
 
@@ -188,7 +189,7 @@ public sealed class LexEntryLexemeFormOperationsTests : IDisposable
             operations: new[] { createOp, bogusDeleteOp });
 
         var footprintDigest = FootprintProbe.ComputeCurrentFootprintDigest(_cache, proposal);
-        var anchor = DummyAnchor() with { FootprintDigest = footprintDigest };
+        var anchor = DummyAnchor(proposal) with { FootprintDigest = footprintDigest };
 
         Assert.ThrowsAny<Exception>(() => ProposalApplier.Apply(_cache, proposal, anchor, "motif-tests"));
 
@@ -316,7 +317,8 @@ public sealed class LexEntryLexemeFormOperationsTests : IDisposable
         return document.RootElement.Clone();
     }
 
-    private static BoundDryRunAnchor DummyAnchor() => new(
+    private static BoundDryRunAnchor DummyAnchor(Proposal proposal) => new(
+        IntentDigest: ContractIntentDigest.Compute(proposal),
         FootprintDigest: "sha256:" + new string('0', 64),
         EffectDigest: "sha256:" + new string('0', 64),
         RunnerVersion: "test",

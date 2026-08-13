@@ -1032,10 +1032,35 @@ public static class Commands
 
                 // The core never saves; the host does, only after the unit of work has closed.
                 if (!receipt.AlreadyApplied)
-                    loader.Save(cache);
+                {
+                    try { loader.Save(cache); }
+                    catch (Exception ex)
+                    {
+                        throw new NeedsReconciliationException(
+                            ReconciliationBoundary.Save,
+                            $"Proposal {id} committed to the live project, but saving it to the .fwdata " +
+                            "file failed partway through. This is not a rollback: the file's on-disk " +
+                            "state is not guaranteed intact. Do not retry automatically -- inspect the " +
+                            "project file before doing anything else with it.",
+                            ex);
+                    }
+                }
 
-                manifest.Status = ManifestStatus.Applied;
-                WriteManifest(manifestPath, manifest);
+                try
+                {
+                    manifest.Status = ManifestStatus.Applied;
+                    WriteManifest(manifestPath, manifest);
+                }
+                catch (Exception ex)
+                {
+                    throw new NeedsReconciliationException(
+                        ReconciliationBoundary.ReceiptRecording,
+                        $"Proposal {id} was applied and saved to the project, but recording that in the " +
+                        $"proposal store failed: manifest '{manifestPath}' was not updated. The project " +
+                        "and the store now disagree about whether this Proposal is applied. Do not retry " +
+                        "automatically -- inspect the manifest before doing anything else with it.",
+                        ex);
+                }
 
                 return (0, ApplyProjectionBuilder.Build(id, receipt), null);
             }
@@ -1047,6 +1072,11 @@ public static class Commands
         catch (LcmFileLockedException)
         {
             return (1, null, FailText(ProjectInUseMessage(fwDataPath, "apply")));
+        }
+        catch (NeedsReconciliationException ex)
+        {
+            // Distinct from the rollback wording below: the mutation may already be durable.
+            return (1, null, FailText(ex.Message));
         }
         catch (Exception ex)
         {
@@ -1158,10 +1188,28 @@ public static class Commands
             var description = manifest.Label ?? "";
             var receipt = session.Apply(envelope, manifest.Anchor, user, description);
 
-            manifest.Status = ManifestStatus.Applied;
-            WriteManifest(manifestPath, manifest);
+            try
+            {
+                manifest.Status = ManifestStatus.Applied;
+                WriteManifest(manifestPath, manifest);
+            }
+            catch (Exception ex)
+            {
+                throw new NeedsReconciliationException(
+                    ReconciliationBoundary.ReceiptRecording,
+                    $"Proposal {id} was applied and saved to the project, but recording that in the " +
+                    $"proposal store failed: manifest '{manifestPath}' was not updated. The project and " +
+                    "the store now disagree about whether this Proposal is applied. Do not retry " +
+                    "automatically -- inspect the manifest before doing anything else with it.",
+                    ex);
+            }
 
             return (0, ApplyProjectionBuilder.Build(id, receipt), null);
+        }
+        catch (NeedsReconciliationException ex)
+        {
+            // Distinct from the rollback wording below: the mutation may already be durable.
+            return (1, null, FailText(ex.Message));
         }
         catch (Exception ex)
         {

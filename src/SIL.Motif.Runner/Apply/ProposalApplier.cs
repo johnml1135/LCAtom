@@ -36,9 +36,11 @@ public static class ProposalApplier
     /// <param name="anchor">
     /// The <see cref="BoundDryRunAnchor"/> a prior <see cref="SIL.Motif.Runner.DryRun.ProposalDryRunner.Run"/>
     /// call produced against this same baseline (ADR 0004 decision 3). Required: a bare apply with no
-    /// bound DryRun is a hard error (<see cref="ApplyPreconditionException"/>). Apply re-reads the
-    /// current footprint and hard-stops with a drift diagnostic if it no longer matches
-    /// <see cref="BoundDryRunAnchor.FootprintDigest"/>.
+    /// bound DryRun is a hard error (<see cref="ApplyPreconditionException"/>), and so is one bound to
+    /// a different Proposal's content (<see cref="BoundDryRunAnchor.IntentDigest"/> mismatch) — an
+    /// anchor authorizes exactly the content its DryRun evaluated, never a substitute with the same
+    /// footprint. Apply re-reads the current footprint and hard-stops with a drift diagnostic if it no
+    /// longer matches <see cref="BoundDryRunAnchor.FootprintDigest"/>.
     /// </param>
     /// <param name="applierIdentity">
     /// Opaque, host-supplied applier identity: FieldWorks supplies its configured user when it has
@@ -88,6 +90,16 @@ public static class ProposalApplier
         if (ProjectAppliedLog.TryFindByProposalId(cache, proposalGuid, out var existingEntry))
         {
             return BuildAlreadyAppliedReceipt(proposal, fullIntentDigest, intentDigestHex, existingEntry!);
+        }
+
+        // One-use authorization (see BoundDryRunAnchor.IntentDigest): reject a substitute Proposal outright.
+        if (!string.Equals(anchor.IntentDigest, fullIntentDigest, StringComparison.Ordinal))
+        {
+            throw new ApplyPreconditionException(
+                "This anchor was not bound to the Proposal presented here: its intent digest is " +
+                $"{anchor.IntentDigest}, but the supplied Proposal's is {fullIntentDigest}. An anchor " +
+                "authorizes apply only for the exact content its DryRun evaluated -- run DryRun again " +
+                "against this Proposal and apply with the anchor it produces.");
         }
 
         // Drift check (docs/adr/0004 decision 3): re-read footprint, hard-stop if it no longer matches the anchor.

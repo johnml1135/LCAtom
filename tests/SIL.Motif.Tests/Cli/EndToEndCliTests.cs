@@ -124,6 +124,55 @@ public sealed class EndToEndCliTests
         AssertAppliedLogEntryCount(1);
     }
 
+    /// <remarks>
+    /// The receipt boundary: <c>apply</c> commits and saves the mutation to the real project (a
+    /// durable, observable fact on disk) before it ever tries to record "applied" in the manifest. The
+    /// manifest is made read-only right beforehand, so that write is the one that fails -- this must
+    /// not be reported the way a rolled-back apply is, since nothing here rolled back. See
+    /// <see cref="NeedsReconciliationException"/> and <see cref="ReconciliationBoundary.ReceiptRecording"/>.
+    /// </remarks>
+    [Fact]
+    public void Apply_ManifestWriteFails_AfterAGenuineCommitAndSave_ReportsReconciliation_NotRollback()
+    {
+        var senseGuid = _seed.FirstSenseId;
+        var wsTag = NewLangProjFixture.AnalysisTag;
+        var originalGloss = SeededProject.FirstGloss;
+        var canonicalId = SIL.Motif.Contract.Ids.CanonicalId.FromGuid(senseGuid);
+        var newGloss = originalGloss + " (receipt boundary test)";
+        const string draftName = "receipt-boundary-demo";
+        const string applier = "motif-cli-tests";
+
+        Assert.Equal(0, Commands.New(_storeDir, draftName, null).ExitCode);
+        Assert.Equal(0, Commands.AddSetGloss(_storeDir, draftName, canonicalId.Value, wsTag, newGloss).ExitCode);
+        var finalizeResult = Commands.Finalize(_storeDir, draftName);
+        Assert.Equal(0, finalizeResult.ExitCode);
+        var proposalId = ExtractProposalId(finalizeResult.Output);
+        var manifestPath = Path.Combine(_storeDir, "manifests", proposalId + ".json");
+
+        Assert.Equal(0, Commands.DryRun(_storeDir, proposalId, _fwDataPath).ExitCode);
+
+        File.SetAttributes(manifestPath, FileAttributes.ReadOnly);
+        try
+        {
+            var applyResult = Commands.Apply(_storeDir, proposalId, _fwDataPath, applier);
+
+            Assert.NotEqual(0, applyResult.ExitCode);
+            Assert.Contains("proposal store failed", applyResult.Output, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("rolled back", applyResult.Output, StringComparison.OrdinalIgnoreCase);
+
+            // The load-bearing proof: the mutation genuinely committed and saved despite the report above.
+            AssertGlossOnDisk(senseGuid, wsTag, newGloss);
+            AssertAppliedLogEntryCount(1);
+
+            // The manifest itself was left exactly as dry-run wrote it -- never touched by the failed write.
+            Assert.Contains("\"status\": \"proposed\"", File.ReadAllText(manifestPath));
+        }
+        finally
+        {
+            File.SetAttributes(manifestPath, FileAttributes.Normal);
+        }
+    }
+
     [Fact]
     public void UnknownCommands_And_MissingArguments_ReturnNonZeroWithClearErrors()
     {
