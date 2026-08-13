@@ -79,6 +79,19 @@ try
             result = Commands.ComposeAuthorLexemeForm(storeDir, composeDraftName, composeProject, composeIntent);
             break;
 
+        case "compose-author-feature-structure":
+            if (!flags.TryGetValue("draft", out var composeFsDraftName) ||
+                !flags.TryGetValue("project", out var composeFsProject) ||
+                !flags.TryGetValue("intent", out var composeFsIntent))
+            {
+                return Usage(
+                    "Usage: motif compose-author-feature-structure --draft <name> --project <fwdata> " +
+                    "--intent '{\"msa\":...}'");
+            }
+            result = Commands.ComposeAuthorFeatureStructure(
+                storeDir, composeFsDraftName, composeFsProject, composeFsIntent);
+            break;
+
         case "promote-gloss":
             if (!flags.TryGetValue("draft", out var promoteDraftName) ||
                 !flags.TryGetValue("target", out var promoteTarget) ||
@@ -338,6 +351,8 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine(
         "  compose-author-lexeme-form --draft <name> --project <fwdata> --intent " +
         "'{\"entry\":...,\"morphType\":...,\"ws\":...,\"text\":...}'");
+    writer.WriteLine(
+        "  compose-author-feature-structure --draft <name> --project <fwdata> --intent '{\"msa\":...}'");
     writer.WriteLine(
         "  promote-gloss --draft <name> --target <canonicalId> --ws <wsTag> --text <text> " +
         "--corpus <corpusId> [--document <docId>]");

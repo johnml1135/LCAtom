@@ -134,9 +134,9 @@ the first author, not the last. M5 is the first thing a linguist would recognise
 | `MOT-10` — Proposal revisions, Check Runs, Reviews, Decisions | M4 | Medium, the PR-like product core | **Statuses and the Decision loop built 2026-08-13** — rescoped by [ADR 0031](adr/0031-collaboration-follows-the-data-not-the-surface.md): `defer`/`approve`/`reject`/`supersede` join the existing `proposed`/`applied` pair, each refusing from a status it isn't legal from; a recorded `Decision` always names its actor as `human` or `ai`, binds to the exact `currentIntentDigest` it was recorded against, and is dropped by an amend the same way the bound DryRun anchor already is. **Not yet built:** typed Check Runs (static-analysis facts with Dry-Run-grade exact-input/stale-binding), a change class requiring a particular Check Run (the `feeding`-reorder-needs-a-Grammar-Delta rule), semantic owner routing, and policy-versioned autonomous-approval. Apply does not yet require an `approved` Decision to run — whether it should is an open follow-up, not decided here |
 | `MOT-17` — Layer-1 semantic and batch authoring for agents | M4 | Medium, and **expected to churn** | **Slice 1 built 2026-08-13** — the CLI's first Layer-1 authoring surface: `compose-author-lexeme-form` resolves one authored intent against a live project into `AuthorLexemeFormComposer`'s operations (up to three, already built for `MOT-4`'s hand-written `LexemeForm` field) and appends them to a draft the agent never enumerated by hand. The authored intent round-trips as non-hashed `extensions` provenance — verified byte-for-byte excluded from the intent digest — and survives `reopen`/`duplicate` rather than being silently dropped. **Found and fixed on the way:** `DraftOperation.After` was `Dictionary<string,string>`, so any composer emitting a non-string payload (e.g. `setIsAbstract`'s `{"value":true}`) would have thrown or silently stringified a boolean; it is now `Dictionary<string,JsonElement>` everywhere a draft operation is built or replayed. **Not yet built:** batch reads/updates over a live query (this slice batches one intent into many operations, not one query into many targets), and further composers beyond `AuthorLexemeForm` |
 | `MOT-18` — selective Proposal editing: duplicate, remove, split | M4 | Small, and required by the agent loop | **Built 2026-08-06** — `duplicate`, `remove-operations`, `split`; declared-dependency closure names every orphaned operation at any depth; every editing path clears the bound anchor. 309 tests pass. One semantic question left open for the owner: `B25` |
-| `MOT-6` — semantic + lowering layer for grammar construct 1 | M5 | Medium — **the first product family** | Not started |
+| `MOT-6` — semantic + lowering layer for grammar construct 1 | M5 | Medium — **the first product family** | **Slice 1 built 2026-08-13**: `AuthorFeatureStructure`, alongside the lexical `AuthorLexemeForm` — one construct, one `grammar/moStemMsa/createMsFeatures` operation, the first hand-written *grammar* owning/atomic creation-validity answer (ADR 0022 §4). Authored, dry-run, applied, and saved on a real project; refuses closed against an already-occupied slot, a nonexistent MSA, and a wrong-typed target. **Not yet done:** the "parsed" leg of M5's acceptance test (needs the external PanGloss executable this environment does not run) and populating actual feature values (`FsFeatStruc.FeatureSpecs`, `owning/col`, a separate operation against the structure's own identity) |
 | `MOT-15` — the parser seam | M5 | Medium | **Built 2026-08-07** — Motif hands PanGloss a project file and gets GUID-keyed analyses back; no FieldWorks assemblies, no HC XML step. 10 tests including a real-project correlation proof. Remaining: one FFI entry point, which only scope 2 needs |
-| `MOT-7` — the remaining 29 constructs | M6 | Large | Not started |
+| `MOT-7` — the remaining 29 constructs | M6 | Large | Not started — gated on `MOT-6` by the plan's own execution order (M1 → M2 → M4 → M5 → M6), and `MOT-6` has only slice 1. The literal "29" is stale: `Construct` (manifest column) stopped naming operation kinds under ADR 0023, and all 495 `Scope=in` rows already carry one; the real remaining work is per-family creation-validity composers like `MOT-6`'s, not a count against the manifest |
 | `MOT-8` — ordered-grammar review proof | M6 | Medium | Not started |
 | `MOT-12` — FieldWorks in-process adapter | M3 | Medium | **Scope 2** — gated on the `F26a` spike |
 | `MOT-13` — `System.Text.Json` on `net48` proof | M3 | Small | **Scope 2** — research says clean (`A4`); the proof itself remains |
@@ -776,6 +776,20 @@ Two inherited constraints:
 **Acceptance:** one construct authored, dry-run, reviewed, applied, saved, and round-tripped through
 Chorus Send/Receive without the applied log being corrupted — see
 [the standing Chorus risk](harmony-adoption-report.md#standing-risk--chorus-does-not-merge-the-applied-log).
+
+**Slice 1 built 2026-08-13.** `AuthorFeatureStructure` (`src/SIL.Motif.Runner/Composers/`) lowers one
+authored intent — an existing `MoStemMsa` to give an (initially empty) feature structure — into
+`grammar/moStemMsa/createMsFeatures`, a new hand-written owning/atomic operation
+(`src/SIL.Motif.Runner/Operations/MoStemMsaMsFeatures.cs`) alongside the lexical `LexEntry.LexemeForm`
+precedent. Its creation validity answer is genuinely trivial rather than deferred: LibLCM imposes no
+minimum on `FsFeatStruc.FeatureSpecs`, so an empty feature structure is already a valid one. The composer
+refuses closed, before authoring anything, against an already-occupied slot, a nonexistent MSA, and a
+wrong-typed target. Authored (through its own closed-schema intent parser), dry-run, applied, and saved
+against a real project — not yet run through Chorus Send/Receive, and not yet parsed (needs the external
+PanGloss executable this environment does not run; see the skipped `ParserSeamIntegrationTests`).
+Populating actual feature values is separate, later work against the created structure's own identity
+(`FsFeatStruc.FeatureSpecs`, `owning/col` — no `Placement`/ordering machinery needed, unlike an
+`owning/seq` family).
 
 ## `MOT-15` — the parser seam — M5
 
