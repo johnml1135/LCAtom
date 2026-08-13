@@ -14,6 +14,10 @@ public sealed record ProposalOperationView(
     IReadOnlyList<string> DependsOn,
     string AfterJson);
 
+/// <summary>The most recent human or AI verdict on a Proposal, shaped for the <c>show</c> report.</summary>
+public sealed record DecisionView(
+    string Outcome, string ActorType, string ActorId, string? Comment, string TimestampUtc);
+
 /// <summary>The <c>show</c> report: a committed Proposal's review state and its full operation list.</summary>
 public sealed record ProposalDetailProjection(
     string ProposalId,
@@ -21,7 +25,9 @@ public sealed record ProposalDetailProjection(
     string? Label,
     string? Comment,
     string CurrentIntentDigest,
-    IReadOnlyList<ProposalOperationView> Operations);
+    IReadOnlyList<ProposalOperationView> Operations,
+    DecisionView? Decision = null,
+    string? SupersededBy = null);
 
 /// <summary>Shapes a manifest and its current object content into a <see cref="ProposalDetailProjection"/>.</summary>
 public static class ProposalDetailProjectionBuilder
@@ -36,7 +42,12 @@ public static class ProposalDetailProjectionBuilder
             DependsOn: op.DependsOn.Select(d => d.OperationId.Value).ToList(),
             AfterJson: op.After?.GetRawText() ?? "{}")).ToList();
 
+        var decision = manifest.Decision is { } d
+            ? new DecisionView(d.Outcome, d.ActorType, d.ActorId, d.Comment, d.TimestampUtc)
+            : null;
+
         return new ProposalDetailProjection(
-            proposalId, manifest.Status, manifest.Label, manifest.Comment, manifest.CurrentIntentDigest, operations);
+            proposalId, manifest.Status, manifest.Label, manifest.Comment, manifest.CurrentIntentDigest, operations,
+            decision, manifest.SupersededBy);
     }
 }

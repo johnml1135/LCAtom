@@ -356,6 +356,9 @@ public static class Commands
                 manifest.Comment = draft.Comment ?? manifest.Comment;
                 // The prior Anchor was bound to the previous content's digest; amend invalidates it too (ADR 0004 decision 3).
                 manifest.Anchor = null;
+                // Same reasoning as Anchor: a Decision is bound to content that no longer exists (ADR 0031 decision 3/4).
+                manifest.Decision = null;
+                manifest.SupersededBy = null;
             }
             else
             {
@@ -441,6 +444,117 @@ public static class Commands
                 "Finalizing this draft will amend the Proposal: same id, new intentDigest, " +
                 "status reset to proposed.");
             return Ok(sb);
+        }
+        catch (Exception ex)
+        {
+            return Fail(ex.Message);
+        }
+    }
+
+    private static readonly string[] DeferrableFrom = { ManifestStatus.Proposed, ManifestStatus.Approved };
+    private static readonly string[] ApprovableFrom = { ManifestStatus.Proposed, ManifestStatus.Deferred };
+    private static readonly string[] RejectableFrom =
+        { ManifestStatus.Proposed, ManifestStatus.Deferred, ManifestStatus.Approved };
+    private static readonly string[] SupersedableFrom =
+        { ManifestStatus.Proposed, ManifestStatus.Deferred, ManifestStatus.Approved, ManifestStatus.Rejected };
+
+    /// <summary>Moves a Proposal to <c>deferred</c>: still wanted, not currently applicable (ADR 0031 decision 4).</summary>
+    public static CommandResult Defer(string storeDir, string proposalId) =>
+        TransitionStatus(storeDir, proposalId, ManifestStatus.Deferred, DeferrableFrom, manifest =>
+        {
+            manifest.Decision = null;
+        });
+
+    /// <summary>
+    /// Records an <c>approved</c> Decision against a Proposal's exact current content. The actor type
+    /// is never inferred — ADR 0031 decision 7 requires the record always show whether a human or an
+    /// AI made the call.
+    /// </summary>
+    public static CommandResult Approve(
+        string storeDir, string proposalId, string actorType, string actorId, string? comment = null) =>
+        Decide(storeDir, proposalId, DecisionOutcome.Approved, ManifestStatus.Approved, ApprovableFrom,
+            actorType, actorId, comment);
+
+    /// <summary>Records a <c>rejected</c> Decision against a Proposal's exact current content.</summary>
+    public static CommandResult Reject(
+        string storeDir, string proposalId, string actorType, string actorId, string? comment = null) =>
+        Decide(storeDir, proposalId, DecisionOutcome.Rejected, ManifestStatus.Rejected, RejectableFrom,
+            actorType, actorId, comment);
+
+    /// <summary>Marks a Proposal <c>superseded</c> by another, naming which one replaced it.</summary>
+    public static CommandResult Supersede(string storeDir, string proposalId, string supersededByProposalId)
+    {
+        string supersededById;
+        try
+        {
+            supersededById = NormalizeId(supersededByProposalId);
+        }
+        catch (ArgumentException ex)
+        {
+            return Fail(ex.Message);
+        }
+
+        return TransitionStatus(storeDir, proposalId, ManifestStatus.Superseded, SupersedableFrom, manifest =>
+        {
+            manifest.Decision = null;
+            manifest.SupersededBy = supersededById;
+        });
+    }
+
+    private static CommandResult Decide(
+        string storeDir, string proposalId, string outcome, string newStatus, string[] allowedFrom,
+        string actorType, string actorId, string? comment)
+    {
+        if (actorType != DecisionActorType.Human && actorType != DecisionActorType.Ai)
+        {
+            return Fail(
+                $"actorType must be '{DecisionActorType.Human}' or '{DecisionActorType.Ai}' — an AI actor " +
+                "must never be recorded as if it were a human, or the reverse (ADR 0031 decision 7).");
+        }
+
+        if (string.IsNullOrWhiteSpace(actorId))
+            return Fail("actorId must not be empty — a Decision must name who made it.");
+
+        return TransitionStatus(storeDir, proposalId, newStatus, allowedFrom, manifest =>
+        {
+            manifest.Decision = new Decision
+            {
+                Outcome = outcome,
+                ActorType = actorType,
+                ActorId = actorId,
+                Comment = comment,
+                BoundIntentDigest = manifest.CurrentIntentDigest,
+                TimestampUtc = SIL.Motif.Model.AppliedLog.AppliedLogFormat.FormatTimestamp(DateTime.UtcNow),
+            };
+            manifest.SupersededBy = null;
+        });
+    }
+
+    /// <summary>Moves a manifest to a new status, refusing if its current status is not an allowed origin.</summary>
+    private static CommandResult TransitionStatus(
+        string storeDir, string proposalId, string newStatus, string[] allowedFrom, Action<ManifestDocument> mutate)
+    {
+        try
+        {
+            var store = new ProposalStore(storeDir);
+            var id = NormalizeId(proposalId);
+            var manifestPath = store.ManifestPath(id);
+            if (!File.Exists(manifestPath))
+                return Fail(ProposalNotFoundMessage(store, id));
+
+            var manifest = ReadManifest(manifestPath);
+            if (Array.IndexOf(allowedFrom, manifest.Status) < 0)
+            {
+                return Fail(
+                    $"Proposal {id} is '{manifest.Status}'; cannot move to '{newStatus}' from there. " +
+                    $"Allowed from: {string.Join(", ", allowedFrom)}.");
+            }
+
+            mutate(manifest);
+            manifest.Status = newStatus;
+            WriteManifest(manifestPath, manifest);
+
+            return Ok($"Proposal {id} is now '{newStatus}'.{Environment.NewLine}");
         }
         catch (Exception ex)
         {

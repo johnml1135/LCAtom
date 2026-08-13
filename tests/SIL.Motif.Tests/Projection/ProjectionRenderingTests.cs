@@ -67,6 +67,45 @@ public sealed class ProjectionRenderingTests
     }
 
     [Fact]
+    public void ProposalDetail_WithADecision_TextFiguresAllAppearInJson()
+    {
+        var projection = new ProposalDetailProjection(
+            ProposalId: "agent_AAECAwQFBgcICQoLDA0ODw",
+            Status: "approved",
+            Label: "Revise gloss",
+            Comment: "because the old one was wrong",
+            CurrentIntentDigest: "sha256:" + new string('a', 64),
+            Operations: System.Array.Empty<ProposalOperationView>(),
+            Decision: new DecisionView("approved", "human", "a-linguist", "looks correct", "20260101T000000Z"));
+
+        var text = CommandTextRenderer.Render(projection);
+        var json = ProjectionJson.Serialize(projection);
+
+        Assert.Contains("approved", text);
+        Assert.Contains("a-linguist", text);
+        FigureAudit.AssertEveryTextFigureAppearsInJson(text, json);
+    }
+
+    [Fact]
+    public void ProposalDetail_SupersededBy_TextFiguresAllAppearInJson()
+    {
+        var projection = new ProposalDetailProjection(
+            ProposalId: "agent_AAECAwQFBgcICQoLDA0ODw",
+            Status: "superseded",
+            Label: null,
+            Comment: null,
+            CurrentIntentDigest: "sha256:" + new string('a', 64),
+            Operations: System.Array.Empty<ProposalOperationView>(),
+            SupersededBy: "agent_AQIDBAUGBwgJCgsMDQ4PEA");
+
+        var text = CommandTextRenderer.Render(projection);
+        var json = ProjectionJson.Serialize(projection);
+
+        Assert.Contains("agent_AQIDBAUGBwgJCgsMDQ4PEA", text);
+        FigureAudit.AssertEveryTextFigureAppearsInJson(text, json);
+    }
+
+    [Fact]
     public void AppliedLog_TextFiguresAllAppearInJson()
     {
         var projection = new AppliedLogProjection(
