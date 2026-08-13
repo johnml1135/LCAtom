@@ -19,6 +19,14 @@ public static partial class SnapshotFields
     public const string LexSenseGloss = "lexical/sense/gloss";
 
     /// <summary>
+    /// A <c>MoStemMsa</c>'s <c>MsFeatures</c> owning/atomic <c>FsFeatStruc</c> field — hand-written
+    /// like <see cref="LexSenseGloss"/> above, because <c>owning/atomic</c> beyond one already-built
+    /// field still has no generator support (its creation validity is not derivable from the model
+    /// file alone).
+    /// </summary>
+    public const string MoStemMsaMsFeatures = "grammar/moStemMsa/msFeatures";
+
+    /// <summary>
     /// The Canonical Semantic Snapshot / expected-effect projection shape version, recorded on
     /// <see cref="SIL.Motif.Model.DryRun.BoundDryRunAnchor.ProjectionVersion"/>. Bump this
     /// only when the snapshot/effect shape changes in a way that could alter a digest for otherwise

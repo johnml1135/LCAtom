@@ -125,7 +125,8 @@ public static class Commands
             var draft = new DraftDocument
             {
                 ProposalId = proposalId.Value,
-                ContractVersions = new Dictionary<string, string> { ["lexical"] = "1.0" },
+                // Empty: EnsureContractVersion populates this from whatever operations actually get authored.
+                ContractVersions = new Dictionary<string, string>(),
                 Requires = new List<string>(),
                 Label = label,
                 Comment = null,
@@ -183,6 +184,7 @@ public static class Commands
                     ["text"] = JsonSerializer.SerializeToElement(text),
                 },
             });
+            EnsureContractVersion(draft, LexicalSenseOperationKinds.SetGloss);
 
             WriteDraft(draftPath, draft);
 
@@ -231,6 +233,7 @@ public static class Commands
                 Target = targetId.Value,
                 After = new Dictionary<string, JsonElement>(),
             });
+            EnsureContractVersion(draft, LexEntryLexemeFormOperationKinds.DeleteLexemeForm);
 
             WriteDraft(draftPath, draft);
 
@@ -281,7 +284,10 @@ public static class Commands
 
             var draft = ReadDraft(draftPath);
             foreach (var operation in operations)
+            {
                 draft.Operations.Add(ToDraftOperation(operation));
+                EnsureContractVersion(draft, operation.Kind);
+            }
 
             var provenanceJson = JsonSerializer.Serialize(
                 new { composer = "AuthorLexemeForm", input = intentDocument.RootElement });
@@ -293,6 +299,59 @@ public static class Commands
             var sb = new StringBuilder();
             sb.AppendLine(
                 $"Composed 'AuthorLexemeForm' against draft '{draftName}': {operations.Count} operation(s) added.");
+            foreach (var operation in operations)
+                sb.AppendLine($"  {operation.OperationId.Value}  ({operation.Kind})");
+            sb.AppendLine($"Draft now has {draft.Operations.Count} operation(s).");
+            return Ok(sb);
+        }
+        catch (Exception ex)
+        {
+            return Fail(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Runs <see cref="AuthorFeatureStructureComposer"/> against a live project and appends the one
+    /// operation it resolves to a draft — Motif's first grammar Layer-1 construct, alongside the
+    /// lexical <see cref="ComposeAuthorLexemeForm"/>.
+    /// </summary>
+    /// <param name="intentJson"><c>{ "msa": "..." }</c> — see <see cref="AuthorFeatureStructureIntentParser"/>.</param>
+    public static CommandResult ComposeAuthorFeatureStructure(
+        string storeDir, string draftName, string fwDataPath, string intentJson)
+    {
+        try
+        {
+            var store = new ProposalStore(storeDir);
+            var draftPath = store.DraftPath(draftName);
+            if (!File.Exists(draftPath))
+                return Fail(DraftNotFoundMessage(store, draftName));
+
+            using var intentDocument = JsonDocument.Parse(intentJson);
+            var intent = AuthorFeatureStructureIntentParser.Parse(intentDocument.RootElement);
+
+            var fullPath = ResolveProjectPath(fwDataPath);
+            var loader = new FwDataProjectLoader();
+            IReadOnlyList<SIL.Motif.Contract.Model.OperationEnvelope> operations;
+            using (var cache = loader.LoadCache(fullPath))
+                operations = AuthorFeatureStructureComposer.Build(cache, intent);
+
+            var draft = ReadDraft(draftPath);
+            foreach (var operation in operations)
+            {
+                draft.Operations.Add(ToDraftOperation(operation));
+                EnsureContractVersion(draft, operation.Kind);
+            }
+
+            var provenanceJson = JsonSerializer.Serialize(
+                new { composer = "AuthorFeatureStructure", input = intentDocument.RootElement });
+            using var provenanceDocument = JsonDocument.Parse(provenanceJson);
+            draft.ComposerProvenance.Add(provenanceDocument.RootElement.Clone());
+
+            WriteDraft(draftPath, draft);
+
+            var sb = new StringBuilder();
+            sb.AppendLine(
+                $"Composed 'AuthorFeatureStructure' against draft '{draftName}': {operations.Count} operation(s) added.");
             foreach (var operation in operations)
                 sb.AppendLine($"  {operation.OperationId.Value}  ({operation.Kind})");
             sb.AppendLine($"Draft now has {draft.Operations.Count} operation(s).");
@@ -352,6 +411,7 @@ public static class Commands
                     ["text"] = JsonSerializer.SerializeToElement(text),
                 },
             });
+            EnsureContractVersion(draft, LexicalSenseOperationKinds.SetGloss);
 
             var origin = corpus.Provenance.Origin;
             var provenanceJson = JsonSerializer.Serialize(new
@@ -705,6 +765,14 @@ public static class Commands
         {
             return Fail(ex.Message);
         }
+    }
+
+    /// <summary>Ensures a newly appended operation's contract group has a declared version.</summary>
+    private static void EnsureContractVersion(DraftDocument draft, string kind)
+    {
+        var group = SIL.Motif.Contract.Model.OperationKind.GetGroup(kind);
+        if (!draft.ContractVersions.ContainsKey(group))
+            draft.ContractVersions[group] = "1.0";
     }
 
     /// <summary>Recovers composer provenance from a committed Proposal's <c>extensions</c>.</summary>
