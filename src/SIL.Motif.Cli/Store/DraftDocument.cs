@@ -32,6 +32,15 @@ public sealed class DraftDocument
     /// never as an input the intent digest depends on.
     /// </summary>
     public List<JsonElement> ComposerProvenance { get; set; } = new();
+
+    /// <summary>
+    /// One entry per <c>promote-gloss</c> call that contributed an operation to this draft — the
+    /// corpus a promoted value was evidenced by, folded into the committed Proposal's <c>extensions</c>
+    /// at <c>finalize</c> (ADR 0036 decision 2). Non-hashed: a licence obligation a promoted stem
+    /// carries must survive for a reader, but must never make the same authored content hash
+    /// differently depending on which corpus a reviewer cited it against.
+    /// </summary>
+    public List<JsonElement> PromotionProvenance { get; set; } = new();
 }
 
 /// <summary>One authored operation inside a draft.</summary>

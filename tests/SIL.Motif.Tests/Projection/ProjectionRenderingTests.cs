@@ -106,6 +106,26 @@ public sealed class ProjectionRenderingTests
     }
 
     [Fact]
+    public void ProposalDetail_WithExtensions_TextFiguresAllAppearInJson()
+    {
+        var projection = new ProposalDetailProjection(
+            ProposalId: "agent_AAECAwQFBgcICQoLDA0ODw",
+            Status: "proposed",
+            Label: null,
+            Comment: null,
+            CurrentIntentDigest: "sha256:" + new string('a', 64),
+            Operations: System.Array.Empty<ProposalOperationView>(),
+            ExtensionsJson: """{"promotions":[{"corpusId":"wiki-testlang","licence":"CC-BY-SA-4.0"}]}""");
+
+        var text = CommandTextRenderer.Render(projection);
+        var json = ProjectionJson.Serialize(projection);
+
+        Assert.Contains("wiki-testlang", text);
+        Assert.Contains("CC-BY-SA-4.0", text);
+        FigureAudit.AssertEveryTextFigureAppearsInJson(text, json);
+    }
+
+    [Fact]
     public void AppliedLog_TextFiguresAllAppearInJson()
     {
         var projection = new AppliedLogProjection(

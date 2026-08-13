@@ -9,6 +9,7 @@ using SIL.Motif.Cli.Store;
 using SIL.Motif.Contract.Canonicalization;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Parsing;
+using SIL.Motif.Host.Corpus;
 using SIL.Motif.Host.LcmUtils;
 using SIL.Motif.Projection;
 using SIL.Motif.Projection.Rendering;
@@ -303,6 +304,87 @@ public static class Commands
         }
     }
 
+    /// <summary>
+    /// Adds a <c>lexical/lexSense/setGloss</c> operation evidenced by a stored corpus — the only
+    /// sanctioned route from the Motif store into the language project (ADR 0036 decision 2). The
+    /// corpus's origin travels with the operation as non-hashed provenance, so a licence obligation a
+    /// promoted value carries (e.g. CC-BY-SA attribution) is never lost between the evidence and the
+    /// dictionary entry it justified.
+    /// </summary>
+    public static CommandResult PromoteGloss(
+        string storeDir, string draftName, string target, string ws, string text,
+        string corpusId, string? documentId = null)
+    {
+        try
+        {
+            var store = new ProposalStore(storeDir);
+            var draftPath = store.DraftPath(draftName);
+            if (!File.Exists(draftPath))
+                return Fail(DraftNotFoundMessage(store, draftName));
+
+            var corpus = CorpusCommands.StoreFor(storeDir).Load(corpusId);
+            if (corpus is null)
+            {
+                return Fail(
+                    $"Corpus '{corpusId}' not found in store '{storeDir}'. Run 'corpora' to see what is there.");
+            }
+
+            if (documentId is not null && corpus.Documents.All(d => d.DocumentId != documentId))
+                return Fail($"Corpus '{corpusId}' has no document '{documentId}'.");
+
+            if (!CanonicalId.TryParse(target, out var targetId, out var idError))
+                return Fail($"--target '{target}' is not a valid canonical id: {idError}");
+
+            if (string.IsNullOrEmpty(ws))
+                return Fail("--ws must not be empty.");
+
+            var draft = ReadDraft(draftPath);
+            var operationId = CanonicalId.Mint();
+
+            draft.Operations.Add(new DraftOperation
+            {
+                OperationId = operationId.Value,
+                Kind = LexicalSenseOperationKinds.SetGloss,
+                Target = targetId.Value,
+                After = new Dictionary<string, JsonElement>
+                {
+                    ["ws"] = JsonSerializer.SerializeToElement(ws),
+                    ["text"] = JsonSerializer.SerializeToElement(text),
+                },
+            });
+
+            var origin = corpus.Provenance.Origin;
+            var provenanceJson = JsonSerializer.Serialize(new
+            {
+                operationId = operationId.Value,
+                corpusId,
+                documentId,
+                description = origin.Description,
+                licence = origin.Licence,
+                retrievedUtc = origin.RetrievedUtc,
+            });
+            using var provenanceDocument = JsonDocument.Parse(provenanceJson);
+            draft.PromotionProvenance.Add(provenanceDocument.RootElement.Clone());
+
+            WriteDraft(draftPath, draft);
+
+            var sb = new StringBuilder();
+            sb.AppendLine(
+                $"Added operation '{operationId.Value}' ({LexicalSenseOperationKinds.SetGloss}) to draft " +
+                $"'{draftName}', promoted from corpus '{corpusId}'.");
+            sb.AppendLine($"  target: {targetId.Value}");
+            sb.AppendLine($"  after:  ws={ws} text=\"{text}\"");
+            if (origin.Licence is not null)
+                sb.AppendLine($"  licence: {origin.Licence}");
+            sb.AppendLine($"Draft now has {draft.Operations.Count} operation(s).");
+            return Ok(sb);
+        }
+        catch (Exception ex)
+        {
+            return Fail(ex.Message);
+        }
+    }
+
     /// <summary>Validates each dependsOn id is already a canonical operation id present in draft.</summary>
     private static bool TryResolveDependsOn(
         DraftDocument draft, IReadOnlyList<string>? dependsOn, out List<string> resolved, out string? error)
@@ -493,6 +575,7 @@ public static class Commands
                 Comment = manifest.Comment,
                 Operations = envelope.Operations.Select(ToDraftOperation).ToList(),
                 ComposerProvenance = ExtractComposerProvenance(envelope.Extensions),
+                PromotionProvenance = ExtractPromotionProvenance(envelope.Extensions),
             };
 
             store.EnsureDirectoriesExist();
@@ -625,17 +708,24 @@ public static class Commands
     }
 
     /// <summary>Recovers composer provenance from a committed Proposal's <c>extensions</c>.</summary>
-    private static List<JsonElement> ExtractComposerProvenance(JsonElement? extensions)
+    private static List<JsonElement> ExtractComposerProvenance(JsonElement? extensions) =>
+        ExtractProvenanceArray(extensions, "composers");
+
+    /// <summary>Recovers promotion provenance from a committed Proposal's <c>extensions</c>.</summary>
+    private static List<JsonElement> ExtractPromotionProvenance(JsonElement? extensions) =>
+        ExtractProvenanceArray(extensions, "promotions");
+
+    private static List<JsonElement> ExtractProvenanceArray(JsonElement? extensions, string propertyName)
     {
         if (extensions is not { } present ||
             present.ValueKind != JsonValueKind.Object ||
-            !present.TryGetProperty("composers", out var composers) ||
-            composers.ValueKind != JsonValueKind.Array)
+            !present.TryGetProperty(propertyName, out var array) ||
+            array.ValueKind != JsonValueKind.Array)
         {
             return new List<JsonElement>();
         }
 
-        return composers.EnumerateArray().Select(e => e.Clone()).ToList();
+        return array.EnumerateArray().Select(e => e.Clone()).ToList();
     }
 
     private static DraftOperation ToDraftOperation(SIL.Motif.Contract.Model.OperationEnvelope operation)
@@ -706,6 +796,7 @@ public static class Commands
                 Comment = manifest.Comment,
                 Operations = envelope.Operations.Select(ToDraftOperation).ToList(),
                 ComposerProvenance = ExtractComposerProvenance(envelope.Extensions),
+                PromotionProvenance = ExtractPromotionProvenance(envelope.Extensions),
             };
 
             store.EnsureDirectoriesExist();
@@ -1516,12 +1607,22 @@ public static class Commands
                 dependsOn = op.DependsOn,
                 after = op.After,
             }).ToList(),
-            extensions = draft.ComposerProvenance.Count > 0
-                ? (object?)new { composers = draft.ComposerProvenance }
-                : null,
+            extensions = BuildExtensions(draft),
         };
 
         return JsonSerializer.Serialize(document, ProposalJsonOptions);
+    }
+
+    private static object? BuildExtensions(DraftDocument draft)
+    {
+        if (draft.ComposerProvenance.Count == 0 && draft.PromotionProvenance.Count == 0)
+            return null;
+
+        return new
+        {
+            composers = draft.ComposerProvenance.Count > 0 ? draft.ComposerProvenance : null,
+            promotions = draft.PromotionProvenance.Count > 0 ? draft.PromotionProvenance : null,
+        };
     }
 
     private static string ResolveProjectPath(string fwDataPath)
