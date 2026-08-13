@@ -129,6 +129,42 @@ try
             result = Commands.Split(storeDir, positionals[0], splitGroups, splitForce);
             break;
 
+        case "defer":
+            if (positionals.Count != 1)
+                return Usage("Usage: motif defer <proposalId>");
+            result = Commands.Defer(storeDir, positionals[0]);
+            break;
+
+        case "approve":
+            if (positionals.Count != 1 ||
+                !flags.TryGetValue("actor-type", out var approveActorType) ||
+                !flags.TryGetValue("actor-id", out var approveActorId))
+            {
+                return Usage(
+                    "Usage: motif approve <proposalId> --actor-type human|ai --actor-id <name> [--comment <text>]");
+            }
+            result = Commands.Approve(
+                storeDir, positionals[0], approveActorType, approveActorId, flags.GetValueOrDefault("comment"));
+            break;
+
+        case "reject":
+            if (positionals.Count != 1 ||
+                !flags.TryGetValue("actor-type", out var rejectActorType) ||
+                !flags.TryGetValue("actor-id", out var rejectActorId))
+            {
+                return Usage(
+                    "Usage: motif reject <proposalId> --actor-type human|ai --actor-id <name> [--comment <text>]");
+            }
+            result = Commands.Reject(
+                storeDir, positionals[0], rejectActorType, rejectActorId, flags.GetValueOrDefault("comment"));
+            break;
+
+        case "supersede":
+            if (positionals.Count != 2)
+                return Usage("Usage: motif supersede <proposalId> <supersededByProposalId>");
+            result = Commands.Supersede(storeDir, positionals[0], positionals[1]);
+            break;
+
         case "list":
             result = asJson ? Commands.ListJson(storeDir, usage) : Commands.List(storeDir, usage);
             break;
@@ -279,6 +315,10 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine("  remove-operations --draft <name> <operationId> [<operationId>...] [--force]");
     writer.WriteLine(
         "  split <proposalId> <draftName>=<opId>[,<opId>...] [<draftName>=<opId>[,<opId>...] ...] [--force]");
+    writer.WriteLine("  defer <proposalId>");
+    writer.WriteLine("  approve <proposalId> --actor-type human|ai --actor-id <name> [--comment <text>]");
+    writer.WriteLine("  reject <proposalId> --actor-type human|ai --actor-id <name> [--comment <text>]");
+    writer.WriteLine("  supersede <proposalId> <supersededByProposalId>");
     writer.WriteLine("  list [--json]");
     writer.WriteLine("  show <proposalId> [--json]");
     writer.WriteLine("  dry-run <proposalId> --project <fwdata> [--json]");
