@@ -1,7 +1,8 @@
+using System;
+using System.Linq;
 using System.Text.Json;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Parsing;
-using SIL.Motif.Runner.Operations;
 
 namespace SIL.Motif.Runner.Composers;
 
@@ -66,13 +67,13 @@ public static class AuthorLexemeFormIntentParser
 
     public static AuthorLexemeFormIntent Parse(JsonElement authored)
     {
-        ClosedPayloadParsing.RequireObject(authored, ConstructName);
-        ClosedPayloadParsing.RejectUnknownProperties(authored, AllowedProperties, ConstructName);
+        RequireObject(authored);
+        RejectUnknownProperties(authored);
 
-        var entry = ClosedPayloadParsing.GetRequiredCanonicalId(authored, "entry", ConstructName);
-        var morphType = ClosedPayloadParsing.GetRequiredCanonicalId(authored, "morphType", ConstructName);
-        var ws = ClosedPayloadParsing.GetRequiredString(authored, "ws", ConstructName);
-        var text = ClosedPayloadParsing.GetRequiredString(authored, "text", ConstructName);
+        var entry = GetRequiredCanonicalId(authored, "entry");
+        var morphType = GetRequiredCanonicalId(authored, "morphType");
+        var ws = GetRequiredString(authored, "ws");
+        var text = GetRequiredString(authored, "text");
         var isAbstract = GetOptionalBoolean(authored, "isAbstract");
 
         var hasSense = authored.TryGetProperty("sense", out _);
@@ -88,9 +89,9 @@ public static class AuthorLexemeFormIntentParser
         if (!hasSense)
             return new AuthorLexemeFormIntent(entry, morphType, ws, text, isAbstract);
 
-        var sense = ClosedPayloadParsing.GetRequiredCanonicalId(authored, "sense", ConstructName);
-        var glossWs = ClosedPayloadParsing.GetRequiredString(authored, "glossWs", ConstructName);
-        var glossText = ClosedPayloadParsing.GetRequiredString(authored, "glossText", ConstructName);
+        var sense = GetRequiredCanonicalId(authored, "sense");
+        var glossWs = GetRequiredString(authored, "glossWs");
+        var glossText = GetRequiredString(authored, "glossText");
 
         return new AuthorLexemeFormIntent(entry, morphType, ws, text, isAbstract, sense, glossWs, glossText);
     }
@@ -101,11 +102,44 @@ public static class AuthorLexemeFormIntentParser
             return false;
 
         if (element.ValueKind != JsonValueKind.True && element.ValueKind != JsonValueKind.False)
-        {
-            throw new ContractParseException(
-                $"'{ConstructName}' 'after.{propertyName}' must be a boolean.");
-        }
+            throw new ContractParseException($"'{ConstructName}': '{propertyName}' must be a boolean.");
 
         return element.GetBoolean();
+    }
+
+    // A construct is authored at the top level, so its refusals must not name the 'after' a payload has.
+    private static void RequireObject(JsonElement authored)
+    {
+        if (authored.ValueKind != JsonValueKind.Object)
+            throw new ContractParseException($"'{ConstructName}': the authored construct must be a JSON object.");
+    }
+
+    private static void RejectUnknownProperties(JsonElement authored)
+    {
+        foreach (var property in authored.EnumerateObject())
+        {
+            if (!AllowedProperties.Contains(property.Name, StringComparer.Ordinal))
+                throw new ContractParseException($"'{ConstructName}': unknown property '{property.Name}'.");
+        }
+    }
+
+    private static string GetRequiredString(JsonElement authored, string propertyName)
+    {
+        if (!authored.TryGetProperty(propertyName, out var element) || element.ValueKind != JsonValueKind.String)
+        {
+            throw new ContractParseException(
+                $"'{ConstructName}': '{propertyName}' is required and must be a string.");
+        }
+
+        return element.GetString()!;
+    }
+
+    private static CanonicalId GetRequiredCanonicalId(JsonElement authored, string propertyName)
+    {
+        var text = GetRequiredString(authored, propertyName);
+        if (!CanonicalId.TryParse(text, out var id, out var error))
+            throw new ContractParseException($"'{ConstructName}': '{propertyName}' ('{text}') is not a valid canonical id: {error}");
+
+        return id;
     }
 }

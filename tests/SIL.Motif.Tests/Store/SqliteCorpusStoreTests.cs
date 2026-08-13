@@ -109,4 +109,26 @@ public sealed class SqliteCorpusStoreTests : IDisposable
         Assert.Equal(new[] { "d1", "d2" }, loaded.Documents.Select(d => d.DocumentId));
         Assert.Equal(new[] { "c" }, store.List());
     }
+
+    /// <summary>
+    /// A document is removed from a corpus when its attribution or licence turns out to be wrong, so
+    /// "replacing what is there" has to mean its text stops being readable — not merely that it stops
+    /// being written. Adding a document proves nothing about that, which is why this is separate.
+    /// </summary>
+    [Fact]
+    public void SavingWithoutADocumentRemovesIt_RatherThanLeavingItReadable()
+    {
+        var store = Store();
+        var withBoth = StoredCorpus.Create("c", Provenance())
+            .With(Document("keep", "kept text\n"))
+            .With(Document("withdrawn", "text that must stop being readable\n"));
+        store.Save(withBoth);
+
+        var withoutWithdrawn = StoredCorpus.Create("c", Provenance()).With(Document("keep", "kept text\n"));
+        store.Save(withoutWithdrawn);
+
+        var loaded = store.Load("c")!;
+        Assert.Equal(new[] { "keep" }, loaded.Documents.Select(d => d.DocumentId));
+        Assert.DoesNotContain(loaded.Documents, d => d.Text.Contains("must stop being readable"));
+    }
 }

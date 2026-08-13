@@ -24,9 +24,13 @@ public static class FootprintProbe
     public static string ComputeCurrentFootprintDigest(LcmCache cache, Proposal proposal)
     {
         var entries = new List<ExpectedEffect>();
+        var mintedTargets = FootprintPlan.TargetsMintedWithinProposal(proposal);
 
         foreach (var operation in proposal.Operations)
         {
+            // A target this Proposal mints does not exist yet, and has no prior state to have drifted from.
+            if (!FootprintPlan.ParticipatesInFootprint(operation, mintedTargets)) continue;
+
             var handler = OperationHandlerRegistry.Resolve(operation.Kind, "Apply's footprint pre-flight");
             entries.Add(handler.ReadCurrentFootprint(cache, operation));
         }

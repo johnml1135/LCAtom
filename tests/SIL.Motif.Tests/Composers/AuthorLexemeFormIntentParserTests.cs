@@ -1,3 +1,4 @@
+using System;
 using System.Text.Json;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Parsing;
@@ -69,7 +70,11 @@ public sealed class AuthorLexemeFormIntentParserTests
             extra = "not allowed",
         });
 
-        Assert.Throws<ContractParseException>(() => AuthorLexemeFormIntentParser.Parse(element));
+        var ex = Assert.Throws<ContractParseException>(() => AuthorLexemeFormIntentParser.Parse(element));
+
+        // Names the property the author actually wrote, and no wrapper this JSON does not have.
+        Assert.Contains("unknown property 'extra'", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("after", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -77,7 +82,10 @@ public sealed class AuthorLexemeFormIntentParserTests
     {
         var element = Parsed(new { morphType = CanonicalId.Mint().Value, ws = "fr", text = "chien" });
 
-        Assert.Throws<ContractParseException>(() => AuthorLexemeFormIntentParser.Parse(element));
+        var ex = Assert.Throws<ContractParseException>(() => AuthorLexemeFormIntentParser.Parse(element));
+
+        Assert.Contains("'entry' is required", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("after", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
