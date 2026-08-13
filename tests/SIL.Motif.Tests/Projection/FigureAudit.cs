@@ -35,9 +35,11 @@ namespace SIL.Motif.Tests.Projection;
 /// digit, while every real canonical id, hex digest, GUID and timestamp this codebase renders does.
 /// </para>
 /// <para>
-/// What it still cannot see is unquoted prose: a renderer writing <c>status: proposed</c> states a
-/// figure this sweep does not recognise as one. Rendering report values unquoted is therefore outside
-/// what this audit defends, and the per-projection contract tests are what cover the shape itself.
+/// A bare single word after a <c>label:</c> (e.g. <c>status:   proposed</c>) is caught too, matched
+/// line by line against the renderer's own <c>label:   value</c> convention. What still escapes is a
+/// multi-word unquoted phrase: nothing distinguishes a label's value from surrounding prose once the
+/// value itself contains a space, so that shape stays outside this sweep and depends on the
+/// per-projection contract tests instead.
 /// </para>
 /// </remarks>
 internal static class FigureAudit
@@ -47,6 +49,10 @@ internal static class FigureAudit
     // The algorithm prefix is part of the value: sha256:abc... is one figure, not a stray token after a colon.
     private static readonly Regex IdOrDigestToken =
         new(@"\b(?:[A-Za-z0-9]+:)?[A-Za-z0-9_-]{16,}\b", RegexOptions.Compiled);
+
+    // Anchored to end of line so a multi-word phrase, indistinguishable from prose, never matches.
+    private static readonly Regex UnquotedLabeledWord =
+        new(@"^\s*[A-Za-z][A-Za-z0-9]*:\s+([A-Za-z][A-Za-z-]*)\s*$", RegexOptions.Compiled);
 
     public static void AssertEveryTextFigureAppearsInJson(string text, string json)
     {
@@ -70,8 +76,19 @@ internal static class FigureAudit
             checkedAny = true;
         }
 
+        foreach (var line in SplitLines(text))
+        {
+            var match = UnquotedLabeledWord.Match(line);
+            if (!match.Success)
+                continue;
+            AssertIsALeaf(match.Groups[1].Value, leafValues, "unquoted labeled value");
+            checkedAny = true;
+        }
+
         Assert.True(checkedAny, "Expected at least one figure-shaped token in the rendered text to audit.");
     }
+
+    private static IEnumerable<string> SplitLines(string text) => text.Replace("\r\n", "\n").Split('\n');
 
     private static void AssertIsALeaf(string value, IReadOnlySet<string> leafValues, string what)
     {
