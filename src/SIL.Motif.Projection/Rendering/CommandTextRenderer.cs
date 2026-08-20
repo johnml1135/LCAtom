@@ -73,6 +73,58 @@ public static class CommandTextRenderer
         return sb.ToString();
     }
 
+    public static string Render(CorpusListProjection projection)
+    {
+        var sb = new StringBuilder();
+        if (projection.Corpora.Count == 0)
+        {
+            sb.AppendLine("No corpora in store.");
+            return sb.ToString();
+        }
+
+        foreach (var corpus in projection.Corpora)
+        {
+            sb.AppendLine(corpus.CorpusId);
+            sb.AppendLine($"  {corpus.Description}");
+            sb.AppendLine(
+                $"  {corpus.DocumentCount} document(s); {corpus.DerivableDocumentCount} permit derived works");
+            sb.AppendLine(
+                $"  accuracy figures: {(corpus.SupportsAccuracyClaims ? "permitted" : "not computable — no attestation")}");
+        }
+
+        return sb.ToString();
+    }
+
+    public static string Render(CorpusDetailProjection projection)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"Corpus:       {projection.CorpusId}");
+        sb.AppendLine($"Origin:       {projection.Description}");
+        if (projection.Uri is not null) sb.AppendLine($"Location:     {projection.Uri}");
+        sb.AppendLine($"Retrieved:    {projection.RetrievedUtc}");
+        sb.AppendLine($"Licence:      {projection.Licence ?? "(none recorded)"}");
+        sb.AppendLine($"Tokenisation: {projection.Tokeniser} {projection.TokeniserVersion}");
+        if (projection.TokeniserNotes is not null)
+            sb.AppendLine($"              {projection.TokeniserNotes}");
+
+        sb.AppendLine();
+        sb.AppendLine(projection.AccuracyStatement);
+        sb.AppendLine();
+        sb.AppendLine($"Documents ({projection.Documents.Count}):");
+        foreach (var document in projection.Documents)
+        {
+            sb.AppendLine($"  {document.DocumentId}  {document.Title}");
+            sb.AppendLine($"    {document.CharacterCount:N0} characters, sha256 {document.ContentSha256[..12]}...");
+            sb.AppendLine(
+                $"    licence: {document.Licence ?? "(none recorded)"}; derived works: " +
+                (document.PermitsDerivedArtefacts ? "permitted" : "not permitted"));
+        }
+
+        sb.AppendLine();
+        sb.AppendLine(projection.DerivationStatement);
+        return sb.ToString();
+    }
+
     public static string Render(AppliedLogProjection projection)
     {
         var sb = new StringBuilder();

@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Text;
 using SIL.Motif.Host.Corpus;
+using SIL.Motif.Projection;
+using SIL.Motif.Projection.Rendering;
+using SIL.Motif.Projection.Usage;
 
 namespace SIL.Motif.Cli;
 
@@ -137,71 +139,55 @@ public static class CorpusCommands
     }
 
     /// <summary>Every stored Corpus, with its size and what may be done with it.</summary>
-    public static CommandResult ListCorpora(string storeDir)
+    public static CommandResult ListCorpora(string storeDir, UsageLog? usage = null)
     {
-        var store = StoreFor(storeDir);
-        var ids = store.List();
-
-        var sb = new StringBuilder();
-        if (ids.Count == 0)
-        {
-            sb.AppendLine("No corpora in store.");
-            return new CommandResult(0, sb.ToString());
-        }
-
-        foreach (var id in ids)
-        {
-            var corpus = store.Load(id);
-            if (corpus is null) continue;
-
-            var derivable = corpus.DocumentsPermittingDerivation().Count;
-            sb.AppendLine($"{id}");
-            sb.AppendLine($"  {corpus.Provenance.Origin.Description}");
-            sb.AppendLine($"  {corpus.Documents.Count} document(s); {derivable} permit derived works");
-            sb.AppendLine($"  accuracy figures: {(corpus.Provenance.SupportsAccuracyClaims ? "permitted" : "not computable — no attestation")}");
-        }
-
-        return new CommandResult(0, sb.ToString());
+        usage?.Record("corpora", new[] { UsageArgumentShape.Text("storeDir") });
+        var projection = BuildCorpusList(storeDir);
+        return new CommandResult(0, CommandTextRenderer.Render(projection));
     }
 
-    /// <summary>One Corpus in full: provenance, every Document, and what each is licensed for.</summary>
-    public static CommandResult ShowCorpus(string storeDir, string corpusId)
+    /// <summary>The <c>corpora</c> report as JSON, rendered from the same projection as text.</summary>
+    public static CommandResult ListCorporaJson(string storeDir, UsageLog? usage = null)
     {
-        var corpus = StoreFor(storeDir).Load(corpusId);
-        if (corpus is null)
-            return new CommandResult(1, $"No corpus '{corpusId}' in store." + Environment.NewLine);
+        usage?.Record("corpora", new[] { UsageArgumentShape.Text("storeDir") });
+        var projection = BuildCorpusList(storeDir);
+        return new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine);
+    }
 
-        var origin = corpus.Provenance.Origin;
-        var sb = new StringBuilder();
-        sb.AppendLine($"Corpus:       {corpus.CorpusId}");
-        sb.AppendLine($"Origin:       {origin.Description}");
-        if (!string.IsNullOrWhiteSpace(origin.Uri)) sb.AppendLine($"Location:     {origin.Uri}");
-        sb.AppendLine($"Retrieved:    {origin.RetrievedUtc:u}");
-        sb.AppendLine($"Licence:      {origin.Licence ?? "(none recorded)"}");
-        sb.AppendLine($"Tokenisation: {corpus.Provenance.Tokenisation.Method} {corpus.Provenance.Tokenisation.Version}");
-        if (!string.IsNullOrWhiteSpace(corpus.Provenance.Tokenisation.Notes))
-            sb.AppendLine($"              {corpus.Provenance.Tokenisation.Notes}");
+    private static CorpusListProjection BuildCorpusList(string storeDir)
+        => CorpusProjectionQuery.List(StoreFor(storeDir));
 
-        sb.AppendLine();
-        sb.AppendLine(corpus.Provenance.SupportsAccuracyClaims
-            ? $"Attested by {corpus.Provenance.Qualification!.Attestor}: accuracy figures may be computed."
-            : corpus.Provenance.WhyAccuracyIsNotComputable());
+    /// <summary>One Corpus in full: provenance, every Document, and what each is licensed for.</summary>
+    public static CommandResult ShowCorpus(string storeDir, string corpusId, UsageLog? usage = null)
+    {
+        usage?.Record(
+            "show-corpus",
+            new[] { UsageArgumentShape.Text("storeDir"), UsageArgumentShape.Text("corpusId") });
+        var (projection, error) = BuildCorpusDetail(storeDir, corpusId);
+        return projection is not null
+            ? new CommandResult(0, CommandTextRenderer.Render(projection))
+            : new CommandResult(1, error!);
+    }
 
-        sb.AppendLine();
-        sb.AppendLine($"Documents ({corpus.Documents.Count}):");
-        foreach (var d in corpus.Documents)
-        {
-            var caps = d.EffectiveCapabilities(origin);
-            sb.AppendLine($"  {d.DocumentId}  {d.Title}");
-            // "..." not U+2026: default-code-page Windows consoles render U+2026 as a full stop.
-            sb.AppendLine($"    {d.Text.Length:N0} characters, sha256 {d.ContentSha256[..12]}...");
-            sb.AppendLine($"    licence: {d.EffectiveLicence(origin) ?? "(none recorded)"}; " +
-                          $"derived works: {(caps.PermitsDerivedArtefacts ? "permitted" : "not permitted")}");
-        }
+    /// <summary>The <c>show-corpus</c> report as JSON, rendered from the same projection as text.</summary>
+    public static CommandResult ShowCorpusJson(string storeDir, string corpusId, UsageLog? usage = null)
+    {
+        usage?.Record(
+            "show-corpus",
+            new[] { UsageArgumentShape.Text("storeDir"), UsageArgumentShape.Text("corpusId") });
+        var (projection, error) = BuildCorpusDetail(storeDir, corpusId);
+        return projection is not null
+            ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
+            : new CommandResult(1, error!);
+    }
 
-        sb.AppendLine();
-        sb.AppendLine(corpus.DescribeDerivationRestrictions());
-        return new CommandResult(0, sb.ToString());
+    private static (CorpusDetailProjection? Projection, string? Error) BuildCorpusDetail(
+        string storeDir, string corpusId)
+    {
+        var projection = CorpusProjectionQuery.Detail(StoreFor(storeDir), corpusId);
+        return projection is null
+            ? (null, $"No corpus '{corpusId}' in store." + Environment.NewLine)
+            : (projection, null);
     }
 
     /// <summary>

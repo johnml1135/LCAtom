@@ -53,11 +53,12 @@ public sealed class ReportProjectionIntegrationTests
         var canonicalId = SIL.Motif.Contract.Ids.CanonicalId.FromGuid(senseGuid);
         var newGloss = originalGloss + " (revised, report projection test)";
         const string draftName = "report-projection-demo";
+        const string label = "report-projection-1";
         const string applier = "report-projection-tests";
 
         var usage = new UsageLog();
 
-        Assert.Equal(0, Commands.New(_storeDir, draftName, null).ExitCode);
+        Assert.Equal(0, Commands.New(_storeDir, draftName, label).ExitCode);
         Assert.Equal(0, Commands.AddSetGloss(_storeDir, draftName, canonicalId.Value, wsTag, newGloss).ExitCode);
         var finalize = Commands.Finalize(_storeDir, draftName);
         Assert.Equal(0, finalize.ExitCode);

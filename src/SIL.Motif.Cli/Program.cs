@@ -302,13 +302,17 @@ try
             break;
 
         case "corpora":
-            result = CorpusCommands.ListCorpora(storeDir);
+            result = asJson
+                ? CorpusCommands.ListCorporaJson(storeDir, usage)
+                : CorpusCommands.ListCorpora(storeDir, usage);
             break;
 
         case "show-corpus":
             if (positionals.Count != 1)
                 return Usage("Usage: motif show-corpus <corpusId>");
-            result = CorpusCommands.ShowCorpus(storeDir, positionals[0]);
+            result = asJson
+                ? CorpusCommands.ShowCorpusJson(storeDir, positionals[0], usage)
+                : CorpusCommands.ShowCorpus(storeDir, positionals[0], usage);
             break;
 
         default:
@@ -383,11 +387,12 @@ static void PrintUsage(TextWriter writer)
         "  add-document --corpus <id> --doc <id> --source <file-or-url> [--title <text>] " +
         "[--licence <text>] [--may-derive true|false] [--licence-basis <text>]");
     writer.WriteLine("  add-corpus-bundle --bundle <path>   (the handoff a fetching tool writes)");
-    writer.WriteLine("  corpora");
-    writer.WriteLine("  show-corpus <corpusId>");
+    writer.WriteLine("  corpora [--json]");
+    writer.WriteLine("  show-corpus <corpusId> [--json]");
     writer.WriteLine();
     writer.WriteLine("Global options: --store <dir>  (default: ./.motif)");
-    writer.WriteLine("                --json         (structured output; supported by open/list/show/dry-run/apply/log)");
+    writer.WriteLine(
+        "                --json         (structured output; supported by open/list/show/dry-run/apply/log/corpora/show-corpus)");
 }
 
 /// <summary>Whether the caller said anything at all about what a licence permits.</summary>

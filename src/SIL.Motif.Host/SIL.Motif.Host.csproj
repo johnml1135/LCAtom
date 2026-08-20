@@ -5,6 +5,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\SIL.Motif.Projection\SIL.Motif.Projection.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="SIL.LCModel" Version="11.0.0-beta0150" />
     <PackageReference Include="Microsoft.ICU.ICU4C.Runtime" Version="72.1.0.3" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
