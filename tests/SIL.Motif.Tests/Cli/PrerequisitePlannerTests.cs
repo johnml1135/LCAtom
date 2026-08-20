@@ -1,10 +1,10 @@
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using SIL.Motif.Cli.Store;
+using SIL.Motif.Contract.Canonicalization;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Model;
 using SIL.Motif.Projection.Store;
+using SIL.Motif.Runner.Operations;
 using Xunit;
 
 namespace SIL.Motif.Tests.Cli;
@@ -121,6 +121,60 @@ public sealed class PrerequisitePlannerTests : IDisposable
         Assert.Empty(plan);
     }
 
+    [Fact]
+    public void Plan_AppliedPrerequisite_DoesNotRequireAStoredManifest()
+    {
+        var store = new ProposalStore(_storeDir);
+        var applied = CanonicalId.Mint();
+        var requested = Proposal(requires: new[] { applied });
+
+        var plan = Plan(store, requested, applied.ToGuid());
+
+        Assert.Empty(plan);
+    }
+
+    [Fact]
+    public void Plan_AppliedPrerequisite_DoesNotReadItsCorruptManifest()
+    {
+        var store = new ProposalStore(_storeDir);
+        var applied = CanonicalId.Mint();
+        var requested = Proposal(requires: new[] { applied });
+        store.EnsureDirectoriesExist();
+        File.WriteAllText(store.ManifestPath(applied.Value), "not json");
+
+        var plan = Plan(store, requested, applied.ToGuid());
+
+        Assert.Empty(plan);
+    }
+
+    [Fact]
+    public void Plan_AppliedPrerequisite_CutsOffItsCorruptAncestor()
+    {
+        var store = new ProposalStore(_storeDir);
+        var ancestor = CanonicalId.Mint();
+        var applied = Proposal(requires: new[] { ancestor });
+        var requested = Proposal(requires: new[] { applied.ProposalId });
+        Store(store, applied);
+        File.WriteAllText(store.ManifestPath(ancestor.Value), "not json");
+
+        var plan = Plan(store, requested, applied.ProposalId.ToGuid());
+
+        Assert.Empty(plan);
+    }
+
+    [Fact]
+    public void Plan_AppliedCutoff_DoesNotHideAMissingUnappliedBranch()
+    {
+        var store = new ProposalStore(_storeDir);
+        var applied = CanonicalId.Mint();
+        var missing = CanonicalId.Mint();
+        var requested = Proposal(requires: new[] { applied, missing });
+
+        var ex = Assert.ThrowsAny<Exception>(() => Plan(store, requested, applied.ToGuid()));
+
+        Assert.Contains(missing.Value, ex.Message, StringComparison.Ordinal);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_storeDir)) Directory.Delete(_storeDir, recursive: true);
@@ -130,25 +184,40 @@ public sealed class PrerequisitePlannerTests : IDisposable
         ProposalStore store, Proposal requested, params Guid[] appliedProposalIds) =>
         store.PlanPrerequisites(requested, appliedProposalIds);
 
-    private static Proposal Proposal(CanonicalId? proposalId = null, params CanonicalId[] requires) =>
-        new(
-            new Dictionary<string, string>(),
+    private static Proposal Proposal(CanonicalId? proposalId = null, params CanonicalId[] requires)
+    {
+        using var after = JsonDocument.Parse("{\"ws\":\"en\",\"text\":\"planner fixture\"}");
+        var operation = new OperationEnvelope(
+            CanonicalId.Mint(),
+            LexicalSenseOperationKinds.SetGloss,
+            target: CanonicalId.Mint(),
+            after: after.RootElement.Clone());
+        return new Proposal(
+            new Dictionary<string, string> { ["lexical"] = "1.0" },
             proposalId ?? CanonicalId.Mint(),
             requires,
-            Array.Empty<OperationEnvelope>());
+            new[] { operation });
+    }
 
     private static void Store(ProposalStore store, Proposal proposal)
     {
         store.EnsureDirectoriesExist();
-        var json = JsonSerializer.Serialize(new
-        {
-            contractVersions = proposal.ContractVersions,
-            proposalId = proposal.ProposalId.Value,
-            requires = proposal.Requires.Select(id => id.Value),
-            operations = Array.Empty<object>(),
-        });
-        var digest = "sha256:" + Convert.ToHexString(
-            SHA256.HashData(Encoding.UTF8.GetBytes(proposal.ProposalId.Value))).ToLowerInvariant();
+        var json = JsonSerializer.Serialize(
+            new
+            {
+                contractVersions = proposal.ContractVersions,
+                proposalId = proposal.ProposalId.Value,
+                requires = proposal.Requires.Select(id => id.Value),
+                operations = proposal.Operations.Select(operation => new
+                {
+                    operationId = operation.OperationId.Value,
+                    kind = operation.Kind,
+                    target = operation.Target!.Value.Value,
+                    after = operation.After!.Value,
+                }),
+            },
+            new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+        var digest = IntentDigest.Compute(proposal);
         File.WriteAllText(store.ObjectPath(digest), json);
         File.WriteAllText(
             store.ManifestPath(proposal.ProposalId.Value),

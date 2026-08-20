@@ -52,12 +52,12 @@ public static class ProposalDryRunner
     }
 
     /// <summary>
-    /// Applies <paramref name="prerequisites"/> to the scratch in declared dependency order, then
+    /// Applies <paramref name="prerequisites"/> to the scratch in the planner-supplied order, then
     /// evaluates <paramref name="proposal"/> against the prepared state. Prerequisite effects prepare
     /// the baseline only; the returned Dry Run describes the requested Proposal alone.
     /// </summary>
     public static DryRunModel Run(
-        DryRunScratch scratch, IReadOnlyCollection<Proposal> prerequisites, Proposal proposal)
+        DryRunScratch scratch, IReadOnlyList<Proposal> prerequisites, Proposal proposal)
     {
         if (scratch is null) throw new ArgumentNullException(nameof(scratch));
         if (prerequisites is null) throw new ArgumentNullException(nameof(prerequisites));
@@ -77,7 +77,7 @@ public static class ProposalDryRunner
         {
             unitOfWork.RollBack = false;
 
-            foreach (var prerequisite in OrderPrerequisites(prerequisites))
+            foreach (var prerequisite in prerequisites)
             {
                 var prerequisiteTargets = new List<CanonicalId>();
                 foreach (var operation in prerequisite.Operations)
@@ -115,44 +115,4 @@ public static class ProposalDryRunner
         return new DryRunModel(intentDigest, baselineNote, effects, effectDigest, anchor);
     }
 
-    private static IReadOnlyList<Proposal> OrderPrerequisites(IReadOnlyCollection<Proposal> prerequisites)
-    {
-        var proposals = prerequisites.ToDictionary(proposal => proposal.ProposalId.Value, StringComparer.Ordinal);
-        var outgoing = proposals.Keys.ToDictionary(
-            id => id,
-            _ => new List<string>(),
-            StringComparer.Ordinal);
-        var indegrees = proposals.Keys.ToDictionary(id => id, _ => 0, StringComparer.Ordinal);
-        foreach (var proposal in proposals.Values)
-        {
-            foreach (var requiredId in proposal.Requires.Select(id => id.Value).Distinct(StringComparer.Ordinal))
-            {
-                if (!proposals.ContainsKey(requiredId)) continue;
-
-                outgoing[requiredId].Add(proposal.ProposalId.Value);
-                indegrees[proposal.ProposalId.Value]++;
-            }
-        }
-
-        var ready = new SortedSet<string>(
-            indegrees.Where(pair => pair.Value == 0).Select(pair => pair.Key),
-            StringComparer.Ordinal);
-        var ordered = new List<Proposal>(proposals.Count);
-        while (ready.Count > 0)
-        {
-            var id = ready.Min!;
-            ready.Remove(id);
-            ordered.Add(proposals[id]);
-            foreach (var dependentId in outgoing[id].OrderBy(value => value, StringComparer.Ordinal))
-            {
-                indegrees[dependentId]--;
-                if (indegrees[dependentId] == 0) ready.Add(dependentId);
-            }
-        }
-
-        if (ordered.Count != proposals.Count)
-            throw new InvalidOperationException("The supplied prerequisite Proposals contain a dependency cycle.");
-
-        return ordered;
-    }
 }

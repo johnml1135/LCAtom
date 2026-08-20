@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using SIL.Motif.Cli;
 using SIL.Motif.Cli.Store;
 using SIL.Motif.Contract.Ids;
@@ -495,6 +496,67 @@ public sealed class CommandsRefusalsTests
 
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("store inconsistency", result.Output);
+    }
+
+    [Fact]
+    public void SessionDryRun_ManifestIdentityDoesNotMatchLookup_RefusesBeforeScratchCreation()
+    {
+        var proposalId = CommitOneOperationProposal("manifest-identity-mismatch");
+        var store = new ProposalStore(_storeDir);
+        var manifestPath = store.ManifestPath(proposalId);
+        var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
+        var wrongId = CanonicalId.Mint().Value;
+        manifest["proposalId"] = wrongId;
+        File.WriteAllText(manifestPath, manifest.ToJsonString());
+        using var session = CliSession.Open(_fwDataPath);
+
+        var result = Commands.DryRun(session, _storeDir, proposalId);
+
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains(proposalId, result.Output, StringComparison.Ordinal);
+        Assert.Contains(wrongId, result.Output, StringComparison.Ordinal);
+        Assert.Equal(0, session.PristineRebuildCount);
+    }
+
+    [Fact]
+    public void SessionDryRun_EnvelopeIdentityDoesNotMatchLookup_RefusesBeforeScratchCreation()
+    {
+        var proposalId = CommitOneOperationProposal("envelope-identity-mismatch");
+        var store = new ProposalStore(_storeDir);
+        var manifest = JsonNode.Parse(File.ReadAllText(store.ManifestPath(proposalId)))!.AsObject();
+        var objectPath = store.ObjectPath(manifest["currentIntentDigest"]!.GetValue<string>());
+        var envelope = JsonNode.Parse(File.ReadAllText(objectPath))!.AsObject();
+        var wrongId = CanonicalId.Mint().Value;
+        envelope["proposalId"] = wrongId;
+        File.WriteAllText(objectPath, envelope.ToJsonString());
+        using var session = CliSession.Open(_fwDataPath);
+
+        var result = Commands.DryRun(session, _storeDir, proposalId);
+
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains(proposalId, result.Output, StringComparison.Ordinal);
+        Assert.Contains(wrongId, result.Output, StringComparison.Ordinal);
+        Assert.Equal(0, session.PristineRebuildCount);
+    }
+
+    [Fact]
+    public void SessionDryRun_ObjectContentDoesNotMatchManifestDigest_RefusesBeforeScratchCreation()
+    {
+        var proposalId = CommitOneOperationProposal("object-digest-mismatch");
+        var store = new ProposalStore(_storeDir);
+        var manifest = JsonNode.Parse(File.ReadAllText(store.ManifestPath(proposalId)))!.AsObject();
+        var objectPath = store.ObjectPath(manifest["currentIntentDigest"]!.GetValue<string>());
+        var envelope = JsonNode.Parse(File.ReadAllText(objectPath))!.AsObject();
+        envelope["operations"]![0]!["after"]!["text"] = "content changed behind the digest";
+        File.WriteAllText(objectPath, envelope.ToJsonString());
+        using var session = CliSession.Open(_fwDataPath);
+
+        var result = Commands.DryRun(session, _storeDir, proposalId);
+
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains("intentDigest", result.Output, StringComparison.Ordinal);
+        Assert.Contains("store inconsistency", result.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, session.PristineRebuildCount);
     }
 
     // --- Helpers ---

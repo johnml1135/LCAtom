@@ -16,9 +16,10 @@ internal static class PrerequisiteClosurePlanner
         {
             [requested.ProposalId.Value] = requested,
         };
+        var applied = new HashSet<Guid>(appliedProposalIds);
         var states = new Dictionary<string, VisitState>(StringComparer.Ordinal);
         var path = new List<string>();
-        Visit(requested, resolve, proposals, states, path);
+        Visit(requested, resolve, applied, proposals, states, path);
 
         var outgoing = proposals.Keys.ToDictionary(
             id => id,
@@ -29,6 +30,8 @@ internal static class PrerequisiteClosurePlanner
         {
             foreach (var requiredId in proposal.Requires.Select(id => id.Value).Distinct(StringComparer.Ordinal))
             {
+                if (!outgoing.ContainsKey(requiredId)) continue;
+
                 outgoing[requiredId].Add(proposal.ProposalId.Value);
                 indegrees[proposal.ProposalId.Value]++;
             }
@@ -38,14 +41,12 @@ internal static class PrerequisiteClosurePlanner
             indegrees.Where(pair => pair.Value == 0).Select(pair => pair.Key),
             StringComparer.Ordinal);
         var ordered = new List<Proposal>(proposals.Count - 1);
-        var applied = new HashSet<Guid>(appliedProposalIds);
-        var executionIds = FindExecutionIds(requested, proposals, applied);
         while (ready.Count > 0)
         {
             var id = ready.Min!;
             ready.Remove(id);
             var proposal = proposals[id];
-            if (executionIds.Contains(id))
+            if (id != requested.ProposalId.Value)
                 ordered.Add(proposal);
 
             foreach (var dependentId in outgoing[id].OrderBy(value => value, StringComparer.Ordinal))
@@ -58,34 +59,10 @@ internal static class PrerequisiteClosurePlanner
         return ordered;
     }
 
-    private static ISet<string> FindExecutionIds(
-        Proposal requested,
-        IReadOnlyDictionary<string, Proposal> proposals,
-        ISet<Guid> appliedProposalIds)
-    {
-        var executionIds = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var requiredId in requested.Requires.Select(id => id.Value).Distinct(StringComparer.Ordinal))
-            AddForExecution(requiredId, proposals, appliedProposalIds, executionIds);
-
-        return executionIds;
-    }
-
-    private static void AddForExecution(
-        string id,
-        IReadOnlyDictionary<string, Proposal> proposals,
-        ISet<Guid> appliedProposalIds,
-        ISet<string> executionIds)
-    {
-        var proposal = proposals[id];
-        if (appliedProposalIds.Contains(proposal.ProposalId.ToGuid()) || !executionIds.Add(id)) return;
-
-        foreach (var requiredId in proposal.Requires.Select(required => required.Value))
-            AddForExecution(requiredId, proposals, appliedProposalIds, executionIds);
-    }
-
     private static void Visit(
         Proposal proposal,
         Func<string, Proposal> resolve,
+        ISet<Guid> appliedProposalIds,
         IDictionary<string, Proposal> proposals,
         IDictionary<string, VisitState> states,
         IList<string> path)
@@ -103,18 +80,20 @@ internal static class PrerequisiteClosurePlanner
 
         states[id] = VisitState.Visiting;
         path.Add(id);
-        foreach (var requiredId in proposal.Requires
-                     .Select(required => required.Value)
-                     .Distinct(StringComparer.Ordinal)
-                     .OrderBy(required => required, StringComparer.Ordinal))
+        foreach (var required in proposal.Requires
+                     .Distinct()
+                     .OrderBy(required => required.Value, StringComparer.Ordinal))
         {
+            if (appliedProposalIds.Contains(required.ToGuid())) continue;
+
+            var requiredId = required.Value;
             if (!proposals.TryGetValue(requiredId, out var prerequisite))
             {
                 prerequisite = resolve(requiredId);
                 proposals.Add(requiredId, prerequisite);
             }
 
-            Visit(prerequisite, resolve, proposals, states, path);
+            Visit(prerequisite, resolve, appliedProposalIds, proposals, states, path);
         }
 
         path.RemoveAt(path.Count - 1);

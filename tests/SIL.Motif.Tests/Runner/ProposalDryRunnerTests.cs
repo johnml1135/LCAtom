@@ -140,7 +140,7 @@ public sealed class ProposalDryRunnerTests : IDisposable
     }
 
     [Fact]
-    public void DryRun_PrerequisiteCollectionOrder_DoesNotOverrideByteOrdinalDependencyOrder()
+    public void DryRun_ExecutesPrerequisitesExactlyInTheSuppliedPlannerOrder()
     {
         var (sense, _, wsTag, originalGloss) = FindSenseWithKnownGloss();
         var target = CanonicalId.FromGuid(sense.Guid);
@@ -149,8 +149,10 @@ public sealed class ProposalDryRunnerTests : IDisposable
         var ordered = new[] { first, second }
             .OrderBy(proposal => proposal.ProposalId.Value, StringComparer.Ordinal)
             .ToArray();
-        var expectedBefore = ordered[1] == first ? originalGloss + " first" : originalGloss + " second";
-        var suppliedInReverse = ordered.Reverse().ToArray();
+        var suppliedByPlanner = ordered.Reverse().ToArray();
+        var expectedBefore = suppliedByPlanner[1] == first
+            ? originalGloss + " first"
+            : originalGloss + " second";
         var dependent = BuildSetGlossProposal(target, wsTag, originalGloss + " dependent");
 
         var scratchRoot = Path.Combine(_tempRoot, "scratch-prerequisite-order");
@@ -158,7 +160,7 @@ public sealed class ProposalDryRunnerTests : IDisposable
             new ScratchCacheFactory().CreateFromFileCopy(_cache.ProjectId.Path, scratchRoot),
             "test scratch with reversed prerequisite collection");
 
-        var dryRun = ProposalDryRunner.Run(scratch, suppliedInReverse, dependent);
+        var dryRun = ProposalDryRunner.Run(scratch, suppliedByPlanner, dependent);
 
         Assert.Equal(expectedBefore, Assert.Single(dryRun.ExpectedEffects).Before[wsTag]);
     }

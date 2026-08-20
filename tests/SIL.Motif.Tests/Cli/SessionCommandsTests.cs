@@ -100,6 +100,31 @@ public sealed class SessionCommandsTests
         Assert.Equal(SeededProject.FirstGloss, ReadGloss(session.LiveCache));
     }
 
+    [Fact]
+    public void AppliedPrerequisite_InvalidatesPristineBeforePlannerPrunesItFromDependentDryRun()
+    {
+        var prerequisiteTarget = SIL.Motif.Contract.Ids.CanonicalId.FromGuid(_seed.FirstSenseId);
+        var dependentTarget = SIL.Motif.Contract.Ids.CanonicalId.FromGuid(_seed.SecondSenseId);
+        var prerequisiteGloss = SeededProject.FirstGloss + " applied prerequisite";
+        var dependentGloss = SeededProject.SecondGloss + " dependent after apply";
+        var prerequisiteId = FinalizeSetGloss(
+            "applied-prerequisite", prerequisiteTarget.Value, prerequisiteGloss);
+        var dependentId = FinalizeSetGloss(
+            "dependent-after-applied-prerequisite", dependentTarget.Value, dependentGloss, prerequisiteId);
+
+        using var session = CliSession.Open(_fwDataPath);
+        Assert.Equal(0, Commands.DryRun(session, _storeDir, prerequisiteId).ExitCode);
+        Assert.Equal(1, session.PristineRebuildCount);
+        Assert.Equal(0, Commands.Apply(session, _storeDir, prerequisiteId, "session-tests").ExitCode);
+
+        var result = Commands.DryRun(session, _storeDir, dependentId);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains($"\"{SeededProject.SecondGloss}\" -> \"{dependentGloss}\"", result.Output);
+        Assert.Equal(prerequisiteGloss, ReadGloss(session.LiveCache));
+        Assert.Equal(2, session.PristineRebuildCount);
+    }
+
     /// <remarks>
     /// The session-backed counterpart to
     /// <see cref="EndToEndCliTests.Apply_ManifestWriteFails_AfterAGenuineCommitAndSave_ReportsReconciliation_NotRollback"/>:

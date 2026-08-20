@@ -30,12 +30,12 @@ namespace SIL.Motif.Cli;
 /// <para>
 /// <b>Two caches, two lifetimes.</b> <see cref="LiveCache"/> is opened once by <see cref="Open"/> and
 /// stays open until <see cref="Dispose"/> (or a failed <see cref="Apply"/> discards it early — see
-/// below). The pristine scratch is a dormant, never-mutated file-backed copy, rebuilt only when
-/// <see cref="FootprintProbe.ComputeCurrentFootprintDigest"/> shows the live project has moved
-/// relative to it (<see cref="PristineRebuildCount"/> counts these rebuilds). Every call to
+/// below). The pristine scratch is a dormant, never-mutated file-backed copy. A successful mutating
+/// Apply discards it; otherwise, <see cref="FootprintProbe.ComputeCurrentFootprintDigest"/> decides
+/// whether it remains fresh (<see cref="PristineRebuildCount"/> counts rebuilds). Every call to
 /// <see cref="DryRun"/> spins a further disposable copy off the pristine scratch — never off the live
 /// cache — runs one <see cref="ProposalDryRunner.Run"/> against it, and discards it, so the pristine
-/// scratch itself is never consumed and can serve any number of dry runs unchanged.
+/// scratch itself is never consumed.
 /// </para>
 /// <para>
 /// <b>A failed apply ends the session's live cache, not the session.</b> <see cref="ProposalApplier.Apply"/>
@@ -125,7 +125,7 @@ public sealed class CliSession : IDisposable
     /// <paramref name="proposal"/> against that state. The pristine freshness check covers every
     /// Proposal whose operations will execute on the scratch.
     /// </summary>
-    public DryRunModel DryRun(IReadOnlyCollection<Proposal> prerequisites, Proposal proposal)
+    public DryRunModel DryRun(IReadOnlyList<Proposal> prerequisites, Proposal proposal)
     {
         if (prerequisites is null) throw new ArgumentNullException(nameof(prerequisites));
         if (proposal is null) throw new ArgumentNullException(nameof(proposal));
@@ -202,10 +202,12 @@ public sealed class CliSession : IDisposable
                 ex);
         }
 
+        InvalidatePristine();
+
         return receipt;
     }
 
-    private void EnsurePristineIsFresh(IReadOnlyCollection<Proposal> prerequisites, Proposal proposal)
+    private void EnsurePristineIsFresh(IReadOnlyList<Proposal> prerequisites, Proposal proposal)
     {
         if (_pristineCache is null)
         {
@@ -259,6 +261,17 @@ public sealed class CliSession : IDisposable
         var cache = _liveCache;
         _liveCache = null;
         SafeDispose(cache);
+    }
+
+    private void InvalidatePristine()
+    {
+        var cache = _pristineCache;
+        var directory = _pristineDirectory;
+        _pristineCache = null;
+        _pristineFwDataPath = null;
+        _pristineDirectory = null;
+        SafeDispose(cache);
+        if (directory is not null) TryDeleteDirectory(directory);
     }
 
     private void ThrowIfDisposed()

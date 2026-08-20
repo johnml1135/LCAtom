@@ -1334,16 +1334,7 @@ public static class Commands
         {
             var store = new ProposalStore(storeDir);
             var id = NormalizeId(proposalId);
-            var manifestPath = store.ManifestPath(id);
-            if (!File.Exists(manifestPath))
-                return (1, null, FailText(ProposalNotFoundMessage(store, id)));
-
-            var manifest = ReadManifest(manifestPath);
-            var objectPath = store.ObjectPath(manifest.CurrentIntentDigest);
-            if (!File.Exists(objectPath))
-                return (1, null, FailText(StoreInconsistencyMessage(id, manifest.CurrentIntentDigest, objectPath)));
-
-            var envelope = ProposalJsonParser.Parse(File.ReadAllText(objectPath));
+            var (manifest, _, envelope) = store.LoadFinalizedProposal(id);
             return (0, ProposalDetailProjectionBuilder.Build(id, manifest, envelope), null);
         }
         catch (Exception ex)
@@ -1383,16 +1374,7 @@ public static class Commands
         {
             var store = new ProposalStore(storeDir);
             var id = NormalizeId(proposalId);
-            var manifestPath = store.ManifestPath(id);
-            if (!File.Exists(manifestPath))
-                return (1, null, FailText(ProposalNotFoundMessage(store, id)));
-
-            var manifest = ReadManifest(manifestPath);
-            var objectPath = store.ObjectPath(manifest.CurrentIntentDigest);
-            if (!File.Exists(objectPath))
-                return (1, null, FailText(StoreInconsistencyMessage(id, manifest.CurrentIntentDigest, objectPath)));
-
-            var envelope = ProposalJsonParser.Parse(File.ReadAllText(objectPath));
+            var (manifest, manifestPath, envelope) = store.LoadFinalizedProposal(id);
 
             var fullFwDataPath = ResolveProjectPath(fwDataPath);
             var loader = new FwDataProjectLoader();
@@ -1476,14 +1458,7 @@ public static class Commands
         {
             var store = new ProposalStore(storeDir);
             var id = NormalizeId(proposalId);
-            var manifestPath = store.ManifestPath(id);
-            if (!File.Exists(manifestPath))
-                return (1, null, FailText(ProposalNotFoundMessage(store, id)));
-
-            var manifest = ReadManifest(manifestPath);
-            var objectPath = store.ObjectPath(manifest.CurrentIntentDigest);
-            if (!File.Exists(objectPath))
-                return (1, null, FailText(StoreInconsistencyMessage(id, manifest.CurrentIntentDigest, objectPath)));
+            var (manifest, manifestPath, envelope) = store.LoadFinalizedProposal(id);
 
             // ADR 0004 decision 3: a bare apply with no bound DryRun is a hard error, checked before loading the project.
             if (manifest.Anchor is null)
@@ -1492,8 +1467,6 @@ public static class Commands
                     $"Proposal {id} has no bound DryRun recorded. Run " +
                     $"'dry-run {id} --project <fwdata>' first, then 'apply'."));
             }
-
-            var envelope = ProposalJsonParser.Parse(File.ReadAllText(objectPath));
 
             var fullFwDataPath = ResolveProjectPath(fwDataPath);
             var loader = new FwDataProjectLoader();
@@ -1707,27 +1680,20 @@ public static class Commands
     {
         var store = new ProposalStore(storeDir);
         normalizedId = NormalizeId(proposalId);
-        manifestPath = store.ManifestPath(normalizedId);
-        if (!File.Exists(manifestPath))
+        try
+        {
+            (manifest, manifestPath, envelope) = store.LoadFinalizedProposal(normalizedId);
+            failure = null;
+            return true;
+        }
+        catch (Exception ex)
         {
             manifest = null!;
+            manifestPath = store.ManifestPath(normalizedId);
             envelope = null!;
-            failure = Fail(ProposalNotFoundMessage(store, normalizedId));
+            failure = Fail(ex.Message);
             return false;
         }
-
-        manifest = ReadManifest(manifestPath);
-        var objectPath = store.ObjectPath(manifest.CurrentIntentDigest);
-        if (!File.Exists(objectPath))
-        {
-            envelope = null!;
-            failure = Fail(StoreInconsistencyMessage(normalizedId, manifest.CurrentIntentDigest, objectPath));
-            return false;
-        }
-
-        envelope = ProposalJsonParser.Parse(File.ReadAllText(objectPath));
-        failure = null;
-        return true;
     }
 
     public static CommandResult Log(string fwDataPath, UsageLog? usage = null)

@@ -92,6 +92,11 @@ public sealed class CliSessionTests
         // And the state is stable again: a further dry run with nothing changed reuses the rebuilt scratch.
         session.DryRun(proposal);
         Assert.Equal(2, session.PristineRebuildCount);
+
+        var idempotentReceipt = session.Apply(proposal, firstDryRun.Anchor, "session-tests");
+        Assert.True(idempotentReceipt.AlreadyApplied);
+        session.DryRun(proposal);
+        Assert.Equal(2, session.PristineRebuildCount);
     }
 
     [Fact]
