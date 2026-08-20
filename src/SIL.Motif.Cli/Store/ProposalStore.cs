@@ -1,5 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Text.Json;
+using SIL.Motif.Contract.Model;
+using SIL.Motif.Contract.Parsing;
+using SIL.Motif.Projection.Store;
 
 namespace SIL.Motif.Cli.Store;
 
@@ -52,6 +57,21 @@ public sealed class ProposalStore
         Directory.CreateDirectory(ManifestsDirectory);
     }
 
+    /// <summary>
+    /// Resolves <paramref name="requested"/>'s finalized prerequisite closure and returns the
+    /// Proposals that must prepare a Dry Run scratch, in deterministic topological order. Applied
+    /// prerequisites remain part of graph validation but are omitted from the returned execution
+    /// plan.
+    /// </summary>
+    public IReadOnlyList<Proposal> PlanPrerequisites(
+        Proposal requested, IReadOnlyCollection<Guid> appliedProposalIds)
+    {
+        if (requested is null) throw new ArgumentNullException(nameof(requested));
+        if (appliedProposalIds is null) throw new ArgumentNullException(nameof(appliedProposalIds));
+
+        return PrerequisiteClosurePlanner.Plan(requested, LoadFinalizedProposal, appliedProposalIds);
+    }
+
     public string DraftPath(string draftName) => Path.Combine(DraftsDirectory, SafeFileName(draftName) + ".json");
 
     /// <summary>
@@ -64,6 +84,38 @@ public sealed class ProposalStore
         Path.Combine(ObjectsDirectory, DigestFileName(intentDigest) + ".json");
 
     public string ManifestPath(string proposalId) => Path.Combine(ManifestsDirectory, proposalId + ".json");
+
+    private Proposal LoadFinalizedProposal(string proposalId)
+    {
+        var manifestPath = ManifestPath(proposalId);
+        if (!File.Exists(manifestPath))
+        {
+            throw new InvalidOperationException(
+                $"Prerequisite Proposal {proposalId} is missing from the Motif store: " +
+                $"manifest '{manifestPath}' was not found.");
+        }
+
+        var manifest = JsonSerializer.Deserialize<ManifestDocument>(
+            File.ReadAllText(manifestPath),
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+            ?? throw new InvalidOperationException($"Prerequisite manifest '{manifestPath}' is empty or invalid.");
+        var objectPath = ObjectPath(manifest.CurrentIntentDigest);
+        if (!File.Exists(objectPath))
+        {
+            throw new InvalidOperationException(
+                $"Prerequisite Proposal {proposalId} is missing its finalized object '{objectPath}'.");
+        }
+
+        var proposal = ProposalJsonParser.Parse(File.ReadAllText(objectPath));
+        if (!string.Equals(proposal.ProposalId.Value, proposalId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Prerequisite manifest {proposalId} points to an object for Proposal " +
+                $"{proposal.ProposalId.Value}; the finalized store identity is inconsistent.");
+        }
+
+        return proposal;
+    }
 
     private static string DigestFileName(string intentDigest)
     {

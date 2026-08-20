@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using SIL.Motif.Contract.Model;
 using SIL.Motif.Host.LcmUtils;
 using SIL.Motif.Model.Receipts;
@@ -115,10 +117,21 @@ public sealed class CliSession : IDisposable
     /// </summary>
     public DryRunModel DryRun(Proposal proposal)
     {
+        return DryRun(Array.Empty<Proposal>(), proposal);
+    }
+
+    /// <summary>
+    /// Prepares one fresh scratch with <paramref name="prerequisites"/> and evaluates
+    /// <paramref name="proposal"/> against that state. The pristine freshness check covers every
+    /// Proposal whose operations will execute on the scratch.
+    /// </summary>
+    public DryRunModel DryRun(IReadOnlyCollection<Proposal> prerequisites, Proposal proposal)
+    {
+        if (prerequisites is null) throw new ArgumentNullException(nameof(prerequisites));
         if (proposal is null) throw new ArgumentNullException(nameof(proposal));
         ThrowIfDisposed();
 
-        EnsurePristineIsFresh(proposal);
+        EnsurePristineIsFresh(prerequisites, proposal);
 
         var fanOutRoot = Path.Combine(_sessionTempRoot, "run-" + Guid.NewGuid().ToString("N"));
         var fanOutCache = _scratchFactory.CreateFromFileCopy(_pristineFwDataPath!, fanOutRoot);
@@ -129,7 +142,7 @@ public sealed class CliSession : IDisposable
 
         try
         {
-            return ProposalDryRunner.Run(scratch, proposal);
+            return ProposalDryRunner.Run(scratch, prerequisites, proposal);
         }
         finally
         {
@@ -192,7 +205,7 @@ public sealed class CliSession : IDisposable
         return receipt;
     }
 
-    private void EnsurePristineIsFresh(Proposal proposal)
+    private void EnsurePristineIsFresh(IReadOnlyCollection<Proposal> prerequisites, Proposal proposal)
     {
         if (_pristineCache is null)
         {
@@ -200,10 +213,16 @@ public sealed class CliSession : IDisposable
             return;
         }
 
-        var liveFootprint = FootprintProbe.ComputeCurrentFootprintDigest(LiveCache, proposal);
-        var pristineFootprint = FootprintProbe.ComputeCurrentFootprintDigest(_pristineCache, proposal);
-        if (!string.Equals(liveFootprint, pristineFootprint, StringComparison.Ordinal))
-            RebuildPristine();
+        foreach (var candidate in prerequisites.Concat(new[] { proposal }))
+        {
+            var liveFootprint = FootprintProbe.ComputeCurrentFootprintDigest(LiveCache, candidate);
+            var pristineFootprint = FootprintProbe.ComputeCurrentFootprintDigest(_pristineCache, candidate);
+            if (!string.Equals(liveFootprint, pristineFootprint, StringComparison.Ordinal))
+            {
+                RebuildPristine();
+                return;
+            }
+        }
     }
 
     private void RebuildPristine()

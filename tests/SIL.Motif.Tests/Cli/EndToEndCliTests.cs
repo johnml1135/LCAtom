@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Text.Json.Nodes;
 using SIL.Motif.Cli;
 using SIL.Motif.Cli.Store;
 using SIL.Motif.Host.LcmUtils;
@@ -124,6 +125,25 @@ public sealed class EndToEndCliTests
         AssertAppliedLogEntryCount(1);
     }
 
+    [Fact]
+    public void FileDryRun_PreparesOneScratchWithPrerequisites_AndReportsOnlyTheDependentEffect()
+    {
+        var target = SIL.Motif.Contract.Ids.CanonicalId.FromGuid(_seed.FirstSenseId);
+        var intermediateGloss = SeededProject.FirstGloss + " prerequisite file";
+        var finalGloss = SeededProject.FirstGloss + " dependent file";
+        var prerequisiteId = FinalizeSetGloss("file-prerequisite", target.Value, intermediateGloss);
+        var dependentId = FinalizeSetGloss(
+            "file-dependent", target.Value, finalGloss, prerequisiteId);
+
+        var result = Commands.DryRun(_storeDir, dependentId, _fwDataPath);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains($"\"{intermediateGloss}\" -> \"{finalGloss}\"", result.Output);
+        Assert.DoesNotContain(
+            $"\"{SeededProject.FirstGloss}\" -> \"{intermediateGloss}\"", result.Output);
+        AssertGlossOnDisk(_seed.FirstSenseId, NewLangProjFixture.AnalysisTag, SeededProject.FirstGloss);
+    }
+
     /// <remarks>
     /// The receipt boundary: <c>apply</c> commits and saves the mutation to the real project (a
     /// durable, observable fact on disk) before it ever tries to record "applied" in the manifest. The
@@ -212,6 +232,28 @@ public sealed class EndToEndCliTests
     {
         using var cache = new FwDataProjectLoader().LoadScratchCache(_fwDataPath);
         Assert.Equal(expectedCount, ProjectAppliedLog.ReadAll(cache).Count);
+    }
+
+    private string FinalizeSetGloss(
+        string draftName, string targetId, string text, params string[] prerequisiteIds)
+    {
+        Assert.Equal(0, Commands.New(_storeDir, draftName, null).ExitCode);
+        Assert.Equal(
+            0,
+            Commands.AddSetGloss(
+                _storeDir, draftName, targetId, NewLangProjFixture.AnalysisTag, text).ExitCode);
+        if (prerequisiteIds.Length > 0)
+        {
+            var draftPath = new ProposalStore(_storeDir).DraftPath(draftName);
+            var draft = JsonNode.Parse(File.ReadAllText(draftPath))!.AsObject();
+            draft["requires"] = new JsonArray(
+                prerequisiteIds.Select(id => (JsonNode?)JsonValue.Create(id)).ToArray());
+            File.WriteAllText(draftPath, draft.ToJsonString());
+        }
+
+        var finalized = Commands.Finalize(_storeDir, draftName);
+        Assert.Equal(0, finalized.ExitCode);
+        return ExtractProposalId(finalized.Output);
     }
 
     private static string ExtractProposalId(string finalizeOutput)

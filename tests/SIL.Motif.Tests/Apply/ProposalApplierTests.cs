@@ -237,6 +237,66 @@ public sealed class ProposalApplierTests : IDisposable
         Assert.Single(ProjectAppliedLog.ReadAll(_cache));
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void Apply_MissingPrerequisites_RefusesBeforeFootprintAndNamesEveryMissingId(int missingCount)
+    {
+        var missing = Enumerable.Range(0, missingCount).Select(_ => CanonicalId.Mint()).ToArray();
+        var proposalWithoutRequirements = BuildSetGlossProposal(
+            CanonicalId.FromGuid(Guid.NewGuid()), "en", "footprint must not run");
+        var proposal = WithRequirements(proposalWithoutRequirements, missing.Reverse().ToArray());
+
+        var ex = Assert.Throws<ApplyPreconditionException>(
+            () => ProposalApplier.Apply(_cache, proposal, DummyAnchor(proposal), "motif-tests"));
+
+        Assert.Contains("prerequisite", ex.Message, StringComparison.OrdinalIgnoreCase);
+        foreach (var missingId in missing)
+            Assert.Contains(missingId.Value, ex.Message, StringComparison.Ordinal);
+
+        var orderedMissing = missing.Select(id => id.Value)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(
+            orderedMissing,
+            orderedMissing.OrderBy(id => ex.Message.IndexOf(id, StringComparison.Ordinal)));
+        Assert.Empty(ProjectAppliedLog.ReadAll(_cache));
+    }
+
+    [Fact]
+    public void Apply_PresentPrerequisite_ContinuesThroughTheExistingApplyPath()
+    {
+        var (senseGuid, wsTag, originalGloss) = FindSenseWithKnownGloss(_cache);
+        var target = CanonicalId.FromGuid(senseGuid);
+        var prerequisite = BuildSetGlossProposal(target, wsTag, originalGloss + " prerequisite");
+        var prerequisiteDryRun = ScratchDryRun.Of(_cache, prerequisite);
+        ProposalApplier.Apply(_cache, prerequisite, prerequisiteDryRun.Anchor, "motif-tests");
+
+        var dependent = WithRequirements(
+            BuildSetGlossProposal(target, wsTag, originalGloss + " dependent"), prerequisite.ProposalId);
+        var dependentDryRun = ScratchDryRun.Of(_cache, dependent);
+        var receipt = ProposalApplier.Apply(_cache, dependent, dependentDryRun.Anchor, "motif-tests");
+
+        Assert.False(receipt.AlreadyApplied);
+        Assert.Equal(2, ProjectAppliedLog.ReadAll(_cache).Count);
+    }
+
+    [Fact]
+    public void Apply_AlreadyAppliedProposal_ShortCircuitsBeforeMissingPrerequisiteCheck()
+    {
+        var (senseGuid, wsTag, originalGloss) = FindSenseWithKnownGloss(_cache);
+        var proposal = BuildSetGlossProposal(
+            CanonicalId.FromGuid(senseGuid), wsTag, originalGloss + " idempotent prerequisite ordering");
+        var dryRun = ScratchDryRun.Of(_cache, proposal);
+        ProposalApplier.Apply(_cache, proposal, dryRun.Anchor, "motif-tests");
+
+        var amendedContent = WithRequirements(proposal, CanonicalId.Mint());
+        var receipt = ProposalApplier.Apply(_cache, amendedContent, dryRun.Anchor, "motif-tests");
+
+        Assert.True(receipt.AlreadyApplied);
+        Assert.Single(ProjectAppliedLog.ReadAll(_cache));
+    }
+
     [Fact]
     public void Apply_AfterFootprintMovedSinceDryRun_IsADriftHardStop()
     {
@@ -367,6 +427,14 @@ public sealed class ProposalApplierTests : IDisposable
             requires: null,
             operations: new[] { operation });
     }
+
+    private static Proposal WithRequirements(Proposal proposal, params CanonicalId[] requirements) =>
+        new(
+            proposal.ContractVersions,
+            proposal.ProposalId,
+            requirements,
+            proposal.Operations,
+            proposal.Extensions);
 
     /// <summary>Snapshots every current (necessarily foreign, before any Apply) resource's Version.</summary>
     private static List<Guid> ReadForeignResourceVersions(LcmCache cache) =>

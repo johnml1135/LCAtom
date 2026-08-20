@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Model;
 using SIL.Motif.Model.AppliedLog;
@@ -90,6 +91,22 @@ public static class ProposalApplier
         if (ProjectAppliedLog.TryFindByProposalId(cache, proposalGuid, out var existingEntry))
         {
             return BuildAlreadyAppliedReceipt(proposal, fullIntentDigest, intentDigestHex, existingEntry!);
+        }
+
+        var appliedProposalIds = new HashSet<Guid>(
+            ProjectAppliedLog.ReadAll(cache).Select(entry => entry.ProposalId));
+        var missingPrerequisites = proposal.Requires
+            .Where(required => !appliedProposalIds.Contains(required.ToGuid()))
+            .Select(required => required.Value)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(required => required, StringComparer.Ordinal)
+            .ToArray();
+        if (missingPrerequisites.Length > 0)
+        {
+            throw new ApplyPreconditionException(
+                "Apply refused because the live project's applied history is missing prerequisite " +
+                $"Proposal(s): {string.Join(", ", missingPrerequisites)}. This dependency/order " +
+                "error cannot be forced; apply every prerequisite first.");
         }
 
         // One-use authorization (see BoundDryRunAnchor.IntentDigest): reject a substitute Proposal outright.

@@ -139,6 +139,30 @@ public sealed class ProposalDryRunnerTests : IDisposable
         Assert.Contains("single-use", reuse.Message);
     }
 
+    [Fact]
+    public void DryRun_PrerequisiteCollectionOrder_DoesNotOverrideByteOrdinalDependencyOrder()
+    {
+        var (sense, _, wsTag, originalGloss) = FindSenseWithKnownGloss();
+        var target = CanonicalId.FromGuid(sense.Guid);
+        var first = BuildSetGlossProposal(target, wsTag, originalGloss + " first");
+        var second = BuildSetGlossProposal(target, wsTag, originalGloss + " second");
+        var ordered = new[] { first, second }
+            .OrderBy(proposal => proposal.ProposalId.Value, StringComparer.Ordinal)
+            .ToArray();
+        var expectedBefore = ordered[1] == first ? originalGloss + " first" : originalGloss + " second";
+        var suppliedInReverse = ordered.Reverse().ToArray();
+        var dependent = BuildSetGlossProposal(target, wsTag, originalGloss + " dependent");
+
+        var scratchRoot = Path.Combine(_tempRoot, "scratch-prerequisite-order");
+        using var scratch = DryRunScratch.Adopt(
+            new ScratchCacheFactory().CreateFromFileCopy(_cache.ProjectId.Path, scratchRoot),
+            "test scratch with reversed prerequisite collection");
+
+        var dryRun = ProposalDryRunner.Run(scratch, suppliedInReverse, dependent);
+
+        Assert.Equal(expectedBefore, Assert.Single(dryRun.ExpectedEffects).Before[wsTag]);
+    }
+
     private (ILexSense Sense, int WsHandle, string WsTag, string Gloss) FindSenseWithKnownGloss()
     {
         var sense = _cache.ServiceLocator.GetInstance<ILexSenseRepository>().GetObject(_seed.FirstSenseId);
