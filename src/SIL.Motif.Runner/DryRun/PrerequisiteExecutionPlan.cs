@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Model;
 
 namespace SIL.Motif.Runner.DryRun;
@@ -13,6 +14,9 @@ namespace SIL.Motif.Runner.DryRun;
 /// </summary>
 public sealed class PrerequisiteExecutionPlan
 {
+    private static readonly IComparer<string> ProposalIdComparer = Comparer<string>.Create(
+        (left, right) => CanonicalId.Parse(left).CompareTo(CanonicalId.Parse(right)));
+
     private PrerequisiteExecutionPlan(Proposal requested, IList<Proposal> prerequisites)
     {
         Requested = requested;
@@ -67,7 +71,7 @@ public sealed class PrerequisiteExecutionPlan
         int candidateCount)
     {
         var reachable = new HashSet<string>(StringComparer.Ordinal);
-        var missing = new SortedSet<string>(StringComparer.Ordinal);
+        var missing = new SortedSet<string>(ProposalIdComparer);
         VisitReachable(requested, proposals, appliedProposalIds, reachable, missing);
         if (missing.Count > 0)
         {
@@ -79,7 +83,7 @@ public sealed class PrerequisiteExecutionPlan
         {
             var extraneous = proposals.Keys
                 .Where(id => id != requested.ProposalId.Value && !reachable.Contains(id))
-                .OrderBy(id => id, StringComparer.Ordinal);
+                .OrderBy(id => id, ProposalIdComparer);
             throw new InvalidOperationException(
                 "Prerequisite execution closure contains unreachable Proposal(s): " +
                 string.Join(", ", extraneous) + ".");
@@ -140,7 +144,7 @@ public sealed class PrerequisiteExecutionPlan
         path.Add(id);
         foreach (var required in proposal.Requires
                      .Distinct()
-                     .OrderBy(value => value.Value, StringComparer.Ordinal))
+                     .OrderBy(value => value.Value, ProposalIdComparer))
         {
             if (appliedProposalIds.Contains(required.ToGuid())) continue;
             VisitForCycle(proposals[required.Value], proposals, appliedProposalIds, states, path);
@@ -172,14 +176,14 @@ public sealed class PrerequisiteExecutionPlan
 
         var ready = new SortedSet<string>(
             indegrees.Where(pair => pair.Value == 0).Select(pair => pair.Key),
-            StringComparer.Ordinal);
+            ProposalIdComparer);
         var ordered = new List<Proposal>(proposals.Count - 1);
         while (ready.Count > 0)
         {
             var id = ready.Min!;
             ready.Remove(id);
             if (id != requested.ProposalId.Value) ordered.Add(proposals[id]);
-            foreach (var dependentId in outgoing[id].OrderBy(value => value, StringComparer.Ordinal))
+            foreach (var dependentId in outgoing[id].OrderBy(value => value, ProposalIdComparer))
             {
                 indegrees[dependentId]--;
                 if (indegrees[dependentId] == 0) ready.Add(dependentId);

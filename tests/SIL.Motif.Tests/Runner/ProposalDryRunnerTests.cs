@@ -163,6 +163,25 @@ public sealed class ProposalDryRunnerTests : IDisposable
     }
 
     [Fact]
+    public void ExecutionPlan_IndependentUnicodePrefixes_UsesCanonicalUtf8ByteOrder()
+    {
+        var identity = Guid.Parse("00112233-4455-6677-8899-aabbccddeeff");
+        var bmpId = CanonicalId.FromGuid(identity, "\uE000");
+        var nonBmpId = CanonicalId.FromGuid(identity, "\U00010000");
+        var bmp = WithIdentityAndRequirements(
+            BuildSetGlossProposal(CanonicalId.Mint(), "en", "BMP"), bmpId);
+        var nonBmp = WithIdentityAndRequirements(
+            BuildSetGlossProposal(CanonicalId.Mint(), "en", "non-BMP"), nonBmpId);
+        var dependent = WithRequirements(
+            BuildSetGlossProposal(CanonicalId.Mint(), "en", "dependent"), nonBmpId, bmpId);
+
+        var plan = PrerequisiteExecutionPlan.Create(
+            dependent, new[] { nonBmp, bmp }, Array.Empty<Guid>());
+
+        Assert.Equal(new[] { bmpId, nonBmpId }, plan.Prerequisites.Select(value => value.ProposalId));
+    }
+
+    [Fact]
     public void ExecutionPlan_MissingUnappliedPrerequisite_RefusesAndNamesIt()
     {
         var missing = CanonicalId.Mint();
