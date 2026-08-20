@@ -118,10 +118,19 @@ public static class AnalysisAggregateReader
                 mb.InflTypeRA?.Guid.ToString()))
             .ToList();
 
+        var occurrences = analysis.OccurrencesInTexts
+            .SelectMany(segment => segment.GetOccurrencesOfAnalysis(analysis, int.MaxValue, includeChildren: true))
+            .Select(occurrence => new AnalysisOccurrenceLink(
+                occurrence.Segment.Guid.ToString(),
+                occurrence.Index))
+            .OrderBy(occurrence => occurrence.SegmentGuid, StringComparer.Ordinal)
+            .ThenBy(occurrence => occurrence.AnalysisIndex)
+            .ToList();
+
         return new ApprovedAnalysis(
             ContentDigest: AnalysisContent.ComputeDigest(bundles),
             MorphBreakdown: DescribeManualBreakdown(analysis),
-            OccurrenceCount: analysis.OccurrencesInTexts.Count());
+            Occurrences: occurrences);
     }
 
     private static string DescribeManualBreakdown(IWfiAnalysis analysis)

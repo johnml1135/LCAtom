@@ -201,8 +201,8 @@ reports coverage. It emits no operations yet — that is `MOT-4`. The implemente
 - perform a Dry Run (today by mutation-and-rollback; ADR 0016 replaces this with a scratch copy);
 - detect footprint Drift and refuse an unbound apply;
 - apply in one LibLCM unit of work, read back, persist, and record an applied marker;
-- exercise the whole flow through the `motif` CLI — `open`, `new`, `add-set-gloss`, `finalize`,
-  `list`, `show`, `dry-run`, `apply`, `log`.
+- exercise the whole flow through the `motif` CLI — `open`, `analyses`, `new`, `add-set-gloss`,
+  `finalize`, `list`, `show`, `dry-run`, `apply`, `log`.
 
 This is a tested control and proving surface for one operation kind, not evidence that the planned
 product is complete.

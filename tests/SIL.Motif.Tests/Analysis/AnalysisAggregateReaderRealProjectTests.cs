@@ -117,6 +117,48 @@ public sealed class AnalysisAggregateReaderRealProjectTests : IDisposable
     }
 
     [Fact]
+    public void ApprovedAnalysisCarriesEveryOccurrenceAsASegmentAndAnalysisIndexLink()
+    {
+        var vernWs = _cache.DefaultVernWs;
+        IWfiWordform wordform = null!;
+        IWfiAnalysis analysis = null!;
+        ISegment segment = null!;
+
+        NonUndoableUnitOfWorkHelper.Do(_cache.ActionHandlerAccessor, () =>
+        {
+            wordform = _cache.ServiceLocator.GetInstance<IWfiWordformFactory>()
+                .Create(TsStringUtils.MakeString("zzMotifOccurrenceWord", vernWs));
+            analysis = _cache.ServiceLocator.GetInstance<IWfiAnalysisFactory>().Create();
+            wordform.AnalysesOC.Add(analysis);
+            _cache.LangProject.DefaultUserAgent.SetEvaluation(analysis, Opinions.approves);
+
+            var text = _cache.ServiceLocator.GetInstance<ITextFactory>().Create();
+            var contents = _cache.ServiceLocator.GetInstance<IStTextFactory>().Create();
+            text.ContentsOA = contents;
+            var paragraph = _cache.ServiceLocator.GetInstance<IStTxtParaFactory>().Create();
+            contents.ParagraphsOS.Add(paragraph);
+            paragraph.Contents = TsStringUtils.MakeString("zzMotifOccurrenceWord zzMotifOccurrenceWord", vernWs);
+            segment = _cache.ServiceLocator.GetInstance<ISegmentFactory>().Create();
+            paragraph.SegmentsOS.Add(segment);
+            segment.AnalysesRS.Add(analysis);
+            segment.AnalysesRS.Add(analysis);
+        });
+
+        var response = AnalysisAggregateReader.Read(_cache);
+        var approved = Assert.Single(
+            response.WordForms.Single(word => word.WordformGuid == wordform.Guid.ToString()).ManualAnalyses);
+
+        Assert.Equal(2, approved.OccurrenceCount);
+        Assert.Equal(
+            new[]
+            {
+                new AnalysisOccurrenceLink(segment.Guid.ToString(), 0),
+                new AnalysisOccurrenceLink(segment.Guid.ToString(), 1),
+            },
+            approved.Occurrences);
+    }
+
+    [Fact]
     public void WithNoStoredAssessment_ReadStillReturnsTheManualSide_AndReportsNoAssessmentRatherThanParsing()
     {
         var vernWs = _cache.DefaultVernWs;

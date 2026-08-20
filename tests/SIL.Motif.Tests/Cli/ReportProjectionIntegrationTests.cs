@@ -45,6 +45,29 @@ public sealed class ReportProjectionIntegrationTests
     }
 
     [Fact]
+    public void AnalysesReadsTheManualAggregateWithoutRecordingProjectData()
+    {
+        var usage = new UsageLog();
+
+        var text = Commands.Analyses(_fwDataPath, usage);
+        var json = Commands.AnalysesJson(_fwDataPath, usage);
+
+        Assert.Equal(0, text.ExitCode);
+        Assert.Equal(0, json.ExitCode);
+        Assert.Contains("No assessment is on record", text.Output);
+        Assert.Contains("\"assessmentState\"", json.Output);
+        Assert.Contains("Word forms: 0", text.Output);
+        Assert.Contains("\"wordFormCount\": 0", json.Output);
+        Assert.Equal(2, usage.Entries.Count);
+        Assert.All(usage.Entries, entry =>
+        {
+            Assert.Equal("analyses", entry.Command);
+            Assert.Equal(new[] { "fwDataPath:text" }, entry.ArgumentShape);
+            Assert.DoesNotContain(_fwDataPath, string.Join(" ", entry.ArgumentShape), StringComparison.Ordinal);
+        });
+    }
+
+    [Fact]
     public void FullLoop_EveryMigratedSurfaceEmitsJsonCarryingItsTextFigures_AndUsageLogStaysDataFree()
     {
         var senseGuid = _seed.FirstSenseId;

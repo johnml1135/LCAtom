@@ -36,6 +36,14 @@ try
             result = asJson ? Commands.OpenJson(positionals[0], usage) : Commands.Open(positionals[0], usage);
             break;
 
+        case "analyses":
+            if (!flags.TryGetValue("project", out var analysesProject))
+                return Usage("Usage: motif analyses --project <fwdata> [--json]");
+            result = asJson
+                ? Commands.AnalysesJson(analysesProject, usage)
+                : Commands.Analyses(analysesProject, usage);
+            break;
+
         case "new":
             if (!flags.TryGetValue("draft", out var newDraftName))
                 return Usage("Usage: motif new --draft <name> [--label <text>]");
@@ -347,6 +355,7 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine();
     writer.WriteLine("Commands:");
     writer.WriteLine("  open <fwdata> [--json]");
+    writer.WriteLine("  analyses --project <fwdata> [--json]");
     writer.WriteLine("  new --draft <name> [--label <text>]");
     writer.WriteLine(
         "  add-set-gloss --draft <name> --target <canonicalId> --ws <wsTag> --text <text> " +
@@ -392,7 +401,8 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine();
     writer.WriteLine("Global options: --store <dir>  (default: ./.motif)");
     writer.WriteLine(
-        "                --json         (structured output; supported by open/list/show/dry-run/apply/log/corpora/show-corpus)");
+        "                --json         (structured output; supported by " +
+        "open/analyses/list/show/dry-run/apply/log/corpora/show-corpus)");
 }
 
 /// <summary>Whether the caller said anything at all about what a licence permits.</summary>

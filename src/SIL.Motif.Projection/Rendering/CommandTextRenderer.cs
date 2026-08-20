@@ -125,6 +125,31 @@ public static class CommandTextRenderer
         return sb.ToString();
     }
 
+    public static string Render(AnalysisAggregateProjection projection)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("Analysis aggregate");
+        sb.AppendLine($"Word forms: {projection.WordFormCount}");
+
+        foreach (var wordForm in projection.WordForms)
+        {
+            sb.AppendLine($"  {wordForm.Form}  {wordForm.WordformGuid}");
+            sb.AppendLine($"    manually approved analyses: {wordForm.ManualAnalysisCount}");
+            foreach (var analysis in wordForm.ManualAnalyses)
+            {
+                sb.AppendLine($"      {analysis.ContentDigest}");
+                sb.AppendLine($"        {analysis.MorphBreakdown}");
+                sb.AppendLine($"        occurrences: {analysis.OccurrenceCount}");
+                foreach (var occurrence in analysis.Occurrences)
+                    sb.AppendLine($"          {occurrence.SegmentGuid}[{occurrence.AnalysisIndex}]");
+            }
+        }
+
+        sb.AppendLine();
+        sb.AppendLine(projection.AssessmentState);
+        return sb.ToString();
+    }
+
     public static string Render(AppliedLogProjection projection)
     {
         var sb = new StringBuilder();

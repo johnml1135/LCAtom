@@ -37,7 +37,7 @@ public class AnalysisAggregateDiffTests
         new(guid, form, manual, AutomaticAnalyses: null);
 
     private static ApprovedAnalysis Approved(string digest, int occurrences = 1) =>
-        new(digest, MorphBreakdown: digest, OccurrenceCount: occurrences);
+        new(digest, MorphBreakdown: digest, Occurrences: Occurrences(occurrences));
 
     private static AnalysisAggregateResponse Response(params WordFormAnalysisAggregate[] wordforms) =>
         new(wordforms, Assessment: null);
@@ -155,8 +155,10 @@ public class AnalysisAggregateDiffTests
     public void ContentDigestEqualityIsWhatMatters_NotWhereTheRecordCameFrom()
     {
         // Same ContentDigest is identity (ADR 0038 decision 3); differing OccurrenceCount/MorphBreakdown are churn.
-        var before = Response(Wordform("w1", "mbali", new ApprovedAnalysis("same-digest", "root-SFX (old count)", 4)));
-        var after = Response(Wordform("w1", "mbali", new ApprovedAnalysis("same-digest", "root-SFX (new count)", 9)));
+        var before = Response(Wordform(
+            "w1", "mbali", new ApprovedAnalysis("same-digest", "root-SFX (old count)", Occurrences(4))));
+        var after = Response(Wordform(
+            "w1", "mbali", new ApprovedAnalysis("same-digest", "root-SFX (new count)", Occurrences(9))));
 
         var diff = AnalysisAggregateDiff.Compute(before, after);
 
@@ -179,4 +181,9 @@ public class AnalysisAggregateDiffTests
         Assert.Empty(diff.Removed);
         Assert.Empty(diff.Vanished);
     }
+
+    private static IReadOnlyList<AnalysisOccurrenceLink> Occurrences(int count) =>
+        Enumerable.Range(0, count)
+            .Select(index => new AnalysisOccurrenceLink("segment-guid", index))
+            .ToArray();
 }

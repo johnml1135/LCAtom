@@ -23,10 +23,24 @@ namespace SIL.Motif.Tests.Analysis;
 public class WordFormAnalysisAggregateTests
 {
     [Fact]
+    public void OccurrenceCount_IsDerivedFromNavigationLinks()
+    {
+        var occurrences = new[]
+        {
+            new AnalysisOccurrenceLink("segment-guid-1", 0),
+            new AnalysisOccurrenceLink("segment-guid-1", 2),
+        };
+
+        var analysis = new ApprovedAnalysis("digest-1", "root-SFX", occurrences);
+
+        Assert.Equal(2, analysis.OccurrenceCount);
+    }
+
+    [Fact]
     public void TwoApprovedAnalysesOnOneWordform_AreBothRepresented_NotCollapsedToOne()
     {
-        var first = new ApprovedAnalysis("digest-1", "root-SFX", OccurrenceCount: 3);
-        var second = new ApprovedAnalysis("digest-2", "root-PFX", OccurrenceCount: 1);
+        var first = new ApprovedAnalysis("digest-1", "root-SFX", Array.Empty<AnalysisOccurrenceLink>());
+        var second = new ApprovedAnalysis("digest-2", "root-PFX", Array.Empty<AnalysisOccurrenceLink>());
 
         var wordform = new WordFormAnalysisAggregate(
             "wordform-guid-1", "mbali", new[] { first, second }, AutomaticAnalyses: null);

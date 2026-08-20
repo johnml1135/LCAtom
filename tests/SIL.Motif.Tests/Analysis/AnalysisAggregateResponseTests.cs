@@ -27,7 +27,9 @@ public class AnalysisAggregateResponseTests
     public void NoAssessmentOnRecord_StillReturnsTheManualSide_AndSaysNothingIsOnRecord()
     {
         var wordform = new WordFormAnalysisAggregate(
-            "w1", "mbali", new[] { new ApprovedAnalysis("d1", "root", 2) }, AutomaticAnalyses: null);
+            "w1", "mbali",
+            new[] { new ApprovedAnalysis("d1", "root", Array.Empty<AnalysisOccurrenceLink>()) },
+            AutomaticAnalyses: null);
         var response = new AnalysisAggregateResponse(new[] { wordform }, Assessment: null);
 
         Assert.False(response.HasAssessment);

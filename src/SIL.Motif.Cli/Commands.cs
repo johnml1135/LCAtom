@@ -9,6 +9,7 @@ using SIL.Motif.Cli.Store;
 using SIL.Motif.Contract.Canonicalization;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Parsing;
+using SIL.Motif.Host.Analysis;
 using SIL.Motif.Host.Corpus;
 using SIL.Motif.Host.LcmUtils;
 using SIL.Motif.Projection;
@@ -99,6 +100,42 @@ public static class Commands
             var loader = new FwDataProjectLoader();
             using var cache = loader.LoadCache(fullPath);
             return (0, ProjectSummaryReader.Read(cache), null);
+        }
+        catch (Exception ex)
+        {
+            return (1, null, FailText(ex.Message));
+        }
+    }
+
+    public static CommandResult Analyses(string fwDataPath, UsageLog? usage = null)
+    {
+        usage?.Record("analyses", new[] { UsageArgumentShape.Text("fwDataPath") });
+        var (exitCode, projection, error) = BuildManualAnalysisProjection(fwDataPath);
+        return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : new CommandResult(exitCode, error!);
+    }
+
+    /// <summary>
+    /// The <c>analyses</c> report as JSON, rendered from the same
+    /// <see cref="AnalysisAggregateProjection"/> as <see cref="Analyses"/>.
+    /// </summary>
+    public static CommandResult AnalysesJson(string fwDataPath, UsageLog? usage = null)
+    {
+        usage?.Record("analyses", new[] { UsageArgumentShape.Text("fwDataPath") });
+        var (exitCode, projection, error) = BuildManualAnalysisProjection(fwDataPath);
+        return projection is not null
+            ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
+            : new CommandResult(exitCode, error!);
+    }
+
+    private static (int ExitCode, AnalysisAggregateProjection? Projection, string? Error)
+        BuildManualAnalysisProjection(string fwDataPath)
+    {
+        try
+        {
+            var fullPath = ResolveProjectPath(fwDataPath);
+            var loader = new FwDataProjectLoader();
+            using var cache = loader.LoadScratchCache(fullPath);
+            return (0, ManualAnalysisProjectionQuery.Read(cache), null);
         }
         catch (Exception ex)
         {
