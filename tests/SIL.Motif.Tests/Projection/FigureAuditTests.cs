@@ -91,4 +91,14 @@ public sealed class FigureAuditTests
 
         FigureAudit.AssertEveryTextFigureAppearsInJson(text, json);
     }
+
+    [Fact]
+    public void ACanonicalIdBeginningWithBase64UrlPunctuation_IsOneCompleteFigure()
+    {
+        const string id = "-5fkGwyjT7qgUh2AbBR2hQ";
+        var text = "  proposalId: " + id;
+        var json = $$"""{"proposalId":"{{id}}"}""";
+
+        FigureAudit.AssertEveryTextFigureAppearsInJson(text, json);
+    }
 }

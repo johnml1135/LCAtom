@@ -48,7 +48,9 @@ internal static class FigureAudit
 
     // The algorithm prefix is part of the value: sha256:abc... is one figure, not a stray token after a colon.
     private static readonly Regex IdOrDigestToken =
-        new(@"\b(?:[A-Za-z0-9]+:)?[A-Za-z0-9_-]{16,}\b", RegexOptions.Compiled);
+        new(
+            @"(?<![A-Za-z0-9_-])(?:[A-Za-z0-9]+:)?[A-Za-z0-9_-]{16,}(?![A-Za-z0-9_-])",
+            RegexOptions.Compiled);
 
     // Anchored to end of line so a multi-word phrase, indistinguishable from prose, never matches.
     private static readonly Regex UnquotedLabeledWord =
