@@ -140,6 +140,32 @@ public sealed class ProposalDryRunnerTests : IDisposable
     }
 
     [Fact]
+    public void DryRunScratch_RejectsMemoryOnlyCacheBeforeTakingOwnership()
+    {
+        var memoryOnlyCache = new ScratchCacheFactory().CreateInMemoryCopy(_cache);
+        var cleanupCalled = false;
+
+        try
+        {
+            var ex = Assert.Throws<InvalidOperationException>(
+                () => DryRunScratch.Adopt(
+                    memoryOnlyCache,
+                    "memory-only test copy",
+                    () => cleanupCalled = true));
+
+            Assert.Contains("collation", ex.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("valid characters", ex.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("file-copy scratch", ex.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.False(memoryOnlyCache.IsDisposed);
+            Assert.False(cleanupCalled);
+        }
+        finally
+        {
+            memoryOnlyCache.Dispose();
+        }
+    }
+
+    [Fact]
     public void DryRun_ReversedCandidateInputStillExecutesDeclaredPrerequisiteFirst()
     {
         var (sense, _, wsTag, originalGloss) = FindSenseWithKnownGloss();

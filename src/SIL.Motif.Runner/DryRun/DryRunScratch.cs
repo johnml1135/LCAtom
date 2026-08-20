@@ -51,7 +51,9 @@ public sealed class DryRunScratch : IDisposable
     /// <param name="throwawayCache">
     /// A cache nobody else needs afterwards — normally the result of
     /// <c>ScratchCacheFactory.CreateFromFileCopy</c>. It will be mutated and then disposed, never
-    /// reverted. Passing a cache someone else is still using is a caller defect this cannot detect.
+    /// reverted. A <see cref="BackendProviderType.kMemoryOnly"/> cache is rejected because it loses
+    /// project-specific writing-system definitions. Passing a cache someone else is still using is
+    /// a caller defect this cannot detect.
     /// </param>
     /// <param name="provenance">
     /// Short human-facing statement of where this copy came from, reported in the Dry Run's baseline
@@ -60,13 +62,19 @@ public sealed class DryRunScratch : IDisposable
     /// </param>
     /// <param name="onDisposed">
     /// Runs after the cache is disposed — the hook for deleting the copied project directory. Optional
-    /// only because an in-memory or test-owned scratch has nothing to delete.
+    /// only because a test-owned scratch may have nothing else to delete.
     /// </param>
     public static DryRunScratch Adopt(LcmCache throwawayCache, string provenance, Action? onDisposed = null)
     {
         if (throwawayCache is null) throw new ArgumentNullException(nameof(throwawayCache));
         if (string.IsNullOrWhiteSpace(provenance))
             throw new ArgumentException("A scratch must state where it came from.", nameof(provenance));
+        if (throwawayCache.ProjectId.Type == BackendProviderType.kMemoryOnly)
+        {
+            throw new InvalidOperationException(
+                "A memory-only cache cannot be a Dry Run scratch: it loses project-specific writing-system " +
+                "fidelity, including collation and valid characters. Create a file-copy scratch instead.");
+        }
 
         return new DryRunScratch(throwawayCache, provenance, onDisposed);
     }
