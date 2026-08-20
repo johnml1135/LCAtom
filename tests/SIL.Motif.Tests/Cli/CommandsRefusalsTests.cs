@@ -157,6 +157,62 @@ public sealed class CommandsRefusalsTests
         Assert.Contains("not found in store", result.Output);
     }
 
+    [Theory]
+    [InlineData(null, "Explains why the change is needed.")]
+    [InlineData("   ", "Explains why the change is needed.")]
+    [InlineData("Clarify the analysis", null)]
+    [InlineData("Clarify the analysis", "\t")]
+    public void Finalize_MissingRationale_RefusesAtomicallyAndPreservesTheDraft(
+        string? label, string? comment)
+    {
+        const string draftName = "missing-rationale";
+        Commands.New(_storeDir, draftName, null);
+        Commands.AddSetGloss(_storeDir, draftName, _target, "en", "clarified gloss");
+        var store = new ProposalStore(_storeDir);
+        var draftPath = store.DraftPath(draftName);
+        var draft = ReadDraft(draftPath);
+        draft.Label = label;
+        draft.Comment = comment;
+        WriteDraft(draftPath, draft);
+        var before = File.ReadAllText(draftPath);
+
+        var result = Commands.Finalize(_storeDir, draftName);
+
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains("short description", result.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("label", result.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("extended explanation", result.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("comment", result.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains($"label {draftName}", result.Output, StringComparison.Ordinal);
+        Assert.Contains($"comment {draftName}", result.Output, StringComparison.Ordinal);
+        Assert.Equal(before, File.ReadAllText(draftPath));
+        Assert.Empty(Directory.GetFiles(store.ObjectsDirectory, "*.json"));
+        Assert.Empty(Directory.GetFiles(store.ManifestsDirectory, "*.json"));
+    }
+
+    [Fact]
+    public void Finalize_AmendWithMissingRationale_RefusesWithoutMovingCommittedState()
+    {
+        var proposalId = CommitOneOperationProposal("original-rationale");
+        var store = new ProposalStore(_storeDir);
+        var manifestPath = store.ManifestPath(proposalId);
+        var manifestBefore = File.ReadAllText(manifestPath);
+        var objectsBefore = Directory.GetFiles(store.ObjectsDirectory, "*.json");
+        Assert.Equal(0, Commands.Reopen(_storeDir, "amend-rationale", proposalId).ExitCode);
+        var draftPath = store.DraftPath("amend-rationale");
+        var draft = ReadDraft(draftPath);
+        draft.Comment = "  ";
+        WriteDraft(draftPath, draft);
+        var draftBefore = File.ReadAllText(draftPath);
+
+        var result = Commands.Finalize(_storeDir, "amend-rationale");
+
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Equal(draftBefore, File.ReadAllText(draftPath));
+        Assert.Equal(manifestBefore, File.ReadAllText(manifestPath));
+        Assert.Equal(objectsBefore, Directory.GetFiles(store.ObjectsDirectory, "*.json"));
+    }
+
     [Fact]
     public void Finalize_DraftFailsProposalValidation_RefusesAndCommitsNothing()
     {
@@ -167,6 +223,8 @@ public sealed class CommandsRefusalsTests
 
         // Corrupt contractVersions so it no longer covers the 'lexical' group the one operation uses.
         var draft = ReadDraft(draftPath);
+        draft.Label = "Exercise Proposal validation";
+        draft.Comment = "Keep contract-version validation independent from the required rationale guard.";
         draft.ContractVersions.Remove("lexical");
         draft.ContractVersions["bogus"] = "1.0";
         WriteDraft(draftPath, draft);
@@ -565,6 +623,8 @@ public sealed class CommandsRefusalsTests
     {
         Commands.New(_storeDir, draftName, null);
         Commands.AddSetGloss(_storeDir, draftName, _target, "en", "text for " + draftName);
+        DraftRationale.Author(
+            _storeDir, draftName, "Clarify a lexical gloss", "Record the intended lexical analysis for review.");
         var finalizeResult = Commands.Finalize(_storeDir, draftName);
         Assert.Equal(0, finalizeResult.ExitCode);
         return ExtractProposalId(finalizeResult.Output);

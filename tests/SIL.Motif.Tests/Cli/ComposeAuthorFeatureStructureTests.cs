@@ -77,6 +77,8 @@ public sealed class ComposeAuthorFeatureStructureTests
 
         Assert.Equal(0, result.ExitCode);
         Assert.Contains("1 operation(s) added", result.Output);
+        DraftRationale.Author(
+            _storeDir, "d", "Author a feature structure", "Represent the selected grammatical analysis on the target MSA.");
 
         var finalize = Commands.Finalize(_storeDir, "d");
         Assert.Equal(0, finalize.ExitCode);
@@ -94,6 +96,8 @@ public sealed class ComposeAuthorFeatureStructureTests
         Assert.Equal(0, Commands.New(_storeDir, "d", null).ExitCode);
         var intentJson = JsonSerializer.Serialize(new { msa = msaId });
         Assert.Equal(0, Commands.ComposeAuthorFeatureStructure(_storeDir, "d", _fwDataPath, intentJson).ExitCode);
+        DraftRationale.Author(
+            _storeDir, "d", "Author a feature structure", "Preserve the composer provenance in the finalized intent.");
 
         var finalize = Commands.Finalize(_storeDir, "d");
         Assert.Equal(0, finalize.ExitCode);

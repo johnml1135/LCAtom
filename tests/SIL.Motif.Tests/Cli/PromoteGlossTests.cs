@@ -7,6 +7,7 @@ using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Model;
 using SIL.Motif.Contract.Parsing;
 using SIL.Motif.Host.Corpus;
+using SIL.Motif.Tests.TestFixtures;
 using Xunit;
 
 namespace SIL.Motif.Tests.Cli;
@@ -71,6 +72,8 @@ public sealed class PromoteGlossTests : IDisposable
         Assert.Equal(0, result.ExitCode);
         Assert.Contains("promoted from corpus 'wiki-testlang'", result.Output);
         Assert.Contains("CC-BY-SA-4.0", result.Output);
+        DraftRationale.Author(
+            _storeDir, "d", "Promote a reviewed corpus gloss", "Use the attested corpus analysis in the language project.");
 
         var finalize = Commands.Finalize(_storeDir, "d");
         Assert.Equal(0, finalize.ExitCode);
@@ -93,6 +96,8 @@ public sealed class PromoteGlossTests : IDisposable
         var target = CanonicalId.Mint().Value;
         Assert.Equal(0, Commands.New(_storeDir, "d", null).ExitCode);
         Assert.Equal(0, Commands.PromoteGloss(_storeDir, "d", target, "en", "a promoted gloss", "wiki-testlang").ExitCode);
+        DraftRationale.Author(
+            _storeDir, "d", "Promote an attested gloss", "Carry the corpus provenance into the finalized proposal.");
         var finalize = Commands.Finalize(_storeDir, "d");
         var proposalId = ExtractProposalId(finalize.Output);
 

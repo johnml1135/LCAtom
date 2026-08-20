@@ -31,6 +31,8 @@ public sealed class ReviewDecisionTests
         Assert.Equal(0, Commands.New(_storeDir, draftName, null).ExitCode);
         var target = CanonicalId.Mint().Value;
         Assert.Equal(0, Commands.AddSetGloss(_storeDir, draftName, target, "en", "a gloss").ExitCode);
+        DraftRationale.Author(
+            _storeDir, draftName, "Clarify a lexical analysis", "Record the intended gloss so reviewers can assess the change.");
         var finalize = Commands.Finalize(_storeDir, draftName);
         Assert.Equal(0, finalize.ExitCode);
         return ExtractProposalId(finalize.Output);
@@ -60,6 +62,8 @@ public sealed class ReviewDecisionTests
         Assert.Equal("a-linguist", manifest.Decision.ActorId);
         Assert.Equal("looks correct", manifest.Decision.Comment);
         Assert.Equal(manifest.CurrentIntentDigest, manifest.Decision.BoundIntentDigest);
+        Assert.Equal("Clarify a lexical analysis", manifest.Label);
+        Assert.Equal("Record the intended gloss so reviewers can assess the change.", manifest.Comment);
     }
 
     [Fact]

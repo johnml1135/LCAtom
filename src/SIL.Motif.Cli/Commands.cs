@@ -635,6 +635,14 @@ public static class Commands
                 return Fail(DraftNotFoundMessage(store, draftName));
 
             var draft = ReadDraft(draftPath);
+            if (string.IsNullOrWhiteSpace(draft.Label) || string.IsNullOrWhiteSpace(draft.Comment))
+            {
+                return Fail(
+                    $"Draft '{draftName}' cannot be finalized without both a short description (label) " +
+                    $"and an extended explanation (comment). Set them with 'label {draftName} <text>' " +
+                    $"and 'comment {draftName} <text>', then finalize again.");
+            }
+
             if (draft.Operations.Count == 0)
             {
                 return Fail(

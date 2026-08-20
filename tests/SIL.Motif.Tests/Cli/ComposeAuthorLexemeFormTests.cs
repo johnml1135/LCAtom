@@ -67,6 +67,8 @@ public sealed class ComposeAuthorLexemeFormTests
 
         Assert.Equal(0, result.ExitCode);
         Assert.Contains("2 operation(s) added", result.Output);
+        DraftRationale.Author(
+            _storeDir, "d", "Author a lexeme form", "Create the missing lexeme analysis and its attested gloss.");
 
         var finalize = Commands.Finalize(_storeDir, "d");
         Assert.Equal(0, finalize.ExitCode);
@@ -87,6 +89,8 @@ public sealed class ComposeAuthorLexemeFormTests
             0,
             Commands.ComposeAuthorLexemeForm(_storeDir, "d", _fwDataPath, IntentJson(entryId, includeGloss: false))
                 .ExitCode);
+        DraftRationale.Author(
+            _storeDir, "d", "Author a lexeme form", "Preserve the composer provenance in the finalized intent.");
 
         var finalize = Commands.Finalize(_storeDir, "d");
         Assert.Equal(0, finalize.ExitCode);
@@ -114,6 +118,8 @@ public sealed class ComposeAuthorLexemeFormTests
             0,
             Commands.ComposeAuthorLexemeForm(_storeDir, "d", _fwDataPath, IntentJson(entryId, includeGloss: false))
                 .ExitCode);
+        DraftRationale.Author(
+            _storeDir, "d", "Author a lexeme form", "Create the lexical analysis before adding the related manual edit.");
         var firstFinalize = Commands.Finalize(_storeDir, "d");
         var proposalId = ExtractProposalId(firstFinalize.Output);
 

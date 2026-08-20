@@ -7,6 +7,7 @@ using SIL.Motif.Cli.Store;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Model.DryRun;
 using SIL.Motif.Projection.Store;
+using SIL.Motif.Tests.TestFixtures;
 using Xunit;
 
 namespace SIL.Motif.Tests.Cli;
@@ -64,6 +65,8 @@ public sealed class SelectiveEditingTests : IDisposable
                 0,
                 Commands.AddSetGloss(_storeDir, draftName, target, "en", "gloss for " + target).ExitCode);
         }
+        DraftRationale.Author(
+            _storeDir, draftName, "Edit selected lexical entries", "Apply the authored gloss changes to the selected targets.");
         var finalize = Commands.Finalize(_storeDir, draftName);
         Assert.Equal(0, finalize.ExitCode);
         return ExtractProposalId(finalize.Output);
@@ -122,6 +125,8 @@ public sealed class SelectiveEditingTests : IDisposable
         Assert.Equal(0, Commands.New(_storeDir, "v1", "two independent ops").ExitCode);
         Assert.Equal(0, Commands.AddSetGloss(_storeDir, "v1", t1, "en", "gloss1").ExitCode);
         Assert.Equal(0, Commands.AddSetGloss(_storeDir, "v1", t2, "en", "gloss2").ExitCode);
+        DraftRationale.Author(
+            _storeDir, "v1", "Update two independent glosses", "Correct both lexical analyses in one proposal.");
         var finalize = Commands.Finalize(_storeDir, "v1");
         Assert.Equal(0, finalize.ExitCode);
         var proposalId = ExtractProposalId(finalize.Output);
@@ -192,6 +197,8 @@ public sealed class SelectiveEditingTests : IDisposable
         var add2 = Commands.AddSetGloss(_storeDir, "v1", t2, "en", "dependent", new[] { op1Id });
         var op2Id = ExtractOperationId(add2.Output);
         Assert.Equal(0, Commands.AddSetGloss(_storeDir, "v1", t3, "en", "independent").ExitCode);
+        DraftRationale.Author(
+            _storeDir, "v1", "Update related glosses", "Keep dependent edits together while preserving the independent edit.");
 
         var finalize = Commands.Finalize(_storeDir, "v1");
         Assert.Equal(0, finalize.ExitCode);
@@ -343,6 +350,8 @@ public sealed class SelectiveEditingTests : IDisposable
         var op2Id = ExtractOperationId(add2.Output);
         var add3 = Commands.AddSetGloss(_storeDir, "source", NewTarget(), "en", "rule5");
         var op3Id = ExtractOperationId(add3.Output);
+        DraftRationale.Author(
+            _storeDir, "source", "Partition authored gloss rules", "Split the rules into independently reviewable proposals.");
         var finalize = Commands.Finalize(_storeDir, "source");
         Assert.Equal(0, finalize.ExitCode);
         var sourceId = ExtractProposalId(finalize.Output);
@@ -381,6 +390,8 @@ public sealed class SelectiveEditingTests : IDisposable
         var op1Id = ExtractOperationId(add1.Output);
         var add2 = Commands.AddSetGloss(_storeDir, "source", NewTarget(), "en", "b", new[] { op1Id });
         var op2Id = ExtractOperationId(add2.Output);
+        DraftRationale.Author(
+            _storeDir, "source", "Separate dependent gloss rules", "Preserve declared dependencies while partitioning the proposal.");
         var finalize = Commands.Finalize(_storeDir, "source");
         Assert.Equal(0, finalize.ExitCode);
         var sourceId = ExtractProposalId(finalize.Output);
@@ -416,6 +427,8 @@ public sealed class SelectiveEditingTests : IDisposable
         var add1 = Commands.AddSetGloss(_storeDir, "source", NewTarget(), "en", "a");
         var op1Id = ExtractOperationId(add1.Output);
         Assert.Equal(0, Commands.AddSetGloss(_storeDir, "source", NewTarget(), "en", "b").ExitCode);
+        DraftRationale.Author(
+            _storeDir, "source", "Partition independent gloss rules", "Keep every authored edit assigned to a resulting proposal.");
         var finalize = Commands.Finalize(_storeDir, "source");
         var sourceId = ExtractProposalId(finalize.Output);
 
@@ -431,6 +444,8 @@ public sealed class SelectiveEditingTests : IDisposable
         Assert.Equal(0, Commands.New(_storeDir, "source", null).ExitCode);
         var add1 = Commands.AddSetGloss(_storeDir, "source", NewTarget(), "en", "a");
         var op1Id = ExtractOperationId(add1.Output);
+        DraftRationale.Author(
+            _storeDir, "source", "Partition one gloss rule", "Ensure each rule is assigned to at most one resulting proposal.");
         var finalize = Commands.Finalize(_storeDir, "source");
         var sourceId = ExtractProposalId(finalize.Output);
 

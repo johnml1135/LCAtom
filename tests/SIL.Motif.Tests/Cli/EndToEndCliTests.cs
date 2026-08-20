@@ -46,6 +46,8 @@ public sealed class EndToEndCliTests
         var newGloss = originalGloss + " (revised sense, Stage E CLI)";
         const string draftName = "stage-e-demo";
         const string label = "Stage E end-to-end demo";
+        const string shortDescription = "Clarify the first sense gloss";
+        const string extendedExplanation = "Replace the ambiguous gloss with the intended analysis.";
         const string applier = "motif-cli-tests";
 
         // --- new ---
@@ -59,6 +61,7 @@ public sealed class EndToEndCliTests
         var addResult = Commands.AddSetGloss(_storeDir, draftName, canonicalId.Value, wsTag, newGloss);
         Assert.Equal(0, addResult.ExitCode);
         Assert.Contains("lexical/lexSense/setGloss", addResult.Output);
+        DraftRationale.Author(_storeDir, draftName, shortDescription, extendedExplanation);
 
         // --- finalize ---
         var finalizeResult = Commands.Finalize(_storeDir, draftName);
@@ -86,6 +89,12 @@ public sealed class EndToEndCliTests
         Assert.Equal(0, showResult.ExitCode);
         Assert.Contains(proposalId, showResult.Output);
         Assert.Contains(canonicalId.Value, showResult.Output);
+        Assert.Contains(shortDescription, showResult.Output);
+        Assert.Contains(extendedExplanation, showResult.Output);
+        var showJsonResult = Commands.ShowJson(_storeDir, proposalId);
+        Assert.Equal(0, showJsonResult.ExitCode);
+        Assert.Contains(shortDescription, showJsonResult.Output);
+        Assert.Contains(extendedExplanation, showJsonResult.Output);
 
         // --- dry-run: real before/after from LibLCM, non-mutating ---
         var dryRunResult = Commands.DryRun(_storeDir, proposalId, _fwDataPath);
@@ -105,6 +114,8 @@ public sealed class EndToEndCliTests
         Assert.Contains("applied-log entry:", applyResult.Output);
         Assert.Contains(applier, applyResult.Output);
         Assert.Contains("\"status\": \"applied\"", File.ReadAllText(manifestPath));
+        Assert.Contains(shortDescription, File.ReadAllText(manifestPath));
+        Assert.Contains(extendedExplanation, File.ReadAllText(manifestPath));
 
         // Apply persists: re-open the saved project from disk and check the gloss + one applied-log entry.
         AssertGlossOnDisk(senseGuid, wsTag, newGloss);
@@ -164,6 +175,8 @@ public sealed class EndToEndCliTests
 
         Assert.Equal(0, Commands.New(_storeDir, draftName, null).ExitCode);
         Assert.Equal(0, Commands.AddSetGloss(_storeDir, draftName, canonicalId.Value, wsTag, newGloss).ExitCode);
+        DraftRationale.Author(
+            _storeDir, draftName, "Clarify the first sense gloss", "Record the intended analysis before applying the proposal.");
         var finalizeResult = Commands.Finalize(_storeDir, draftName);
         Assert.Equal(0, finalizeResult.ExitCode);
         var proposalId = ExtractProposalId(finalizeResult.Output);
@@ -205,6 +218,8 @@ public sealed class EndToEndCliTests
         var invalidTarget = Commands.AddSetGloss(_storeDir, "bad-target-draft", "not-a-canonical-id", "en", "x");
         Assert.NotEqual(0, invalidTarget.ExitCode);
         Assert.Contains("not a valid canonical id", invalidTarget.Output);
+        DraftRationale.Author(
+            _storeDir, "bad-target-draft", "Test an empty proposal", "Keep the no-operations refusal independently observable.");
 
         var emptyFinalize = Commands.Finalize(_storeDir, "bad-target-draft");
         Assert.NotEqual(0, emptyFinalize.ExitCode);
@@ -251,6 +266,8 @@ public sealed class EndToEndCliTests
             File.WriteAllText(draftPath, draft.ToJsonString());
         }
 
+        DraftRationale.Author(
+            _storeDir, draftName, "Prepare a dependent gloss", "Establish the lexical state required by later proposals.");
         var finalized = Commands.Finalize(_storeDir, draftName);
         Assert.Equal(0, finalized.ExitCode);
         return ExtractProposalId(finalized.Output);

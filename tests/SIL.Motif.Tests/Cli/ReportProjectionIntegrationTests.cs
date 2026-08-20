@@ -253,6 +253,8 @@ public sealed class ReportProjectionIntegrationTests
 
         Assert.Equal(0, Commands.New(_storeDir, draftName, label).ExitCode);
         Assert.Equal(0, Commands.AddSetGloss(_storeDir, draftName, canonicalId.Value, wsTag, newGloss).ExitCode);
+        DraftRationale.Author(
+            _storeDir, draftName, label, "Explain why this lexical gloss should replace the current analysis.");
         var finalize = Commands.Finalize(_storeDir, draftName);
         Assert.Equal(0, finalize.ExitCode);
         var proposalId = ExtractProposalId(finalize.Output);

@@ -48,6 +48,8 @@ public sealed class SessionCommandsTests
         Assert.Equal(0, Commands.New(_storeDir, draftName, null).ExitCode);
         Assert.Equal(
             0, Commands.AddSetGloss(_storeDir, draftName, canonicalId.Value, wsTag, newGloss).ExitCode);
+        DraftRationale.Author(
+            _storeDir, draftName, "Clarify the first sense gloss", "Replace the ambiguous gloss with the intended analysis.");
         var finalizeResult = Commands.Finalize(_storeDir, draftName);
         Assert.Equal(0, finalizeResult.ExitCode);
         var proposalId = ExtractProposalId(finalizeResult.Output);
@@ -146,6 +148,8 @@ public sealed class SessionCommandsTests
         Assert.Equal(0, Commands.New(_storeDir, draftName, null).ExitCode);
         Assert.Equal(
             0, Commands.AddSetGloss(_storeDir, draftName, canonicalId.Value, wsTag, newGloss).ExitCode);
+        DraftRationale.Author(
+            _storeDir, draftName, "Clarify the first sense gloss", "Replace the ambiguous gloss with the intended analysis.");
         var finalizeResult = Commands.Finalize(_storeDir, draftName);
         Assert.Equal(0, finalizeResult.ExitCode);
         var proposalId = ExtractProposalId(finalizeResult.Output);
@@ -200,6 +204,8 @@ public sealed class SessionCommandsTests
             File.WriteAllText(draftPath, draft.ToJsonString());
         }
 
+        DraftRationale.Author(
+            _storeDir, draftName, "Prepare a dependent gloss", "Establish the lexical state required by later proposals.");
         var finalized = Commands.Finalize(_storeDir, draftName);
         Assert.Equal(0, finalized.ExitCode);
         return ExtractProposalId(finalized.Output);
