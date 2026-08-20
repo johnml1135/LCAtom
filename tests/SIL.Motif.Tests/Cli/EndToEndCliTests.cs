@@ -113,9 +113,10 @@ public sealed class EndToEndCliTests
         Assert.Contains($"\"{originalGloss}\" -> \"{newGloss}\"", applyResult.Output);
         Assert.Contains("applied-log entry:", applyResult.Output);
         Assert.Contains(applier, applyResult.Output);
-        Assert.Contains("\"status\": \"applied\"", File.ReadAllText(manifestPath));
-        Assert.Contains(shortDescription, File.ReadAllText(manifestPath));
-        Assert.Contains(extendedExplanation, File.ReadAllText(manifestPath));
+        var appliedManifest = File.ReadAllText(manifestPath);
+        Assert.Contains("\"status\": \"applied\"", appliedManifest);
+        Assert.Contains(shortDescription, appliedManifest);
+        Assert.Contains(extendedExplanation, appliedManifest);
 
         // Apply persists: re-open the saved project from disk and check the gloss + one applied-log entry.
         AssertGlossOnDisk(senseGuid, wsTag, newGloss);

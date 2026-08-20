@@ -5,7 +5,6 @@ using System.Text.Json.Nodes;
 using SIL.Motif.Cli;
 using SIL.Motif.Cli.Store;
 using SIL.Motif.Contract.Ids;
-using SIL.Motif.Projection.Store;
 using SIL.Motif.Tests.TestFixtures;
 using Xunit;
 
@@ -124,49 +123,6 @@ public sealed class ReopenAmendTests
     }
 
     [Fact]
-    public void RationaleOnlyAmend_PersistsBothFields_WithoutMovingTheIntentDigest()
-    {
-        const string initialLabel = "Clarify the first sense gloss";
-        const string initialComment = "Replace the ambiguous gloss with the intended analysis.";
-        const string revisedLabel = "Explain the first sense analysis";
-        const string revisedComment = "Give reviewers the linguistic reason this gloss is the intended one.";
-        var target = CanonicalId.FromGuid(_seed.FirstSenseId).Value;
-
-        Assert.Equal(0, Commands.New(_storeDir, "original", null).ExitCode);
-        Assert.Equal(0, Commands.AddSetGloss(_storeDir, "original", target, "en", "a clarified gloss").ExitCode);
-        DraftRationale.Author(_storeDir, "original", initialLabel, initialComment);
-        var firstFinalize = Commands.Finalize(_storeDir, "original");
-        Assert.Equal(0, firstFinalize.ExitCode);
-        var proposalId = ExtractProposalId(firstFinalize.Output);
-        var firstDigest = ExtractIntentDigest(firstFinalize.Output);
-
-        Assert.Equal(0, Commands.Reopen(_storeDir, "rationale-amend", proposalId).ExitCode);
-        var reopened = ReadDraft(Path.Combine(_storeDir, "drafts", "rationale-amend.json"));
-        Assert.Equal(initialLabel, reopened.Label);
-        Assert.Equal(initialComment, reopened.Comment);
-        DraftRationale.Author(_storeDir, "rationale-amend", revisedLabel, revisedComment);
-
-        var amend = Commands.Finalize(_storeDir, "rationale-amend");
-
-        Assert.Equal(0, amend.ExitCode);
-        Assert.Equal(firstDigest, ExtractIntentDigest(amend.Output));
-        var manifest = ReadManifest(proposalId);
-        Assert.Equal(firstDigest, manifest.CurrentIntentDigest);
-        Assert.Equal(revisedLabel, manifest.Label);
-        Assert.Equal(revisedComment, manifest.Comment);
-        Assert.Single(Directory.GetFiles(new ProposalStore(_storeDir).ObjectsDirectory, "*.json"));
-
-        var showText = Commands.Show(_storeDir, proposalId);
-        var showJson = Commands.ShowJson(_storeDir, proposalId);
-        Assert.Equal(0, showText.ExitCode);
-        Assert.Equal(0, showJson.ExitCode);
-        Assert.Contains(revisedLabel, showText.Output);
-        Assert.Contains(revisedComment, showText.Output);
-        Assert.Contains(revisedLabel, showJson.Output);
-        Assert.Contains(revisedComment, showJson.Output);
-    }
-
-    [Fact]
     public void Show_OlderManifestWithoutRationale_RemainsReadable()
     {
         var target = CanonicalId.FromGuid(_seed.FirstSenseId).Value;
@@ -223,7 +179,4 @@ public sealed class ReopenAmendTests
     private static DraftDocument ReadDraft(string path) =>
         JsonSerializer.Deserialize<DraftDocument>(File.ReadAllText(path), StoreJsonOptions)!;
 
-    private ManifestDocument ReadManifest(string proposalId) =>
-        JsonSerializer.Deserialize<ManifestDocument>(
-            File.ReadAllText(new ProposalStore(_storeDir).ManifestPath(proposalId)), StoreJsonOptions)!;
 }

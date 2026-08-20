@@ -639,8 +639,8 @@ public static class Commands
             {
                 return Fail(
                     $"Draft '{draftName}' cannot be finalized without both a short description (label) " +
-                    $"and an extended explanation (comment). Set them with 'label {draftName} <text>' " +
-                    $"and 'comment {draftName} <text>', then finalize again.");
+                    $"and an extended explanation (comment). Set them with 'label --draft {draftName} <text>' " +
+                    $"and 'comment --draft {draftName} <text>', then finalize again.");
             }
 
             if (draft.Operations.Count == 0)

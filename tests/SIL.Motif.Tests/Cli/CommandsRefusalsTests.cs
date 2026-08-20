@@ -1,10 +1,12 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using SIL.Motif.Cli;
 using SIL.Motif.Cli.Store;
 using SIL.Motif.Contract.Ids;
+using SIL.Motif.Generator;
 using SIL.Motif.Tests.TestFixtures;
 using Xunit;
 
@@ -183,11 +185,30 @@ public sealed class CommandsRefusalsTests
         Assert.Contains("label", result.Output, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("extended explanation", result.Output, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("comment", result.Output, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains($"label {draftName}", result.Output, StringComparison.Ordinal);
-        Assert.Contains($"comment {draftName}", result.Output, StringComparison.Ordinal);
+        Assert.Contains($"label --draft {draftName} <text>", result.Output, StringComparison.Ordinal);
+        Assert.Contains($"comment --draft {draftName} <text>", result.Output, StringComparison.Ordinal);
         Assert.Equal(before, File.ReadAllText(draftPath));
         Assert.Empty(Directory.GetFiles(store.ObjectsDirectory, "*.json"));
         Assert.Empty(Directory.GetFiles(store.ManifestsDirectory, "*.json"));
+    }
+
+    [Fact]
+    public void Finalize_ArgvDiagnosticNamesCommandsThatRemedyTheRefusal()
+    {
+        const string draftName = "argv-rationale";
+        Assert.Equal(0, Commands.New(_storeDir, draftName, null).ExitCode);
+        Assert.Equal(0, Commands.AddSetGloss(_storeDir, draftName, _target, "en", "clarified gloss").ExitCode);
+
+        var refused = RunCli($"finalize --draft {draftName}");
+
+        Assert.NotEqual(0, refused.ExitCode);
+        Assert.Contains($"label --draft {draftName} <text>", refused.Error);
+        Assert.Contains($"comment --draft {draftName} <text>", refused.Error);
+        Assert.Equal(0, RunCli($"label --draft {draftName} \"Clarify the analysis\"").ExitCode);
+        Assert.Equal(
+            0,
+            RunCli($"comment --draft {draftName} \"Explain why this analysis is intended\"").ExitCode);
+        Assert.Equal(0, RunCli($"finalize --draft {draftName}").ExitCode);
     }
 
     [Fact]
@@ -628,6 +649,26 @@ public sealed class CommandsRefusalsTests
         var finalizeResult = Commands.Finalize(_storeDir, draftName);
         Assert.Equal(0, finalizeResult.ExitCode);
         return ExtractProposalId(finalizeResult.Output);
+    }
+
+    private (int ExitCode, string Output, string Error) RunCli(string arguments)
+    {
+        var executable = Path.Combine(
+            RepoPaths.FindRepoRoot(), "src", "SIL.Motif.Cli", "bin", "Debug", "net10.0", "motif.exe");
+        var start = new ProcessStartInfo(executable)
+        {
+            Arguments = $"{arguments} --store \"{_storeDir}\"",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+
+        using var process = Process.Start(start)!;
+        var output = process.StandardOutput.ReadToEnd();
+        var error = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+        return (process.ExitCode, output, error);
     }
 
     private static void DeleteTheCommittedObject(ProposalStore store, string proposalId)
