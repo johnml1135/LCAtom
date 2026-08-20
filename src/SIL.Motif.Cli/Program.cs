@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using SIL.Motif.Cli;
+using SIL.Motif.Projection;
 using SIL.Motif.Projection.Usage;
 
 // Thin dispatcher: verbs call straight into Commands, so tests exercise the same handlers without shelling out.
@@ -44,6 +45,13 @@ try
             var hasCurrentGrammar = flags.TryGetValue("current-grammar-sha256", out var currentGrammarSha256);
             if ((hasAssessment || hasCurrentCorpus || hasCurrentGrammar)
                 && !(hasAssessment && hasCurrentCorpus && hasCurrentGrammar))
+            {
+                return Usage(AnalysesUsage());
+            }
+            if (hasAssessment
+                && (!Sha256Value.IsCanonical(assessmentId)
+                    || !Sha256Value.IsCanonical(currentCorpusSha256)
+                    || !Sha256Value.IsCanonical(currentGrammarSha256)))
             {
                 return Usage(AnalysesUsage());
             }

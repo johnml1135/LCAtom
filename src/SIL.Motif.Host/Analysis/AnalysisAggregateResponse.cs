@@ -26,11 +26,32 @@ public sealed record AnalysisAssessmentProvenance(string CorpusId, string Corpus
 /// <see cref="Assessment"/> being <c>null</c>: with no Assessment on record, whether the grammar parses any
 /// given word form is not knowable, so there is nothing to count.
 /// </param>
-public sealed record AnalysisAggregateResponse(
-    IReadOnlyList<WordFormAnalysisAggregate> WordForms,
-    AnalysisAssessmentProvenance? Assessment,
-    UnanalysedReachFigure? UnanalysedReach = null)
+public sealed record AnalysisAggregateResponse
 {
+    public AnalysisAggregateResponse(
+        IReadOnlyList<WordFormAnalysisAggregate> WordForms,
+        AnalysisAssessmentProvenance? Assessment,
+        UnanalysedReachFigure? UnanalysedReach = null)
+    {
+        ArgumentNullException.ThrowIfNull(WordForms);
+        if ((Assessment is null) != (UnanalysedReach is null))
+        {
+            throw new ArgumentException(
+                "Assessment and unanalysed reach must either both be present or both be absent.",
+                nameof(UnanalysedReach));
+        }
+
+        this.WordForms = WordForms;
+        this.Assessment = Assessment;
+        this.UnanalysedReach = UnanalysedReach;
+    }
+
+    public IReadOnlyList<WordFormAnalysisAggregate> WordForms { get; }
+
+    public AnalysisAssessmentProvenance? Assessment { get; }
+
+    public UnanalysedReachFigure? UnanalysedReach { get; }
+
     /// <summary>Whether an Assessment was on record at all, independent of whether it is still current.</summary>
     public bool HasAssessment => Assessment is not null;
 

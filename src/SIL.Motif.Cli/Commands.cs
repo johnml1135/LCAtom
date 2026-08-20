@@ -180,7 +180,15 @@ public static class Commands
     {
         try
         {
-            var store = new SqliteAssessmentStore(Path.Combine(storeDir, "motif.db"));
+            Sha256Value.RequireCanonical(assessmentId, nameof(assessmentId));
+            Sha256Value.RequireCanonical(currentCorpusSha256, nameof(currentCorpusSha256));
+            Sha256Value.RequireCanonical(currentGrammarSourceSha256, nameof(currentGrammarSourceSha256));
+
+            var databasePath = Path.Combine(storeDir, "motif.db");
+            if (!File.Exists(databasePath))
+                return (1, null, FailText($"Assessment '{assessmentId}' was not found in the Motif store."));
+
+            var store = new SqliteAssessmentStore(databasePath);
             var assessment = store.Load(assessmentId);
             if (assessment is null)
                 return (1, null, FailText($"Assessment '{assessmentId}' was not found in the Motif store."));

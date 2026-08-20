@@ -7,6 +7,8 @@ namespace SIL.Motif.Tests.Projection;
 
 public sealed class AnalysisAggregateProjectionTests
 {
+    private static string Hash(char digit) => "sha256:" + new string(digit, 64);
+
     [Fact]
     public void ManualProjectionIsDeterministicAndCarriesEveryTextFigureInJson()
     {
@@ -48,7 +50,8 @@ public sealed class AnalysisAggregateProjectionTests
     {
         var response = new AnalysisAggregateResponse(
             Array.Empty<WordFormAnalysisAggregate>(),
-            new AnalysisAssessmentProvenance("corpus", "corpus-sha", "grammar-sha"));
+            new AnalysisAssessmentProvenance("corpus", Hash('a'), Hash('b')),
+            new UnanalysedReachFigure(0, 0));
 
         var error = Assert.Throws<ArgumentException>(() => ManualAnalysisProjectionQuery.Build(response));
 
@@ -83,11 +86,11 @@ public sealed class AnalysisAggregateProjectionTests
                     AutomaticAnalyses: null),
                 Wordform("wordform-guid-0004", "unanalysed"),
             },
-            new AnalysisAssessmentProvenance("corpus-one", "sha256:corpus", "sha256:grammar"),
+            new AnalysisAssessmentProvenance("corpus-one", Hash('c'), Hash('d')),
             reach);
 
         var projection = AnalysisAggregateProjectionQuery.Build(
-            response, "sha256:corpus", "sha256:grammar");
+            response, Hash('c'), Hash('d'));
         var text = CommandTextRenderer.Render(projection);
         var json = ProjectionJson.Serialize(projection);
 
@@ -119,19 +122,39 @@ public sealed class AnalysisAggregateProjectionTests
             Array.Empty<WordFormAnalysisAggregate>(),
             new AnalysisAssessmentProvenance(
                 "corpus-one",
-                "sha256:aaaaaaaaaaaabbbb",
-                "sha256:ccccccccccccdddd"));
+                Hash('a'),
+                Hash('c')),
+            new UnanalysedReachFigure(0, 0));
 
         var current = AnalysisAggregateProjectionQuery.Build(
-            response, "sha256:aaaaaaaaaaaabbbb", "sha256:ccccccccccccdddd");
+            response, Hash('a'), Hash('c'));
         var stale = AnalysisAggregateProjectionQuery.Build(
-            response, "sha256:9999999999990000", "sha256:8888888888887777");
+            response, Hash('9'), Hash('8'));
 
         Assert.Contains("still describes the current project", current.AssessmentState);
         Assert.Contains("corpus 'corpus-one'", current.AssessmentState);
         Assert.Contains("corpus has changed", stale.AssessmentState);
         Assert.Contains("grammar has changed", stale.AssessmentState);
         Assert.Contains("state that no longer exists", stale.AssessmentState);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("true")]
+    [InlineData("sha256:abc")]
+    [InlineData("sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")]
+    [InlineData("sha256:gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg")]
+    public void AssessmentProjectionRejectsMalformedCurrentHashes(string malformed)
+    {
+        var response = new AnalysisAggregateResponse(
+            Array.Empty<WordFormAnalysisAggregate>(),
+            new AnalysisAssessmentProvenance("corpus", Hash('a'), Hash('b')),
+            new UnanalysedReachFigure(0, 0));
+
+        Assert.Throws<ArgumentException>(() =>
+            AnalysisAggregateProjectionQuery.Build(response, malformed, Hash('b')));
+        Assert.Throws<ArgumentException>(() =>
+            AnalysisAggregateProjectionQuery.Build(response, Hash('a'), malformed));
     }
 
     private static WordFormAnalysisAggregate Wordform(

@@ -1,10 +1,14 @@
 using System;
 using System.IO;
+using System.Text.Json;
 using SIL.Motif.Cli;
 using SIL.Motif.Host.Analysis;
 using SIL.Motif.Host.Corpus;
 using SIL.Motif.Host.Parser;
 using SIL.Motif.Host.Store;
+using SIL.LCModel;
+using SIL.LCModel.Core.Text;
+using SIL.LCModel.Infrastructure;
 using SIL.Motif.Projection.Usage;
 using SIL.Motif.Tests.Projection;
 using SIL.Motif.Tests.TestFixtures;
@@ -21,6 +25,8 @@ namespace SIL.Motif.Tests.Cli;
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
 public sealed class ReportProjectionIntegrationTests
 {
+    private static string Hash(char digit) => "sha256:" + new string(digit, 64);
+
     private readonly SeededProject _seed;
     private readonly string _fwDataPath;
     private readonly string _storeDir;
@@ -79,7 +85,7 @@ public sealed class ReportProjectionIntegrationTests
                 Array.Empty<AssessedWord>(),
                 "outcome",
                 "semantic",
-                "sha256:grammar-current",
+                Hash('a'),
                 "model",
                 "pipeline",
                 0),
@@ -98,7 +104,7 @@ public sealed class ReportProjectionIntegrationTests
             _storeDir,
             _fwDataPath,
             assessmentId,
-            "sha256:corpus-moved",
+            Hash('b'),
             assessment.Report.GrammarSourceSha256,
             usage);
 
@@ -126,16 +132,109 @@ public sealed class ReportProjectionIntegrationTests
     [Fact]
     public void AnalysesReturnsClearErrorWhenNamedAssessmentDoesNotExist()
     {
+        var missingStore = Path.Combine(_storeDir, "missing-store");
+        var result = Commands.Analyses(
+            missingStore,
+            _fwDataPath,
+            Hash('0'),
+            Hash('1'),
+            Hash('2'));
+
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains(Hash('0'), result.Output);
+        Assert.Contains("not found", result.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.False(Directory.Exists(missingStore));
+    }
+
+    [Theory]
+    [InlineData("", "sha256:1111111111111111111111111111111111111111111111111111111111111111", "sha256:2222222222222222222222222222222222222222222222222222222222222222")]
+    [InlineData("sha256:abc", "sha256:1111111111111111111111111111111111111111111111111111111111111111", "sha256:2222222222222222222222222222222222222222222222222222222222222222")]
+    [InlineData("sha256:0000000000000000000000000000000000000000000000000000000000000000", "true", "sha256:2222222222222222222222222222222222222222222222222222222222222222")]
+    [InlineData("sha256:0000000000000000000000000000000000000000000000000000000000000000", "sha256:1111111111111111111111111111111111111111111111111111111111111111", "SHA256:2222222222222222222222222222222222222222222222222222222222222222")]
+    public void AssessmentCommandsRejectMalformedIdentifiers(
+        string assessmentId,
+        string currentCorpusSha256,
+        string currentGrammarSha256)
+    {
         var result = Commands.Analyses(
             _storeDir,
             _fwDataPath,
-            "missing-assessment",
-            "sha256:corpus",
-            "sha256:grammar");
+            assessmentId,
+            currentCorpusSha256,
+            currentGrammarSha256);
 
         Assert.NotEqual(0, result.ExitCode);
-        Assert.Contains("missing-assessment", result.Output);
-        Assert.Contains("not found", result.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("sha256:", result.Output);
+    }
+
+    [Fact]
+    public void AnalysesJoinsStoredAutomaticResultsToRealManuallyAnalysedWordforms()
+    {
+        SeedApprovedWordform("zzAssessmentParsed");
+        SeedApprovedWordform("zzAssessmentEmpty");
+        SeedApprovedWordform("zzAssessmentUncovered");
+
+        var assessment = new StoredAssessment(
+            new AssessReport(
+                new[]
+                {
+                    new AssessedWord(
+                        "zzAssessmentParsed",
+                        "Analysed",
+                        new[]
+                        {
+                            new ParsedAnalysis(
+                                null,
+                                new[] { _seed.FirstLexemeFormId.ToString() },
+                                0,
+                                "automatic-real-join"),
+                        }),
+                    new AssessedWord("zzAssessmentEmpty", "NoAnalysis", Array.Empty<ParsedAnalysis>()),
+                },
+                "outcome",
+                "semantic",
+                Hash('c'),
+                "model",
+                "pipeline",
+                0),
+            CorpusDescriptor.Create(
+                "real-join",
+                new[] { "zzAssessmentParsed", "zzAssessmentEmpty" }));
+        var assessmentId = new SqliteAssessmentStore(Path.Combine(_storeDir, "motif.db")).Save(assessment);
+
+        var result = Commands.AnalysesJson(
+            _storeDir,
+            _fwDataPath,
+            assessmentId,
+            assessment.Corpus.Sha256,
+            assessment.Report.GrammarSourceSha256);
+
+        Assert.Equal(0, result.ExitCode);
+        using var document = JsonDocument.Parse(result.Output);
+        var wordforms = document.RootElement.GetProperty("wordForms").EnumerateArray()
+            .ToDictionary(element => element.GetProperty("form").GetString()!, StringComparer.Ordinal);
+        Assert.Equal("automatic-real-join", wordforms["zzAssessmentParsed"]
+            .GetProperty("automaticAnalyses")[0].GetProperty("contentDigest").GetString());
+        Assert.Equal(1, wordforms["zzAssessmentParsed"].GetProperty("automaticAnalysisCount").GetInt32());
+        Assert.Empty(wordforms["zzAssessmentEmpty"].GetProperty("automaticAnalyses").EnumerateArray());
+        Assert.Equal(0, wordforms["zzAssessmentEmpty"].GetProperty("automaticAnalysisCount").GetInt32());
+        Assert.False(wordforms["zzAssessmentUncovered"].TryGetProperty("automaticAnalyses", out _));
+        Assert.False(wordforms["zzAssessmentUncovered"].TryGetProperty("automaticAnalysisCount", out _));
+    }
+
+    private void SeedApprovedWordform(string form)
+    {
+        var loader = new SIL.Motif.Host.LcmUtils.FwDataProjectLoader();
+        using var cache = loader.LoadScratchCache(_fwDataPath);
+        NonUndoableUnitOfWorkHelper.Do(cache.ActionHandlerAccessor, () =>
+        {
+            var wordform = cache.ServiceLocator.GetInstance<IWfiWordformFactory>()
+                .Create(TsStringUtils.MakeString(form, cache.DefaultVernWs));
+            var analysis = cache.ServiceLocator.GetInstance<IWfiAnalysisFactory>().Create();
+            wordform.AnalysesOC.Add(analysis);
+            cache.LangProject.DefaultUserAgent.SetEvaluation(analysis, Opinions.approves);
+        });
+        loader.Save(cache);
     }
 
     [Fact]

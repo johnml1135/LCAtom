@@ -23,6 +23,20 @@ namespace SIL.Motif.Tests.Analysis;
 /// </remarks>
 public class AnalysisAggregateResponseTests
 {
+    private static string Hash(char digit) => "sha256:" + new string(digit, 64);
+
+    [Fact]
+    public void AssessmentAndUnanalysedReachMustEitherBothBePresentOrBothBeAbsent()
+    {
+        var provenance = new AnalysisAssessmentProvenance("corpus", Hash('a'), Hash('b'));
+        var reach = new UnanalysedReachFigure(1, 0);
+
+        Assert.Throws<ArgumentException>(() => new AnalysisAggregateResponse(
+            Array.Empty<WordFormAnalysisAggregate>(), provenance));
+        Assert.Throws<ArgumentException>(() => new AnalysisAggregateResponse(
+            Array.Empty<WordFormAnalysisAggregate>(), Assessment: null, reach));
+    }
+
     [Fact]
     public void NoAssessmentOnRecord_StillReturnsTheManualSide_AndSaysNothingIsOnRecord()
     {
@@ -33,13 +47,13 @@ public class AnalysisAggregateResponseTests
         var response = new AnalysisAggregateResponse(new[] { wordform }, Assessment: null);
 
         Assert.False(response.HasAssessment);
-        Assert.False(response.IsCurrent("sha256:aaa", "sha256:bbb"));
+        Assert.False(response.IsCurrent(Hash('a'), Hash('b')));
 
         // The manual side — the test suite — is untouched and needs no parser at all.
         Assert.Single(response.WordForms);
         Assert.Single(response.WordForms[0].ManualAnalyses);
 
-        var description = response.DescribeAssessmentState("sha256:aaa", "sha256:bbb");
+        var description = response.DescribeAssessmentState(Hash('a'), Hash('b'));
         Assert.Contains("No assessment is on record", description);
     }
 
@@ -48,13 +62,14 @@ public class AnalysisAggregateResponseTests
     {
         var response = new AnalysisAggregateResponse(
             Array.Empty<WordFormAnalysisAggregate>(),
-            new AnalysisAssessmentProvenance("seh-wikipedia", "sha256:aaaaaaaaaaaabbbb", "sha256:ccccccccccccdddd"));
+            new AnalysisAssessmentProvenance("seh-wikipedia", Hash('a'), Hash('c')),
+            new UnanalysedReachFigure(0, 0));
 
         foreach (var sentence in new[]
                  {
-                     response.DescribeAssessmentState("sha256:aaaaaaaaaaaabbbb", "sha256:ccccccccccccdddd"), // current
-                     response.DescribeAssessmentState("sha256:9999999999990000", "sha256:ccccccccccccdddd"), // corpus moved
-                     response.DescribeAssessmentState("sha256:aaaaaaaaaaaabbbb", "sha256:8888888888887777"), // grammar moved
+                     response.DescribeAssessmentState(Hash('a'), Hash('c')), // current
+                     response.DescribeAssessmentState(Hash('9'), Hash('c')), // corpus moved
+                     response.DescribeAssessmentState(Hash('a'), Hash('8')), // grammar moved
                  })
         {
             Assert.Contains("seh-wikipedia", sentence);
@@ -68,20 +83,21 @@ public class AnalysisAggregateResponseTests
     {
         var response = new AnalysisAggregateResponse(
             Array.Empty<WordFormAnalysisAggregate>(),
-            new AnalysisAssessmentProvenance("seh-wikipedia", "sha256:aaaaaaaaaaaabbbb", "sha256:ccccccccccccdddd"));
+            new AnalysisAssessmentProvenance("seh-wikipedia", Hash('a'), Hash('c')),
+            new UnanalysedReachFigure(0, 0));
 
-        var current = response.DescribeAssessmentState("sha256:aaaaaaaaaaaabbbb", "sha256:ccccccccccccdddd");
+        var current = response.DescribeAssessmentState(Hash('a'), Hash('c'));
         Assert.Contains("still describes the current project", current);
         Assert.DoesNotContain("no longer exists", current);
 
-        var grammarMoved = response.DescribeAssessmentState("sha256:aaaaaaaaaaaabbbb", "sha256:8888888888887777");
+        var grammarMoved = response.DescribeAssessmentState(Hash('a'), Hash('8'));
         Assert.StartsWith("As of the assessment", grammarMoved);
         Assert.Contains("the grammar has changed", grammarMoved);
         Assert.Contains("888888888888", grammarMoved); // names what it moved to
         Assert.Contains("no longer exists", grammarMoved);
         Assert.DoesNotContain("the corpus has changed", grammarMoved);
 
-        var bothMoved = response.DescribeAssessmentState("sha256:9999999999990000", "sha256:8888888888887777");
+        var bothMoved = response.DescribeAssessmentState(Hash('9'), Hash('8'));
         Assert.Contains("the corpus has changed", bothMoved);
         Assert.Contains("the grammar has changed", bothMoved);
     }

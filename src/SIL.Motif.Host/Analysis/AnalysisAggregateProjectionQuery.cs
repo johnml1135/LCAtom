@@ -28,8 +28,15 @@ public static class AnalysisAggregateProjectionQuery
         string currentGrammarSourceSha256)
     {
         ArgumentNullException.ThrowIfNull(response);
-        ArgumentNullException.ThrowIfNull(currentCorpusSha256);
-        ArgumentNullException.ThrowIfNull(currentGrammarSourceSha256);
+        if (response.Assessment is { } assessment)
+        {
+            Sha256Value.RequireCanonical(currentCorpusSha256, nameof(currentCorpusSha256));
+            Sha256Value.RequireCanonical(currentGrammarSourceSha256, nameof(currentGrammarSourceSha256));
+            Sha256Value.RequireCanonical(assessment.CorpusSha256, nameof(assessment.CorpusSha256));
+            Sha256Value.RequireCanonical(
+                assessment.GrammarSourceSha256,
+                nameof(assessment.GrammarSourceSha256));
+        }
 
         var wordForms = response.WordForms
             .Where(wordForm => wordForm.ManualAnalyses.Count > 0)
