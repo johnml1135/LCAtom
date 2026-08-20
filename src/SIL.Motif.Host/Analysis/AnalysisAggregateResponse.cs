@@ -40,6 +40,12 @@ public sealed record AnalysisAggregateResponse
                 "Assessment and unanalysed reach must either both be present or both be absent.",
                 nameof(UnanalysedReach));
         }
+        if (Assessment is null && WordForms.Any(wordForm => wordForm.AutomaticAnalyses is not null))
+        {
+            throw new ArgumentException(
+                "Automatic analyses require Assessment provenance.",
+                nameof(WordForms));
+        }
 
         this.WordForms = WordForms;
         this.Assessment = Assessment;

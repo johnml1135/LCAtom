@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using SIL.LCModel;
+using SIL.Motif.Contract.Canonicalization;
 using SIL.Motif.Projection;
 
 namespace SIL.Motif.Host.Analysis;

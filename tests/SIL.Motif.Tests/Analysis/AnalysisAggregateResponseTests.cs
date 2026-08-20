@@ -38,6 +38,37 @@ public class AnalysisAggregateResponseTests
     }
 
     [Fact]
+    public void AutomaticAnalysesRequireAssessmentProvenance()
+    {
+        var wordform = new WordFormAnalysisAggregate(
+            "wordform-guid-1",
+            "mbali",
+            Array.Empty<ApprovedAnalysis>(),
+            Array.Empty<AutomaticAnalysis>());
+
+        Assert.Throws<ArgumentException>(() => new AnalysisAggregateResponse(
+            new[] { wordform },
+            Assessment: null));
+    }
+
+    [Fact]
+    public void AssessmentMayLeaveUncoveredWordformsWithoutAutomaticAnalyses()
+    {
+        var wordform = new WordFormAnalysisAggregate(
+            "wordform-guid-1",
+            "mbali",
+            Array.Empty<ApprovedAnalysis>(),
+            AutomaticAnalyses: null);
+
+        var response = new AnalysisAggregateResponse(
+            new[] { wordform },
+            new AnalysisAssessmentProvenance("corpus", Hash('a'), Hash('b')),
+            new UnanalysedReachFigure(0, 0));
+
+        Assert.Null(response.WordForms[0].AutomaticAnalyses);
+    }
+
+    [Fact]
     public void NoAssessmentOnRecord_StillReturnsTheManualSide_AndSaysNothingIsOnRecord()
     {
         var wordform = new WordFormAnalysisAggregate(

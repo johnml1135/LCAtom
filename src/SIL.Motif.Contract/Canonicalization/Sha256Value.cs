@@ -1,6 +1,6 @@
 using System;
 
-namespace SIL.Motif.Projection;
+namespace SIL.Motif.Contract.Canonicalization;
 
 /// <summary>Validates the canonical text form shared by Motif's SHA-256 identities.</summary>
 public static class Sha256Value

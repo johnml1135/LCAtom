@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using SIL.Motif.Cli;
-using SIL.Motif.Projection;
+using SIL.Motif.Contract.Canonicalization;
 using SIL.Motif.Projection.Usage;
 
 // Thin dispatcher: verbs call straight into Commands, so tests exercise the same handlers without shelling out.
