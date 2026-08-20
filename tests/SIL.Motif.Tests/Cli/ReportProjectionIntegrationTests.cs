@@ -1,6 +1,10 @@
 using System;
 using System.IO;
 using SIL.Motif.Cli;
+using SIL.Motif.Host.Analysis;
+using SIL.Motif.Host.Corpus;
+using SIL.Motif.Host.Parser;
+using SIL.Motif.Host.Store;
 using SIL.Motif.Projection.Usage;
 using SIL.Motif.Tests.Projection;
 using SIL.Motif.Tests.TestFixtures;
@@ -65,6 +69,73 @@ public sealed class ReportProjectionIntegrationTests
             Assert.Equal(new[] { "fwDataPath:text" }, entry.ArgumentShape);
             Assert.DoesNotContain(_fwDataPath, string.Join(" ", entry.ArgumentShape), StringComparison.Ordinal);
         });
+    }
+
+    [Fact]
+    public void AnalysesLoadsNamedAssessmentFromSqliteWithoutRecordingValues()
+    {
+        var assessment = new StoredAssessment(
+            new AssessReport(
+                Array.Empty<AssessedWord>(),
+                "outcome",
+                "semantic",
+                "sha256:grammar-current",
+                "model",
+                "pipeline",
+                0),
+            CorpusDescriptor.Create("corpus-one", Array.Empty<string>()));
+        var assessmentId = new SqliteAssessmentStore(Path.Combine(_storeDir, "motif.db")).Save(assessment);
+        var usage = new UsageLog();
+
+        var text = Commands.Analyses(
+            _storeDir,
+            _fwDataPath,
+            assessmentId,
+            assessment.Corpus.Sha256,
+            assessment.Report.GrammarSourceSha256,
+            usage);
+        var json = Commands.AnalysesJson(
+            _storeDir,
+            _fwDataPath,
+            assessmentId,
+            "sha256:corpus-moved",
+            assessment.Report.GrammarSourceSha256,
+            usage);
+
+        Assert.Equal(0, text.ExitCode);
+        Assert.Equal(0, json.ExitCode);
+        Assert.Contains("still describes the current project", text.Output);
+        Assert.Contains("corpus has changed", json.Output);
+        Assert.Contains("\"unanalysedCount\": 0", json.Output);
+        Assert.Contains("\"parsedCount\": 0", json.Output);
+        Assert.All(usage.Entries, entry => Assert.Equal(
+            new[]
+            {
+                "fwDataPath:text",
+                "assessmentId:text",
+                "currentCorpusSha256:text",
+                "currentGrammarSourceSha256:text",
+            },
+            entry.ArgumentShape));
+        var usageText = string.Join(" ", usage.Entries.SelectMany(entry => entry.ArgumentShape));
+        Assert.DoesNotContain(_storeDir, usageText, StringComparison.Ordinal);
+        Assert.DoesNotContain(assessmentId, usageText, StringComparison.Ordinal);
+        Assert.DoesNotContain(assessment.Corpus.Sha256, usageText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AnalysesReturnsClearErrorWhenNamedAssessmentDoesNotExist()
+    {
+        var result = Commands.Analyses(
+            _storeDir,
+            _fwDataPath,
+            "missing-assessment",
+            "sha256:corpus",
+            "sha256:grammar");
+
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains("missing-assessment", result.Output);
+        Assert.Contains("not found", result.Output, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

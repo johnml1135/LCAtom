@@ -12,6 +12,7 @@ using SIL.Motif.Contract.Parsing;
 using SIL.Motif.Host.Analysis;
 using SIL.Motif.Host.Corpus;
 using SIL.Motif.Host.LcmUtils;
+using SIL.Motif.Host.Store;
 using SIL.Motif.Projection;
 using SIL.Motif.Projection.Rendering;
 using SIL.Motif.Projection.Store;
@@ -125,6 +126,78 @@ public static class Commands
         return projection is not null
             ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
             : new CommandResult(exitCode, error!);
+    }
+
+    public static CommandResult Analyses(
+        string storeDir,
+        string fwDataPath,
+        string assessmentId,
+        string currentCorpusSha256,
+        string currentGrammarSourceSha256,
+        UsageLog? usage = null)
+    {
+        RecordAssessmentAnalysisUsage(usage);
+        var (exitCode, projection, error) = BuildAssessmentAnalysisProjection(
+            storeDir, fwDataPath, assessmentId, currentCorpusSha256, currentGrammarSourceSha256);
+        return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : new CommandResult(exitCode, error!);
+    }
+
+    /// <summary>The Assessment-backed <c>analyses</c> report as JSON.</summary>
+    public static CommandResult AnalysesJson(
+        string storeDir,
+        string fwDataPath,
+        string assessmentId,
+        string currentCorpusSha256,
+        string currentGrammarSourceSha256,
+        UsageLog? usage = null)
+    {
+        RecordAssessmentAnalysisUsage(usage);
+        var (exitCode, projection, error) = BuildAssessmentAnalysisProjection(
+            storeDir, fwDataPath, assessmentId, currentCorpusSha256, currentGrammarSourceSha256);
+        return projection is not null
+            ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
+            : new CommandResult(exitCode, error!);
+    }
+
+    private static void RecordAssessmentAnalysisUsage(UsageLog? usage) =>
+        usage?.Record(
+            "analyses",
+            new[]
+            {
+                UsageArgumentShape.Text("fwDataPath"),
+                UsageArgumentShape.Text("assessmentId"),
+                UsageArgumentShape.Text("currentCorpusSha256"),
+                UsageArgumentShape.Text("currentGrammarSourceSha256"),
+            });
+
+    private static (int ExitCode, AnalysisAggregateProjection? Projection, string? Error)
+        BuildAssessmentAnalysisProjection(
+            string storeDir,
+            string fwDataPath,
+            string assessmentId,
+            string currentCorpusSha256,
+            string currentGrammarSourceSha256)
+    {
+        try
+        {
+            var store = new SqliteAssessmentStore(Path.Combine(storeDir, "motif.db"));
+            var assessment = store.Load(assessmentId);
+            if (assessment is null)
+                return (1, null, FailText($"Assessment '{assessmentId}' was not found in the Motif store."));
+
+            var fullPath = ResolveProjectPath(fwDataPath);
+            var loader = new FwDataProjectLoader();
+            using var cache = loader.LoadScratchCache(fullPath);
+            return (
+                0,
+                AnalysisAggregateProjectionQuery.Read(
+                    cache, assessment, currentCorpusSha256, currentGrammarSourceSha256),
+                null);
+        }
+        catch (Exception ex)
+        {
+            return (1, null, FailText(ex.Message));
+        }
     }
 
     private static (int ExitCode, AnalysisAggregateProjection? Projection, string? Error)

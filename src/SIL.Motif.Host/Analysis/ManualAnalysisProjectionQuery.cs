@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using SIL.LCModel;
 using SIL.Motif.Projection;
 
@@ -23,33 +22,6 @@ public static class ManualAnalysisProjectionQuery
                 "A manual analysis projection cannot discard a recorded Assessment.", nameof(response));
         }
 
-        var wordForms = response.WordForms
-            .Where(wordForm => wordForm.ManualAnalyses.Count > 0)
-            .OrderBy(wordForm => wordForm.Form, StringComparer.Ordinal)
-            .ThenBy(wordForm => wordForm.WordformGuid, StringComparer.Ordinal)
-            .Select(wordForm =>
-            {
-                var manualAnalyses = wordForm.ManualAnalyses
-                    .OrderBy(analysis => analysis.ContentDigest, StringComparer.Ordinal)
-                    .Select(analysis => new ApprovedAnalysisView(
-                        analysis.ContentDigest,
-                        analysis.MorphBreakdown,
-                        analysis.Occurrences
-                            .Select(occurrence => new AnalysisOccurrenceView(
-                                occurrence.SegmentGuid,
-                                occurrence.AnalysisIndex))
-                            .ToList()))
-                    .ToList();
-
-                return new WordFormAnalysisView(
-                    wordForm.WordformGuid,
-                    wordForm.Form,
-                    manualAnalyses);
-            })
-            .ToList();
-
-        return new AnalysisAggregateProjection(
-            response.DescribeAssessmentState(string.Empty, string.Empty),
-            wordForms);
+        return AnalysisAggregateProjectionQuery.Build(response, string.Empty, string.Empty);
     }
 }

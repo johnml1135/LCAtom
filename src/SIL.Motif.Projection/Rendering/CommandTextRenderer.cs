@@ -143,10 +143,31 @@ public static class CommandTextRenderer
                 foreach (var occurrence in analysis.Occurrences)
                     sb.AppendLine($"          {occurrence.SegmentGuid}[{occurrence.AnalysisIndex}]");
             }
+
+            if (wordForm.AutomaticAnalyses is null)
+            {
+                sb.AppendLine("    automatic analyses: not covered");
+            }
+            else
+            {
+                sb.AppendLine($"    automatic analyses: {wordForm.AutomaticAnalysisCount}");
+                foreach (var analysis in wordForm.AutomaticAnalyses)
+                {
+                    sb.AppendLine($"      {analysis.ContentDigest}");
+                    sb.AppendLine($"        {analysis.MorphBreakdown}");
+                }
+            }
         }
 
         sb.AppendLine();
         sb.AppendLine(projection.AssessmentState);
+        if (projection.UnanalysedReach is { } reach)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"Unanalysed word forms: {reach.UnanalysedCount}");
+            sb.AppendLine($"Parsed unanalysed word forms: {reach.ParsedCount}");
+            sb.AppendLine(reach.Statement);
+        }
         return sb.ToString();
     }
 

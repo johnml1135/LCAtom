@@ -38,10 +38,24 @@ try
 
         case "analyses":
             if (!flags.TryGetValue("project", out var analysesProject))
-                return Usage("Usage: motif analyses --project <fwdata> [--json]");
-            result = asJson
-                ? Commands.AnalysesJson(analysesProject, usage)
-                : Commands.Analyses(analysesProject, usage);
+                return Usage(AnalysesUsage());
+            var hasAssessment = flags.TryGetValue("assessment", out var assessmentId);
+            var hasCurrentCorpus = flags.TryGetValue("current-corpus-sha256", out var currentCorpusSha256);
+            var hasCurrentGrammar = flags.TryGetValue("current-grammar-sha256", out var currentGrammarSha256);
+            if ((hasAssessment || hasCurrentCorpus || hasCurrentGrammar)
+                && !(hasAssessment && hasCurrentCorpus && hasCurrentGrammar))
+            {
+                return Usage(AnalysesUsage());
+            }
+            result = hasAssessment
+                ? asJson
+                    ? Commands.AnalysesJson(
+                        storeDir, analysesProject, assessmentId!, currentCorpusSha256!, currentGrammarSha256!, usage)
+                    : Commands.Analyses(
+                        storeDir, analysesProject, assessmentId!, currentCorpusSha256!, currentGrammarSha256!, usage)
+                : asJson
+                    ? Commands.AnalysesJson(analysesProject, usage)
+                    : Commands.Analyses(analysesProject, usage);
             break;
 
         case "new":
@@ -349,6 +363,11 @@ static int Usage(string message)
     return 1;
 }
 
+static string AnalysesUsage() =>
+    "Usage: motif analyses --project <fwdata> [--json] OR motif analyses --project <fwdata> " +
+    "--assessment <assessmentId> --current-corpus-sha256 <sha256> " +
+    "--current-grammar-sha256 <sha256> [--store <dir>] [--json]";
+
 static void PrintUsage(TextWriter writer)
 {
     writer.WriteLine("Usage: motif <command> [options]");
@@ -356,6 +375,9 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine("Commands:");
     writer.WriteLine("  open <fwdata> [--json]");
     writer.WriteLine("  analyses --project <fwdata> [--json]");
+    writer.WriteLine(
+        "  analyses --project <fwdata> --assessment <assessmentId> --current-corpus-sha256 <sha256> " +
+        "--current-grammar-sha256 <sha256> [--store <dir>] [--json]");
     writer.WriteLine("  new --draft <name> [--label <text>]");
     writer.WriteLine(
         "  add-set-gloss --draft <name> --target <canonicalId> --ws <wsTag> --text <text> " +

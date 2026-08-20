@@ -204,6 +204,27 @@ reports coverage. It emits no operations yet — that is `MOT-4`. The implemente
 - exercise the whole flow through the `motif` CLI — `open`, `analyses`, `new`, `add-set-gloss`,
   `finalize`, `list`, `show`, `dry-run`, `apply`, `log`.
 
+The analysis aggregate is a cheap read that never invokes PanGloss. Without an Assessment it reports
+the project's manually approved analyses:
+
+```powershell
+motif analyses --project C:\path\to\project.fwdata [--json]
+```
+
+To include automatic analyses from an Assessment already stored in `.motif/motif.db`, name it and
+supply both current hashes. Motif compares those caller-supplied values with the stored provenance so
+the Report can say whether the Assessment is current or stale without running the parser:
+
+```powershell
+motif analyses --project C:\path\to\project.fwdata `
+  --assessment <assessmentId> `
+  --current-corpus-sha256 <sha256> `
+  --current-grammar-sha256 <sha256> `
+  [--store <dir>] [--json]
+```
+
+Producing the Assessment is a separate slow operation and is not yet a CLI verb.
+
 This is a tested control and proving surface for one operation kind, not evidence that the planned
 product is complete.
 

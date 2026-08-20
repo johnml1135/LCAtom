@@ -19,24 +19,34 @@ public sealed record ApprovedAnalysisView(
     public int OccurrenceCount => Occurrences.Count;
 }
 
-/// <summary>One word form and its manually approved analyses in the analysis aggregate report.</summary>
+/// <summary>One automatic analysis recorded by an Assessment.</summary>
+public sealed record AutomaticAnalysisView(string ContentDigest, string MorphBreakdown);
+
+/// <summary>The aggregate reach figure for correctly-spelled word forms without manual analyses.</summary>
+public sealed record UnanalysedReachView(int UnanalysedCount, int ParsedCount, string Statement);
+
+/// <summary>One word form and its manual and automatic analyses in the analysis aggregate report.</summary>
 public sealed record WordFormAnalysisView(
     string WordformGuid,
     string Form,
-    IReadOnlyList<ApprovedAnalysisView> ManualAnalyses)
+    IReadOnlyList<ApprovedAnalysisView> ManualAnalyses,
+    IReadOnlyList<AutomaticAnalysisView>? AutomaticAnalyses = null)
 {
     /// <summary>How many manually approved analyses the word form has.</summary>
     public int ManualAnalysisCount => ManualAnalyses.Count;
+
+    /// <summary><c>null</c> when the Assessment did not cover the word; otherwise the automatic list's count.</summary>
+    public int? AutomaticAnalysisCount => AutomaticAnalyses?.Count;
 }
 
 /// <summary>
-/// The read-only analysis aggregate when no Assessment is supplied: the manually approved analyses
-/// already stored in the project and an explicit statement that automatic analyses are absent. Word
-/// forms without an approved analysis are omitted because the unanalysed are reported only in aggregate.
+/// The read-only analysis aggregate. Word forms without an approved analysis are omitted because the
+/// unanalysed are reported only in aggregate.
 /// </summary>
 public sealed record AnalysisAggregateProjection(
     string AssessmentState,
-    IReadOnlyList<WordFormAnalysisView> WordForms)
+    IReadOnlyList<WordFormAnalysisView> WordForms,
+    UnanalysedReachView? UnanalysedReach = null)
 {
     /// <summary>How many word forms have at least one manually approved analysis.</summary>
     public int WordFormCount => WordForms.Count;
