@@ -6,6 +6,7 @@ using SIL.Motif.Contract.Canonicalization;
 using SIL.Motif.Contract.Model;
 using SIL.Motif.Contract.Parsing;
 using SIL.Motif.Projection.Store;
+using SIL.Motif.Runner.DryRun;
 
 namespace SIL.Motif.Cli.Store;
 
@@ -63,16 +64,17 @@ public sealed class ProposalStore
     /// Proposals that must prepare a Dry Run scratch, in deterministic topological order. Applied
     /// prerequisites satisfy their dependency branch without requiring its stored objects.
     /// </summary>
-    public IReadOnlyList<Proposal> PlanPrerequisites(
+    public PrerequisiteExecutionPlan PlanPrerequisites(
         Proposal requested, IReadOnlyCollection<Guid> appliedProposalIds)
     {
         if (requested is null) throw new ArgumentNullException(nameof(requested));
         if (appliedProposalIds is null) throw new ArgumentNullException(nameof(appliedProposalIds));
 
-        return PrerequisiteClosurePlanner.Plan(
+        var candidates = PrerequisiteClosureResolver.Resolve(
             requested,
             id => LoadFinalizedProposal(id).Envelope,
             appliedProposalIds);
+        return PrerequisiteExecutionPlan.Create(requested, candidates, appliedProposalIds);
     }
 
     public string DraftPath(string draftName) => Path.Combine(DraftsDirectory, SafeFileName(draftName) + ".json");

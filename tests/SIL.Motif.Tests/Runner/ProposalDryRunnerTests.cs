@@ -140,29 +140,62 @@ public sealed class ProposalDryRunnerTests : IDisposable
     }
 
     [Fact]
-    public void DryRun_ExecutesPrerequisitesExactlyInTheSuppliedPlannerOrder()
+    public void DryRun_ReversedCandidateInputStillExecutesDeclaredPrerequisiteFirst()
     {
         var (sense, _, wsTag, originalGloss) = FindSenseWithKnownGloss();
         var target = CanonicalId.FromGuid(sense.Guid);
         var first = BuildSetGlossProposal(target, wsTag, originalGloss + " first");
-        var second = BuildSetGlossProposal(target, wsTag, originalGloss + " second");
-        var ordered = new[] { first, second }
-            .OrderBy(proposal => proposal.ProposalId.Value, StringComparer.Ordinal)
-            .ToArray();
-        var suppliedByPlanner = ordered.Reverse().ToArray();
-        var expectedBefore = suppliedByPlanner[1] == first
-            ? originalGloss + " first"
-            : originalGloss + " second";
-        var dependent = BuildSetGlossProposal(target, wsTag, originalGloss + " dependent");
+        var second = WithRequirements(
+            BuildSetGlossProposal(target, wsTag, originalGloss + " second"), first.ProposalId);
+        var dependent = WithRequirements(
+            BuildSetGlossProposal(target, wsTag, originalGloss + " dependent"), second.ProposalId);
+        var plan = PrerequisiteExecutionPlan.Create(
+            dependent, new[] { second, first }, Array.Empty<Guid>());
 
         var scratchRoot = Path.Combine(_tempRoot, "scratch-prerequisite-order");
         using var scratch = DryRunScratch.Adopt(
             new ScratchCacheFactory().CreateFromFileCopy(_cache.ProjectId.Path, scratchRoot),
             "test scratch with reversed prerequisite collection");
 
-        var dryRun = ProposalDryRunner.Run(scratch, suppliedByPlanner, dependent);
+        var dryRun = ProposalDryRunner.Run(scratch, plan);
 
-        Assert.Equal(expectedBefore, Assert.Single(dryRun.ExpectedEffects).Before[wsTag]);
+        Assert.Equal(originalGloss + " second", Assert.Single(dryRun.ExpectedEffects).Before[wsTag]);
+    }
+
+    [Fact]
+    public void ExecutionPlan_MissingUnappliedPrerequisite_RefusesAndNamesIt()
+    {
+        var missing = CanonicalId.Mint();
+        var dependent = WithRequirements(
+            BuildSetGlossProposal(CanonicalId.Mint(), "en", "dependent"), missing);
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => PrerequisiteExecutionPlan.Create(
+                dependent, Array.Empty<Proposal>(), Array.Empty<Guid>()));
+
+        Assert.Contains(missing.Value, ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ExecutionPlan_CyclicCandidateClosure_RefusesAndReportsCompleteCycle()
+    {
+        var firstId = CanonicalId.Mint();
+        var secondId = CanonicalId.Mint();
+        var first = WithIdentityAndRequirements(
+            BuildSetGlossProposal(CanonicalId.Mint(), "en", "first"), firstId, secondId);
+        var second = WithIdentityAndRequirements(
+            BuildSetGlossProposal(CanonicalId.Mint(), "en", "second"), secondId, firstId);
+        var dependent = WithRequirements(
+            BuildSetGlossProposal(CanonicalId.Mint(), "en", "dependent"), firstId);
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => PrerequisiteExecutionPlan.Create(
+                dependent, new[] { second, first }, Array.Empty<Guid>()));
+
+        Assert.Contains(
+            $"{firstId.Value} -> {secondId.Value} -> {firstId.Value}",
+            ex.Message,
+            StringComparison.Ordinal);
     }
 
     private (ILexSense Sense, int WsHandle, string WsTag, string Gloss) FindSenseWithKnownGloss()
@@ -190,4 +223,16 @@ public sealed class ProposalDryRunnerTests : IDisposable
             requires: null,
             operations: new[] { operation });
     }
+
+    private static Proposal WithRequirements(Proposal proposal, params CanonicalId[] requirements) =>
+        WithIdentityAndRequirements(proposal, proposal.ProposalId, requirements);
+
+    private static Proposal WithIdentityAndRequirements(
+        Proposal proposal, CanonicalId proposalId, params CanonicalId[] requirements) =>
+        new(
+            proposal.ContractVersions,
+            proposalId,
+            requirements,
+            proposal.Operations,
+            proposal.Extensions);
 }

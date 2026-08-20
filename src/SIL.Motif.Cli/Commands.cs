@@ -1385,7 +1385,7 @@ public static class Commands
             var appliedProposalIds = ProjectAppliedLog.ReadAll(cache)
                 .Select(entry => entry.ProposalId)
                 .ToArray();
-            var prerequisites = store.PlanPrerequisites(envelope, appliedProposalIds);
+            var plan = store.PlanPrerequisites(envelope, appliedProposalIds);
 
             // Save before the copy: the scratch copies the FILE, so an uncommitted edit is invisible to it (ADR 0016).
             loader.Save(cache);
@@ -1398,7 +1398,7 @@ public static class Commands
                 $"file copy of {fullFwDataPath}",
                 onDisposed: () => TryDeleteDirectory(scratchRoot));
 
-            var dryRun = ProposalDryRunner.Run(scratch, prerequisites, envelope);
+            var dryRun = ProposalDryRunner.Run(scratch, plan);
 
             // Persist the bound-DryRun anchor (docs/adr/0004 decision 3): apply requires it present and unmoved.
             manifest.Anchor = dryRun.Anchor;
@@ -1576,9 +1576,9 @@ public static class Commands
             var appliedProposalIds = ProjectAppliedLog.ReadAll(session.LiveCache)
                 .Select(entry => entry.ProposalId)
                 .ToArray();
-            var prerequisites = new ProposalStore(storeDir)
+            var plan = new ProposalStore(storeDir)
                 .PlanPrerequisites(envelope, appliedProposalIds);
-            var dryRun = session.DryRun(prerequisites, envelope);
+            var dryRun = session.DryRun(plan);
 
             // Persist the bound-DryRun anchor (docs/adr/0004 decision 3): apply requires it present and unmoved.
             manifest.Anchor = dryRun.Anchor;

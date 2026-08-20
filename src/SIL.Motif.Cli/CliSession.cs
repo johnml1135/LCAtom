@@ -117,21 +117,21 @@ public sealed class CliSession : IDisposable
     /// </summary>
     public DryRunModel DryRun(Proposal proposal)
     {
-        return DryRun(Array.Empty<Proposal>(), proposal);
+        return DryRun(PrerequisiteExecutionPlan.Create(
+            proposal, Array.Empty<Proposal>(), Array.Empty<Guid>()));
     }
 
     /// <summary>
-    /// Prepares one fresh scratch with <paramref name="prerequisites"/> and evaluates
-    /// <paramref name="proposal"/> against that state. The pristine freshness check covers every
-    /// Proposal whose operations will execute on the scratch.
+    /// Prepares one fresh scratch with <paramref name="plan"/>'s prerequisites and evaluates its
+    /// requested Proposal against that state. The pristine freshness check covers every Proposal
+    /// whose operations will execute on the scratch.
     /// </summary>
-    public DryRunModel DryRun(IReadOnlyList<Proposal> prerequisites, Proposal proposal)
+    public DryRunModel DryRun(PrerequisiteExecutionPlan plan)
     {
-        if (prerequisites is null) throw new ArgumentNullException(nameof(prerequisites));
-        if (proposal is null) throw new ArgumentNullException(nameof(proposal));
+        if (plan is null) throw new ArgumentNullException(nameof(plan));
         ThrowIfDisposed();
 
-        EnsurePristineIsFresh(prerequisites, proposal);
+        EnsurePristineIsFresh(plan);
 
         var fanOutRoot = Path.Combine(_sessionTempRoot, "run-" + Guid.NewGuid().ToString("N"));
         var fanOutCache = _scratchFactory.CreateFromFileCopy(_pristineFwDataPath!, fanOutRoot);
@@ -142,7 +142,7 @@ public sealed class CliSession : IDisposable
 
         try
         {
-            return ProposalDryRunner.Run(scratch, prerequisites, proposal);
+            return ProposalDryRunner.Run(scratch, plan);
         }
         finally
         {
@@ -207,7 +207,7 @@ public sealed class CliSession : IDisposable
         return receipt;
     }
 
-    private void EnsurePristineIsFresh(IReadOnlyList<Proposal> prerequisites, Proposal proposal)
+    private void EnsurePristineIsFresh(PrerequisiteExecutionPlan plan)
     {
         if (_pristineCache is null)
         {
@@ -215,7 +215,7 @@ public sealed class CliSession : IDisposable
             return;
         }
 
-        foreach (var candidate in prerequisites.Concat(new[] { proposal }))
+        foreach (var candidate in plan.Prerequisites.Concat(new[] { plan.Requested }))
         {
             var liveFootprint = FootprintProbe.ComputeCurrentFootprintDigest(LiveCache, candidate);
             var pristineFootprint = FootprintProbe.ComputeCurrentFootprintDigest(_pristineCache, candidate);

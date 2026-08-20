@@ -1,5 +1,6 @@
 using SIL.Motif.Contract.Model;
 using SIL.Motif.Host.LcmUtils;
+using SIL.Motif.Runner.AppliedLog;
 using SIL.Motif.Runner.DryRun;
 using SIL.LCModel;
 using DryRunModel = SIL.Motif.Model.DryRun.DryRun;
@@ -66,6 +67,13 @@ internal static class ScratchDryRun
                 catch { /* best effort: a locked handle must not fail the test */ }
             });
 
-        return ProposalDryRunner.Run(scratch, proposal);
+        var appliedProposalIds = ProjectAppliedLog.ReadAll(projectCache)
+            .Select(entry => entry.ProposalId)
+            .ToArray();
+        var plan = PrerequisiteExecutionPlan.Create(
+            proposal,
+            Array.Empty<Proposal>(),
+            appliedProposalIds);
+        return ProposalDryRunner.Run(scratch, plan);
     }
 }

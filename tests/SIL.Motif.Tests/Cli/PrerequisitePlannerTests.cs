@@ -175,6 +175,20 @@ public sealed class PrerequisitePlannerTests : IDisposable
         Assert.Contains(missing.Value, ex.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Plan_AppliedCutoff_StillExecutesASeparatelyDeclaredUnappliedBranch()
+    {
+        var store = new ProposalStore(_storeDir);
+        var applied = CanonicalId.Mint();
+        var unapplied = Proposal();
+        var requested = Proposal(requires: new[] { applied, unapplied.ProposalId });
+        Store(store, unapplied);
+
+        var plan = Plan(store, requested, applied.ToGuid());
+
+        Assert.Equal(unapplied.ProposalId, Assert.Single(plan).ProposalId);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_storeDir)) Directory.Delete(_storeDir, recursive: true);
@@ -182,7 +196,7 @@ public sealed class PrerequisitePlannerTests : IDisposable
 
     private static IReadOnlyList<Proposal> Plan(
         ProposalStore store, Proposal requested, params Guid[] appliedProposalIds) =>
-        store.PlanPrerequisites(requested, appliedProposalIds);
+        store.PlanPrerequisites(requested, appliedProposalIds).Prerequisites;
 
     private static Proposal Proposal(CanonicalId? proposalId = null, params CanonicalId[] requires)
     {

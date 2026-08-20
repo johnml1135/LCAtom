@@ -48,20 +48,21 @@ public static class ProposalDryRunner
 {
     public static DryRunModel Run(DryRunScratch scratch, Proposal proposal)
     {
-        return Run(scratch, Array.Empty<Proposal>(), proposal);
+        return Run(scratch, PrerequisiteExecutionPlan.Create(
+            proposal, Array.Empty<Proposal>(), Array.Empty<Guid>()));
     }
 
     /// <summary>
-    /// Applies <paramref name="prerequisites"/> to the scratch in the planner-supplied order, then
-    /// evaluates <paramref name="proposal"/> against the prepared state. Prerequisite effects prepare
+    /// Applies <paramref name="plan"/>'s validated prerequisites to the scratch, then evaluates its
+    /// requested Proposal against the prepared state. Prerequisite effects prepare
     /// the baseline only; the returned Dry Run describes the requested Proposal alone.
     /// </summary>
-    public static DryRunModel Run(
-        DryRunScratch scratch, IReadOnlyList<Proposal> prerequisites, Proposal proposal)
+    public static DryRunModel Run(DryRunScratch scratch, PrerequisiteExecutionPlan plan)
     {
         if (scratch is null) throw new ArgumentNullException(nameof(scratch));
-        if (prerequisites is null) throw new ArgumentNullException(nameof(prerequisites));
-        if (proposal is null) throw new ArgumentNullException(nameof(proposal));
+        if (plan is null) throw new ArgumentNullException(nameof(plan));
+
+        var proposal = plan.Requested;
 
         var cache = scratch.ConsumeForOneRun();
 
@@ -77,7 +78,7 @@ public static class ProposalDryRunner
         {
             unitOfWork.RollBack = false;
 
-            foreach (var prerequisite in prerequisites)
+            foreach (var prerequisite in plan.Prerequisites)
             {
                 var prerequisiteTargets = new List<CanonicalId>();
                 foreach (var operation in prerequisite.Operations)
