@@ -68,6 +68,12 @@ public sealed class WorkerConnection : IDisposable
             }, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
             TaskScheduler.Default);
         _eventDispatchLoop = EventDispatchLoopAsync();
+        _eventDispatchLoop.ContinueWith(
+            task =>
+            {
+                var ignored = task.Exception;
+            }, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
         _readLoop = ReadLoopAsync();
         _startup.TrySetResult(true);
     }
@@ -94,11 +100,12 @@ public sealed class WorkerConnection : IDisposable
                 {
                     credits = _eventQueue.Count - _eventSignalCredits;
                     if (credits > 0)
+                    {
                         _eventSignalCredits += credits;
+                        _eventDispatchSignal.Release(credits);
+                    }
                 }
             }
-            if (credits > 0)
-                _eventDispatchSignal.Release(credits);
         }
         remove
         {
@@ -109,7 +116,10 @@ public sealed class WorkerConnection : IDisposable
 
     private EventHandler<WorkerEventEnvelope>? _eventReceived;
 
-    /// <summary>Completes when the connection is explicitly disposed or reaches a terminal peer or protocol state.</summary>
+    /// <summary>
+    /// Completes when disposal requests normal termination or the connection reaches a peer or protocol failure;
+    /// transport cleanup may continue afterward.
+    /// </summary>
     public Task Completion => _completion;
 
     /// <summary>Sends a request and waits for exactly the response bearing its request identifier.</summary>
@@ -204,7 +214,7 @@ public sealed class WorkerConnection : IDisposable
         }
     }
 
-    /// <summary>Initiates a normal shutdown; await <see cref="Completion"/> to observe cleanup completion.</summary>
+    /// <summary>Initiates normal shutdown; <see cref="Completion"/> observes the terminal state.</summary>
     public void Dispose() => Close(null);
 
     private async Task ReadLoopAsync()
@@ -271,7 +281,10 @@ public sealed class WorkerConnection : IDisposable
                 _eventQueue.Enqueue(eventEnvelope);
                 signal = _eventReceived is not null;
                 if (signal)
+                {
                     _eventSignalCredits++;
+                    _eventDispatchSignal.Release();
+                }
             }
         }
         if (overflow is not null)
@@ -279,8 +292,6 @@ public sealed class WorkerConnection : IDisposable
             Close(overflow);
             throw overflow;
         }
-        if (signal)
-            _eventDispatchSignal.Release();
     }
 
     private async Task EventDispatchLoopAsync()
@@ -316,6 +327,11 @@ public sealed class WorkerConnection : IDisposable
             }
             if (failures.Count != 0)
                 Close(failures.Count == 1 ? failures[0] : new AggregateException(failures));
+            lock (_stateGate)
+            {
+                if (_eventDispatchStopped)
+                    return;
+            }
         }
     }
 
@@ -333,10 +349,14 @@ public sealed class WorkerConnection : IDisposable
             _pending.Clear();
             if (_activeWriters == 0)
                 writersToComplete = _writersQuiesced;
+            if (reason is null)
+                _completionSource.TrySetResult(true);
+            else
+                _completionSource.TrySetException(reason);
+            _eventDispatchSignal.Release();
         }
         _shutdownCancellation.Cancel();
         _stream.Dispose();
-        _eventDispatchSignal.Release();
         writersToComplete?.TrySetResult(true);
         foreach (var item in pending)
         {
@@ -345,7 +365,7 @@ public sealed class WorkerConnection : IDisposable
             else
                 item.TrySetException(reason);
         }
-        _ = CleanupAsync(reason);
+        _ = CleanupAsync();
     }
 
     private async Task WriteControlAsync(
@@ -381,23 +401,22 @@ public sealed class WorkerConnection : IDisposable
         }
     }
 
-    private async Task CleanupAsync(Exception? reason)
+    private async Task CleanupAsync()
     {
         try
         {
-            await Task.WhenAll(_readLoop, _eventDispatchLoop).ConfigureAwait(false);
+            await _readLoop.ConfigureAwait(false);
             await _writersQuiesced.Task.ConfigureAwait(false);
-            _writeGate.Dispose();
-            _eventDispatchSignal.Dispose();
-            _shutdownCancellation.Dispose();
-            if (reason is null)
-                _completionSource.TrySetResult(true);
-            else
-                _completionSource.TrySetException(reason);
+            lock (_stateGate)
+            {
+                _writeGate.Dispose();
+                _eventDispatchSignal.Dispose();
+                _shutdownCancellation.Dispose();
+            }
         }
         catch (Exception exception)
         {
-            _completionSource.TrySetException(exception);
+            var ignored = exception;
         }
     }
 

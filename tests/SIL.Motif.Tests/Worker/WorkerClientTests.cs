@@ -318,6 +318,85 @@ public sealed class WorkerClientTests
     }
 
     [Fact]
+    public async Task DisposeCanRaceSubscriptionAndEventArrival()
+    {
+        var pipeName = "motif-client-" + Guid.NewGuid().ToString("N");
+        var server = NewServer(pipeName);
+        var serverTask = RunServerAsync(server, async (stream, offer) =>
+        {
+            await ReadJsonAsync(stream);
+            await WriteJsonAsync(stream, new WorkerHandshakeOffer("1.0.0", new ProtocolRange(1, 1), Array.Empty<string>()));
+            try
+            {
+                for (var index = 0; index < 32; index++)
+                {
+                    await WriteJsonAsync(stream, new WorkerEventEnvelope("race-" + index,
+                        WorkerCommands.ApplyRequested, JsonDocument.Parse("{}").RootElement.Clone(), 1));
+                    await Task.Yield();
+                }
+            }
+            catch (IOException)
+            {
+            }
+        });
+        using var connection = await ConnectAsync(pipeName);
+        EventHandler<WorkerEventEnvelope> handler = (_, _) => { };
+        var subscriptionTask = Task.Run(() =>
+        {
+            for (var index = 0; index < 100; index++)
+            {
+                try
+                {
+                    connection.EventReceived += handler;
+                    connection.EventReceived -= handler;
+                }
+                catch (ObjectDisposedException)
+                {
+                    return;
+                }
+            }
+        });
+        connection.Dispose();
+        await subscriptionTask.WaitAsync(TimeSpan.FromSeconds(5));
+        await connection.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        await serverTask.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task CompletionIsPromptWhileEventHandlerIsBlockedDuringDispose()
+    {
+        var pipeName = "motif-client-" + Guid.NewGuid().ToString("N");
+        var server = NewServer(pipeName);
+        var serverTask = RunServerAsync(server, async (stream, offer) =>
+        {
+            await ReadJsonAsync(stream);
+            await WriteJsonAsync(stream, new WorkerHandshakeOffer("1.0.0", new ProtocolRange(1, 1), Array.Empty<string>()));
+            await WriteJsonAsync(stream, new WorkerEventEnvelope("blocked-dispose", WorkerCommands.ApplyRequested,
+                JsonDocument.Parse("{}").RootElement.Clone(), 1));
+            try
+            {
+                await ReadJsonAsync(stream);
+            }
+            catch (EndOfStreamException)
+            {
+            }
+        });
+        using var connection = await ConnectAsync(pipeName);
+        var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var release = new ManualResetEventSlim(false);
+        connection.EventReceived += (_, _) =>
+        {
+            entered.TrySetResult(true);
+            release.Wait(TimeSpan.FromSeconds(5));
+        };
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        connection.Dispose();
+        await connection.Completion.WaitAsync(TimeSpan.FromSeconds(1));
+        release.Set();
+        await serverTask.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
     public async Task BlockingOrThrowingEventHandlerDoesNotBlockOrCorruptResponses()
     {
         var pipeName = "motif-client-" + Guid.NewGuid().ToString("N");
@@ -516,7 +595,7 @@ public sealed class WorkerClientTests
         using var connection = await new WorkerClient().ConnectAsync(pipeName,
             new WorkerHandshakeRequest("client-1", "1.0.0", new ProtocolRange(1, 1), Array.Empty<string>()),
             TimeSpan.FromSeconds(5), CancellationToken.None);
-        var offer = new BinaryTransferOffer("transfer-1", "upload", binaryPipeName, bytes.Length, DateTimeOffset.UtcNow.AddMinutes(1));
+        var offer = new BinaryTransferOffer("transfer-1", "upload", binaryPipeName, bytes.Length, DateTimeOffset.UtcNow.AddDays(30));
         var expired = new BinaryTransferOffer("transfer-2", "upload", binaryPipeName, bytes.Length, DateTimeOffset.UtcNow.AddMinutes(-1));
         await Assert.ThrowsAsync<InvalidOperationException>(() => connection.UploadAsync(expired, new MemoryStream(bytes), CancellationToken.None));
         using var source = new MemoryStream(bytes);

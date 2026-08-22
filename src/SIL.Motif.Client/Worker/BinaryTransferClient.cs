@@ -27,7 +27,9 @@ internal static class BinaryTransferClient
         if (remaining <= TimeSpan.Zero)
             throw new InvalidOperationException("The binary transfer offer has expired.");
         using var expiryCancellation = new CancellationTokenSource();
-        expiryCancellation.CancelAfter(remaining);
+        using var expiryMonitorCancellation = new CancellationTokenSource();
+        var expiryMonitor = MonitorExpiryAsync(offer.ExpiresAt, expiryCancellation,
+            expiryMonitorCancellation.Token);
         using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, expiryCancellation.Token);
         var transferCancellation = linkedCancellation.Token;
@@ -72,6 +74,11 @@ internal static class BinaryTransferClient
                 throw new InvalidOperationException("The binary transfer offer has expired.", exception);
             throw;
         }
+        finally
+        {
+            expiryMonitorCancellation.Cancel();
+            await expiryMonitor.ConfigureAwait(false);
+        }
     }
 
     private static void ThrowIfExpired(
@@ -94,19 +101,37 @@ internal static class BinaryTransferClient
         if (readTask.IsCompleted)
             return await readTask.ConfigureAwait(false);
 
-        var remaining = offer.ExpiresAt - DateTimeOffset.UtcNow;
-        if (remaining <= TimeSpan.Zero)
-        {
-            ObserveFailure(readTask);
-            throw new InvalidOperationException("The binary transfer offer has expired.");
-        }
-        var deadlineTask = Task.Delay(remaining, transferCancellation);
-        if (await Task.WhenAny(readTask, deadlineTask).ConfigureAwait(false) == readTask)
+        var cancellationTask = Task.Delay(Timeout.InfiniteTimeSpan, transferCancellation);
+        if (await Task.WhenAny(readTask, cancellationTask).ConfigureAwait(false) == readTask)
             return await readTask.ConfigureAwait(false);
 
         ObserveFailure(readTask);
         ThrowIfExpired(offer, expiryCancellation, transferCancellation);
         throw new InvalidOperationException("The binary transfer offer has expired.");
+    }
+
+    private static async Task MonitorExpiryAsync(
+        DateTimeOffset expiresAt, CancellationTokenSource expiryCancellation, CancellationToken cancellationToken)
+    {
+        var maximumWait = TimeSpan.FromDays(1);
+        while (true)
+        {
+            var remaining = expiresAt - DateTimeOffset.UtcNow;
+            if (remaining <= TimeSpan.Zero)
+            {
+                expiryCancellation.Cancel();
+                return;
+            }
+            try
+            {
+                await Task.Delay(remaining < maximumWait ? remaining : maximumWait, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+        }
     }
 
     private static void ObserveFailure(Task task)
