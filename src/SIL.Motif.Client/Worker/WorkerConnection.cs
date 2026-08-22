@@ -478,11 +478,18 @@ internal static class WorkerFrame
 {
     private static readonly JsonSerializerOptions JsonOptions = CreateOptions();
 
-    public static async Task ConnectAsync(NamedPipeClientStream stream, CancellationToken cancellationToken)
+    public static Task ConnectAsync(NamedPipeClientStream stream, TimeSpan timeout,
+        CancellationToken cancellationToken)
     {
-        using var cancellation = cancellationToken.Register(stream.Dispose);
-        await stream.ConnectAsync().ConfigureAwait(false);
-        cancellationToken.ThrowIfCancellationRequested();
+        if (timeout <= TimeSpan.Zero && timeout != Timeout.InfiniteTimeSpan)
+            throw new ArgumentOutOfRangeException(nameof(timeout));
+
+        var milliseconds = timeout == Timeout.InfiniteTimeSpan
+            ? Timeout.Infinite
+            : timeout.TotalMilliseconds >= int.MaxValue
+                ? int.MaxValue
+                : Math.Max(1, (int)Math.Ceiling(timeout.TotalMilliseconds));
+        return stream.ConnectAsync(milliseconds, cancellationToken);
     }
 
     public static async Task WriteAsync(Stream stream, object value, CancellationToken cancellationToken)

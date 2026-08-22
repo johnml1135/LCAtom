@@ -55,7 +55,7 @@ public sealed class WorkerClient
         var peerConnected = false;
         try
         {
-            await WorkerFrame.ConnectAsync(stream, timeoutCancellation.Token).ConfigureAwait(false);
+            await WorkerFrame.ConnectAsync(stream, timeout, timeoutCancellation.Token).ConfigureAwait(false);
             peerConnected = true;
             await WorkerFrame.WriteAsync(stream, handshake, timeoutCancellation.Token).ConfigureAwait(false);
             var offerFrame = await WorkerFrame.ReadAsync(stream, timeoutCancellation.Token).ConfigureAwait(false);

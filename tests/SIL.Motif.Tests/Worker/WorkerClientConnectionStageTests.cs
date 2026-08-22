@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.IO.Pipes;
 using System.Threading;
@@ -14,11 +15,14 @@ public sealed class WorkerClientConnectionStageTests
     [Fact]
     public async Task MissingPipeIsReportedBeforePeerConnection()
     {
+        var started = Stopwatch.StartNew();
         var exception = await Assert.ThrowsAsync<WorkerConnectionFailureException>(() =>
             new WorkerClient().ConnectAsync("motif-missing-" + Guid.NewGuid().ToString("N"), Handshake(),
                 TimeSpan.FromMilliseconds(100), CancellationToken.None));
+        started.Stop();
 
         Assert.Equal(WorkerConnectionFailureStage.BeforePeerConnection, exception.Stage);
+        Assert.InRange(started.Elapsed, TimeSpan.Zero, TimeSpan.FromSeconds(2));
     }
 
     [Fact]
@@ -100,8 +104,15 @@ public sealed class WorkerClientConnectionStageTests
     private static async Task WriteAndCloseAsync(NamedPipeServerStream server, byte[] bytes)
     {
         await server.WaitForConnectionAsync();
-        await server.WriteAsync(bytes);
-        await server.FlushAsync();
+        try
+        {
+            await server.WriteAsync(bytes);
+            await server.FlushAsync();
+        }
+        catch (IOException)
+        {
+            // The client can close immediately after consuming the deliberately invalid frame.
+        }
     }
 
     private static async Task ReadHandshakeAndWriteOfferAsync(NamedPipeServerStream server,

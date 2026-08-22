@@ -41,14 +41,18 @@ public sealed class WorkerServerTests
         var running = new WorkerLifetime(clock).RunUntilIdleAsync(
             TimeSpan.FromSeconds(5), tracker, shutdown.Token);
 
-        clock.Advance(TimeSpan.FromSeconds(30));
-        await Task.Delay(20);
+        await clock.WaitForDelayRegistrationAsync();
+        for (var poll = 0; poll < 6; poll++)
+        {
+            clock.Advance(TimeSpan.FromSeconds(5));
+            await clock.WaitForDelayRegistrationAsync();
+        }
         Assert.False(running.IsCompleted);
 
         tracker.HasQueuedRunningOrWaitingWork = false;
         clock.Advance(TimeSpan.FromSeconds(5));
+        await clock.WaitForDelayRegistrationAsync();
         Assert.False(running.IsCompleted);
-        await Task.Yield();
         clock.Advance(TimeSpan.FromSeconds(5));
         await running.WaitAsync(TimeSpan.FromSeconds(1));
     }
