@@ -20,6 +20,7 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
     private readonly Mutex _ownerMutex;
     private readonly WorkerHandshakeOffer _offer;
     private readonly IWorkerWorkTracker? _workTracker;
+    private readonly WorkerEventSink _eventSink;
     private readonly CancellationTokenSource _shutdown = new CancellationTokenSource();
     private readonly ConcurrentDictionary<string, WorkerControlConnection> _connections =
         new ConcurrentDictionary<string, WorkerControlConnection>(StringComparer.Ordinal);
@@ -28,18 +29,28 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
     private bool _disposed;
     private Task? _acceptLoop;
 
-    /// <summary>Creates a server using the actual Windows user SID unless a test namespace is supplied.</summary>
-    public WorkerServer(string? userNamespace = null, string productVersion = "0.0.0",
+    /// <summary>Creates a server using the actual Windows user SID.</summary>
+    public WorkerServer(string productVersion = "0.0.0", IWorkerWorkTracker? workTracker = null)
+        : this(CurrentSid(), productVersion, workTracker)
+    {
+    }
+
+    internal WorkerServer(string userNamespace, string productVersion = "0.0.0",
         IWorkerWorkTracker? workTracker = null)
     {
         _userSid = WindowsIdentity.GetCurrent().User?.Value ?? "unknown-user";
         _userNamespace = string.IsNullOrWhiteSpace(userNamespace) ? _userSid : userNamespace;
-        EndpointName = GetControlPipeName(_userNamespace);
-        OwnerName = GetOwnerMutexName(_userNamespace);
+        EndpointName = GetControlPipeNameForNamespace(_userNamespace);
+        OwnerName = GetOwnerMutexNameForNamespace(_userNamespace);
         _ownerMutex = new Mutex(false, OwnerName, out _);
         _offer = new WorkerHandshakeOffer(productVersion, new ProtocolRange(1, 1), Array.Empty<string>());
-        _workTracker = workTracker;
+        _workTracker = workTracker ?? new WorkerWorkTracker();
+        _eventSink = new WorkerEventSink();
     }
+
+    /// <summary>Creates an isolated server identity for protocol tests only.</summary>
+    internal static WorkerServer CreateForTests(string userNamespace) =>
+        new WorkerServer(userNamespace, "0.0.0", null);
 
     /// <summary>The predictable control endpoint for clients in this user namespace.</summary>
     public string EndpointName { get; }
@@ -51,15 +62,22 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
     public bool IsOwner { get; private set; }
 
     /// <summary>Whether a queued, running, or waiting request is keeping the worker alive.</summary>
-    public bool HasQueuedRunningOrWaitingWork => _workTracker?.HasQueuedRunningOrWaitingWork ?? false;
+    public bool HasQueuedRunningOrWaitingWork => _workTracker!.HasQueuedRunningOrWaitingWork;
 
-    /// <summary>Derives a stable control pipe name from an injected namespace or the current SID.</summary>
-    public static string GetControlPipeName(string? userNamespace = null) =>
-        "motif-worker-" + (string.IsNullOrWhiteSpace(userNamespace) ? CurrentSid() : userNamespace);
+    /// <summary>The duplex event sink attached to the one registered live host.</summary>
+    public WorkerEventSink EventSink => _eventSink;
 
-    /// <summary>Derives the process owner mutex name from an injected namespace or the current SID.</summary>
-    public static string GetOwnerMutexName(string? userNamespace = null) =>
-        "Global\\MotifWorkerOwner-" + (string.IsNullOrWhiteSpace(userNamespace) ? CurrentSid() : userNamespace);
+    /// <summary>Derives the stable control pipe name for the current Windows user.</summary>
+    public static string GetControlPipeName() => GetControlPipeNameForNamespace(CurrentSid());
+
+    /// <summary>Derives the process owner mutex name for the current Windows user.</summary>
+    public static string GetOwnerMutexName() => GetOwnerMutexNameForNamespace(CurrentSid());
+
+    internal static string GetControlPipeNameForNamespace(string userNamespace) =>
+        "motif-worker-" + userNamespace;
+
+    internal static string GetOwnerMutexNameForNamespace(string userNamespace) =>
+        "Global\\MotifWorkerOwner-" + userNamespace;
 
     /// <summary>Creates the explicit ACL shared by control and binary worker pipes.</summary>
     public static PipeSecurity CreatePipeSecurity(string? userSid = null) =>
@@ -117,6 +135,7 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
         }
         foreach (var connection in _connections.Values)
             await connection.DisposeAsync().ConfigureAwait(false);
+        _eventSink.Dispose();
         if (IsOwner)
         {
             try { _ownerMutex.ReleaseMutex(); } catch { }
@@ -148,20 +167,30 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
     {
         await using (pipe.ConfigureAwait(false))
         {
+            WorkerControlConnection? connection = null;
+            var registered = false;
             try
             {
                 var frame = await WorkerWire.ReadAsync(pipe, cancellationToken).ConfigureAwait(false);
                 var handshake = WorkerWire.Deserialize<WorkerHandshakeRequest>(frame);
                 var negotiated = WorkerHandshake.Negotiate(handshake, _offer);
                 await WorkerWire.WriteAsync(pipe, _offer, cancellationToken).ConfigureAwait(false);
-                var connection = new WorkerControlConnection(pipe, negotiated.ProtocolVersion);
+                _eventSink.RegisterLiveHost(pipe, negotiated.ProtocolVersion);
+                registered = true;
+                connection = new WorkerControlConnection(pipe, negotiated.ProtocolVersion, _eventSink);
                 _connections[connection.Id] = connection;
                 await connection.RunAsync(cancellationToken).ConfigureAwait(false);
-                _connections.TryRemove(connection.Id, out _);
             }
             catch
             {
                 // A failed handshake closes before any command or database work is considered.
+            }
+            finally
+            {
+                if (connection is not null)
+                    _connections.TryRemove(connection.Id, out _);
+                if (registered)
+                    _eventSink.UnregisterLiveHost(pipe);
             }
         }
     }
@@ -183,11 +212,13 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
     {
         private readonly Stream _stream;
         private readonly int _protocolVersion;
+        private readonly WorkerEventSink _eventSink;
 
-        public WorkerControlConnection(Stream stream, int protocolVersion)
+        public WorkerControlConnection(Stream stream, int protocolVersion, WorkerEventSink eventSink)
         {
             _stream = stream;
             _protocolVersion = protocolVersion;
+            _eventSink = eventSink;
             Id = Guid.NewGuid().ToString("N");
         }
 
@@ -199,6 +230,12 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
             {
                 var frame = await WorkerWire.ReadAsync(_stream, cancellationToken).ConfigureAwait(false);
                 using var document = JsonDocument.Parse(frame);
+                if (document.RootElement.TryGetProperty("EventId", out _) &&
+                    document.RootElement.TryGetProperty("Outcome", out _))
+                {
+                    _eventSink.AcceptResult(WorkerWire.Deserialize<WorkerEventResultEnvelope>(frame));
+                    continue;
+                }
                 if (!document.RootElement.TryGetProperty("Command", out var command))
                 {
                     if (document.RootElement.TryGetProperty("EventId", out _))

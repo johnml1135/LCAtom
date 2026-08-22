@@ -53,13 +53,12 @@ public sealed class WorkerServerTests
     [Fact]
     public async Task SecondWorkerProcessReportsExistingEndpointAndExits()
     {
-        var name = "worker-test-" + Guid.NewGuid().ToString("N");
-        using var first = StartWorkerProcess(name, 30000);
+        using var first = StartWorkerProcess(30000);
         try
         {
             var endpoint = await first.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(5));
             Assert.False(string.IsNullOrWhiteSpace(endpoint));
-            using var second = StartWorkerProcess(name, 1000);
+            using var second = StartWorkerProcess(1000);
             var secondOutput = await second.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(5));
             Assert.Equal("existing endpoint: " + endpoint, secondOutput);
             await second.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
@@ -75,10 +74,20 @@ public sealed class WorkerServerTests
     }
 
     [Fact]
+    public async Task WorkerProcessExitsAfterIdleTimeout()
+    {
+        using var process = StartWorkerProcess(200);
+        var endpoint = await process.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.False(string.IsNullOrWhiteSpace(endpoint));
+        await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(0, process.ExitCode);
+    }
+
+    [Fact]
     public async Task ControlPipeAcceptsTwoLiveClients()
     {
         var name = "worker-test-" + Guid.NewGuid().ToString("N");
-        await using var server = new WorkerServer(name);
+        await using var server = WorkerServer.CreateForTests(name);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var running = server.StartAsync(cancellation.Token);
         using var first = await new SIL.Motif.Client.Worker.WorkerClient().ConnectAsync(
@@ -95,7 +104,7 @@ public sealed class WorkerServerTests
     public async Task HandshakeCompletesBeforeACommandAndDoesNotCreateProjectState()
     {
         var name = "worker-test-" + Guid.NewGuid().ToString("N");
-        await using var server = new WorkerServer(name);
+        await using var server = WorkerServer.CreateForTests(name);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         _ = server.StartAsync(cancellation.Token);
         using var client = await new SIL.Motif.Client.Worker.WorkerClient().ConnectAsync(
@@ -126,7 +135,7 @@ public sealed class WorkerServerTests
     public async Task UnknownControlTrafficClosesBeforeDispatch()
     {
         var name = "worker-test-" + Guid.NewGuid().ToString("N");
-        await using var server = new WorkerServer(name);
+        await using var server = WorkerServer.CreateForTests(name);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         var running = server.StartAsync(cancellation.Token);
         using var pipe = new NamedPipeClientStream(".", server.EndpointName, PipeDirection.InOut,
@@ -143,7 +152,7 @@ public sealed class WorkerServerTests
     public async Task UnknownCommandAfterHandshakeClosesBeforeDispatch()
     {
         var name = "worker-test-" + Guid.NewGuid().ToString("N");
-        await using var server = new WorkerServer(name);
+        await using var server = WorkerServer.CreateForTests(name);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         var running = server.StartAsync(cancellation.Token);
         using var pipe = new NamedPipeClientStream(".", server.EndpointName, PipeDirection.InOut,
@@ -173,8 +182,19 @@ public sealed class WorkerServerTests
         await CompleteEventAsync(sink, host, document.RootElement.Clone(),
             sink.RequestReconciliationAsync, WorkerCommands.ReconciliationRequested);
         using var cancellation = new CancellationTokenSource();
+        var beforeCancellation = host.Length;
         var cancelled = sink.RequestCancellationAsync(document.RootElement.Clone(), cancellation.Token);
-        Assert.True(SpinWait.SpinUntil(() => host.Length > 0, TimeSpan.FromSeconds(1)));
+        Assert.True(SpinWait.SpinUntil(() => host.Length > beforeCancellation, TimeSpan.FromSeconds(1)));
+        var cancellationBytes = host.ToArray();
+        var cancellationOffset = (int)beforeCancellation;
+        var cancellationLength = cancellationBytes[cancellationOffset] |
+            cancellationBytes[cancellationOffset + 1] << 8 |
+            cancellationBytes[cancellationOffset + 2] << 16 |
+            cancellationBytes[cancellationOffset + 3] << 24;
+        using var cancellationDocument = JsonDocument.Parse(cancellationBytes.AsMemory(
+            cancellationOffset + 4, cancellationLength));
+        Assert.Equal(WorkerCommands.CancellationRequested,
+            cancellationDocument.RootElement.GetProperty("Event").GetString());
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelled);
         Assert.Throws<InvalidOperationException>(() => sink.AcceptResult(
@@ -195,6 +215,55 @@ public sealed class WorkerServerTests
         Assert.True(SpinWait.SpinUntil(() => host.Length >= 4, TimeSpan.FromSeconds(1)));
         sink.UnregisterLiveHost(host);
         await Assert.ThrowsAsync<IOException>(() => pending);
+    }
+
+    [Fact]
+    public async Task WorkerServerRoutesEventResultsOverTheLiveDuplexConnection()
+    {
+        var name = "worker-test-" + Guid.NewGuid().ToString("N");
+        await using var server = WorkerServer.CreateForTests(name);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var running = server.StartAsync(cancellation.Token);
+        using var client = await new SIL.Motif.Client.Worker.WorkerClient().ConnectAsync(
+            server.EndpointName, Handshake(), TimeSpan.FromSeconds(5), cancellation.Token);
+        using var document = JsonDocument.Parse("{\"roundTrip\":true}");
+        TaskCompletionSource<WorkerEventEnvelope>? received = null;
+        client.EventReceived += (_, value) => received?.TrySetResult(value);
+        var requests = new (string Name, Func<JsonElement, CancellationToken, Task<WorkerEventResultEnvelope>> Request)[]
+        {
+            (WorkerCommands.BaselineRefreshRequested, server.EventSink.RequestBaselineRefreshAsync),
+            (WorkerCommands.ApplyRequested, server.EventSink.RequestApplyAsync),
+            (WorkerCommands.ReconciliationRequested, server.EventSink.RequestReconciliationAsync),
+            (WorkerCommands.CancellationRequested, server.EventSink.RequestCancellationAsync),
+        };
+        foreach (var request in requests)
+        {
+            received = new TaskCompletionSource<WorkerEventEnvelope>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            var pending = request.Request(document.RootElement.Clone(), cancellation.Token);
+            var eventEnvelope = await received.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(request.Name, eventEnvelope.Event);
+            var result = new WorkerEventResultEnvelope(eventEnvelope.EventId,
+                WorkerEventOutcome.Completed, document.RootElement.Clone(), client.Negotiated.ProtocolVersion);
+            await client.CompleteEventAsync(result, cancellation.Token);
+            var completed = await pending.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(result.EventId, completed.EventId);
+            Assert.Equal(result.Outcome, completed.Outcome);
+            Assert.Equal(result.Payload.GetRawText(), completed.Payload.GetRawText());
+        }
+        cancellation.Cancel();
+        await running.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task ProductionConstructionUsesTheCurrentUserSid()
+    {
+        await using var server = new WorkerServer();
+        var sid = WindowsIdentity.GetCurrent().User!.Value;
+        Assert.Equal(WorkerServer.GetControlPipeName(), server.EndpointName);
+        Assert.Equal(WorkerServer.GetOwnerMutexName(), server.OwnerName);
+        Assert.EndsWith(sid, server.EndpointName, StringComparison.Ordinal);
+        Assert.EndsWith(sid, server.OwnerName, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -307,6 +376,101 @@ public sealed class WorkerServerTests
     }
 
     [Fact]
+    public async Task BinaryTransferUsesMonotonicDeadlineAcrossWallClockJump()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "motif-worker-" + Guid.NewGuid().ToString("N"));
+        var clock = new ManualClock();
+        await using var server = new BinaryTransferServer(directory, clock);
+        var bytes = Encoding.UTF8.GetBytes("wall-clock jump");
+        var offer = server.CreateOffer(bytes.Length, TimeSpan.FromSeconds(1));
+        clock.JumpWall(TimeSpan.FromDays(2));
+        using (var client = new NamedPipeClientStream(".", offer.PipeName, PipeDirection.Out,
+                   PipeOptions.Asynchronous))
+        {
+            await client.ConnectAsync(5000);
+            await client.WriteAsync(bytes);
+        }
+        using var digest = SHA256.Create();
+        var completion = new BinaryTransferCompletion(offer.TransferId, bytes.Length,
+            Convert.ToHexString(digest.ComputeHash(bytes)).ToLowerInvariant());
+        var published = await server.CompleteAsync(completion);
+        Assert.True(File.Exists(published));
+    }
+
+    [Fact]
+    public void ProductionWorkTrackerLeasesKeepWorkerAliveUntilReleased()
+    {
+        using var tracker = new WorkerWorkTracker();
+        Assert.False(tracker.HasQueuedRunningOrWaitingWork);
+        using var lease = tracker.AcquireLease();
+        Assert.True(tracker.HasQueuedRunningOrWaitingWork);
+        lease.Dispose();
+        Assert.False(tracker.HasQueuedRunningOrWaitingWork);
+    }
+
+    [Fact]
+    public async Task BinaryTransferDeletesTemporaryFileWhenClientDisconnectsIncomplete()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "motif-worker-" + Guid.NewGuid().ToString("N"));
+        await using var server = new BinaryTransferServer(directory);
+        var offer = server.CreateOffer(100, TimeSpan.FromSeconds(10));
+        using (var client = new NamedPipeClientStream(".", offer.PipeName, PipeDirection.Out,
+                   PipeOptions.Asynchronous))
+        {
+            await client.ConnectAsync(5000);
+            await client.WriteAsync(new byte[] { 1, 2, 3 });
+        }
+        await Assert.ThrowsAnyAsync<Exception>(() => server.CompleteAsync(
+            new BinaryTransferCompletion(offer.TransferId, 3, new string('0', 64))));
+        Assert.Empty(Directory.GetFiles(directory));
+    }
+
+    [Fact]
+    public async Task BinaryTransferReportsCleanupFailureForAnOwnedPathItCannotDelete()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "motif-worker-" + Guid.NewGuid().ToString("N"));
+        await using var server = new BinaryTransferServer(directory);
+        var offer = server.CreateOffer(3, TimeSpan.FromSeconds(10));
+        var temporaryPath = Path.Combine(directory, offer.TransferId + ".tmp");
+        Directory.CreateDirectory(temporaryPath);
+        using (var client = new NamedPipeClientStream(".", offer.PipeName, PipeDirection.Out,
+                   PipeOptions.Asynchronous))
+        {
+            await client.ConnectAsync(5000);
+            await client.WriteAsync(new byte[] { 1, 2, 3 });
+        }
+        await Assert.ThrowsAnyAsync<Exception>(() => server.CompleteAsync(
+            new BinaryTransferCompletion(offer.TransferId, 3, new string('0', 64))));
+        Assert.Contains(temporaryPath, server.CleanupFailures);
+        Directory.Delete(temporaryPath);
+        server.RetryCleanupFailures();
+        Assert.DoesNotContain(temporaryPath, server.CleanupFailures);
+    }
+
+    [Fact]
+    public async Task BinaryTransferCleansTemporaryFileWhenPublicationMoveFails()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "motif-worker-" + Guid.NewGuid().ToString("N"));
+        await using var server = new BinaryTransferServer(directory);
+        var bytes = Encoding.UTF8.GetBytes("move failure");
+        var offer = server.CreateOffer(bytes.Length, TimeSpan.FromSeconds(10));
+        var readyPath = Path.Combine(directory, offer.TransferId + ".ready");
+        await File.WriteAllTextAsync(readyPath, "already published");
+        using (var client = new NamedPipeClientStream(".", offer.PipeName, PipeDirection.Out,
+                   PipeOptions.Asynchronous))
+        {
+            await client.ConnectAsync(5000);
+            await client.WriteAsync(bytes);
+        }
+        using var digest = SHA256.Create();
+        await Assert.ThrowsAnyAsync<Exception>(() => server.CompleteAsync(
+            new BinaryTransferCompletion(offer.TransferId, bytes.Length,
+                Convert.ToHexString(digest.ComputeHash(bytes)).ToLowerInvariant())));
+        Assert.False(File.Exists(Path.Combine(directory, offer.TransferId + ".tmp")));
+        Assert.Equal("already published", await File.ReadAllTextAsync(readyPath));
+    }
+
+    [Fact]
     public async Task BinaryTransferAllowsOneCompletionAndRejectsReconnect()
     {
         var directory = Path.Combine(Path.GetTempPath(), "motif-worker-" + Guid.NewGuid().ToString("N"));
@@ -353,12 +517,12 @@ public sealed class WorkerServerTests
         Assert.Single(Directory.GetFiles(directory, "*.ready"));
     }
 
-    private static Process StartWorkerProcess(string userNamespace, int idleMilliseconds)
+    private static Process StartWorkerProcess(int idleMilliseconds)
     {
         var path = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
             "../../../../../src/SIL.Motif.Worker/bin/Debug/net10.0/SIL.Motif.Worker.exe"));
         var process = Process.Start(new ProcessStartInfo(path,
-            "--namespace " + userNamespace + " --idle-ms " + idleMilliseconds)
+            "--idle-ms " + idleMilliseconds)
         {
             UseShellExecute = false,
             RedirectStandardOutput = true,
@@ -382,7 +546,7 @@ public sealed class WorkerServerTests
             rule.PipeAccessRights.HasFlag(PipeAccessRights.FullControl));
         Assert.Contains(rules, rule =>
             rule.IdentityReference.Value == "S-1-5-2" && rule.AccessControlType == AccessControlType.Deny &&
-            rule.PipeAccessRights.HasFlag(PipeAccessRights.ReadWrite));
+            rule.PipeAccessRights.HasFlag(PipeAccessRights.FullControl));
     }
 
     private static async Task WriteFrameAsync(Stream stream, string json)
@@ -463,16 +627,18 @@ public sealed class WorkerServerTests
         private readonly object _gate = new object();
         private readonly System.Collections.Generic.List<Waiter> _waiters = new();
         private DateTimeOffset _now = DateTimeOffset.UtcNow;
+        private TimeSpan _monotonic;
 
         public DateTimeOffset UtcNow => _now;
+        public TimeSpan MonotonicNow => _monotonic;
 
         public Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken)
         {
             lock (_gate)
             {
-                if (delay <= TimeSpan.Zero || _now + delay <= _now)
+                if (delay <= TimeSpan.Zero || _monotonic + delay <= _monotonic)
                     return Task.CompletedTask;
-                var waiter = new Waiter(_now + delay);
+                var waiter = new Waiter(_monotonic + delay);
                 _waiters.Add(waiter);
                 if (cancellationToken.CanBeCanceled)
                     cancellationToken.Register(() => waiter.CompleteCanceled(cancellationToken));
@@ -486,7 +652,8 @@ public sealed class WorkerServerTests
             lock (_gate)
             {
                 _now += by;
-                due = _waiters.Where(waiter => waiter.Deadline <= _now).ToArray();
+                _monotonic += by;
+                due = _waiters.Where(waiter => waiter.Deadline <= _monotonic).ToArray();
                 foreach (var waiter in due)
                     _waiters.Remove(waiter);
             }
@@ -494,13 +661,15 @@ public sealed class WorkerServerTests
                 waiter.Complete();
         }
 
+        public void JumpWall(TimeSpan by) => _now += by;
+
         private sealed class Waiter
         {
             private readonly TaskCompletionSource<bool> _completion =
                 new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-            public Waiter(DateTimeOffset deadline) => Deadline = deadline;
-            public DateTimeOffset Deadline { get; }
+            public Waiter(TimeSpan deadline) => Deadline = deadline;
+            public TimeSpan Deadline { get; }
             public Task Task => _completion.Task;
             public void Complete() => _completion.TrySetResult(true);
             public void CompleteCanceled(CancellationToken token) => _completion.TrySetCanceled(token);

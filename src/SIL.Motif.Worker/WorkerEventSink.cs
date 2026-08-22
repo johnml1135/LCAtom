@@ -41,7 +41,8 @@ public sealed class WorkerEventSink : IDisposable
     {
         lock (_gate)
         {
-            ThrowIfDisposed();
+            if (_disposed)
+                return;
             if (!ReferenceEquals(_stream, stream))
                 return;
             _stream = null;

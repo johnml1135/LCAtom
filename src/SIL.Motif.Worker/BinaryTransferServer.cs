@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.IO.Pipes;
 using System.Security.AccessControl;
 using System.Security.Cryptography;
@@ -20,6 +23,8 @@ public sealed class BinaryTransferServer : IAsyncDisposable
     private readonly string? _userSid;
     private readonly ConcurrentDictionary<string, Transfer> _transfers =
         new ConcurrentDictionary<string, Transfer>(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, byte> _cleanupFailures =
+        new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase);
     private int _disposed;
 
     /// <summary>Creates a server that owns temporary files under the supplied directory.</summary>
@@ -35,6 +40,27 @@ public sealed class BinaryTransferServer : IAsyncDisposable
     public static PipeSecurity CreatePipeSecurity(string? userSid = null) =>
         PipeSecurityFactory.Create(userSid ?? CurrentSid());
 
+    /// <summary>Returns temporary paths whose cleanup failed and need an explicit retry.</summary>
+    public IReadOnlyCollection<string> CleanupFailures => _cleanupFailures.Keys.ToArray();
+
+    /// <summary>Retries deletion of temporary paths recorded after a cleanup failure.</summary>
+    public void RetryCleanupFailures()
+    {
+        foreach (var path in _cleanupFailures.Keys)
+        {
+            try
+            {
+                if (File.Exists(path))
+                    File.Delete(path);
+                if (!File.Exists(path) && !Directory.Exists(path))
+                    _cleanupFailures.TryRemove(path, out _);
+            }
+            catch
+            {
+            }
+        }
+    }
+
     /// <summary>Creates an unpredictable one-use offer and starts accepting its upload.</summary>
     public BinaryTransferOffer CreateOffer(long maximumBytes, TimeSpan lifetime,
         CancellationToken cancellationToken = default)
@@ -47,7 +73,8 @@ public sealed class BinaryTransferServer : IAsyncDisposable
         var id = Guid.NewGuid().ToString("N");
         var offer = new BinaryTransferOffer(id, "upload", "motif-transfer-" + Guid.NewGuid().ToString("N"),
             maximumBytes, _clock.UtcNow + lifetime);
-        var transfer = new Transfer(offer, Path.Combine(_tempDirectory, id + ".tmp"));
+        var transfer = new Transfer(offer, Path.Combine(_tempDirectory, id + ".tmp"),
+            _clock.MonotonicNow + lifetime);
         if (!_transfers.TryAdd(id, transfer))
             throw new InvalidOperationException("A transfer identifier was unexpectedly reused.");
         transfer.AcceptTask = AcceptAsync(transfer, cancellationToken);
@@ -70,13 +97,21 @@ public sealed class BinaryTransferServer : IAsyncDisposable
                 throw new InvalidOperationException("The binary transfer is no longer publishable.");
             transfer.State = TransferState.Completing;
         }
-        if (_clock.UtcNow >= transfer.Offer.ExpiresAt)
+        if (_clock.MonotonicNow >= transfer.MonotonicDeadline)
             return Reject(transfer, "The binary transfer offer has expired.");
         if (completion.ByteCount != transfer.ByteCount ||
             !string.Equals(completion.Sha256, transfer.Sha256, StringComparison.OrdinalIgnoreCase))
             return Reject(transfer, "The binary transfer completion does not match received bytes.");
         var readyPath = Path.Combine(_tempDirectory, transfer.Offer.TransferId + ".ready");
-        File.Move(transfer.TempPath, readyPath);
+        try
+        {
+            File.Move(transfer.TempPath, readyPath);
+        }
+        catch
+        {
+            RemoveAndDelete(transfer);
+            throw;
+        }
         lock (transfer.Gate)
             transfer.State = TransferState.Published;
         _transfers.TryRemove(transfer.Offer.TransferId, out _);
@@ -107,7 +142,7 @@ public sealed class BinaryTransferServer : IAsyncDisposable
                 PipeSecurityFactory.Create(_userSid), HandleInheritability.None, (PipeAccessRights)0);
             using var expiry = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, transfer.Cancel.Token);
             var deadline = CancelAtDeadlineAsync(
-                _clock.DelayAsync(DelayUntil(transfer.Offer.ExpiresAt), deadlineCancellation.Token), expiry);
+                _clock.DelayAsync(DelayUntil(transfer.MonotonicDeadline), deadlineCancellation.Token), expiry);
             var waitForConnection = pipe.WaitForConnectionAsync(expiry.Token);
             if (await Task.WhenAny(waitForConnection, deadline).ConfigureAwait(false) != waitForConnection)
                 throw new InvalidOperationException("The binary transfer offer has expired.");
@@ -128,7 +163,7 @@ public sealed class BinaryTransferServer : IAsyncDisposable
             }
             digest.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
             transfer.Sha256 = Convert.ToHexString(digest.Hash!).ToLowerInvariant();
-            if (_clock.UtcNow >= transfer.Offer.ExpiresAt)
+            if (_clock.MonotonicNow >= transfer.MonotonicDeadline)
                 throw new InvalidOperationException("The binary transfer offer has expired.");
             lock (transfer.Gate)
                 transfer.State = TransferState.Received;
@@ -177,12 +212,23 @@ public sealed class BinaryTransferServer : IAsyncDisposable
             transfer.State = TransferState.Rejected;
             _transfers.TryRemove(transfer.Offer.TransferId, out _);
         }
-        try { if (File.Exists(transfer.TempPath)) File.Delete(transfer.TempPath); } catch { }
+        try
+        {
+            if (File.Exists(transfer.TempPath))
+                File.Delete(transfer.TempPath);
+            else if (Directory.Exists(transfer.TempPath))
+                throw new IOException("The transfer temporary path is a directory.");
+            _cleanupFailures.TryRemove(transfer.TempPath, out _);
+        }
+        catch
+        {
+            _cleanupFailures.TryAdd(transfer.TempPath, 0);
+        }
     }
 
-    private TimeSpan DelayUntil(DateTimeOffset deadline)
+    private TimeSpan DelayUntil(TimeSpan deadline)
     {
-        var delay = deadline - _clock.UtcNow;
+        var delay = deadline - _clock.MonotonicNow;
         return delay > TimeSpan.Zero ? delay : TimeSpan.Zero;
     }
 
@@ -196,10 +242,16 @@ public sealed class BinaryTransferServer : IAsyncDisposable
 
     private sealed class Transfer
     {
-        public Transfer(BinaryTransferOffer offer, string tempPath) { Offer = offer; TempPath = tempPath; }
+        public Transfer(BinaryTransferOffer offer, string tempPath, TimeSpan monotonicDeadline)
+        {
+            Offer = offer;
+            TempPath = tempPath;
+            MonotonicDeadline = monotonicDeadline;
+        }
         public object Gate { get; } = new object();
         public BinaryTransferOffer Offer { get; }
         public string TempPath { get; }
+        public TimeSpan MonotonicDeadline { get; }
         public CancellationTokenSource Cancel { get; } = new CancellationTokenSource();
         public Task AcceptTask { get; set; } = Task.CompletedTask;
         public long ByteCount { get; set; }
@@ -212,6 +264,8 @@ public sealed class BinaryTransferServer : IAsyncDisposable
     private sealed class SystemClock : IWorkerClock
     {
         public DateTimeOffset UtcNow => DateTimeOffset.UtcNow;
+        public TimeSpan MonotonicNow =>
+            TimeSpan.FromSeconds((double)Stopwatch.GetTimestamp() / Stopwatch.Frequency);
         public Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken) =>
             Task.Delay(delay, cancellationToken);
     }
@@ -230,7 +284,7 @@ internal static class PipeSecurityFactory
             PipeAccessRights.FullControl, AccessControlType.Allow));
         security.AddAccessRule(new PipeAccessRule(
             new SecurityIdentifier(WellKnownSidType.NetworkSid, null),
-            PipeAccessRights.ReadWrite, AccessControlType.Deny));
+            PipeAccessRights.FullControl, AccessControlType.Deny));
         return security;
     }
 }

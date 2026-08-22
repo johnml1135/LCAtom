@@ -8,9 +8,9 @@ internal static class Program
 {
     private static async Task<int> Main(string[] args)
     {
-        var testNamespace = ReadNamespace(args);
         var idleTimeout = ReadIdleTimeout(args);
-        await using var server = new WorkerServer(testNamespace);
+        using var tracker = new WorkerWorkTracker();
+        await using var server = new WorkerServer(workTracker: tracker);
         if (!server.TryAcquireOwnership())
         {
             Console.WriteLine("existing endpoint: " + server.EndpointName);
@@ -30,16 +30,6 @@ internal static class Program
         shutdown.Cancel();
         await run.ConfigureAwait(false);
         return 0;
-    }
-
-    private static string? ReadNamespace(string[] args)
-    {
-        for (var index = 0; index + 1 < args.Length; index++)
-        {
-            if (string.Equals(args[index], "--namespace", StringComparison.Ordinal))
-                return args[index + 1];
-        }
-        return null;
     }
 
     private static TimeSpan ReadIdleTimeout(string[] args)

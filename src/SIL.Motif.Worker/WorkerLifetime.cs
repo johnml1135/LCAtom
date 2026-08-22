@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -16,6 +17,9 @@ public interface IWorkerClock
 {
     /// <summary>The current UTC instant used for deadline comparisons.</summary>
     DateTimeOffset UtcNow { get; }
+
+    /// <summary>The monotonic elapsed time used for deadline enforcement.</summary>
+    TimeSpan MonotonicNow { get; }
 
     /// <summary>Waits without coupling deadline logic to wall-clock polling.</summary>
     Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken);
@@ -38,19 +42,20 @@ public sealed class WorkerLifetime
         if (work is null)
             throw new ArgumentNullException(nameof(work));
 
-        var idleSince = _clock.UtcNow;
+        var idleSince = _clock.MonotonicNow;
         while (!shutdown.IsCancellationRequested)
         {
             if (work.HasQueuedRunningOrWaitingWork)
             {
-                idleSince = _clock.UtcNow;
+                idleSince = _clock.MonotonicNow;
             }
-            else if (_clock.UtcNow - idleSince >= idleTimeout)
+            else if (_clock.MonotonicNow - idleSince >= idleTimeout)
             {
                 return;
             }
 
-            try { await _clock.DelayAsync(TimeSpan.FromMilliseconds(10), shutdown).ConfigureAwait(false); }
+            var remaining = idleTimeout - (_clock.MonotonicNow - idleSince);
+            try { await _clock.DelayAsync(remaining, shutdown).ConfigureAwait(false); }
             catch (OperationCanceledException) when (shutdown.IsCancellationRequested)
             {
                 return;
@@ -63,6 +68,9 @@ public sealed class WorkerLifetime
         public static readonly SystemWorkerClock Instance = new SystemWorkerClock();
 
         public DateTimeOffset UtcNow => DateTimeOffset.UtcNow;
+
+        public TimeSpan MonotonicNow =>
+            TimeSpan.FromSeconds((double)Stopwatch.GetTimestamp() / Stopwatch.Frequency);
 
         public Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken) =>
             Task.Delay(delay, cancellationToken);
