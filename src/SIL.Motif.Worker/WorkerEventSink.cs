@@ -9,8 +9,9 @@ using SIL.Motif.Contract.Worker;
 namespace SIL.Motif.Worker;
 
 /// <summary>Sends one correlated worker event at a time to the registered live host.</summary>
-public sealed class WorkerEventSink : IDisposable
+public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
 {
+    internal const int PendingCorrelationCapacity = 128;
     private readonly object _gate = new object();
     private readonly SemaphoreSlim _writeGate = new SemaphoreSlim(1, 1);
     private readonly Dictionary<string, TaskCompletionSource<WorkerEventResultEnvelope>> _pending =
@@ -19,6 +20,9 @@ public sealed class WorkerEventSink : IDisposable
     private SemaphoreSlim? _sharedWriteGate;
     private int _protocolVersion;
     private bool _disposed;
+    private int _activeWrites;
+    private Task? _disposeTask;
+    private TaskCompletionSource<bool>? _writesQuiesced;
 
     /// <summary>Registers the sole live-host control stream.</summary>
     public void RegisterLiveHost(Stream stream, int protocolVersion)
@@ -71,6 +75,8 @@ public sealed class WorkerEventSink : IDisposable
             ThrowIfDisposed();
             if (_stream is null)
                 throw new InvalidOperationException("No live host is registered.");
+            if (_pending.Count >= PendingCorrelationCapacity)
+                throw new InvalidOperationException("The live-host event correlation bound is full.");
             envelope = new WorkerEventEnvelope(Guid.NewGuid().ToString("N"), eventName, payload, _protocolVersion);
             completion = new TaskCompletionSource<WorkerEventResultEnvelope>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
@@ -113,18 +119,32 @@ public sealed class WorkerEventSink : IDisposable
     /// <summary>Faults pending events and releases the serialized writer.</summary>
     public void Dispose()
     {
+        DisposeAsync().AsTask().GetAwaiter().GetResult();
+    }
+
+    /// <summary>Waits for active event writes before releasing the sink-owned semaphore.</summary>
+    public ValueTask DisposeAsync()
+    {
+        Task disposeTask;
         lock (_gate)
         {
-            if (_disposed)
-                return;
-            _disposed = true;
-            _stream = null;
-            _sharedWriteGate = null;
-            foreach (var pending in _pending.Values)
-                pending.TrySetException(new ObjectDisposedException(nameof(WorkerEventSink)));
-            _pending.Clear();
+            if (_disposeTask is null)
+            {
+                _disposed = true;
+                _stream = null;
+                _sharedWriteGate = null;
+                foreach (var pending in _pending.Values)
+                    pending.TrySetException(new ObjectDisposedException(nameof(WorkerEventSink)));
+                _pending.Clear();
+                _writesQuiesced = new TaskCompletionSource<bool>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                if (_activeWrites == 0)
+                    _writesQuiesced.TrySetResult(true);
+                _disposeTask = DisposeAfterWritesAsync(_writesQuiesced.Task);
+            }
+            disposeTask = _disposeTask;
         }
-        _writeGate.Dispose();
+        return new ValueTask(disposeTask);
     }
 
     private async Task<WorkerEventResultEnvelope> SendCoreAsync(
@@ -140,6 +160,7 @@ public sealed class WorkerEventSink : IDisposable
             {
                 stream = _stream ?? throw new InvalidOperationException("No live host is registered.");
                 writeGate = _sharedWriteGate ?? _writeGate;
+                _activeWrites++;
             }
             await writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
@@ -156,8 +177,19 @@ public sealed class WorkerEventSink : IDisposable
         finally
         {
             lock (_gate)
+            {
                 _pending.Remove(envelope.EventId);
+                _activeWrites--;
+                if (_disposed && _activeWrites == 0)
+                    _writesQuiesced?.TrySetResult(true);
+            }
         }
+    }
+
+    private async Task DisposeAfterWritesAsync(Task writesQuiesced)
+    {
+        await writesQuiesced.ConfigureAwait(false);
+        _writeGate.Dispose();
     }
 
     private void ThrowIfDisposed()

@@ -30,6 +30,7 @@ public sealed class WorkerConnection : IDisposable
 {
     internal const int MaximumFrameBytes = 1024 * 1024;
     private const int EventQueueCapacity = 128;
+    private const int EventCorrelationCapacity = 128;
     private readonly Stream _stream;
     private readonly WorkerHandshakeResult _negotiated;
     private readonly string? _serverConnectionId;
@@ -47,10 +48,12 @@ public sealed class WorkerConnection : IDisposable
         new Dictionary<string, TaskCompletionSource<WorkerEnvelope>>(StringComparer.Ordinal);
     private readonly HashSet<string> _events = new HashSet<string>(StringComparer.Ordinal);
     private readonly HashSet<string> _seenEvents = new HashSet<string>(StringComparer.Ordinal);
+    private readonly Queue<string> _recentEventIds = new Queue<string>();
     private readonly Queue<WorkerEventEnvelope> _eventQueue = new Queue<WorkerEventEnvelope>();
     private readonly HashSet<string> _usedTransfers = new HashSet<string>(StringComparer.Ordinal);
     private readonly Task _completion;
     private bool _closed;
+    private bool _disposeRequested;
     private bool _eventDispatchStopped;
     private int _activeWriters;
     private int _eventSignalCredits;
@@ -90,6 +93,7 @@ public sealed class WorkerConnection : IDisposable
     /// Raised in arrival order on the connection's background dispatch queue. Callers that own UI, LibLCM,
     /// or cache thread affinity must marshal work to the required context; this client does not capture one.
     /// Events are connection events, so queued events survive subscriber removal and are delivered to later subscribers.
+    /// Duplicate identifiers are refused while retained in the bounded recent-event window.
     /// </summary>
     public event EventHandler<WorkerEventEnvelope>? EventReceived
     {
@@ -220,7 +224,12 @@ public sealed class WorkerConnection : IDisposable
     }
 
     /// <summary>Initiates normal shutdown; <see cref="Completion"/> observes the terminal state.</summary>
-    public void Dispose() => Close(null);
+    public void Dispose()
+    {
+        lock (_stateGate)
+            _disposeRequested = true;
+        Close(null);
+    }
 
     private async Task ReadLoopAsync()
     {
@@ -237,8 +246,15 @@ public sealed class WorkerConnection : IDisposable
                     lock (_stateGate)
                     {
                         ThrowIfClosed();
-                        if (!_seenEvents.Add(eventEnvelope.EventId) || !_events.Add(eventEnvelope.EventId))
+                        if (_seenEvents.Contains(eventEnvelope.EventId))
                             throw new InvalidOperationException("The worker sent a duplicate event identifier.");
+                        if (_events.Count >= EventCorrelationCapacity)
+                            throw new WorkerEventQueueOverflowException(EventCorrelationCapacity);
+                        _seenEvents.Add(eventEnvelope.EventId);
+                        _recentEventIds.Enqueue(eventEnvelope.EventId);
+                        if (_recentEventIds.Count > EventCorrelationCapacity)
+                            _seenEvents.Remove(_recentEventIds.Dequeue());
+                        _events.Add(eventEnvelope.EventId);
                     }
                     QueueEvent(eventEnvelope);
                     continue;
@@ -354,6 +370,8 @@ public sealed class WorkerConnection : IDisposable
             _pending.Clear();
             if (_activeWriters == 0)
                 writersToComplete = _writersQuiesced;
+            if (_disposeRequested)
+                reason = null;
             if (reason is null)
                 _completionSource.TrySetResult(true);
             else

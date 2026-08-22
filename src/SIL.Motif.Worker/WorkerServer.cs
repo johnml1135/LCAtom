@@ -17,7 +17,7 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
 {
     private readonly string _userNamespace;
     private readonly string _userSid;
-    private readonly Mutex _ownerMutex;
+    private readonly WorkerMutexOwner _ownerMutex;
     private readonly WorkerHandshakeOffer _offer;
     private readonly IWorkerWorkTracker? _workTracker;
     private readonly WorkerEventSink _eventSink;
@@ -42,7 +42,7 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
         _userNamespace = string.IsNullOrWhiteSpace(userNamespace) ? _userSid : userNamespace;
         EndpointName = GetControlPipeNameForNamespace(_userNamespace);
         OwnerName = GetOwnerMutexNameForNamespace(_userNamespace);
-        _ownerMutex = new Mutex(false, OwnerName, out _);
+        _ownerMutex = new WorkerMutexOwner(OwnerName);
         _offer = new WorkerHandshakeOffer(productVersion, new ProtocolRange(1, 1), Array.Empty<string>());
         _workTracker = workTracker ?? new WorkerWorkTracker();
         _eventSink = new WorkerEventSink();
@@ -109,16 +109,8 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
         {
             if (IsOwner)
                 return true;
-            try
-            {
-                IsOwner = _ownerMutex.WaitOne(TimeSpan.Zero);
-                return IsOwner;
-            }
-            catch (AbandonedMutexException)
-            {
-                IsOwner = true;
-                return true;
-            }
+            IsOwner = _ownerMutex.TryAcquire();
+            return IsOwner;
         }
     }
 
@@ -154,13 +146,18 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
         }
         foreach (var connection in _connections.Values)
             await connection.DisposeAsync().ConfigureAwait(false);
-        _eventSink.Dispose();
+        await _eventSink.DisposeAsync().ConfigureAwait(false);
+        Exception? ownershipFailure = null;
         if (IsOwner)
         {
-            try { _ownerMutex.ReleaseMutex(); } catch { }
+            try { _ownerMutex.Release(); }
+            catch (Exception exception) { ownershipFailure = exception; }
         }
-        _ownerMutex.Dispose();
+        try { _ownerMutex.Dispose(); }
+        catch (Exception exception) { ownershipFailure ??= exception; }
         _shutdown.Dispose();
+        if (ownershipFailure is not null)
+            throw new InvalidOperationException("The worker owner mutex could not be released.", ownershipFailure);
     }
 
     private async Task AcceptLoopAsync(CancellationToken cancellationToken)

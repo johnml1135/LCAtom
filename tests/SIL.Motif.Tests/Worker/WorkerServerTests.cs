@@ -47,6 +47,30 @@ public sealed class WorkerServerTests
 
         tracker.HasQueuedRunningOrWaitingWork = false;
         clock.Advance(TimeSpan.FromSeconds(5));
+        Assert.False(running.IsCompleted);
+        await Task.Yield();
+        clock.Advance(TimeSpan.FromSeconds(5));
+        await running.WaitAsync(TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public async Task WorkEndingAtBusyPollStartsAFullIdleInterval()
+    {
+        var clock = new ManualClock();
+        var tracker = new TestWorkTracker(true);
+        using var shutdown = new CancellationTokenSource();
+        var running = new WorkerLifetime(clock).RunUntilIdleAsync(
+            TimeSpan.FromSeconds(5), tracker, shutdown.Token);
+
+        await clock.WaitForDelayRegistrationAsync();
+        clock.Advance(TimeSpan.FromSeconds(5));
+        tracker.HasQueuedRunningOrWaitingWork = false;
+        await clock.WaitForDelayRegistrationAsync();
+
+        Assert.False(running.IsCompleted);
+        clock.Advance(TimeSpan.FromSeconds(4));
+        Assert.False(running.IsCompleted);
+        clock.Advance(TimeSpan.FromSeconds(1));
         await running.WaitAsync(TimeSpan.FromSeconds(1));
     }
 
@@ -96,11 +120,11 @@ public sealed class WorkerServerTests
             server.EndpointName, Handshake(), TimeSpan.FromSeconds(5), cancellation.Token);
         Assert.Equal(1, first.Negotiated.ProtocolVersion);
         Assert.Equal(1, second.Negotiated.ProtocolVersion);
-        cancellation.Cancel();
         first.Dispose();
         second.Dispose();
         await first.Completion.WaitAsync(TimeSpan.FromSeconds(5));
         await second.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        cancellation.Cancel();
         await running.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
@@ -358,6 +382,40 @@ public sealed class WorkerServerTests
     }
 
     [Fact]
+    public async Task EventSinkRefusesMoreThanItsBoundedPendingCorrelationSet()
+    {
+        using var host = new MemoryStream();
+        await using var sink = new WorkerEventSink();
+        sink.RegisterLiveHost(host, 1);
+        using var document = JsonDocument.Parse("{}");
+        var pending = new System.Collections.Generic.List<Task<WorkerEventResultEnvelope>>();
+        for (var index = 0; index < WorkerEventSink.PendingCorrelationCapacity; index++)
+            pending.Add(sink.RequestApplyAsync(document.RootElement.Clone(), CancellationToken.None));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => sink.RequestApplyAsync(
+            document.RootElement.Clone(), CancellationToken.None));
+        sink.UnregisterLiveHost(host);
+        await Task.WhenAll(pending.Select(task => task.ContinueWith(_ => { })));
+    }
+
+    [Fact]
+    public async Task EventSinkDisposalWaitsForAnActiveWriterAndFaultsPendingResult()
+    {
+        await using var sink = new WorkerEventSink();
+        var host = new BlockingStream();
+        sink.RegisterLiveHost(host, 1);
+        using var document = JsonDocument.Parse("{}");
+        var pending = sink.RequestApplyAsync(document.RootElement.Clone(), CancellationToken.None);
+        await host.WriteStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        var disposing = sink.DisposeAsync().AsTask();
+        Assert.False(disposing.IsCompleted);
+        host.ReleaseWrite.TrySetResult(true);
+        await disposing;
+        await Assert.ThrowsAnyAsync<ObjectDisposedException>(() => pending);
+    }
+
+    [Fact]
     public async Task BinaryTransferPublishesOnlyAfterMatchingCompletion()
     {
         var directory = Path.Combine(Path.GetTempPath(), "motif-worker-" + Guid.NewGuid().ToString("N"));
@@ -480,6 +538,18 @@ public sealed class WorkerServerTests
     }
 
     [Fact]
+    public async Task GracefulOwnerDisposalLetsSuccessorAcquireWithoutAbandonment()
+    {
+        var identity = "mutex-disposal-" + Guid.NewGuid().ToString("N");
+        await using var first = WorkerServer.CreateForTests(identity);
+        await using var second = WorkerServer.CreateForTests(identity);
+        Assert.True(first.TryAcquireOwnership());
+        Assert.False(second.TryAcquireOwnership());
+        await first.DisposeAsync();
+        Assert.True(second.TryAcquireOwnership());
+    }
+
+    [Fact]
     public async Task BinaryTransferDeletesTemporaryFileWhenClientDisconnectsIncomplete()
     {
         var directory = Path.Combine(Path.GetTempPath(), "motif-worker-" + Guid.NewGuid().ToString("N"));
@@ -558,7 +628,7 @@ public sealed class WorkerServerTests
         var completion = new BinaryTransferCompletion(offer.TransferId, bytes.Length,
             Convert.ToHexString(digest.ComputeHash(bytes)).ToLowerInvariant());
         var published = await server.CompleteAsync(completion);
-        Assert.Throws<InvalidOperationException>(() => server.CompleteAsync(completion).GetAwaiter().GetResult());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => server.CompleteAsync(completion));
         using var reconnect = new NamedPipeClientStream(".", offer.PipeName, PipeDirection.Out);
         await Assert.ThrowsAnyAsync<Exception>(() => reconnect.ConnectAsync(500));
         Assert.True(File.Exists(published));
@@ -586,6 +656,53 @@ public sealed class WorkerServerTests
         Assert.Equal(1, completions.Count(task => task.Status == TaskStatus.RanToCompletion));
         Assert.Equal(1, completions.Count(task => task.IsFaulted));
         Assert.Single(Directory.GetFiles(directory, "*.ready"));
+    }
+
+    [Fact]
+    public async Task BinaryOfferRegisteredBeforeDisposeIsDrainedBeforeDisposeCompletes()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "motif-worker-" + Guid.NewGuid().ToString("N"));
+        using var registered = new ManualResetEventSlim(false);
+        using var release = new ManualResetEventSlim(false);
+        await using var server = BinaryTransferServer.CreateWithLifecycleProbes(directory,
+            onOfferRegistered: () =>
+            {
+                registered.Set();
+                release.Wait();
+            });
+
+        var offerTask = Task.Run(() => server.CreateOffer(10, TimeSpan.FromSeconds(10)));
+        Assert.True(registered.Wait(TimeSpan.FromSeconds(1)));
+        var disposeTask = Task.Run(async () => await server.DisposeAsync());
+        Assert.False(disposeTask.IsCompleted);
+        release.Set();
+        var offer = await offerTask;
+        await disposeTask;
+        Assert.Throws<ObjectDisposedException>(() => server.CreateOffer(10, TimeSpan.FromSeconds(1)));
+        Assert.False(File.Exists(Path.Combine(directory, offer.TransferId + ".tmp")));
+    }
+
+    [Fact]
+    public async Task BinaryDisposeStartedBeforeOfferPreventsOfferEscape()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "motif-worker-" + Guid.NewGuid().ToString("N"));
+        using var disposing = new ManualResetEventSlim(false);
+        using var release = new ManualResetEventSlim(false);
+        await using var server = BinaryTransferServer.CreateWithLifecycleProbes(directory,
+            onDisposed: () =>
+            {
+                disposing.Set();
+                release.Wait();
+            });
+
+        var disposeTask = Task.Run(async () => await server.DisposeAsync());
+        Assert.True(disposing.Wait(TimeSpan.FromSeconds(1)));
+        var offerTask = Task.Run(() => Record.Exception(() => server.CreateOffer(10, TimeSpan.FromSeconds(1))));
+        await Task.Delay(20);
+        Assert.False(offerTask.IsCompleted);
+        release.Set();
+        await disposeTask;
+        Assert.IsType<ObjectDisposedException>(await offerTask);
     }
 
     private static Process StartWorkerProcess(int idleMilliseconds)
@@ -772,10 +889,27 @@ public sealed class WorkerServerTests
         }
     }
 
+    private sealed class BlockingStream : MemoryStream
+    {
+        public TaskCompletionSource<bool> WriteStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<bool> ReleaseWrite { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public override async Task WriteAsync(byte[] buffer, int offset, int count,
+            CancellationToken cancellationToken)
+        {
+            WriteStarted.TrySetResult(true);
+            await ReleaseWrite.Task.WaitAsync(cancellationToken);
+            await base.WriteAsync(buffer, offset, count, cancellationToken);
+        }
+    }
+
     private sealed class ManualClock : IWorkerClock
     {
         private readonly object _gate = new object();
         private readonly System.Collections.Generic.List<Waiter> _waiters = new();
+        private TaskCompletionSource<bool>? _delayRegistered;
         private DateTimeOffset _now = DateTimeOffset.UtcNow;
         private TimeSpan _monotonic;
 
@@ -790,9 +924,23 @@ public sealed class WorkerServerTests
                     return Task.CompletedTask;
                 var waiter = new Waiter(_monotonic + delay);
                 _waiters.Add(waiter);
+                _delayRegistered?.TrySetResult(true);
+                _delayRegistered = null;
                 if (cancellationToken.CanBeCanceled)
                     cancellationToken.Register(() => waiter.CompleteCanceled(cancellationToken));
                 return waiter.Task;
+            }
+        }
+
+        public Task WaitForDelayRegistrationAsync()
+        {
+            lock (_gate)
+            {
+                if (_waiters.Count != 0)
+                    return Task.CompletedTask;
+                _delayRegistered ??= new TaskCompletionSource<bool>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                return _delayRegistered.Task;
             }
         }
 

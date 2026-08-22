@@ -43,18 +43,26 @@ public sealed class WorkerLifetime
             throw new ArgumentNullException(nameof(work));
 
         var idleSince = _clock.MonotonicNow;
+        var wasBusy = work.HasQueuedRunningOrWaitingWork;
         while (!shutdown.IsCancellationRequested)
         {
+            var now = _clock.MonotonicNow;
             if (work.HasQueuedRunningOrWaitingWork)
             {
-                idleSince = _clock.MonotonicNow;
+                idleSince = now;
+                wasBusy = true;
             }
-            else if (_clock.MonotonicNow - idleSince >= idleTimeout)
+            else if (wasBusy)
+            {
+                idleSince = now;
+                wasBusy = false;
+            }
+            else if (now - idleSince >= idleTimeout)
             {
                 return;
             }
 
-            var remaining = idleTimeout - (_clock.MonotonicNow - idleSince);
+            var remaining = idleTimeout - (now - idleSince);
             try { await _clock.DelayAsync(remaining, shutdown).ConfigureAwait(false); }
             catch (OperationCanceledException) when (shutdown.IsCancellationRequested)
             {

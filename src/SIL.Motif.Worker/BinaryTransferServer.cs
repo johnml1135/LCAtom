@@ -21,20 +21,35 @@ public sealed class BinaryTransferServer : IAsyncDisposable
     private readonly string _tempDirectory;
     private readonly IWorkerClock _clock;
     private readonly string? _userSid;
+    private readonly object _lifecycleGate = new object();
+    private Action? _onOfferRegistered;
+    private Action? _onDisposed;
     private readonly ConcurrentDictionary<string, Transfer> _transfers =
         new ConcurrentDictionary<string, Transfer>(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _cleanupFailures =
         new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase);
-    private int _disposed;
+    private bool _disposed;
 
     /// <summary>Creates a server that owns temporary files under the supplied directory.</summary>
     public BinaryTransferServer(string tempDirectory, IWorkerClock? clock = null, string? userSid = null)
+        : this(tempDirectory, clock, userSid, null, null)
+    {
+    }
+
+    private BinaryTransferServer(string tempDirectory, IWorkerClock? clock, string? userSid,
+        Action? onOfferRegistered, Action? onDisposed)
     {
         _tempDirectory = Path.GetFullPath(tempDirectory ?? throw new ArgumentNullException(nameof(tempDirectory)));
         Directory.CreateDirectory(_tempDirectory);
         _clock = clock ?? new SystemClock();
         _userSid = userSid;
+        _onOfferRegistered = onOfferRegistered;
+        _onDisposed = onDisposed;
     }
+
+    internal static BinaryTransferServer CreateWithLifecycleProbes(string tempDirectory,
+        Action? onOfferRegistered = null, Action? onDisposed = null) =>
+        new BinaryTransferServer(tempDirectory, null, null, onOfferRegistered, onDisposed);
 
     /// <summary>Exposes the same restricted ACL used by every binary pipe.</summary>
     public static PipeSecurity CreatePipeSecurity(string? userSid = null) =>
@@ -69,17 +84,22 @@ public sealed class BinaryTransferServer : IAsyncDisposable
             throw new ArgumentOutOfRangeException(nameof(maximumBytes));
         if (lifetime <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(lifetime));
-        ThrowIfDisposed();
-        var id = Guid.NewGuid().ToString("N");
-        var offer = new BinaryTransferOffer(id, "upload", "motif-transfer-" + Guid.NewGuid().ToString("N"),
-            maximumBytes, _clock.UtcNow + lifetime);
-        var transfer = new Transfer(offer, Path.Combine(_tempDirectory, id + ".tmp"),
-            _clock.MonotonicNow + lifetime);
-        if (!_transfers.TryAdd(id, transfer))
-            throw new InvalidOperationException("A transfer identifier was unexpectedly reused.");
-        transfer.AcceptTask = AcceptAsync(transfer, cancellationToken);
-        _ = RemoveAfterFailureAsync(transfer);
-        return offer;
+        lock (_lifecycleGate)
+        {
+            ThrowIfDisposed();
+            var id = Guid.NewGuid().ToString("N");
+            var offer = new BinaryTransferOffer(id, "upload",
+                "motif-transfer-" + Guid.NewGuid().ToString("N"), maximumBytes,
+                _clock.UtcNow + lifetime);
+            var transfer = new Transfer(offer, Path.Combine(_tempDirectory, id + ".tmp"),
+                _clock.MonotonicNow + lifetime);
+            if (!_transfers.TryAdd(id, transfer))
+                throw new InvalidOperationException("A transfer identifier was unexpectedly reused.");
+            _onOfferRegistered?.Invoke();
+            transfer.AcceptTask = AcceptAsync(transfer, cancellationToken);
+            _ = RemoveAfterFailureAsync(transfer);
+            return offer;
+        }
     }
 
     /// <summary>Completes and atomically publishes an offer after checking its count and digest.</summary>
@@ -121,9 +141,16 @@ public sealed class BinaryTransferServer : IAsyncDisposable
     /// <summary>Removes all unpublished temporary files owned by this server.</summary>
     public async ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
-            return;
-        foreach (var transfer in _transfers.Values)
+        Transfer[] transfers;
+        lock (_lifecycleGate)
+        {
+            if (_disposed)
+                return;
+            _disposed = true;
+            transfers = _transfers.Values.ToArray();
+            _onDisposed?.Invoke();
+        }
+        foreach (var transfer in transfers)
         {
             transfer.Cancel.Cancel();
             try { await transfer.AcceptTask.ConfigureAwait(false); } catch { }
@@ -236,7 +263,7 @@ public sealed class BinaryTransferServer : IAsyncDisposable
 
     private void ThrowIfDisposed()
     {
-        if (Volatile.Read(ref _disposed) != 0)
+        if (_disposed)
             throw new ObjectDisposedException(nameof(BinaryTransferServer));
     }
 

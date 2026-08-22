@@ -212,6 +212,33 @@ public sealed class WorkerClientTests
     }
 
     [Fact]
+    public async Task OutstandingEventCorrelationBoundFaultsEvenWhenDispatchQueueDrains()
+    {
+        var pipeName = "motif-client-" + Guid.NewGuid().ToString("N");
+        var server = NewServer(pipeName);
+        var serverTask = RunServerAsync(server, async (stream, offer) =>
+        {
+            await ReadJsonAsync(stream);
+            await WriteJsonAsync(stream, new WorkerHandshakeOffer("1.0.0",
+                new ProtocolRange(1, 1), Array.Empty<string>()));
+            try
+            {
+                for (var index = 0; index < 129; index++)
+                    await WriteJsonAsync(stream, new WorkerEventEnvelope("correlation-" + index,
+                        WorkerCommands.ApplyRequested, JsonDocument.Parse("{}").RootElement.Clone(), 1));
+            }
+            catch (IOException)
+            {
+            }
+        });
+        using var connection = await ConnectAsync(pipeName);
+        connection.EventReceived += (_, _) => { };
+        await Assert.ThrowsAsync<WorkerEventQueueOverflowException>(() =>
+            connection.Completion.WaitAsync(TimeSpan.FromSeconds(5)));
+        await serverTask.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
     public async Task SubscriberExceptionsReachCompletionAfterLaterSubscribersRun()
     {
         var pipeName = "motif-client-" + Guid.NewGuid().ToString("N");
