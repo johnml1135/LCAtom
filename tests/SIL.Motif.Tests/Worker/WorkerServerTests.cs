@@ -97,7 +97,74 @@ public sealed class WorkerServerTests
         Assert.Equal(1, first.Negotiated.ProtocolVersion);
         Assert.Equal(1, second.Negotiated.ProtocolVersion);
         cancellation.Cancel();
+        first.Dispose();
+        second.Dispose();
+        await first.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        await second.Completion.WaitAsync(TimeSpan.FromSeconds(5));
         await running.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task OrdinaryClientCoexistsWithExplicitlyRegisteredLiveHost()
+    {
+        var name = "worker-test-" + Guid.NewGuid().ToString("N");
+        await using var server = WorkerServer.CreateForTests(name);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var running = server.StartAsync(cancellation.Token);
+        using var live = await new SIL.Motif.Client.Worker.WorkerClient().ConnectAsync(
+            server.EndpointName, Handshake(), TimeSpan.FromSeconds(5), cancellation.Token);
+        using var ordinary = await new SIL.Motif.Client.Worker.WorkerClient().ConnectAsync(
+            server.EndpointName, Handshake(), TimeSpan.FromSeconds(5), cancellation.Token);
+        Assert.NotEqual(live.ServerConnectionId, ordinary.ServerConnectionId);
+        server.RegisterLiveHost(live.ServerConnectionId!);
+        Assert.Throws<InvalidOperationException>(() =>
+            server.RegisterLiveHost(ordinary.ServerConnectionId!));
+
+        using var document = JsonDocument.Parse("{\"coexist\":true}");
+        var received = new TaskCompletionSource<WorkerEventEnvelope>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        live.EventReceived += (_, value) => received.TrySetResult(value);
+        var pending = server.EventSink.RequestApplyAsync(document.RootElement.Clone(), cancellation.Token);
+        var eventEnvelope = await received.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await live.CompleteEventAsync(new WorkerEventResultEnvelope(eventEnvelope.EventId,
+            WorkerEventOutcome.Completed, document.RootElement.Clone(), 1), cancellation.Token);
+        await pending.WaitAsync(TimeSpan.FromSeconds(5));
+        server.UnregisterLiveHost(live.ServerConnectionId!);
+        server.RegisterLiveHost(ordinary.ServerConnectionId!);
+
+        var response = await ordinary.SendAsync(new WorkerEnvelope(
+            "ordinary-request", WorkerCommands.Handshake, document.RootElement.Clone(), 1),
+            cancellation.Token);
+        Assert.Equal("ordinary-request", response.RequestId);
+        cancellation.Cancel();
+        live.Dispose();
+        ordinary.Dispose();
+        await live.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        await ordinary.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        await running.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task SharedConnectionWriterKeepsResponseAndEventFramesIntact()
+    {
+        using var stream = new ChunkingStream();
+        using var sink = new WorkerEventSink();
+        using var writerGate = new SemaphoreSlim(1, 1);
+        sink.RegisterLiveHost(stream, 1, writerGate);
+        using var document = JsonDocument.Parse("{}");
+        var pending = sink.RequestApplyAsync(document.RootElement.Clone(), CancellationToken.None);
+        var responseWrite = WriteSerializedAsync(writerGate, stream, new WorkerEnvelope(
+            "response", WorkerCommands.Handshake, document.RootElement.Clone(), 1),
+            CancellationToken.None);
+        await responseWrite;
+        Assert.True(SpinWait.SpinUntil(() => stream.Length > 0, TimeSpan.FromSeconds(1)));
+        var frames = ReadFrames(stream.ToArray());
+        Assert.Equal(2, frames.Count);
+        Assert.Contains(frames, frame => frame.Contains(WorkerCommands.ApplyRequested, StringComparison.Ordinal));
+        Assert.Contains(frames, frame => frame.Contains("response", StringComparison.Ordinal));
+        sink.AcceptResult(new WorkerEventResultEnvelope(ReadEventId(stream),
+            WorkerEventOutcome.Completed, document.RootElement.Clone(), 1));
+        await pending.WaitAsync(TimeSpan.FromSeconds(1));
     }
 
     [Fact]
@@ -226,6 +293,7 @@ public sealed class WorkerServerTests
         var running = server.StartAsync(cancellation.Token);
         using var client = await new SIL.Motif.Client.Worker.WorkerClient().ConnectAsync(
             server.EndpointName, Handshake(), TimeSpan.FromSeconds(5), cancellation.Token);
+        server.RegisterLiveHost(client.ServerConnectionId!);
         using var document = JsonDocument.Parse("{\"roundTrip\":true}");
         TaskCompletionSource<WorkerEventEnvelope>? received = null;
         client.EventReceived += (_, value) => received?.TrySetResult(value);
@@ -615,11 +683,90 @@ public sealed class WorkerServerTests
         return result ?? throw new InvalidOperationException("No worker event was written.");
     }
 
+    private static List<string> ReadFrames(byte[] bytes)
+    {
+        var frames = new List<string>();
+        var offset = 0;
+        while (offset < bytes.Length)
+        {
+            Assert.True(offset + 4 <= bytes.Length);
+            var length = bytes[offset] | bytes[offset + 1] << 8 |
+                bytes[offset + 2] << 16 | bytes[offset + 3] << 24;
+            Assert.InRange(length, 1, WorkerWire.MaximumFrameBytes);
+            Assert.True(offset + 4 + length <= bytes.Length);
+            frames.Add(Encoding.UTF8.GetString(bytes, offset + 4, length));
+            offset += 4 + length;
+        }
+        return frames;
+    }
+
+    private static string ReadEventId(ChunkingStream stream)
+    {
+        foreach (var frame in ReadFrames(stream.ToArray()))
+        {
+            using var document = JsonDocument.Parse(frame);
+            if (document.RootElement.TryGetProperty("EventId", out var eventId))
+                return eventId.GetString()!;
+        }
+        throw new InvalidOperationException("No event frame was written.");
+    }
+
+    private static async Task WriteSerializedAsync(
+        SemaphoreSlim gate, Stream stream, object value, CancellationToken cancellationToken)
+    {
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            await WorkerWire.WriteAsync(stream, value, cancellationToken);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
     private sealed class TestWorkTracker : IWorkerWorkTracker
     {
         public TestWorkTracker(bool hasWork) => HasQueuedRunningOrWaitingWork = hasWork;
 
         public bool HasQueuedRunningOrWaitingWork { get; set; }
+    }
+
+    private sealed class ChunkingStream : Stream
+    {
+        private readonly object _gate = new object();
+        private readonly List<byte> _bytes = new List<byte>();
+
+        public override bool CanRead => false;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length
+        {
+            get { lock (_gate) return _bytes.Count; }
+        }
+        public override long Position { get; set; }
+        public byte[] ToArray()
+        {
+            lock (_gate)
+                return _bytes.ToArray();
+        }
+        public override void Flush() { }
+        public override Task FlushAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override async Task WriteAsync(byte[] buffer, int offset, int count,
+            CancellationToken cancellationToken)
+        {
+            for (var index = 0; index < count; index++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                lock (_gate)
+                    _bytes.Add(buffer[offset + index]);
+                await Task.Yield();
+            }
+        }
     }
 
     private sealed class ManualClock : IWorkerClock

@@ -34,7 +34,7 @@ public sealed class WorkerClient
             var offerFrame = await WorkerFrame.ReadAsync(stream, timeoutCancellation.Token).ConfigureAwait(false);
             var offer = WorkerFrame.Deserialize<WorkerHandshakeOffer>(offerFrame);
             var negotiated = WorkerHandshake.Negotiate(handshake, offer);
-            return new WorkerConnection(stream, negotiated);
+            return new WorkerConnection(stream, negotiated, offer.ConnectionId);
         }
         catch (Exception exception) when (cancellationToken.IsCancellationRequested)
         {

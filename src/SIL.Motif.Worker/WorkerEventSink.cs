@@ -16,11 +16,15 @@ public sealed class WorkerEventSink : IDisposable
     private readonly Dictionary<string, TaskCompletionSource<WorkerEventResultEnvelope>> _pending =
         new Dictionary<string, TaskCompletionSource<WorkerEventResultEnvelope>>(StringComparer.Ordinal);
     private Stream? _stream;
+    private SemaphoreSlim? _sharedWriteGate;
     private int _protocolVersion;
     private bool _disposed;
 
     /// <summary>Registers the sole live-host control stream.</summary>
     public void RegisterLiveHost(Stream stream, int protocolVersion)
+        => RegisterLiveHost(stream, protocolVersion, null);
+
+    internal void RegisterLiveHost(Stream stream, int protocolVersion, SemaphoreSlim? sharedWriteGate)
     {
         if (stream is null)
             throw new ArgumentNullException(nameof(stream));
@@ -33,6 +37,7 @@ public sealed class WorkerEventSink : IDisposable
                 throw new InvalidOperationException("A live host is already registered.");
             _stream = stream;
             _protocolVersion = protocolVersion;
+            _sharedWriteGate = sharedWriteGate;
         }
     }
 
@@ -46,6 +51,7 @@ public sealed class WorkerEventSink : IDisposable
             if (!ReferenceEquals(_stream, stream))
                 return;
             _stream = null;
+            _sharedWriteGate = null;
             foreach (var pending in _pending.Values)
                 pending.TrySetException(new IOException("The live host disconnected."));
             _pending.Clear();
@@ -113,6 +119,7 @@ public sealed class WorkerEventSink : IDisposable
                 return;
             _disposed = true;
             _stream = null;
+            _sharedWriteGate = null;
             foreach (var pending in _pending.Values)
                 pending.TrySetException(new ObjectDisposedException(nameof(WorkerEventSink)));
             _pending.Clear();
@@ -128,16 +135,20 @@ public sealed class WorkerEventSink : IDisposable
         try
         {
             Stream stream;
+            SemaphoreSlim writeGate;
             lock (_gate)
+            {
                 stream = _stream ?? throw new InvalidOperationException("No live host is registered.");
-            await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                writeGate = _sharedWriteGate ?? _writeGate;
+            }
+            await writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 await WorkerWire.WriteAsync(stream, envelope, cancellationToken).ConfigureAwait(false);
             }
             finally
             {
-                _writeGate.Release();
+                writeGate.Release();
             }
             using (cancellationToken.Register(() => completion.TrySetCanceled(cancellationToken)))
                 return await completion.Task.ConfigureAwait(false);

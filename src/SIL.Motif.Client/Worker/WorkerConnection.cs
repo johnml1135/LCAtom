@@ -32,6 +32,7 @@ public sealed class WorkerConnection : IDisposable
     private const int EventQueueCapacity = 128;
     private readonly Stream _stream;
     private readonly WorkerHandshakeResult _negotiated;
+    private readonly string? _serverConnectionId;
     private readonly object _stateGate = new object();
     private readonly SemaphoreSlim _writeGate = new SemaphoreSlim(1, 1);
     private readonly SemaphoreSlim _eventDispatchSignal = new SemaphoreSlim(0);
@@ -56,10 +57,11 @@ public sealed class WorkerConnection : IDisposable
     private readonly Task _readLoop;
     private readonly Task _eventDispatchLoop;
 
-    internal WorkerConnection(Stream stream, WorkerHandshakeResult negotiated)
+    internal WorkerConnection(Stream stream, WorkerHandshakeResult negotiated, string? serverConnectionId = null)
     {
         _stream = stream ?? throw new ArgumentNullException(nameof(stream));
         _negotiated = negotiated ?? throw new ArgumentNullException(nameof(negotiated));
+        _serverConnectionId = serverConnectionId;
         _completion = _completionSource.Task;
         _completion.ContinueWith(
             task =>
@@ -80,6 +82,9 @@ public sealed class WorkerConnection : IDisposable
 
     /// <summary>The protocol generation and capabilities selected during connection setup.</summary>
     public WorkerHandshakeResult Negotiated => _negotiated;
+
+    /// <summary>The server-issued identity used to select this connection as the live host.</summary>
+    public string? ServerConnectionId => _serverConnectionId;
 
     /// <summary>
     /// Raised in arrival order on the connection's background dispatch queue. Callers that own UI, LibLCM,

@@ -44,16 +44,27 @@ public sealed record WorkerHandshakeOffer
 {
     public WorkerHandshakeOffer(
         string productVersion, ProtocolRange protocols, IEnumerable<string> capabilities)
+        : this(productVersion, protocols, capabilities, null)
+    {
+    }
+
+    public WorkerHandshakeOffer(
+        string productVersion, ProtocolRange protocols, IEnumerable<string> capabilities,
+        string? connectionId)
     {
         ProductVersion = WorkerProtocolValidation.Identifier(productVersion, nameof(productVersion));
         Protocols = protocols ?? throw new ArgumentNullException(nameof(protocols));
         Capabilities = WorkerProtocolValidation.CopyCapabilities(capabilities, nameof(capabilities));
+        ConnectionId = string.IsNullOrWhiteSpace(connectionId)
+            ? null
+            : WorkerProtocolValidation.Identifier(connectionId!, nameof(connectionId));
     }
 
     [JsonConstructor]
     public WorkerHandshakeOffer(
-        string productVersion, ProtocolRange protocols, IReadOnlyList<string> capabilities)
-        : this(productVersion, protocols, (IEnumerable<string>)capabilities)
+        string productVersion, ProtocolRange protocols, IReadOnlyList<string> capabilities,
+        string? connectionId = null)
+        : this(productVersion, protocols, (IEnumerable<string>)capabilities, connectionId)
     {
     }
 
@@ -65,6 +76,9 @@ public sealed record WorkerHandshakeOffer
 
     /// <summary>Capabilities exposed by the worker.</summary>
     public IReadOnlyList<string> Capabilities { get; }
+
+    /// <summary>The unambiguous server connection identity used for explicit host registration.</summary>
+    public string? ConnectionId { get; }
 
 }
 

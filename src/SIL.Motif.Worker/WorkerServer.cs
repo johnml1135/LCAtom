@@ -64,8 +64,27 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
     /// <summary>Whether a queued, running, or waiting request is keeping the worker alive.</summary>
     public bool HasQueuedRunningOrWaitingWork => _workTracker!.HasQueuedRunningOrWaitingWork;
 
-    /// <summary>The duplex event sink attached to the one registered live host.</summary>
+    /// <summary>The duplex event sink attached to the explicitly registered live host.</summary>
     public WorkerEventSink EventSink => _eventSink;
+
+    /// <summary>Registers one connected client as the live host by its server-issued identity.</summary>
+    public void RegisterLiveHost(string connectionId)
+    {
+        if (string.IsNullOrWhiteSpace(connectionId))
+            throw new ArgumentException("A server connection identity is required.", nameof(connectionId));
+        if (!_connections.TryGetValue(connectionId, out var connection))
+            throw new InvalidOperationException("The server connection identity is unknown.");
+        connection.RegisterLiveHost();
+    }
+
+    /// <summary>Removes a connected client from live-host registration.</summary>
+    public void UnregisterLiveHost(string connectionId)
+    {
+        if (string.IsNullOrWhiteSpace(connectionId))
+            throw new ArgumentException("A server connection identity is required.", nameof(connectionId));
+        if (_connections.TryGetValue(connectionId, out var connection))
+            connection.UnregisterLiveHost();
+    }
 
     /// <summary>Derives the stable control pipe name for the current Windows user.</summary>
     public static string GetControlPipeName() => GetControlPipeNameForNamespace(CurrentSid());
@@ -168,17 +187,17 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
         await using (pipe.ConfigureAwait(false))
         {
             WorkerControlConnection? connection = null;
-            var registered = false;
             try
             {
+                var connectionId = Guid.NewGuid().ToString("N");
                 var frame = await WorkerWire.ReadAsync(pipe, cancellationToken).ConfigureAwait(false);
                 var handshake = WorkerWire.Deserialize<WorkerHandshakeRequest>(frame);
                 var negotiated = WorkerHandshake.Negotiate(handshake, _offer);
-                await WorkerWire.WriteAsync(pipe, _offer, cancellationToken).ConfigureAwait(false);
-                _eventSink.RegisterLiveHost(pipe, negotiated.ProtocolVersion);
-                registered = true;
-                connection = new WorkerControlConnection(pipe, negotiated.ProtocolVersion, _eventSink);
+                connection = new WorkerControlConnection(pipe, negotiated.ProtocolVersion, _eventSink, connectionId);
+                var offer = new WorkerHandshakeOffer(_offer.ProductVersion, _offer.Protocols,
+                    _offer.Capabilities, connectionId);
                 _connections[connection.Id] = connection;
+                await connection.WriteAsync(offer, cancellationToken).ConfigureAwait(false);
                 await connection.RunAsync(cancellationToken).ConfigureAwait(false);
             }
             catch
@@ -189,8 +208,7 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
             {
                 if (connection is not null)
                     _connections.TryRemove(connection.Id, out _);
-                if (registered)
-                    _eventSink.UnregisterLiveHost(pipe);
+                connection?.UnregisterLiveHost();
             }
         }
     }
@@ -213,16 +231,36 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
         private readonly Stream _stream;
         private readonly int _protocolVersion;
         private readonly WorkerEventSink _eventSink;
+        private readonly SemaphoreSlim _writeGate = new SemaphoreSlim(1, 1);
+        private bool _liveHost;
 
-        public WorkerControlConnection(Stream stream, int protocolVersion, WorkerEventSink eventSink)
+        public WorkerControlConnection(Stream stream, int protocolVersion, WorkerEventSink eventSink,
+            string connectionId)
         {
             _stream = stream;
             _protocolVersion = protocolVersion;
             _eventSink = eventSink;
-            Id = Guid.NewGuid().ToString("N");
+            Id = connectionId;
         }
 
         public string Id { get; }
+
+        public void RegisterLiveHost()
+        {
+            _eventSink.RegisterLiveHost(_stream, _protocolVersion, _writeGate);
+            _liveHost = true;
+        }
+
+        public void UnregisterLiveHost()
+        {
+            if (!_liveHost)
+                return;
+            _eventSink.UnregisterLiveHost(_stream);
+            _liveHost = false;
+        }
+
+        public Task WriteAsync(object value, CancellationToken cancellationToken) =>
+            WriteSerializedAsync(value, cancellationToken);
 
         public async Task RunAsync(CancellationToken cancellationToken)
         {
@@ -247,7 +285,7 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
                     throw new InvalidDataException("The command discriminator is not registered.");
                 if (request.ProtocolVersion != _protocolVersion)
                     throw new InvalidDataException("The request protocol does not match negotiation.");
-                await WorkerWire.WriteAsync(_stream, new WorkerEnvelope(
+                await WriteSerializedAsync(new WorkerEnvelope(
                     request.RequestId, WorkerCommands.Handshake, EmptyPayload(), _protocolVersion), cancellationToken)
                     .ConfigureAwait(false);
             }
@@ -257,6 +295,19 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
         {
             _stream.Dispose();
             return ValueTask.CompletedTask;
+        }
+
+        private async Task WriteSerializedAsync(object value, CancellationToken cancellationToken)
+        {
+            await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await WorkerWire.WriteAsync(_stream, value, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _writeGate.Release();
+            }
         }
 
         private static JsonElement EmptyPayload() =>
