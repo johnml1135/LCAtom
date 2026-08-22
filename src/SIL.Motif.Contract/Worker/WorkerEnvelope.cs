@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -28,9 +27,6 @@ public sealed record WorkerEnvelope
 
     /// <summary>The negotiated protocol generation used by this envelope.</summary>
     public int ProtocolVersion { get; }
-
-    [JsonExtensionData]
-    public IDictionary<string, JsonElement>? UnknownProperties { get; set; }
 
     internal static int ValidateProtocolVersion(int version)
     {

@@ -37,8 +37,6 @@ public sealed record WorkerHandshakeRequest
     /// <summary>Capabilities required by this client and understood by its caller.</summary>
     public IReadOnlyList<string> Capabilities { get; }
 
-    [JsonExtensionData]
-    public IDictionary<string, JsonElement>? UnknownProperties { get; set; }
 }
 
 /// <summary>Worker identity and compatibility interval offered to a connecting client.</summary>
@@ -68,8 +66,6 @@ public sealed record WorkerHandshakeOffer
     /// <summary>Capabilities exposed by the worker.</summary>
     public IReadOnlyList<string> Capabilities { get; }
 
-    [JsonExtensionData]
-    public IDictionary<string, JsonElement>? UnknownProperties { get; set; }
 }
 
 /// <summary>Negotiated protocol generation and effective capability set.</summary>
@@ -88,8 +84,6 @@ public sealed record WorkerHandshakeResult
     /// <summary>Capabilities available to the connected client.</summary>
     public IReadOnlyList<string> Capabilities { get; }
 
-    [JsonExtensionData]
-    public IDictionary<string, JsonElement>? UnknownProperties { get; set; }
 }
 
 /// <summary>Negotiates a safe protocol generation and capability set.</summary>

@@ -87,6 +87,7 @@ public sealed class WorkerProtocolTests
         Assert.Equal("motif-cli", request!.ClientId);
         Assert.Equal(1, request.Protocols.Minimum);
         Assert.Equal(new[] { "jobs.v1" }, request.Capabilities);
+        Assert.DoesNotContain("futureField", JsonSerializer.Serialize(request));
     }
 
     [Fact]
@@ -100,6 +101,7 @@ public sealed class WorkerProtocolTests
         Assert.NotNull(parsed);
         Assert.Equal(2, parsed!.ProtocolVersion);
         Assert.Equal(new[] { "jobs.v1" }, parsed.Capabilities);
+        Assert.DoesNotContain("futureField", JsonSerializer.Serialize(parsed));
     }
 
     [Fact]
@@ -129,6 +131,7 @@ public sealed class WorkerProtocolTests
         Assert.Equal(envelope.RequestId, parsed!.RequestId);
         Assert.Equal(envelope.Command, parsed.Command);
         Assert.Equal(42, parsed.Payload.GetProperty("value").GetInt32());
+        Assert.DoesNotContain("futureField", JsonSerializer.Serialize(parsed, options));
     }
 
     [Fact]
@@ -175,6 +178,29 @@ public sealed class WorkerProtocolTests
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<WorkerEventResultEnvelope>(
             "{\"EventId\":\"event-1\",\"Outcome\":\"FutureOutcome\",\"Payload\":{},\"ProtocolVersion\":1}",
             new JsonSerializerOptions { Converters = { new JsonStringEnumConverter() } }));
+    }
+
+    [Fact]
+    public void UnknownProperties_AreSkippedAcrossWorkerDtoFamilies()
+    {
+        AssertUnknownPropertySkipped<WorkerHandshakeOffer>(
+            "{\"ProductVersion\":\"3.5.0\",\"Protocols\":{\"Minimum\":2,\"Maximum\":3},\"Capabilities\":[\"jobs.v1\"],\"futureField\":true}");
+        AssertUnknownPropertySkipped<WorkerEventEnvelope>(
+            "{\"EventId\":\"event-1\",\"Event\":\"baseline.refresh.requested\",\"Payload\":{},\"ProtocolVersion\":1,\"futureField\":true}");
+        AssertUnknownPropertySkipped<WorkerEventResultEnvelope>(
+            "{\"EventId\":\"event-1\",\"Outcome\":\"Accepted\",\"Payload\":{},\"ProtocolVersion\":1,\"futureField\":true}");
+        AssertUnknownPropertySkipped<BinaryTransferOffer>(
+            "{\"TransferId\":\"transfer-1\",\"Direction\":\"upload\",\"PipeName\":\"pipe-1\",\"MaximumBytes\":1024,\"ExpiresAt\":\"2030-01-01T00:00:00+00:00\",\"futureField\":true}");
+        AssertUnknownPropertySkipped<BinaryTransferCompletion>(
+            "{\"TransferId\":\"transfer-1\",\"ByteCount\":12,\"Sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"futureField\":true}");
+    }
+
+    private static void AssertUnknownPropertySkipped<T>(string json)
+    {
+        var parsed = JsonSerializer.Deserialize<T>(json);
+
+        Assert.NotNull(parsed);
+        Assert.DoesNotContain("futureField", JsonSerializer.Serialize(parsed));
     }
 
     [Fact]

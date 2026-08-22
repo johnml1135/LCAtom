@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -38,6 +37,4 @@ public sealed record BinaryTransferOffer
     /// <summary>The point after which the offer is unusable.</summary>
     public DateTimeOffset ExpiresAt { get; }
 
-    [JsonExtensionData]
-    public IDictionary<string, JsonElement>? UnknownProperties { get; set; }
 }

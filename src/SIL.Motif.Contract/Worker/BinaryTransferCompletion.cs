@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -28,9 +27,6 @@ public sealed record BinaryTransferCompletion
 
     /// <summary>The hexadecimal SHA-256 digest observed by the sender.</summary>
     public string Sha256 { get; }
-
-    [JsonExtensionData]
-    public IDictionary<string, JsonElement>? UnknownProperties { get; set; }
 
     private static bool IsHex(string value)
     {

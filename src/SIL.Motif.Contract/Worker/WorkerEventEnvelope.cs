@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -28,6 +27,4 @@ public sealed record WorkerEventEnvelope
     /// <summary>The negotiated protocol generation used by this event.</summary>
     public int ProtocolVersion { get; }
 
-    [JsonExtensionData]
-    public IDictionary<string, JsonElement>? UnknownProperties { get; set; }
 }
