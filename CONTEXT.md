@@ -52,10 +52,33 @@ effects back from the engine — never by predicting them. The live model is not
 ([ADR 0016](docs/adr/0016-scratch-cache-copy-not-undo.md)).
 _Avoid_: assessment, preview, plan, simulation
 
+**Baseline**:
+A saved, minimal, file-backed copy of the project state from which Motif can make many independent
+Dry Run scratches. It contains the LibLCM and writing-system data needed to reproduce engine behaviour,
+but no linked media bytes. A Baseline is replaced explicitly, not merely because time passed.
+_Avoid_: snapshot, backup, session cache, live model
+
+**Preflight**:
+The final non-mutating comparison against the live model immediately before Apply. It proves that the
+approved evidence still matches the project; it is not the earlier, reusable Dry Run.
+_Avoid_: dry run, assessment, validation pass
+
 **Drift**:
 The condition where the project has moved since a Dry Run was computed, so the Dry Run no longer
 describes what applying the Proposal would do.
 _Avoid_: staleness, conflict, merge failure
+
+**Apply Authorization**:
+An opaque, one-use, short-lived grant from the Motif worker for exactly one Apply attempt. It binds the
+project, Proposal intent, approved Decision, Dry Run, Baseline, and Assessment disposition; it is neither
+the human Decision nor a general security credential.
+_Avoid_: approval, token, permission
+
+**Conflict**:
+A loud, derived condition in which the language project's applied history and the Motif store disagree
+about a Proposal. It is shown ahead of ordinary workflow states until a person resolves it, but it is not
+itself a Proposal lifecycle state.
+_Avoid_: drift, merge conflict, failed assessment
 
 **Receipt**:
 The record that one Proposal was applied to one project, naming the before and after state. The
@@ -92,14 +115,22 @@ _Avoid_: source of truth, database, backing store
 
 **Live model**:
 A loaded, in-memory LibLCM model representing the project as it is right now, against which Dry Runs
-are computed and Proposals applied. A Motif tool never opens or owns a project's lifecycle; it is
-handed one.
+may be prepared and Proposals are applied. The Runner is always handed an already-loaded model; the
+FieldWorks adapter or the `net10.0` Host owns loading, saving, locking, and disposal.
 _Avoid_: cache, session, connection
 
 **Motif store**:
-Everything Motif keeps outside the language project: Proposals and Receipts as immutable content-addressed
-documents, plus Corpora and Assessments. There is no merge engine and no replication.
+Everything Motif keeps outside the language project in its paired sibling database: Proposals, Decisions,
+jobs, Assessments, Reports, Receipts, Corpora, and the applied index. Content digests still identify
+immutable intent and evidence, but the storage container is not itself content-addressed. There is no
+merge engine and no replication.
 _Avoid_: proposal store, change store, database, repository, queue
+
+**Motif worker**:
+The one on-demand process for a logged-in Windows user that owns Motif stores, durable jobs, project
+queues, Baselines, and PanGloss orchestration. CLI and FieldWorks are clients; the worker never owns a
+FieldWorks user's live `LcmCache`.
+_Avoid_: server, service, daemon, project host
 
 **Text**:
 FieldWorks' term, kept for FieldWorks' meaning: an interlinearised document **in the language project**.

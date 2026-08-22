@@ -1,12 +1,10 @@
 # Product architecture — semantic collaboration for language projects
 
 
-> **Superseded in part, 2026-08-01.** Written when Harmony and LcmCrdt were the collaborative
-> successor to `.fwdata`. [Plan A](plan-motif.md) removed that routing: Motif targets LibLCM objects
-> directly and the live model is the only authority on its path. The **normative boundaries this
-> document draws — Baseline Token, Dry Run binding, one-use apply authorization, drift refusal,
-> Receipt, and the reconciliation states — are unchanged and are `MOT-9`**. Read the Harmony/LcmCrdt
-> ownership rows as describing FwLite's substrate, not Motif's.
+> **Current Motif architecture.** Motif targets LibLCM objects directly; Harmony, Chorus, LcmCrdt, and
+> replication are outside this product boundary. [ADR 0039](adr/0039-one-worker-baseline-and-live-host-authority.md)
+> defines the process boundary: one local worker owns workflow state, a saved Baseline supports reusable Dry
+> Runs, and Apply is immediate in the live host.
 
 *This is the product-level architecture served by the cross-repository milestone ladder. It
 consolidates the controlled-materialization amendment and the 2026-08-01 literature reviews.*
@@ -28,7 +26,7 @@ the delivery priority.
 | CI | typed Check Runs bound to exact inputs |
 | review | typed human or AI Review |
 | branch protection | versioned project/Construct policy |
-| merge queue | serialized final comparison and apply queue |
+| merge queue | bounded live-project gate and immediate final Preflight |
 | merge result | Receipt plus after-token |
 
 Motif does not clone Git branches, textual diffs, or merge commits. It borrows exact input binding,
@@ -36,56 +34,53 @@ stale-check invalidation, required review, serialized landing, and auditable out
 
 ## Target architecture
 
-Harmony and LcmCrdt are the modern collaborative successor to monolithic `.fwdata` state:
+One live project has one writer, while Motif keeps review workflow and reusable evaluation evidence beside it.
 
-- **Harmony** owns domain-neutral replicated commit history, opaque preservation, group mechanics,
-  convergence primitives, and deterministic materialization diagnostics.
-- **LcmCrdt** owns the generated LibLCM-shaped collaborative state and is the target authority for
-  domains promoted to CRDT-native operation.
-- **Motif** owns semantic operations and the Proposal, Check Run, Review, Decision, Dry Run,
-  authorization, rebase, and Receipt contracts used by humans and agents.
-- **LibLCM/FieldWorks** owns model invariants, project lifecycle, unit of work, persistence, and
-  compatibility validation whenever a FieldWorks project is materialized.
-- **FwLiteProjectSync / the FieldWorks adapter** owns private workspaces, translation between
-  LcmCrdt and LibLCM, exclusive live apply, save/read-back, and recovery.
-- **PanGloss** owns immutable Assessments and parser facts; Motif policy decides what evidence is
-  required and never turns one Assessment into a verdict.
-
-This target is earned incrementally. “Modern reincarnation of fwdata” is a product destination, not
-a claim that current LcmCrdt already covers the full LibLCM model.
+- **Motif** owns semantic operations and the Proposal, Check Run, Review, Decision, Dry Run, authorization,
+  rebase, Conflict, and Receipt contracts used by humans and agents.
+- **Motif worker** owns paired SQLite stores, durable jobs, Baselines, queues, PanGloss orchestration, archive,
+  and reconciliation. It never owns a FieldWorks process's live cache.
+- **LibLCM/FieldWorks or the CLI Host** owns model invariants, live project lifecycle, lock, unit of work,
+  persistence, and read-back while it hosts the project.
+- **FieldWorks adapter** invokes the shared Runner on FieldWorks' cache and communicates with the worker; it
+  contains no SQLite ownership or independent project loader.
+- **PanGloss** owns immutable Assessments and parser facts; Motif policy decides what evidence is required and
+  never turns one Assessment into a linguistic verdict.
 
 ## Authority matrix
 
-Every Baseline Token, Dry Run, Check Run, Decision, Apply Authorization, Receipt, and diagnostic
-names an `authorityKind`, authority epoch, project identity, schema/model versions, and projection
-version.
+Every Baseline Token, Dry Run, Check Run, Decision, Apply Authorization, Receipt, and diagnostic binds the
+project identity and the versioned evidence its own contract requires. The earlier universal
+`authorityKind`/epoch envelope belonged to the superseded Harmony substrate; Motif's accepted Baseline Token
+shape is defined by ADR 0039.
 
-| Mode | Canonical materialized state | FieldWorks role |
+| State | Authority | Other components' role |
 | --- | --- | --- |
-| CRDT-native domain | LcmCrdt projection | LibLCM validates and persists a compatibility projection |
-| FieldWorks-hosted transition | live LibLCM model supplied by its owning host | the host is the sole writer during final compare/apply/save |
+| Language-project data | Live `LcmCache` supplied by its owning host | Worker holds only a saved Baseline and observed evidence |
+| Proposal workflow and evidence | Sibling `Project.motif.db` owned by the worker | Live host reports Apply and reconciliation facts |
 
-One field is governed by exactly one authority in an epoch. Chorus and Harmony must never
-independently merge the same field. Authority changes are explicit migrations with round-trip
-evidence, never runtime guesswork.
+The live host is the only writer of language-project fields. Motif's sibling database stores workflow and
+evidence, not a competing materialization of those fields.
 
 ## Three independent state machines
 
-1. **History:** accepted, replicated, opaque/known. History is never deleted merely because current
-   software cannot materialize it.
-2. **Materialization:** materialized, refused, deferred by dependency, deferred by atomic group,
-   resolved by later authored history.
-3. **Proposal workflow:** Draft → Submitted → Checks Pending → Ready for Review → Changes Requested
-   / Rejected / Approved → Queued → Final Comparison → Drift Refused / Applying → Receipt Complete
-   / Needs Reconciliation.
+Users need history, execution, and review state to remain distinguishable so one failure never masquerades as
+another.
+
+1. **Proposal workflow:** Draft → Submitted → Checks Pending → Ready for Review → Changes Requested
+   / Rejected / Approved → Final Preflight → Drift Refused / Applying → Receipt Complete
+   / Needs Reconciliation. Apply is immediate and never waits in a durable queue.
+2. **Long-running job:** Queued → Waiting for Baseline or Host → Running → Completed / Failed / Cancelled /
+   Interrupted. An explicit retry creates a new attempt.
+3. **Apply attempt:** Authorization Issued → Mutation Started → Runner Completed in Cache → Save Started →
+   Saved → Receipt Recorded, with Refused or Needs Reconciliation exits at the defined boundaries.
 
 A Proposal has a stable identity and immutable revisions. Changing intent creates a new revision and
 invalidates Check Runs, Reviews, Decisions, Dry Runs, and authorizations bound to the former digest.
 
-“Always resolve” means history is always retained and converges, and every materialization receives
-an explicit `Applied`, `Refused`, or `Deferred` disposition. It does not mean every semantic conflict
-auto-materializes. Where authored meaning or a domain invariant cannot be preserved, coordination or
-deterministic refusal is the correct resolved outcome.
+Every Apply receives an immediate Receipt, refusal, or Needs Reconciliation result. Where authored meaning or
+a domain invariant cannot be preserved, deterministic refusal is the correct outcome; an ambiguous
+persistence boundary enters Needs Reconciliation and never causes automatic re-Apply.
 
 ## Checks, reviews, and policy
 
@@ -114,10 +109,10 @@ Permissive collections use convergent primitives. Strict ordered grammar carries
 identity and semantic placement intent; ambiguity is retained and refused, never resolved through a
 scalar last-writer-wins fallback. One strict Proposal is one atomic materialization group.
 
-Proposal atomicity is a Motif materialization guarantee. It is distinct from Harmony commit insertion,
-LibLCM UOW atomicity, and cross-store durability. M4 must prove whether one Harmony commit supplies
-group identity, all-or-none materialization, old-client opacity, and payload/provenance binding; if
-not, Motif defines an immutable group envelope before grammar volume.
+Proposal atomicity is a Motif guarantee implemented by one outer LibLCM UOW. It is distinct from the later
+project-file save and worker Receipt write, which reconciliation joins after an interruption. Every finalized
+Proposal already supplies immutable group identity and payload/provenance binding; no separate replicated
+group envelope is on Motif's delivery path.
 
 ## Controlled apply
 
@@ -126,16 +121,19 @@ deliberation. Final apply:
 
 1. acquires a short exclusive capability with fencing/version validation;
 2. verifies the exact Proposal, evidence, policy, and payload digests;
-3. recomputes the Baseline Token while authority is held;
-4. refuses Drift before mutation;
-5. applies authored operation order in one outer LibLCM unit of work;
+3. compares the live footprint and engine versions with the exact approved Dry Run and Baseline evidence;
+4. refuses Drift before mutation without replacing the saved Baseline;
+5. applies operations in declared dependency order in one outer LibLCM unit of work;
 6. reads back, saves, computes the after-token, and records a Receipt;
 7. enters `NeedsReconciliation` after ambiguous cross-store failure and never blindly retries.
 
-The LibLCM UOW, file save, Harmony persistence, and Receipt store are separate durability boundaries,
-not a distributed transaction.
+The LibLCM UOW, project-file save, and worker Receipt store are separate durability boundaries, not a
+distributed transaction.
 
 ## Domain order
+
+The product expands one proven operation family at a time, with grammar first and text authoring deliberately
+later.
 
 1. A lexical `setGloss` control slice proves Proposal revision, checks, Drift, rollback, save, and
    recovery.
@@ -164,6 +162,9 @@ Generated artifacts carry reproducible provenance binding the LibLCM model, mani
 crosswalk, generator, dependency lock, build environment, and generated-output digests.
 
 ## Evidence behind this consolidation
+
+These sources explain the design pressures behind the accepted direct-LibLCM architecture; they do not
+override its ADRs or current plan.
 
 - [Plan A](plan-motif.md) — the controlled-materialization amendment was folded into `MOT-9` and
   [ADR 0016](adr/0016-scratch-cache-copy-not-undo.md), then deleted

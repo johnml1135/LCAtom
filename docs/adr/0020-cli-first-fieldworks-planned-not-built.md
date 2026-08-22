@@ -1,7 +1,9 @@
 # ADR 0020 — Two scopes: prove the LibLCM seams through the CLI, plan FieldWorks without building it
 
-**Status:** accepted, 2026-08-05. Re-sequences [Plan A](../plan-motif.md)'s milestones. Does not
-change the delivery statement, the contract, or any decision in ADRs 0016–0019.
+**Status:** accepted, 2026-08-05; execution mechanism amended by
+[ADR 0039](0039-one-worker-baseline-and-live-host-authority.md). The CLI-first sequencing and
+cross-runtime obligations remain binding, but the on-demand worker replaces the warm CLI process as the
+long-lived owner of workflow state.
 
 ## Context
 

@@ -1,8 +1,9 @@
 # ADR 0036 — Motif has its own data store, and only curated subsets cross into FieldWorks
 
-**Status:** accepted, 2026-08-09. Generalises [ADR 0035](0035-reports-are-advisory-queries-over-stored-assessments.md)
-decision 2 from "Assessments live in the proposal store" to a store in its own right. Bounded by
-[ADR 0034](0034-the-boundary-with-fieldworks-state-versus-change.md).
+**Status:** accepted, 2026-08-09; storage layout amended by
+[ADR 0039](0039-one-worker-baseline-and-live-host-authority.md). The separate-store and deliberate-promotion
+decisions remain binding. Decision 6's file/database split is historical: one paired SQLite database now
+holds all local workflow state while content digests retain immutable identity.
 
 **In plain terms:** the data Motif works with is about to be far larger than the project it describes. Pulling
 text from Wikipedia and elsewhere to measure how much of a language a grammar reaches — and to build spelling
@@ -86,6 +87,10 @@ look"* must never read as *"everything is fine"*, and a precision figure over un
 its most persuasive form, because it looks like evidence.
 
 ### 6. The store is split by kind: files for documents, an embedded database for bulk
+
+> **Superseded by ADR 0039.** This section records the earlier layout. The accepted layout is one sibling
+> `Project.motif.db` for Proposals, workflow records, Corpora, and Assessments; content addressing remains a
+> contract property rather than a requirement that each object occupy a separate file.
 
 Decided 2026-08-09, closing the question this ADR first left open.
 

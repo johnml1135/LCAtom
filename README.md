@@ -16,27 +16,27 @@ unit of work.
 
 > **Status: this is the target architecture and delivery plan, not the current implementation.**
 >
-> The repository contains a tested one-operation `lexical/lexSense/setGloss` control slice and extensive
-> LibLCM/HermitCrab coverage research. The PR-like review domain, the generated grammar surface, the
-> FieldWorks in-process adapter, and receipt sync are planned work. Nothing in the plans should be
-> read as already shipped.
+> The repository contains a tested CLI-first control path, generated operation families, Proposal workflow,
+> scratch Dry Runs, and stored Assessment reporting. The local worker, paired database, durable job system,
+> PanGloss orchestrator, Apply Authorization, and FieldWorks adapter are specified but not built. Nothing in
+> the plans should be read as already shipped.
 
 **Start with [Plan A](docs/plan-motif.md).** It is the live plan and owns both the milestones and the
 work items.
 
 ## Delivery
 
-**Motif delivers exactly two things: the `motif` CLI, and a FieldWorks integration.**
+**Motif delivers exactly two user-facing things: the `motif` CLI and a FieldWorks integration.** Both use
+one on-demand local worker, which is internal infrastructure rather than a third product.
 
 | | |
 | --- | --- |
-| `motif` CLI | `net10.0` executable. Batch, automation, and AI-agent use, against a `.fwdata` project it opens itself |
-| FieldWorks integration | `netstandard2.0` Runner hosted in-process, behind FieldWorks-owned Avalonia surfaces |
+| `motif` CLI | `net10.0` client. Batch, automation, and AI-agent use; when FieldWorks is closed, its Host may temporarily own the live project |
+| FieldWorks integration | `netstandard2.0` Runner and worker client hosted in-process, behind FieldWorks-owned Avalonia surfaces |
 
-Everything else is a dependency rather than a deliverable — the Lexbox receipt store is server work in
-another repository, PanGloss is a subprocess or native library, and `SIL.Motif.Contract` is a
-published contract other runners consume. There is no Motif web app, service, or mobile surface, and no
-Motif presence inside any other product.
+Everything else is infrastructure or a dependency — the worker is installed with Motif, PanGloss is a
+subprocess, and `SIL.Motif.Contract` is a published contract other runners consume. There is no Motif web
+app, network service, or mobile surface.
 
 ## Scope
 
@@ -55,6 +55,12 @@ standoff annotations, provenance, reanchoring and refusal, lowering, and read-ba
 separable and much cheaper** — `Text`, `StText`, `StTxtPara`, and `Segment` are ordinary GUID-bearing
 objects that fit the contract today.
 
+Linked media is explicitly deferred. Deleting a lexical entry or other owner follows FieldWorks' normal
+LibLCM cascade and may delete owned picture or audio reference objects, but Motif neither copies nor deletes
+the external files. Adding, replacing, holding, restoring, or packaging linked media requires a separate
+storage design. The binding initial boundary is
+[the linked-media specification](docs/media-boundary-spec.md).
+
 ## The intended workflow
 
 ```text
@@ -71,7 +77,7 @@ immutable Proposal revision ────────┐
                                      ▼
                           typed Reviews and Decision
                                      │
-                              final baseline check
+                                final Preflight
                                      │
                          controlled atomic application
                                      │
@@ -82,18 +88,20 @@ immutable Proposal revision ────────┐
 A review or check applies only to the exact Proposal revision, Baseline Token, artifacts, tool
 contract, and policy revision it evaluated. Changed inputs make that evidence stale.
 
-Every application receives an explicit `Applied`, `Refused`, or `Deferred` disposition. Nothing is
-applied silently, and a Proposal that cannot preserve authored meaning or a language-project invariant
-is refused deterministically rather than merged optimistically.
+Every Apply receives an immediate `Applied` Receipt, explicit `Refused` result, or `Needs Reconciliation`
+result after an ambiguous persistence boundary; it is never queued or deferred. Nothing is applied silently,
+and a Proposal that cannot preserve authored meaning or a language-project invariant is refused
+deterministically rather than merged optimistically.
 
 ## Responsibilities
 
 | Component | Responsibility |
 | --- | --- |
 | **Motif** | Semantic operations; Proposal, Check Run, Review, Decision, Dry Run, authorization, rebase, and Receipt contracts |
+| **Motif worker** | Paired databases, durable jobs, Baselines, per-project queues, PanGloss limits, cleanup, and reconciliation |
 | **LibLCM / FieldWorks** | Model invariants, project lifecycle, unit of work, persistence, and compatibility validation. **The only authority on Motif's path** |
-| **FieldWorks adapter** | Hosts the `netstandard2.0` Runner in-process; UI-thread marshalling, one undoable unit of work, save, read-back, and recovery |
-| **Lexbox** | Proposal and Receipt object store, optional per project |
+| **FieldWorks adapter** | Hosts the `netstandard2.0` Runner and worker client in-process; UI-thread marshalling, one undoable unit of work, save, Baseline capture, and recovery |
+| **Lexbox** | Optional future sharing of Proposal and Receipt records |
 | **PanGloss** | Immutable parser Assessments and parser facts; Motif policy decides what evidence is required |
 
 Motif owns the Manifest, the generator, the semantic operations, and the lowering rules. **Its operations
@@ -104,14 +112,15 @@ behaviour are derived from LibLCM's own declarations and checked against it
 
 ## Authority
 
-**The live LibLCM model is the only authority.** The process owning the loaded `LcmCache` is the sole
-writer, and Chorus moves projects between people as it already does. There is no second merge engine and
-no replicated copy of the data — one field never has two authorities.
+**The live LibLCM model is the only authority for language data.** The process owning the loaded `LcmCache`
+is its sole writer. The sibling `Project.motif.db` owns workflow records, not a competing copy of linguistic
+state.
 
-Dry runs never mutate the live model. They run against a throwaway copy of the project
-([ADR 0016](docs/adr/0016-scratch-cache-copy-not-undo.md)), because neither `Rollback` nor `Undo` is safe
-to build on — `Rollback` skips the forward-only setter hooks `Undo` runs, and LibLCM has genuinely
-non-undoable units of work.
+Dry Runs never mutate the live model. They run against throwaway caches made from a saved, minimal,
+file-backed Baseline. FieldWorks can therefore remain open while the CLI authors and evaluates Proposals
+against an older Baseline; the result says “run against the project as of X” and warns when live state has
+moved. Apply remains immediate in the live host and performs a final Preflight against the exact approved
+evidence ([ADR 0039](docs/adr/0039-one-worker-baseline-and-live-host-authority.md)).
 
 ## Grammar first
 
@@ -133,6 +142,10 @@ volume is generated. Lexical coverage expands afterward from the same Manifest.
 
 - **[Plan A](docs/plan-motif.md)** — the live plan: milestones, model join, generator, scratch-cache
   dry run, FieldWorks adapter, review domain;
+- [worker, Baseline, Dry Run, and Apply specification](docs/superpowers/specs/2026-08-20-baseline-dry-run-session-design.md)
+  — the accepted local-process, queue, storage, and authority contract;
+- [worker architecture implementation plan](docs/superpowers/plans/2026-08-22-motif-worker-baseline-implementation.md)
+  — staged, test-first handoff for building it;
 - [work in other repositories](docs/plan-cross-repo.md) — FieldWorks, PanGloss, liblcm, lexbox;
 - [product architecture](docs/plan-product-architecture.md) — normative end-state boundaries;
 - [overall product plan](docs/motif-overall-plan.md) — user workflow, evidence corpus, UI, and CLI.
@@ -190,19 +203,23 @@ are evidence rather than plans.
 ## Present implementation
 
 The repository currently contains `SIL.Motif.Contract`, `SIL.Motif.Model`, `SIL.Motif.Runner`,
-`SIL.Motif.Host`, `SIL.Motif.Cli`, `SIL.Motif.Generator`, and tests — 214 passing. **Milestone M1 is met:**
-the generator reads `MasterLCModel.xml` from the NuGet package cache with no liblcm checkout, joins it to the
-Manifest fail-closed (898 = 898, zero orphans), derives verbs, comparison behaviour, construct and group, and
-reports coverage. It emits no operations yet — that is `MOT-4`. The implemented control slice can:
+`SIL.Motif.Host`, `SIL.Motif.Cli`, `SIL.Motif.Generator`, and tests. The generator reads
+`MasterLCModel.xml` from the NuGet package cache with no LibLCM checkout, joins it to the Manifest
+fail-closed, derives operation metadata, and emits the implemented families. The current one-shot CLI can:
 
 - parse and canonicalize a Proposal containing `lexical/lexSense/setGloss`;
 - compute stable intent and effect digests;
 - open a real FieldWorks project through the host;
-- perform a Dry Run (today by mutation-and-rollback; ADR 0016 replaces this with a scratch copy);
+- perform a file-backed scratch Dry Run without mutating or rolling back the live cache;
+- execute declared prerequisite Proposals once in deterministic canonical order;
 - detect footprint Drift and refuse an unbound apply;
 - apply in one LibLCM unit of work, read back, persist, and record an applied marker;
 - exercise the whole flow through the `motif` CLI — `open`, `analyses`, `new`, `add-set-gloss`,
   `finalize`, `list`, `show`, `dry-run`, `apply`, `log`.
+
+The worker architecture above is not implemented yet. Today each argv invocation owns its process, Proposal
+storage is file-based, the CLI opens projects directly, and Apply does not yet use the new authorization and
+reconciliation protocol.
 
 The analysis aggregate is a cheap read that never invokes PanGloss. Without an Assessment it reports
 the project's manually approved analyses:
@@ -242,7 +259,7 @@ All LibLCM-dependent projects pin `SIL.LCModel 11.0.0-beta0150`. See
 Run the tests with:
 
 ```powershell
-dotnet test Motif.sln
+./test.ps1
 ```
 
 ## Vocabulary and design constraints
@@ -251,7 +268,7 @@ dotnet test Motif.sln
 
 - **Motif operation** — one named unit of semantic intent;
 - **Proposal** — the immutable, reviewable unit of operations;
-- **Dry Run** — what a Proposal would do to a live LibLCM model;
+- **Dry Run** — what a Proposal would do, observed on a throwaway cache opened from a saved Baseline;
 - **Assessment** — an immutable PanGloss parser run;
 - **Drift** — the live project no longer matches the evaluated baseline;
 - **Receipt** — the durable record of controlled application;
@@ -260,8 +277,8 @@ dotnet test Motif.sln
 
 Canonical Proposal input is semantic intent, never a low-level LibLCM mutation script. The **intent
 contract is public and versioned**; generated LibLCM Mutation Plans are **private and output-only**,
-which is why drift is compared over effects and never over the plan. Operation order is
-authoritative. Unknown operation kinds and semantic properties fail closed. Diff is
+which is why drift is compared over effects and never over the plan. Only declared dependencies impose
+order; array position does not. Unknown operation kinds and semantic properties fail closed. Diff is
 exact-identity-based and linguistically unaware. Every operation family must satisfy the complete
 schema, semantics, validation, lowering, Dry Run, apply, read-back, conflict/rebase, snapshot/diff,
 rollback, round-trip, concurrency, compatibility, and coverage gate before it is complete.

@@ -1,9 +1,9 @@
 # ADR 0030 — There is one writer: the CLI locks the project exactly as FieldWorks does
 
-**Status:** accepted, 2026-08-06. Tightens [ADR 0006](0006-engine-reality-apply-readback-preflight.md)
-decision 4 from a required guarantee into an observed mechanism. Constrains
-[ADR 0016](0016-scratch-cache-copy-not-undo.md)'s Dry Run sequence and
-[ADR 0020](0020-cli-first-fieldworks-planned-not-built.md)'s two scopes.
+**Status:** partly superseded by
+[ADR 0039](0039-one-worker-baseline-and-live-host-authority.md), 2026-08-22. The FieldWorks file lock
+and one-live-writer findings remain binding. Decisions 1 and 2 below are historical: a reusable Baseline
+now permits Dry Runs while FieldWorks is open, while only the live host may save, refresh, or Apply.
 
 ## Context
 
