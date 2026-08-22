@@ -93,10 +93,10 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
     public static string GetOwnerMutexName() => GetOwnerMutexNameForNamespace(CurrentSid());
 
     internal static string GetControlPipeNameForNamespace(string userNamespace) =>
-        "motif-worker-" + userNamespace;
+        WorkerEndpointNames.ControlPipe(userNamespace);
 
     internal static string GetOwnerMutexNameForNamespace(string userNamespace) =>
-        "Global\\MotifWorkerOwner-" + userNamespace;
+        WorkerEndpointNames.OwnerMutex(userNamespace);
 
     /// <summary>Creates the explicit ACL shared by control and binary worker pipes.</summary>
     public static PipeSecurity CreatePipeSecurity(string? userSid = null) =>
