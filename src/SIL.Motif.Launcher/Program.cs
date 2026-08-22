@@ -10,7 +10,7 @@ using SIL.Motif.Contract.Worker;
 namespace SIL.Motif.Launcher;
 
 /// <summary>Signals that no worker endpoint could be contacted.</summary>
-public sealed class WorkerEndpointUnavailableException : IOException
+public sealed class WorkerEndpointUnavailableException : Exception
 {
     /// <summary>Creates an endpoint-unavailable diagnostic.</summary>
     public WorkerEndpointUnavailableException(string message, Exception? innerException = null)
@@ -30,13 +30,54 @@ public sealed class WorkerEndpointIncompatibleException : InvalidOperationExcept
 }
 
 /// <summary>Signals that no safe worker startup or connection path completed.</summary>
-public sealed class WorkerLaunchException : InvalidOperationException
+public class WorkerLaunchException : InvalidOperationException
 {
     /// <summary>Creates a launcher diagnostic with optional local failure details.</summary>
-    public WorkerLaunchException(string message, Exception? innerException = null)
+    public WorkerLaunchException(string message, Exception? innerException = null, bool noCompatibleWorker = false)
+        : base(message, innerException)
+    {
+        NoCompatibleWorker = noCompatibleWorker;
+    }
+
+    /// <summary>Whether the caller should report an install or update requirement.</summary>
+    public bool NoCompatibleWorker { get; }
+}
+
+/// <summary>Reports an invalid or unavailable immutable worker registration.</summary>
+public sealed class WorkerCatalogException : WorkerLaunchException
+{
+    /// <summary>Creates an actionable catalog diagnostic.</summary>
+    public WorkerCatalogException(string message, Exception? innerException = null)
         : base(message, innerException)
     {
     }
+}
+
+/// <summary>Reports that no registered worker matches the connecting client.</summary>
+public sealed class NoCompatibleWorkerException : WorkerLaunchException
+{
+    /// <summary>Creates an install or update diagnostic.</summary>
+    public NoCompatibleWorkerException(string message, Exception? innerException = null)
+        : base(message, innerException)
+    {
+    }
+}
+
+/// <summary>Provides a monotonic time source for bounded startup.</summary>
+public interface ILauncherClock
+{
+    /// <summary>The current monotonic timestamp.</summary>
+    long Timestamp { get; }
+
+    /// <summary>Ticks per second for <see cref="Timestamp"/>.</summary>
+    long Frequency { get; }
+}
+
+/// <summary>Provides an injectable bounded delay between endpoint probes.</summary>
+public interface ILauncherDelay
+{
+    /// <summary>Delays without extending the launcher's overall deadline.</summary>
+    Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken);
 }
 
 /// <summary>Exposes only the connection lifetime needed by launcher orchestration.</summary>
@@ -69,6 +110,9 @@ public interface IWorkerProcess
 
     /// <summary>The exit code when the process has exited.</summary>
     int ExitCode { get; }
+
+    /// <summary>The exact shell-free startup configuration used by the process seam.</summary>
+    ProcessStartInfo StartInfo { get; }
 }
 
 /// <summary>Connects to an existing worker or starts one registered compatible installation.</summary>
@@ -79,10 +123,13 @@ public sealed class WorkerLauncher
     private readonly IWorkerProcessStarter _processStarter;
     private readonly string _endpointName;
     private readonly TimeSpan _startupTimeout;
+    private readonly ILauncherClock _clock;
+    private readonly ILauncherDelay _delay;
 
     /// <summary>Creates a launcher with injectable catalog, transport, process, and endpoint seams.</summary>
     public WorkerLauncher(InstalledWorkerCatalog catalog, IWorkerConnector connector,
-        IWorkerProcessStarter processStarter, string endpointName, TimeSpan startupTimeout)
+        IWorkerProcessStarter processStarter, string endpointName, TimeSpan startupTimeout,
+        ILauncherClock? clock = null, ILauncherDelay? delay = null)
     {
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         _connector = connector ?? throw new ArgumentNullException(nameof(connector));
@@ -93,6 +140,8 @@ public sealed class WorkerLauncher
             throw new ArgumentOutOfRangeException(nameof(startupTimeout));
         _endpointName = endpointName;
         _startupTimeout = startupTimeout;
+        _clock = clock ?? SystemLauncherClock.Instance;
+        _delay = delay ?? SystemLauncherDelay.Instance;
     }
 
     /// <summary>Creates a launcher using the stable user catalog and worker endpoint.</summary>
@@ -108,22 +157,51 @@ public sealed class WorkerLauncher
     {
         if (request is null)
             throw new ArgumentNullException(nameof(request));
-        var first = await TryConnectAsync(request, _startupTimeout, cancellationToken).ConfigureAwait(false);
+        var deadline = Deadline(_clock.Timestamp, _startupTimeout, _clock.Frequency);
+        var first = await TryConnectAsync(request, Remaining(deadline), cancellationToken).ConfigureAwait(false);
         if (first is not null)
         {
             first.Dispose();
             return;
         }
 
+        EnsureBeforeDeadline(deadline);
         InstalledWorker candidate;
         try
         {
             candidate = WorkerSelector.SelectNewestCompatible(_catalog.List(), request);
         }
-        catch (Exception exception) when (exception is InvalidOperationException || exception is ArgumentException)
+        catch (Exception exception) when (exception is InvalidDataException || exception is IOException ||
+            exception is UnauthorizedAccessException)
+        {
+            throw new WorkerCatalogException(
+                "The installed worker catalog is corrupt or unavailable; reinstall or update Motif and try again.",
+                exception);
+        }
+        catch (InvalidOperationException exception) when (exception.Message.StartsWith(
+            "No installed worker overlaps", StringComparison.Ordinal))
         {
             throw new WorkerLaunchException(
-                "No compatible worker is installed; install or update Motif and try again.", exception);
+                "No compatible worker is installed; install or update Motif and try again.", exception,
+                noCompatibleWorker: true);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException || exception is ArgumentException)
+        {
+            throw new WorkerCatalogException(
+                "The installed worker catalog contains an ambiguous or invalid registration; reinstall or update " +
+                "Motif and try again.", exception);
+        }
+        EnsureBeforeDeadline(deadline);
+        try
+        {
+            candidate = _catalog.ValidateInstalled(candidate);
+        }
+        catch (Exception exception) when (exception is InvalidDataException || exception is IOException ||
+            exception is UnauthorizedAccessException)
+        {
+            throw new WorkerCatalogException(
+                "The selected worker registration changed or is unavailable; reinstall or update Motif and try again.",
+                exception);
         }
 
         IWorkerProcess process;
@@ -137,14 +215,13 @@ public sealed class WorkerLauncher
                 "The installed worker could not start; reinstall or update Motif and try again.", exception);
         }
 
-        var deadline = Stopwatch.GetTimestamp() + (long)(_startupTimeout.TotalSeconds * Stopwatch.Frequency);
-        while (Stopwatch.GetTimestamp() <= deadline)
+        while (_clock.Timestamp <= deadline)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var remaining = deadline - Stopwatch.GetTimestamp();
+            var remaining = deadline - _clock.Timestamp;
             if (remaining <= 0)
                 break;
-            var connectionTimeout = TimeSpan.FromSeconds(remaining / (double)Stopwatch.Frequency);
+            var connectionTimeout = TimeSpan.FromSeconds(remaining / (double)_clock.Frequency);
             var connection = await TryConnectAsync(request, connectionTimeout, cancellationToken)
                 .ConfigureAwait(false);
             if (connection is not null)
@@ -156,12 +233,12 @@ public sealed class WorkerLauncher
                 throw new WorkerLaunchException(
                     "Worker startup failed: the installed worker exited before its endpoint became ready; " +
                     "reinstall or update Motif and try again.");
-            remaining = deadline - Stopwatch.GetTimestamp();
+            remaining = deadline - _clock.Timestamp;
             if (remaining <= 0)
                 break;
             var delay = TimeSpan.FromMilliseconds(Math.Min(50,
-                remaining * 1000.0 / Stopwatch.Frequency));
-            await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                remaining * 1000.0 / _clock.Frequency));
+            await _delay.DelayAsync(delay, cancellationToken).ConfigureAwait(false);
         }
         throw new WorkerLaunchException(
             "Worker startup failed: the endpoint did not become ready before startup timed out; " +
@@ -184,22 +261,53 @@ public sealed class WorkerLauncher
         {
             throw;
         }
-        catch (IOException)
+        catch (WorkerConnectionFailureException exception) when (
+            exception.Stage == WorkerConnectionFailureStage.BeforePeerConnection)
         {
             return null;
         }
-        catch (TimeoutException)
-        {
-            return null;
-        }
-        catch (InvalidOperationException exception)
+        catch (WorkerConnectionFailureException exception)
         {
             throw new WorkerEndpointIncompatibleException(
-                "The existing worker endpoint is incompatible with this client.", exception);
+                "The existing worker endpoint returned an invalid or incompatible response.", exception);
         }
     }
 
     private static string CurrentSid() => WindowsIdentity.GetCurrent().User?.Value ?? "unknown-user";
+
+    private long Deadline(long start, TimeSpan timeout, long frequency)
+    {
+        var ticks = timeout.TotalSeconds * frequency;
+        return start + (long)Math.Min(ticks, long.MaxValue - start);
+    }
+
+    private TimeSpan Remaining(long deadline)
+    {
+        var ticks = deadline - _clock.Timestamp;
+        if (ticks <= 0)
+            throw new WorkerLaunchException("Worker startup timed out; reinstall or update Motif and try again.");
+        return TimeSpan.FromSeconds(ticks / (double)_clock.Frequency);
+    }
+
+    private void EnsureBeforeDeadline(long deadline)
+    {
+        if (_clock.Timestamp > deadline)
+            throw new WorkerLaunchException("Worker startup timed out; reinstall or update Motif and try again.");
+    }
+
+    private sealed class SystemLauncherClock : ILauncherClock
+    {
+        public static readonly SystemLauncherClock Instance = new SystemLauncherClock();
+        public long Timestamp => Stopwatch.GetTimestamp();
+        public long Frequency => Stopwatch.Frequency;
+    }
+
+    private sealed class SystemLauncherDelay : ILauncherDelay
+    {
+        public static readonly SystemLauncherDelay Instance = new SystemLauncherDelay();
+        public Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken) =>
+            Task.Delay(delay, cancellationToken);
+    }
 }
 
 /// <summary>Adapts the cross-runtime worker client to launcher connection semantics.</summary>
@@ -215,24 +323,17 @@ public sealed class WorkerClientConnector : IWorkerConnector
                 cancellationToken).ConfigureAwait(false);
             return new WorkerConnectionAdapter(connection);
         }
-        catch (Exception exception) when (IsUnavailable(exception))
+        catch (WorkerConnectionFailureException exception) when (
+            exception.Stage == WorkerConnectionFailureStage.BeforePeerConnection)
         {
             throw new WorkerEndpointUnavailableException("The worker endpoint did not respond.", exception);
         }
-        catch (Exception exception) when (IsIncompatible(exception))
+        catch (WorkerConnectionFailureException exception)
         {
             throw new WorkerEndpointIncompatibleException(
-                "The existing worker endpoint is incompatible with this client.", exception);
+                "The existing worker endpoint returned an invalid or incompatible response.", exception);
         }
     }
-
-    private static bool IsUnavailable(Exception exception) =>
-        exception is TimeoutException || exception is EndOfStreamException ||
-        exception is UnauthorizedAccessException || exception is IOException;
-
-    private static bool IsIncompatible(Exception exception) =>
-        exception is InvalidOperationException || exception is ArgumentException ||
-        exception is InvalidDataException || exception is System.Text.Json.JsonException;
 
     private sealed class WorkerConnectionAdapter : IWorkerConnection
     {
@@ -252,6 +353,14 @@ public sealed class WorkerClientConnector : IWorkerConnector
 /// <summary>Starts a registered worker with hidden, shell-free process creation.</summary>
 public sealed class WorkerProcessStarter : IWorkerProcessStarter
 {
+    private readonly Func<ProcessStartInfo, Process?> _processFactory;
+
+    /// <summary>Creates a process starter; the factory is injectable for safe startup configuration tests.</summary>
+    public WorkerProcessStarter(Func<ProcessStartInfo, Process?>? processFactory = null)
+    {
+        _processFactory = processFactory ?? (info => Process.Start(info));
+    }
+
     /// <inheritdoc />
     public IWorkerProcess Start(InstalledWorker worker)
     {
@@ -264,35 +373,51 @@ public sealed class WorkerProcessStarter : IWorkerProcessStarter
             CreateNoWindow = true,
             WindowStyle = ProcessWindowStyle.Hidden
         };
-        var process = Process.Start(info) ?? throw new InvalidOperationException("The worker process did not start.");
-        return new StartedWorkerProcess(process);
+        var process = _processFactory(info) ?? throw new InvalidOperationException("The worker process did not start.");
+        return new StartedWorkerProcess(process, info);
     }
 
     private sealed class StartedWorkerProcess : IWorkerProcess
     {
         private readonly Process _process;
+        private readonly ProcessStartInfo _startInfo;
 
-        public StartedWorkerProcess(Process process) { _process = process; }
+        public StartedWorkerProcess(Process process, ProcessStartInfo startInfo)
+        {
+            _process = process;
+            _startInfo = startInfo;
+        }
 
         public bool HasExited => _process.HasExited;
 
         public int ExitCode => _process.ExitCode;
+
+        public ProcessStartInfo StartInfo => _startInfo;
     }
 }
 
-internal static class Program
+public static class Program
 {
     private const int Success = 0;
     private const int NoCompatibleInstall = 2;
     private const int ExistingWorkerIncompatible = 3;
     private const int StartupFailure = 4;
+    private const int CatalogFailure = 5;
 
     private static async Task<int> Main(string[] args)
+    {
+        return await RunAsync(args, new WorkerLauncher()).ConfigureAwait(false);
+    }
+
+    /// <summary>Runs the bounded launcher command against an injectable orchestration seam.</summary>
+    public static async Task<int> RunAsync(string[] args, WorkerLauncher launcher)
     {
         try
         {
             var request = Parse(args);
-            await new WorkerLauncher().EnsureConnectedAsync(request).ConfigureAwait(false);
+            if (launcher is null)
+                throw new ArgumentNullException(nameof(launcher));
+            await launcher.EnsureConnectedAsync(request).ConfigureAwait(false);
             Console.WriteLine("Connected to the Motif worker.");
             return Success;
         }
@@ -301,12 +426,15 @@ internal static class Program
             Console.Error.WriteLine(exception.Message);
             return ExistingWorkerIncompatible;
         }
+        catch (WorkerCatalogException exception)
+        {
+            Console.Error.WriteLine(exception.Message);
+            return CatalogFailure;
+        }
         catch (WorkerLaunchException exception)
         {
             Console.Error.WriteLine(exception.Message);
-            return exception.Message.IndexOf("No compatible", StringComparison.OrdinalIgnoreCase) >= 0
-                ? NoCompatibleInstall
-                : StartupFailure;
+            return exception.NoCompatibleWorker ? NoCompatibleInstall : StartupFailure;
         }
         catch (Exception exception) when (exception is ArgumentException || exception is FormatException)
         {

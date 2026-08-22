@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using SIL.Motif.Client.Worker;
 using SIL.Motif.Contract.Worker;
 using SIL.Motif.Launcher;
 using Xunit;
@@ -68,7 +70,8 @@ public sealed class WorkerSelectorTests
     public void CatalogTreatsIdenticalRegistrationAsIdempotentAndRejectsMutation()
     {
         using var root = TemporaryDirectory.Create();
-        var executable = Path.Combine(root.Path, "worker.exe");
+        var executable = Path.Combine(root.Path, "catalog", "1.2.3", "worker.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
         File.WriteAllText(executable, "worker");
         var worker = new InstalledWorker(new Version(1, 2, 3), executable,
             new ProtocolRange(1, 2), new[] { "jobs.v1" });
@@ -78,7 +81,7 @@ public sealed class WorkerSelectorTests
         catalog.Register(worker);
         Assert.Single(catalog.List());
 
-        var changed = worker with { ExecutablePath = Path.Combine(root.Path, "other.exe") };
+        var changed = worker with { ExecutablePath = Path.Combine(root.Path, "catalog", "1.2.3", "other.exe") };
         File.WriteAllText(changed.ExecutablePath, "worker");
         Assert.Throws<InvalidOperationException>(() => catalog.Register(changed));
     }
@@ -89,10 +92,13 @@ public sealed class WorkerSelectorTests
         var connector = new FakeConnector(FakeConnector.Connected());
         var starter = new FakeStarter();
         var launcher = NewLauncher(connector, starter);
+        var request = Client(new ProtocolRange(1, 1));
 
-        await launcher.EnsureConnectedAsync(Client(new ProtocolRange(1, 1)), CancellationToken.None);
+        await launcher.EnsureConnectedAsync(request, CancellationToken.None);
 
         Assert.Equal(1, connector.Attempts);
+        Assert.Equal("motif-test-endpoint", connector.LastEndpoint);
+        Assert.Same(request, connector.LastRequest);
         Assert.Empty(starter.Started);
     }
 
@@ -100,7 +106,8 @@ public sealed class WorkerSelectorTests
     public async Task AbsentEndpointStartsNewestCandidateHiddenAndConfirmsConnection()
     {
         using var root = TemporaryDirectory.Create();
-        var executable = Path.Combine(root.Path, "worker.exe");
+        var executable = Path.Combine(root.Path, "catalog", "3.0", "worker.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
         File.WriteAllText(executable, "worker");
         var candidate = new InstalledWorker(new Version(3, 0), executable,
             new ProtocolRange(1, 1), Array.Empty<string>());
@@ -133,6 +140,19 @@ public sealed class WorkerSelectorTests
     }
 
     [Fact]
+    public async Task ConnectedEndpointFailureIsNotTreatedAsAbsent()
+    {
+        var connector = new FakeConnector(FakeConnector.ConnectedFailure());
+        var starter = new FakeStarter();
+        var launcher = NewLauncher(connector, starter);
+
+        await Assert.ThrowsAsync<WorkerEndpointIncompatibleException>(() =>
+            launcher.EnsureConnectedAsync(Client(new ProtocolRange(1, 1)), CancellationToken.None));
+
+        Assert.Empty(starter.Started);
+    }
+
+    [Fact]
     public async Task NoCompatibleInstallProvidesInstallOrUpdateGuidance()
     {
         using var root = TemporaryDirectory.Create();
@@ -150,7 +170,8 @@ public sealed class WorkerSelectorTests
     public async Task StartupFailureReportsActionableErrorWithoutRetryStorm()
     {
         using var root = TemporaryDirectory.Create();
-        var executable = Path.Combine(root.Path, "worker.exe");
+        var executable = Path.Combine(root.Path, "catalog", "1.0", "worker.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
         File.WriteAllText(executable, "worker");
         var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"));
         catalog.Register(new InstalledWorker(new Version(1, 0), executable,
@@ -191,11 +212,15 @@ public sealed class WorkerSelectorTests
         }
 
         public int Attempts { get; private set; }
+        public string? LastEndpoint { get; private set; }
+        public WorkerHandshakeRequest? LastRequest { get; private set; }
 
         public Task<IWorkerConnection> ConnectAsync(string endpointName, WorkerHandshakeRequest request,
             TimeSpan timeout, CancellationToken cancellationToken)
         {
             Attempts++;
+            LastEndpoint = endpointName;
+            LastRequest = request;
             return (_responses.Count == 0 ? Unavailable() : _responses.Dequeue())();
         }
 
@@ -207,6 +232,10 @@ public sealed class WorkerSelectorTests
 
         public static Func<Task<IWorkerConnection>> Incompatible() => () =>
             Task.FromException<IWorkerConnection>(new WorkerEndpointIncompatibleException("endpoint incompatible"));
+
+        public static Func<Task<IWorkerConnection>> ConnectedFailure() => () =>
+            Task.FromException<IWorkerConnection>(new WorkerConnectionFailureException(
+                WorkerConnectionFailureStage.AfterPeerConnection, "connected endpoint failed"));
     }
 
     private sealed class FakeConnection : IWorkerConnection
@@ -252,6 +281,7 @@ public sealed class WorkerSelectorTests
         public bool Hidden { get; }
         public bool HasExited { get; }
         public int ExitCode { get; }
+        public ProcessStartInfo StartInfo { get; } = new ProcessStartInfo();
     }
 
     private sealed class TemporaryDirectory : IDisposable

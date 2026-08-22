@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text.Json;
 using SIL.Motif.Contract.Worker;
 
@@ -18,7 +19,8 @@ public sealed record InstalledWorker(
 public sealed class InstalledWorkerCatalog
 {
     private const int MaximumManifestBytes = 64 * 1024;
-    private readonly object _gate = new object();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, object> Gates =
+        new System.Collections.Concurrent.ConcurrentDictionary<string, object>(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Creates a catalog at the stable per-user worker installation root.</summary>
     public InstalledWorkerCatalog()
@@ -46,7 +48,8 @@ public sealed class InstalledWorkerCatalog
         var canonical = CanonicalWorker(worker);
         var versionDirectory = Path.Combine(Root, canonical.ProductVersion.ToString());
         var manifestPath = Path.Combine(versionDirectory, "manifest.json");
-        lock (_gate)
+        ValidateBinding(canonical, versionDirectory);
+        lock (Gates.GetOrAdd(Root, _ => new object()))
         {
             Directory.CreateDirectory(Root);
             Directory.CreateDirectory(versionDirectory);
@@ -89,14 +92,15 @@ public sealed class InstalledWorkerCatalog
     {
         if (!Directory.Exists(Root))
             return Array.Empty<InstalledWorker>();
-        lock (_gate)
+        lock (Gates.GetOrAdd(Root, _ => new object()))
         {
             var workers = new List<InstalledWorker>();
             foreach (var directory in Directory.EnumerateDirectories(Root))
             {
                 var manifest = Path.Combine(directory, "manifest.json");
-                if (File.Exists(manifest))
-                    workers.Add(ReadManifest(manifest));
+                if (!File.Exists(manifest))
+                    throw new InvalidDataException("The worker catalog contains a registration without a manifest.");
+                workers.Add(ReadManifest(manifest));
             }
             return workers.OrderByDescending(worker => worker.ProductVersion).ToArray();
         }
@@ -104,6 +108,24 @@ public sealed class InstalledWorkerCatalog
 
     /// <summary>Returns the registered workers; this name emphasizes that unregistered files are ignored.</summary>
     public IReadOnlyList<InstalledWorker> GetInstalled() => List();
+
+    /// <summary>Revalidates a selected registration immediately before process startup.</summary>
+    public InstalledWorker ValidateInstalled(InstalledWorker worker)
+    {
+        if (worker is null)
+            throw new ArgumentNullException(nameof(worker));
+        var canonical = CanonicalWorker(worker);
+        var manifest = Path.Combine(Root, canonical.ProductVersion.ToString(), "manifest.json");
+        lock (Gates.GetOrAdd(Root, _ => new object()))
+        {
+            if (!File.Exists(manifest))
+                throw new InvalidDataException("The selected worker registration is missing.");
+            var registered = ReadManifest(manifest);
+            if (!Equivalent(registered, canonical))
+                throw new InvalidDataException("The selected worker registration changed after selection.");
+            return registered;
+        }
+    }
 
     private static void ValidateWorker(InstalledWorker worker, bool requireExecutable)
     {
@@ -154,6 +176,35 @@ public sealed class InstalledWorkerCatalog
         };
     }
 
+    private void ValidateBinding(InstalledWorker worker, string versionDirectory)
+    {
+        var root = CanonicalPath(Root);
+        var version = CanonicalPath(versionDirectory);
+        var executable = CanonicalPath(worker.ExecutablePath);
+        if (!IsWithin(version, root) || !string.Equals(Path.GetFileName(version),
+                worker.ProductVersion.ToString(), PathComparison()) || !IsWithin(executable, version))
+            throw new ArgumentException(
+                "The worker executable must be inside its immutable product-version directory.",
+                nameof(worker));
+        for (var current = new DirectoryInfo(executable).Parent; current is not null &&
+            IsWithin(current.FullName, root); current = current.Parent)
+        {
+            if ((current.Attributes & FileAttributes.ReparsePoint) != 0)
+                throw new ArgumentException("Reparse points are not valid in the worker catalog.", nameof(worker));
+        }
+    }
+
+    private static bool IsWithin(string path, string parent)
+    {
+        var normalizedParent = parent.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) +
+            Path.DirectorySeparatorChar;
+        return path.StartsWith(normalizedParent, PathComparison()) ||
+            string.Equals(path, parent, PathComparison());
+    }
+
+    private static StringComparison PathComparison() =>
+        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+
     private static string CanonicalPath(string path)
     {
         var full = Path.GetFullPath(path);
@@ -176,11 +227,12 @@ public sealed class InstalledWorkerCatalog
     private static string Serialize(InstalledWorker worker)
     {
         return JsonSerializer.Serialize(new Manifest(worker.ProductVersion.ToString(), worker.ExecutablePath,
-            new ManifestProtocols(worker.Protocols.Minimum, worker.Protocols.Maximum), worker.Capabilities),
+            new ManifestProtocols(worker.Protocols.Minimum, worker.Protocols.Maximum), worker.Capabilities,
+            Hash(worker.ExecutablePath)),
             new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
     }
 
-    private static InstalledWorker ReadManifest(string path)
+    private InstalledWorker ReadManifest(string path)
     {
         var information = new FileInfo(path);
         if (information.Length <= 0 || information.Length > MaximumManifestBytes)
@@ -202,12 +254,17 @@ public sealed class InstalledWorkerCatalog
                 throw new InvalidDataException("The worker registration has an invalid capability.");
             capabilities.Add(value.GetString()!);
         }
+        var hash = RequiredString(root, "sha256");
         try
         {
             var worker = new InstalledWorker(productVersion, executable,
                 new ProtocolRange(minimum, maximum), capabilities);
             ValidateWorker(worker, requireExecutable: true);
-            return CanonicalWorker(worker);
+            var canonical = CanonicalWorker(worker);
+            ValidateBinding(canonical, Path.GetDirectoryName(path)!);
+            if (!string.Equals(hash, Hash(canonical.ExecutablePath), StringComparison.Ordinal))
+                throw new InvalidDataException("The registered worker executable changed after publication.");
+            return canonical;
         }
         catch (Exception exception) when (exception is ArgumentException || exception is IOException)
         {
@@ -254,7 +311,14 @@ public sealed class InstalledWorkerCatalog
     }
 
     private sealed record Manifest(string ProductVersion, string ExecutablePath,
-        ManifestProtocols Protocols, IReadOnlyList<string> Capabilities);
+        ManifestProtocols Protocols, IReadOnlyList<string> Capabilities, string Sha256);
 
     private sealed record ManifestProtocols(int Minimum, int Maximum);
+
+    private static string Hash(string path)
+    {
+        using var stream = File.OpenRead(path);
+        using var sha = SHA256.Create();
+        return Convert.ToHexString(sha.ComputeHash(stream));
+    }
 }
