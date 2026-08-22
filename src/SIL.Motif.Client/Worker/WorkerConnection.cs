@@ -18,26 +18,32 @@ public sealed class WorkerConnection : IDisposable
     private readonly Stream _stream;
     private readonly WorkerHandshakeResult _negotiated;
     private readonly object _stateGate = new object();
-    private readonly object _writeGate = new object();
+    private readonly SemaphoreSlim _writeGate = new SemaphoreSlim(1, 1);
+    private readonly SemaphoreSlim _eventDispatchSignal = new SemaphoreSlim(0);
     private readonly Dictionary<string, TaskCompletionSource<WorkerEnvelope>> _pending =
         new Dictionary<string, TaskCompletionSource<WorkerEnvelope>>(StringComparer.Ordinal);
     private readonly HashSet<string> _events = new HashSet<string>(StringComparer.Ordinal);
+    private readonly HashSet<string> _seenEvents = new HashSet<string>(StringComparer.Ordinal);
     private readonly Queue<WorkerEventEnvelope> _eventBuffer = new Queue<WorkerEventEnvelope>();
+    private readonly Queue<WorkerEventEnvelope> _eventDispatchQueue = new Queue<WorkerEventEnvelope>();
     private readonly HashSet<string> _usedTransfers = new HashSet<string>(StringComparer.Ordinal);
     private bool _closed;
+    private bool _eventDispatchStopped;
     private readonly Task _readLoop;
+    private readonly Task _eventDispatchLoop;
 
     internal WorkerConnection(Stream stream, WorkerHandshakeResult negotiated)
     {
         _stream = stream ?? throw new ArgumentNullException(nameof(stream));
         _negotiated = negotiated ?? throw new ArgumentNullException(nameof(negotiated));
         _readLoop = ReadLoopAsync();
+        _eventDispatchLoop = EventDispatchLoopAsync();
     }
 
     /// <summary>The protocol generation and capabilities selected during connection setup.</summary>
     public WorkerHandshakeResult Negotiated => _negotiated;
 
-    /// <summary>Raised on the control read loop when the worker sends an unsolicited event.</summary>
+    /// <summary>Raised on a serialized dispatch queue when the worker sends an unsolicited event.</summary>
     public event EventHandler<WorkerEventEnvelope>? EventReceived
     {
         add
@@ -50,7 +56,11 @@ public sealed class WorkerConnection : IDisposable
                 _eventBuffer.Clear();
             }
             foreach (var item in buffered)
-                value?.Invoke(this, item);
+            {
+                lock (_stateGate)
+                    _eventDispatchQueue.Enqueue(item);
+                _eventDispatchSignal.Release();
+            }
         }
         remove
         {
@@ -86,13 +96,14 @@ public sealed class WorkerConnection : IDisposable
         using var cancellation = cancellationToken.Register(() => CancelRequest(request.RequestId, completion));
         try
         {
-            await WorkerFrame.WriteAsync(_stream, request, cancellationToken).ConfigureAwait(false);
+            await WriteControlAsync(request, cancellationToken).ConfigureAwait(false);
             return await completion.Task.ConfigureAwait(false);
         }
         catch
         {
             lock (_stateGate)
                 _pending.Remove(request.RequestId);
+            Close(new IOException("The request could not be sent."));
             throw;
         }
     }
@@ -129,7 +140,7 @@ public sealed class WorkerConnection : IDisposable
         }
         try
         {
-            await WorkerFrame.WriteAsync(_stream, result, cancellationToken).ConfigureAwait(false);
+            await WriteControlAsync(result, cancellationToken).ConfigureAwait(false);
         }
         catch
         {
@@ -140,7 +151,15 @@ public sealed class WorkerConnection : IDisposable
 
     internal async Task SendBinaryCompletionAsync(BinaryTransferCompletion completion, CancellationToken cancellationToken)
     {
-        await WorkerFrame.WriteAsync(_stream, completion, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await WriteControlAsync(completion, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            Close(new IOException("The binary transfer completion could not be sent."));
+            throw;
+        }
     }
 
     /// <summary>Closes the control pipe and fails all outstanding requests.</summary>
@@ -160,7 +179,7 @@ public sealed class WorkerConnection : IDisposable
                     lock (_stateGate)
                     {
                         ThrowIfClosed();
-                        if (!_events.Add(eventEnvelope.EventId))
+                        if (!_seenEvents.Add(eventEnvelope.EventId) || !_events.Add(eventEnvelope.EventId))
                             throw new InvalidOperationException("The worker sent a duplicate event identifier.");
                     }
                     RaiseEvent(eventEnvelope);
@@ -195,17 +214,49 @@ public sealed class WorkerConnection : IDisposable
 
     private void RaiseEvent(WorkerEventEnvelope eventEnvelope)
     {
-        EventHandler<WorkerEventEnvelope>? handler;
+        var queued = false;
         lock (_stateGate)
         {
-            handler = _eventReceived;
-            if (handler is null)
+            if (_eventReceived is null)
             {
                 _eventBuffer.Enqueue(eventEnvelope);
-                return;
+            }
+            else
+            {
+                _eventDispatchQueue.Enqueue(eventEnvelope);
+                queued = true;
             }
         }
-        handler(this, eventEnvelope);
+        if (queued)
+            _eventDispatchSignal.Release();
+    }
+
+    private async Task EventDispatchLoopAsync()
+    {
+        while (true)
+        {
+            await _eventDispatchSignal.WaitAsync().ConfigureAwait(false);
+            WorkerEventEnvelope? eventEnvelope;
+            EventHandler<WorkerEventEnvelope>? handler;
+            lock (_stateGate)
+            {
+                if (_eventDispatchStopped)
+                    return;
+                if (_eventDispatchQueue.Count == 0)
+                    continue;
+                eventEnvelope = _eventDispatchQueue.Dequeue();
+                handler = _eventReceived;
+            }
+            if (handler is null)
+                continue;
+            try
+            {
+                handler(this, eventEnvelope);
+            }
+            catch (Exception)
+            {
+            }
+        }
     }
 
     private void Close(Exception reason)
@@ -216,12 +267,27 @@ public sealed class WorkerConnection : IDisposable
             if (_closed)
                 return;
             _closed = true;
+            _eventDispatchStopped = true;
             pending = new List<TaskCompletionSource<WorkerEnvelope>>(_pending.Values).ToArray();
             _pending.Clear();
         }
         _stream.Dispose();
+        _eventDispatchSignal.Release();
         foreach (var item in pending)
             item.TrySetException(reason);
+    }
+
+    private async Task WriteControlAsync(object value, CancellationToken cancellationToken)
+    {
+        await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await WorkerFrame.WriteAsync(_stream, value, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _writeGate.Release();
+        }
     }
 
     private void ThrowIfClosed()
@@ -249,13 +315,9 @@ internal static class WorkerFrame
             throw new InvalidDataException("The control frame exceeds the maximum size.");
         var prefix = new byte[4];
         WriteInt32LittleEndian(prefix, payload.Length);
-        lock (stream)
-        {
-            stream.WriteAsync(prefix, 0, prefix.Length, cancellationToken).GetAwaiter().GetResult();
-            stream.WriteAsync(payload, 0, payload.Length, cancellationToken).GetAwaiter().GetResult();
-            stream.FlushAsync(cancellationToken).GetAwaiter().GetResult();
-        }
-        await Task.CompletedTask.ConfigureAwait(false);
+        await stream.WriteAsync(prefix, 0, prefix.Length, cancellationToken).ConfigureAwait(false);
+        await stream.WriteAsync(payload, 0, payload.Length, cancellationToken).ConfigureAwait(false);
+        await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public static async Task<byte[]> ReadAsync(Stream stream, CancellationToken cancellationToken)

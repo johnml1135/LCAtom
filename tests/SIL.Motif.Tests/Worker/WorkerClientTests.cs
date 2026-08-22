@@ -92,6 +92,157 @@ public sealed class WorkerClientTests
     }
 
     [Fact]
+    public async Task ReplayedCompletedEventClosesConnectionWithoutSecondCompletion()
+    {
+        var pipeName = "motif-client-" + Guid.NewGuid().ToString("N");
+        var server = NewServer(pipeName);
+        var serverTask = RunServerAsync(server, async (stream, offer) =>
+        {
+            await ReadJsonAsync(stream);
+            await WriteJsonAsync(stream, new WorkerHandshakeOffer("1.0.0", new ProtocolRange(1, 1), Array.Empty<string>()));
+            var eventEnvelope = new WorkerEventEnvelope("event-replay", WorkerCommands.ApplyRequested,
+                JsonDocument.Parse("{}").RootElement.Clone(), 1);
+            await WriteJsonAsync(stream, eventEnvelope);
+            await ReadJsonAsync(stream);
+            await WriteJsonAsync(stream, eventEnvelope);
+            try
+            {
+                await ReadJsonAsync(stream);
+                throw new InvalidOperationException("The client accepted a replayed event result.");
+            }
+            catch (EndOfStreamException)
+            {
+            }
+        });
+        using var connection = await ConnectAsync(pipeName);
+        var received = 0;
+        var seen = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        connection.EventReceived += (_, _) =>
+        {
+            Interlocked.Increment(ref received);
+            seen.TrySetResult(true);
+        };
+        await seen.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await connection.CompleteEventAsync(new WorkerEventResultEnvelope("event-replay", WorkerEventOutcome.Accepted,
+            JsonDocument.Parse("{}").RootElement.Clone(), 1), CancellationToken.None);
+        await serverTask.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(1, received);
+    }
+
+    [Fact]
+    public async Task BlockingOrThrowingEventHandlerDoesNotBlockOrCorruptResponses()
+    {
+        var pipeName = "motif-client-" + Guid.NewGuid().ToString("N");
+        var server = NewServer(pipeName);
+        var serverTask = RunServerAsync(server, async (stream, offer) =>
+        {
+            await ReadJsonAsync(stream);
+            await WriteJsonAsync(stream, new WorkerHandshakeOffer("1.0.0", new ProtocolRange(1, 1), Array.Empty<string>()));
+            var request = await ReadJsonAsync(stream);
+            await WriteJsonAsync(stream, new WorkerEventEnvelope("event-blocking", WorkerCommands.ApplyRequested,
+                JsonDocument.Parse("{}").RootElement.Clone(), 1));
+            await WriteJsonAsync(stream, new WorkerEnvelope(request.GetProperty("RequestId").GetString()!,
+                WorkerCommands.Handshake, JsonDocument.Parse("{}").RootElement.Clone(), 1));
+        });
+        using var connection = await ConnectAsync(pipeName);
+        var handlerStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var release = new ManualResetEventSlim(false);
+        connection.EventReceived += (_, _) =>
+        {
+            handlerStarted.TrySetResult(true);
+            release.Wait(TimeSpan.FromSeconds(5));
+            throw new InvalidOperationException("Handler failure is isolated from framing.");
+        };
+        var responseTask = connection.SendAsync(new WorkerEnvelope("request-blocking", WorkerCommands.Handshake,
+            JsonDocument.Parse("{}").RootElement.Clone(), 1), CancellationToken.None);
+        await handlerStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var completed = await Task.WhenAny(responseTask, Task.Delay(TimeSpan.FromSeconds(2)));
+        release.Set();
+        Assert.Same(responseTask, completed);
+        Assert.Equal("request-blocking", (await responseTask).RequestId);
+        await serverTask.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task EventResultWithMismatchedProtocolIsRejected()
+    {
+        var pipeName = "motif-client-" + Guid.NewGuid().ToString("N");
+        var server = NewServer(pipeName);
+        var serverTask = RunServerAsync(server, async (stream, offer) =>
+        {
+            await ReadJsonAsync(stream);
+            await WriteJsonAsync(stream, new WorkerHandshakeOffer("1.0.0", new ProtocolRange(1, 1), Array.Empty<string>()));
+            await WriteJsonAsync(stream, new WorkerEventEnvelope("event-protocol", WorkerCommands.ApplyRequested,
+                JsonDocument.Parse("{}").RootElement.Clone(), 1));
+            try
+            {
+                await ReadJsonAsync(stream);
+            }
+            catch (EndOfStreamException)
+            {
+            }
+        });
+        using var connection = await ConnectAsync(pipeName);
+        var seen = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        connection.EventReceived += (_, _) => seen.TrySetResult(true);
+        await seen.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => connection.CompleteEventAsync(
+            new WorkerEventResultEnvelope("event-protocol", WorkerEventOutcome.Accepted,
+                JsonDocument.Parse("{}").RootElement.Clone(), 2), CancellationToken.None));
+        connection.Dispose();
+        await serverTask.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task OutboundFrameUsesLittleEndianPrefixAndRejectsExcessPayload()
+    {
+        var pipeName = "motif-client-" + Guid.NewGuid().ToString("N");
+        var server = NewServer(pipeName);
+        var serverTask = RunServerAsync(server, async (stream, offer) =>
+        {
+            await ReadJsonAsync(stream);
+            await WriteJsonAsync(stream, new WorkerHandshakeOffer("1.0.0", new ProtocolRange(1, 1), Array.Empty<string>()));
+            var prefix = new byte[4];
+            await ReadExactlyAsync(stream, prefix);
+            var length = ReadInt32LittleEndian(prefix);
+            Assert.Equal(new byte[] { (byte)length, (byte)(length >> 8), (byte)(length >> 16), (byte)(length >> 24) }, prefix);
+            var payload = new byte[length];
+            await ReadExactlyAsync(stream, payload);
+            using var request = JsonDocument.Parse(payload);
+            Assert.Equal("prefix-check", request.RootElement.GetProperty("RequestId").GetString());
+            await WriteJsonAsync(stream, new WorkerEnvelope("prefix-check", WorkerCommands.Handshake,
+                JsonDocument.Parse("{}").RootElement.Clone(), 1));
+            try
+            {
+                await ReadJsonAsync(stream);
+            }
+            catch (EndOfStreamException)
+            {
+            }
+        });
+        using var connection = await ConnectAsync(pipeName);
+        await connection.SendAsync(new WorkerEnvelope("prefix-check", WorkerCommands.Handshake,
+            JsonDocument.Parse("{}").RootElement.Clone(), 1), CancellationToken.None);
+        await Assert.ThrowsAsync<InvalidDataException>(() => connection.SendAsync(new WorkerEnvelope("too-large",
+            WorkerCommands.Handshake, JsonDocument.Parse("{\"data\":\"" + new string('x', 1024 * 1024) + "\"}").RootElement.Clone(), 1),
+            CancellationToken.None));
+        connection.Dispose();
+        await serverTask.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task InboundOversizedFrameIsRejected()
+    {
+        await AssertInboundLengthRejectedAsync(new byte[] { 0x01, 0x00, 0x10, 0x00 });
+    }
+
+    [Fact]
+    public async Task InboundNonPositiveFrameIsRejected()
+    {
+        await AssertInboundLengthRejectedAsync(new byte[] { 0x00, 0x00, 0x00, 0x00 });
+    }
+
+    [Fact]
     public async Task MismatchedResponseIdRejectsPendingRequest()
     {
         var pipeName = "motif-client-" + Guid.NewGuid().ToString("N");
@@ -155,6 +306,7 @@ public sealed class WorkerClientTests
         var binaryServer = new NamedPipeServerStream(binaryPipeName, PipeDirection.In, 1, PipeTransmissionMode.Byte,
             PipeOptions.Asynchronous);
         var bytes = Encoding.UTF8.GetBytes("binary payload");
+        var binaryEof = false;
         var serverTask = RunServerAsync(server, async (stream, offer) =>
         {
             await ReadJsonAsync(stream);
@@ -162,8 +314,15 @@ public sealed class WorkerClientTests
             await binaryServer.WaitForConnectionAsync();
             var received = new MemoryStream();
             await binaryServer.CopyToAsync(received);
+            binaryEof = true;
             Assert.Equal(bytes, received.ToArray());
-            await ReadJsonAsync(stream);
+            var completion = await ReadJsonAsync(stream);
+            Assert.Equal("transfer-1", completion.GetProperty("TransferId").GetString());
+            Assert.Equal(bytes.Length, completion.GetProperty("ByteCount").GetInt64());
+            using var digest = SHA256.Create();
+            Assert.Equal(Convert.ToHexString(digest.ComputeHash(bytes)).ToLowerInvariant(),
+                completion.GetProperty("Sha256").GetString());
+            Assert.True(binaryEof);
             binaryServer.Dispose();
         });
         using var connection = await new WorkerClient().ConnectAsync(pipeName,
@@ -212,11 +371,43 @@ public sealed class WorkerClientTests
         server.Dispose();
     }
 
+    private static NamedPipeServerStream NewServer(string pipeName)
+    {
+        return new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte,
+            PipeOptions.Asynchronous);
+    }
+
+    private static Task<WorkerConnection> ConnectAsync(string pipeName)
+    {
+        return new WorkerClient().ConnectAsync(pipeName,
+            new WorkerHandshakeRequest("client-1", "1.0.0", new ProtocolRange(1, 1), Array.Empty<string>()),
+            TimeSpan.FromSeconds(5), CancellationToken.None);
+    }
+
+    private static async Task AssertInboundLengthRejectedAsync(byte[] prefix)
+    {
+        var pipeName = "motif-client-" + Guid.NewGuid().ToString("N");
+        var server = NewServer(pipeName);
+        var serverTask = RunServerAsync(server, async (stream, offer) =>
+        {
+            await ReadJsonAsync(stream);
+            await WriteJsonAsync(stream, new WorkerHandshakeOffer("1.0.0", new ProtocolRange(1, 1), Array.Empty<string>()));
+            var request = await ReadJsonAsync(stream);
+            await stream.WriteAsync(prefix, 0, prefix.Length);
+            await stream.FlushAsync();
+            Assert.Equal("request-length", request.GetProperty("RequestId").GetString());
+        });
+        using var connection = await ConnectAsync(pipeName);
+        await Assert.ThrowsAsync<InvalidDataException>(() => connection.SendAsync(new WorkerEnvelope("request-length",
+            WorkerCommands.Handshake, JsonDocument.Parse("{}").RootElement.Clone(), 1), CancellationToken.None));
+        await serverTask.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
     private static async Task<JsonElement> ReadJsonAsync(Stream stream)
     {
         var prefix = new byte[4];
         await ReadExactlyAsync(stream, prefix);
-        var length = BitConverter.ToInt32(prefix, 0);
+        var length = ReadInt32LittleEndian(prefix);
         var payload = new byte[length];
         await ReadExactlyAsync(stream, payload);
         return JsonDocument.Parse(payload).RootElement.Clone();
@@ -225,7 +416,8 @@ public sealed class WorkerClientTests
     private static async Task WriteJsonAsync(Stream stream, object value)
     {
         var payload = JsonSerializer.SerializeToUtf8Bytes(value);
-        var prefix = BitConverter.GetBytes(payload.Length);
+        var prefix = new byte[4];
+        WriteInt32LittleEndian(prefix, payload.Length);
         await stream.WriteAsync(prefix, 0, prefix.Length);
         await stream.WriteAsync(payload, 0, payload.Length);
         await stream.FlushAsync();
@@ -241,5 +433,18 @@ public sealed class WorkerClientTests
                 throw new EndOfStreamException();
             offset += count;
         }
+    }
+
+    private static int ReadInt32LittleEndian(byte[] bytes)
+    {
+        return bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (bytes[3] << 24);
+    }
+
+    private static void WriteInt32LittleEndian(byte[] bytes, int value)
+    {
+        bytes[0] = (byte)value;
+        bytes[1] = (byte)(value >> 8);
+        bytes[2] = (byte)(value >> 16);
+        bytes[3] = (byte)(value >> 24);
     }
 }
