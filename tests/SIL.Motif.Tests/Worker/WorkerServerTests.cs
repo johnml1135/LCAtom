@@ -126,16 +126,19 @@ public sealed class WorkerServerTests
         live.EventReceived += (_, value) => received.TrySetResult(value);
         var pending = server.EventSink.RequestApplyAsync(document.RootElement.Clone(), cancellation.Token);
         var eventEnvelope = await received.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.False(pending.IsCompleted);
+        var ordinaryResponseTask = ordinary.SendAsync(new WorkerEnvelope(
+            "ordinary-request", WorkerCommands.Handshake, document.RootElement.Clone(), 1),
+            cancellation.Token);
+        var response = await ordinaryResponseTask.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal("ordinary-request", response.RequestId);
+        Assert.Equal(WorkerCommands.Handshake, response.Command);
+        Assert.False(pending.IsCompleted);
         await live.CompleteEventAsync(new WorkerEventResultEnvelope(eventEnvelope.EventId,
             WorkerEventOutcome.Completed, document.RootElement.Clone(), 1), cancellation.Token);
         await pending.WaitAsync(TimeSpan.FromSeconds(5));
         server.UnregisterLiveHost(live.ServerConnectionId!);
         server.RegisterLiveHost(ordinary.ServerConnectionId!);
-
-        var response = await ordinary.SendAsync(new WorkerEnvelope(
-            "ordinary-request", WorkerCommands.Handshake, document.RootElement.Clone(), 1),
-            cancellation.Token);
-        Assert.Equal("ordinary-request", response.RequestId);
         cancellation.Cancel();
         live.Dispose();
         ordinary.Dispose();
