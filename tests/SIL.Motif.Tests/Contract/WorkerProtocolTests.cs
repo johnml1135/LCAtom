@@ -155,6 +155,17 @@ public sealed class WorkerProtocolTests
     }
 
     [Fact]
+    public void EventEnvelope_RejectsUnknownEventDiscriminator()
+    {
+        var payload = JsonDocument.Parse("{}").RootElement.Clone();
+
+        Assert.Throws<ArgumentException>(() =>
+            new WorkerEventEnvelope("event-1", "speculative.future-event", payload, 1));
+        Assert.Throws<ArgumentException>(() => JsonSerializer.Deserialize<WorkerEventEnvelope>(
+            "{\"EventId\":\"event-1\",\"Event\":\"speculative.future-event\",\"Payload\":{},\"ProtocolVersion\":1}"));
+    }
+
+    [Fact]
     public void EventResult_RejectsUnknownOutcome()
     {
         var payload = JsonDocument.Parse("{}").RootElement.Clone();
@@ -185,7 +196,16 @@ public sealed class WorkerProtocolTests
     public void WorkerCommands_RegistryContainsOnlySettledDiscriminators()
     {
         var commands = WorkerCommands.All.ToArray();
+        var events = WorkerCommands.Events.ToArray();
 
+        Assert.Equal(new[] { WorkerCommands.Handshake }, commands);
+        Assert.Equal(new[]
+        {
+            WorkerCommands.BaselineRefreshRequested,
+            WorkerCommands.ApplyRequested,
+            WorkerCommands.ReconciliationRequested,
+            WorkerCommands.CancellationRequested,
+        }, events);
         Assert.Contains(WorkerCommands.Handshake, commands);
         Assert.Contains(WorkerCommands.BaselineRefreshRequested, WorkerCommands.Events);
         Assert.Equal(commands.Length, commands.Distinct(StringComparer.Ordinal).Count());
