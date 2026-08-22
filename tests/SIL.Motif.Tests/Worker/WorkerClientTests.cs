@@ -239,6 +239,53 @@ public sealed class WorkerClientTests
     }
 
     [Fact]
+    public async Task OutstandingRequestCorrelationBoundReleasesAfterResponse()
+    {
+        const int capacity = 128;
+        var pipeName = "motif-client-" + Guid.NewGuid().ToString("N");
+        var server = NewServer(pipeName);
+        var received = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var serverTask = RunServerAsync(server, async (stream, offer) =>
+        {
+            await ReadJsonAsync(stream);
+            await WriteJsonAsync(stream, new WorkerHandshakeOffer("1.0.0",
+                new ProtocolRange(1, 1), Array.Empty<string>()));
+            var requests = new List<string>();
+            for (var index = 0; index < capacity; index++)
+                requests.Add((await ReadJsonAsync(stream)).GetProperty("RequestId").GetString()!);
+            received.TrySetResult(true);
+            await release.Task;
+            await WriteJsonAsync(stream, new WorkerEnvelope(requests[0], WorkerCommands.Handshake,
+                JsonDocument.Parse("{}").RootElement.Clone(), 1));
+            var next = await ReadJsonAsync(stream);
+            await WriteJsonAsync(stream, new WorkerEnvelope(next.GetProperty("RequestId").GetString()!,
+                WorkerCommands.Handshake, JsonDocument.Parse("{}").RootElement.Clone(), 1));
+        });
+
+        using var connection = await ConnectAsync(pipeName);
+        var requests = Enumerable.Range(0, capacity)
+            .Select(index => connection.SendAsync(new WorkerEnvelope("request-" + index,
+                WorkerCommands.Handshake, JsonDocument.Parse("{}").RootElement.Clone(), 1),
+                CancellationToken.None))
+            .ToArray();
+        await received.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await Assert.ThrowsAsync<WorkerRequestQueueOverflowException>(() => connection.SendAsync(
+            new WorkerEnvelope("request-overflow", WorkerCommands.Handshake,
+                JsonDocument.Parse("{}").RootElement.Clone(), 1), CancellationToken.None));
+
+        release.TrySetResult(true);
+        await requests[0].WaitAsync(TimeSpan.FromSeconds(5));
+        var admitted = connection.SendAsync(new WorkerEnvelope("request-after-response",
+            WorkerCommands.Handshake, JsonDocument.Parse("{}").RootElement.Clone(), 1),
+            CancellationToken.None);
+        await admitted.WaitAsync(TimeSpan.FromSeconds(5));
+        connection.Dispose();
+        await Assert.ThrowsAnyAsync<Exception>(() => Task.WhenAll(requests.Skip(1)));
+        await serverTask.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
     public async Task SubscriberExceptionsReachCompletionAfterLaterSubscribersRun()
     {
         var pipeName = "motif-client-" + Guid.NewGuid().ToString("N");

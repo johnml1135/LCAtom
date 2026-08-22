@@ -25,12 +25,28 @@ public sealed class WorkerEventQueueOverflowException : InvalidOperationExceptio
     public int Capacity { get; }
 }
 
+/// <summary>Signals that the bounded request-correlation set cannot retain another request.</summary>
+public sealed class WorkerRequestQueueOverflowException : InvalidOperationException
+{
+    /// <summary>Creates an exception that reports the request-correlation capacity.</summary>
+    public WorkerRequestQueueOverflowException(int capacity)
+        : base("The worker request queue exceeded its capacity of " + capacity + " requests.")
+    {
+        Capacity = capacity;
+    }
+
+    /// <summary>The maximum number of requests retained by the connection.</summary>
+    public int Capacity { get; }
+}
+
 /// <summary>Multiplexes correlated control requests and worker events over one pipe.</summary>
 public sealed class WorkerConnection : IDisposable
 {
     internal const int MaximumFrameBytes = 1024 * 1024;
     private const int EventQueueCapacity = 128;
     private const int EventCorrelationCapacity = 128;
+    internal const int RequestCorrelationCapacity = 128;
+    private const int TransferReuseCapacity = 128;
     private readonly Stream _stream;
     private readonly WorkerHandshakeResult _negotiated;
     private readonly string? _serverConnectionId;
@@ -51,6 +67,7 @@ public sealed class WorkerConnection : IDisposable
     private readonly Queue<string> _recentEventIds = new Queue<string>();
     private readonly Queue<WorkerEventEnvelope> _eventQueue = new Queue<WorkerEventEnvelope>();
     private readonly HashSet<string> _usedTransfers = new HashSet<string>(StringComparer.Ordinal);
+    private readonly Queue<string> _recentTransferIds = new Queue<string>();
     private readonly Task _completion;
     private bool _closed;
     private bool _disposeRequested;
@@ -150,6 +167,8 @@ public sealed class WorkerConnection : IDisposable
             ThrowIfClosed();
             if (_pending.ContainsKey(request.RequestId))
                 throw new InvalidOperationException("A request with this identifier is already outstanding.");
+            if (_pending.Count >= RequestCorrelationCapacity)
+                throw new WorkerRequestQueueOverflowException(RequestCorrelationCapacity);
             _pending.Add(request.RequestId, completion);
         }
 
@@ -181,6 +200,9 @@ public sealed class WorkerConnection : IDisposable
                 throw new InvalidOperationException("A binary transfer offer may be used only once.");
             ThrowIfClosed();
             _usedTransfers.Add(offer.TransferId);
+            _recentTransferIds.Enqueue(offer.TransferId);
+            if (_recentTransferIds.Count > TransferReuseCapacity)
+                _usedTransfers.Remove(_recentTransferIds.Dequeue());
         }
         return BinaryTransferClient.UploadAsync(offer, source, cancellationToken, SendBinaryCompletionAsync);
     }

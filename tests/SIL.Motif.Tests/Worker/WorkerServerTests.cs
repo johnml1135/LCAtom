@@ -683,6 +683,41 @@ public sealed class WorkerServerTests
     }
 
     [Fact]
+    public async Task BinaryOfferCountAndBudgetAreBoundedAndReleasedAfterSuccessAndFailure()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "motif-worker-" + Guid.NewGuid().ToString("N"));
+        await using var server = new BinaryTransferServer(directory, maximumActiveOffers: 2,
+            maximumReservedBytes: 10);
+        var first = server.CreateOffer(6, TimeSpan.FromSeconds(10));
+        var second = server.CreateOffer(4, TimeSpan.FromSeconds(10));
+        Assert.Throws<InvalidOperationException>(() => server.CreateOffer(1, TimeSpan.FromSeconds(10)));
+
+        var firstBytes = Encoding.UTF8.GetBytes("first");
+        using (var client = new NamedPipeClientStream(".", first.PipeName, PipeDirection.Out,
+                   PipeOptions.Asynchronous))
+        {
+            await client.ConnectAsync(5000);
+            await client.WriteAsync(firstBytes);
+        }
+        using var digest = SHA256.Create();
+        await server.CompleteAsync(new BinaryTransferCompletion(first.TransferId, firstBytes.Length,
+            Convert.ToHexString(digest.ComputeHash(firstBytes)).ToLowerInvariant()));
+
+        var third = server.CreateOffer(6, TimeSpan.FromSeconds(10));
+        var secondBytes = Encoding.UTF8.GetBytes("bad");
+        using (var client = new NamedPipeClientStream(".", second.PipeName, PipeDirection.Out,
+                   PipeOptions.Asynchronous))
+        {
+            await client.ConnectAsync(5000);
+            await client.WriteAsync(secondBytes);
+        }
+        await Assert.ThrowsAsync<InvalidOperationException>(() => server.CompleteAsync(
+            new BinaryTransferCompletion(second.TransferId, secondBytes.Length, new string('0', 64))));
+        var fourth = server.CreateOffer(4, TimeSpan.FromSeconds(10));
+        Assert.NotEqual(third.TransferId, fourth.TransferId);
+    }
+
+    [Fact]
     public async Task BinaryDisposeStartedBeforeOfferPreventsOfferEscape()
     {
         var directory = Path.Combine(Path.GetTempPath(), "motif-worker-" + Guid.NewGuid().ToString("N"));

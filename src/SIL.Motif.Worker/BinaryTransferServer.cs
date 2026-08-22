@@ -18,9 +18,15 @@ namespace SIL.Motif.Worker;
 public sealed class BinaryTransferServer : IAsyncDisposable
 {
     private const int BufferSize = 64 * 1024;
+    /// <summary>Default simultaneous unpublished-offer envelope.</summary>
+    public const int DefaultMaximumActiveOffers = 128;
+    /// <summary>Default aggregate bytes reserved by unpublished offers.</summary>
+    public const long DefaultMaximumReservedBytes = 1024L * 1024 * 1024;
     private readonly string _tempDirectory;
     private readonly IWorkerClock _clock;
     private readonly string? _userSid;
+    private readonly int _maximumActiveOffers;
+    private readonly long _maximumReservedBytes;
     private readonly object _lifecycleGate = new object();
     private Action? _onOfferRegistered;
     private Action? _onDisposed;
@@ -29,27 +35,38 @@ public sealed class BinaryTransferServer : IAsyncDisposable
     private readonly ConcurrentDictionary<string, byte> _cleanupFailures =
         new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase);
     private bool _disposed;
+    private long _reservedBytes;
 
     /// <summary>Creates a server that owns temporary files under the supplied directory.</summary>
-    public BinaryTransferServer(string tempDirectory, IWorkerClock? clock = null, string? userSid = null)
-        : this(tempDirectory, clock, userSid, null, null)
+    public BinaryTransferServer(string tempDirectory, IWorkerClock? clock = null, string? userSid = null,
+        int maximumActiveOffers = DefaultMaximumActiveOffers,
+        long maximumReservedBytes = DefaultMaximumReservedBytes)
+        : this(tempDirectory, clock, userSid, maximumActiveOffers, maximumReservedBytes, null, null)
     {
     }
 
     private BinaryTransferServer(string tempDirectory, IWorkerClock? clock, string? userSid,
+        int maximumActiveOffers, long maximumReservedBytes,
         Action? onOfferRegistered, Action? onDisposed)
     {
+        if (maximumActiveOffers <= 0)
+            throw new ArgumentOutOfRangeException(nameof(maximumActiveOffers));
+        if (maximumReservedBytes <= 0)
+            throw new ArgumentOutOfRangeException(nameof(maximumReservedBytes));
         _tempDirectory = Path.GetFullPath(tempDirectory ?? throw new ArgumentNullException(nameof(tempDirectory)));
         Directory.CreateDirectory(_tempDirectory);
         _clock = clock ?? new SystemClock();
         _userSid = userSid;
+        _maximumActiveOffers = maximumActiveOffers;
+        _maximumReservedBytes = maximumReservedBytes;
         _onOfferRegistered = onOfferRegistered;
         _onDisposed = onDisposed;
     }
 
     internal static BinaryTransferServer CreateWithLifecycleProbes(string tempDirectory,
         Action? onOfferRegistered = null, Action? onDisposed = null) =>
-        new BinaryTransferServer(tempDirectory, null, null, onOfferRegistered, onDisposed);
+        new BinaryTransferServer(tempDirectory, null, null, DefaultMaximumActiveOffers,
+            DefaultMaximumReservedBytes, onOfferRegistered, onDisposed);
 
     /// <summary>Exposes the same restricted ACL used by every binary pipe.</summary>
     public static PipeSecurity CreatePipeSecurity(string? userSid = null) =>
@@ -87,6 +104,10 @@ public sealed class BinaryTransferServer : IAsyncDisposable
         lock (_lifecycleGate)
         {
             ThrowIfDisposed();
+            if (_transfers.Count >= _maximumActiveOffers)
+                throw new InvalidOperationException("The active binary-offer envelope is full.");
+            if (maximumBytes > _maximumReservedBytes - _reservedBytes)
+                throw new InvalidOperationException("The reserved binary-byte envelope is full.");
             var id = Guid.NewGuid().ToString("N");
             var offer = new BinaryTransferOffer(id, "upload",
                 "motif-transfer-" + Guid.NewGuid().ToString("N"), maximumBytes,
@@ -95,10 +116,20 @@ public sealed class BinaryTransferServer : IAsyncDisposable
                 _clock.MonotonicNow + lifetime);
             if (!_transfers.TryAdd(id, transfer))
                 throw new InvalidOperationException("A transfer identifier was unexpectedly reused.");
-            _onOfferRegistered?.Invoke();
-            transfer.AcceptTask = AcceptAsync(transfer, cancellationToken);
-            _ = RemoveAfterFailureAsync(transfer);
-            return offer;
+            _reservedBytes += maximumBytes;
+            try
+            {
+                _onOfferRegistered?.Invoke();
+                transfer.AcceptTask = AcceptAsync(transfer, cancellationToken);
+                _ = RemoveAfterFailureAsync(transfer);
+                return offer;
+            }
+            catch
+            {
+                _transfers.TryRemove(id, out _);
+                ReleaseCapacity(transfer);
+                throw;
+            }
         }
     }
 
@@ -135,6 +166,7 @@ public sealed class BinaryTransferServer : IAsyncDisposable
         lock (transfer.Gate)
             transfer.State = TransferState.Published;
         _transfers.TryRemove(transfer.Offer.TransferId, out _);
+        ReleaseCapacity(transfer);
         return readyPath;
     }
 
@@ -239,6 +271,7 @@ public sealed class BinaryTransferServer : IAsyncDisposable
             transfer.State = TransferState.Rejected;
             _transfers.TryRemove(transfer.Offer.TransferId, out _);
         }
+        ReleaseCapacity(transfer);
         try
         {
             if (File.Exists(transfer.TempPath))
@@ -251,6 +284,18 @@ public sealed class BinaryTransferServer : IAsyncDisposable
         {
             _cleanupFailures.TryAdd(transfer.TempPath, 0);
         }
+    }
+
+    private void ReleaseCapacity(Transfer transfer)
+    {
+        lock (transfer.Gate)
+        {
+            if (transfer.CapacityReleased)
+                return;
+            transfer.CapacityReleased = true;
+        }
+        lock (_lifecycleGate)
+            _reservedBytes -= transfer.Offer.MaximumBytes;
     }
 
     private TimeSpan DelayUntil(TimeSpan deadline)
@@ -284,6 +329,7 @@ public sealed class BinaryTransferServer : IAsyncDisposable
         public long ByteCount { get; set; }
         public string? Sha256 { get; set; }
         public TransferState State { get; set; }
+        public bool CapacityReleased { get; set; }
     }
 
     private enum TransferState { Receiving, Received, Completing, Published, Rejected }
