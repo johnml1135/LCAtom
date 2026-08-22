@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using SIL.Motif.Contract.Worker;
@@ -17,9 +18,18 @@ public sealed class WorkerLauncherReviewTests
     public void RealProcessStarterUsesHiddenShellFreeConfiguration()
     {
         var executable = Environment.ProcessPath!;
-        var process = new WorkerProcessStarter(_ => Process.GetCurrentProcess()).Start(new InstalledWorker(
+        ProcessStartInfo? captured = null;
+        var process = new WorkerProcessStarter(info =>
+        {
+            captured = info;
+            return Process.GetCurrentProcess();
+        }).Start(new InstalledWorker(
             new Version(1, 0), executable, new ProtocolRange(1, 1), Array.Empty<string>()));
 
+        Assert.NotNull(captured);
+        Assert.Equal(executable, captured!.FileName);
+        Assert.Equal(string.Empty, captured.Arguments);
+        Assert.Empty(captured.ArgumentList);
         Assert.False(process.StartInfo.UseShellExecute);
         Assert.True(process.StartInfo.CreateNoWindow);
         Assert.Equal(ProcessWindowStyle.Hidden, process.StartInfo.WindowStyle);
@@ -61,6 +71,69 @@ public sealed class WorkerLauncherReviewTests
         await Assert.ThrowsAsync<WorkerLaunchException>(() => launcher.EnsureConnectedAsync(Client()));
 
         Assert.InRange(connector.Attempts, 1, 8);
+    }
+
+    [Fact]
+    public async Task LauncherDoesNotStartWhenValidationReachesExactDeadline()
+    {
+        using var root = TemporaryDirectory.Create();
+        var executable = Path.Combine(root.Path, "catalog", "1.0", "worker.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
+        File.WriteAllText(executable, "worker");
+        var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"));
+        catalog.Register(new InstalledWorker(new Version(1, 0), executable,
+            new ProtocolRange(1, 1), Array.Empty<string>()));
+        var starter = new CountingStarter();
+        var launcher = new WorkerLauncher(catalog, new UnavailableConnector(), starter, "endpoint",
+            TimeSpan.FromSeconds(10), new ExactDeadlineClock(), new NoopDelay());
+
+        await Assert.ThrowsAsync<WorkerLaunchException>(() => launcher.EnsureConnectedAsync(Client()));
+
+        Assert.Equal(0, starter.Starts);
+    }
+
+    [Fact]
+    public async Task ProgramReturnsDistinctCodesForLauncherOutcomes()
+    {
+        using var root = TemporaryDirectory.Create();
+        var emptyCatalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "empty"));
+        Assert.Equal(0, await SIL.Motif.Launcher.Program.RunAsync(Array.Empty<string>(),
+            NewLauncher(emptyCatalog, new ConnectedConnector(), new NoopStarter())));
+        Assert.Equal(2, await SIL.Motif.Launcher.Program.RunAsync(Array.Empty<string>(),
+            NewLauncher(emptyCatalog, new UnavailableConnector(), new NoopStarter())));
+        Assert.Equal(3, await SIL.Motif.Launcher.Program.RunAsync(Array.Empty<string>(),
+            NewLauncher(emptyCatalog, new IncompatibleConnector(), new NoopStarter())));
+
+        var executable = Path.Combine(root.Path, "startup", "1.0", "worker.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
+        File.WriteAllText(executable, "worker");
+        var startupCatalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "startup"));
+        startupCatalog.Register(new InstalledWorker(new Version(1, 0), executable,
+            new ProtocolRange(1, 1), Array.Empty<string>()));
+        Assert.Equal(4, await SIL.Motif.Launcher.Program.RunAsync(Array.Empty<string>(),
+            NewLauncher(startupCatalog, new UnavailableConnector(), new ExitedStarter())));
+
+        var corruptRoot = Path.Combine(root.Path, "corrupt", "1.0");
+        Directory.CreateDirectory(corruptRoot);
+        File.WriteAllText(Path.Combine(corruptRoot, "manifest.json"), "{}");
+        Assert.Equal(5, await SIL.Motif.Launcher.Program.RunAsync(Array.Empty<string>(),
+            NewLauncher(new InstalledWorkerCatalog(Path.Combine(root.Path, "corrupt")),
+                new UnavailableConnector(), new NoopStarter())));
+    }
+
+    [Fact]
+    public async Task ProgramWritesBoundedActionableMessageForNoCompatibleInstall()
+    {
+        using var root = TemporaryDirectory.Create();
+        var error = new StringWriter(new StringBuilder(), System.Globalization.CultureInfo.InvariantCulture);
+        var code = await SIL.Motif.Launcher.Program.RunAsync(Array.Empty<string>(),
+            NewLauncher(new InstalledWorkerCatalog(Path.Combine(root.Path, "empty")),
+                new UnavailableConnector(), new NoopStarter()), TextWriter.Null, error);
+
+        Assert.Equal(2, code);
+        Assert.Contains("install", error.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("update", error.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.InRange(error.ToString().Length, 1, 512);
     }
 
     [Fact]
@@ -124,9 +197,35 @@ public sealed class WorkerLauncherReviewTests
         }
     }
 
+    private sealed class ConnectedConnector : IWorkerConnector
+    {
+        public Task<IWorkerConnection> ConnectAsync(string endpointName, WorkerHandshakeRequest request,
+            TimeSpan timeout, CancellationToken cancellationToken) =>
+            Task.FromResult<IWorkerConnection>(new ConnectedConnection());
+    }
+
+    private sealed class IncompatibleConnector : IWorkerConnector
+    {
+        public Task<IWorkerConnection> ConnectAsync(string endpointName, WorkerHandshakeRequest request,
+            TimeSpan timeout, CancellationToken cancellationToken) =>
+            Task.FromException<IWorkerConnection>(new WorkerEndpointIncompatibleException("incompatible"));
+    }
+
     private sealed class NoopStarter : IWorkerProcessStarter
     {
         public IWorkerProcess Start(InstalledWorker worker) => new NoopProcess();
+    }
+
+    private sealed class ExitedStarter : IWorkerProcessStarter
+    {
+        public IWorkerProcess Start(InstalledWorker worker) => new ExitedProcess();
+    }
+
+    private sealed class ExitedProcess : IWorkerProcess
+    {
+        public bool HasExited => true;
+        public int ExitCode => 17;
+        public ProcessStartInfo StartInfo { get; } = new ProcessStartInfo();
     }
 
     private sealed class CountingStarter : IWorkerProcessStarter
@@ -173,6 +272,14 @@ public sealed class WorkerLauncherReviewTests
         public bool HasExited => false;
         public int ExitCode => 0;
         public ProcessStartInfo StartInfo { get; } = new ProcessStartInfo();
+    }
+
+    private sealed class ExactDeadlineClock : ILauncherClock
+    {
+        private readonly Queue<long> _timestamps = new Queue<long>(new[] { 0L, 1L, 1L, 1L, 10L });
+
+        public long Timestamp => _timestamps.Count == 0 ? 10 : _timestamps.Dequeue();
+        public long Frequency => 1;
     }
 
     private sealed class AdvancingClock : ILauncherClock

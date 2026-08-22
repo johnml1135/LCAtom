@@ -87,6 +87,133 @@ public sealed class WorkerSelectorTests
     }
 
     [Fact]
+    public void CatalogIgnoresVersionDirectoryUntilManifestIsPublished()
+    {
+        using var root = TemporaryDirectory.Create();
+        var versionDirectory = Path.Combine(root.Path, "catalog", "2.0.0");
+        Directory.CreateDirectory(versionDirectory);
+        File.WriteAllText(Path.Combine(versionDirectory, "manifest.json.tmp"), "partial");
+
+        var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"));
+
+        Assert.Empty(catalog.List());
+    }
+
+    [Fact]
+    public void CatalogRejectsManifestMetadataMutationThroughDigest()
+    {
+        using var root = TemporaryDirectory.Create();
+        var executable = Path.Combine(root.Path, "catalog", "1.2.3", "worker.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
+        File.WriteAllText(executable, "worker");
+        var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"));
+        catalog.Register(new InstalledWorker(new Version(1, 2, 3), executable,
+            new ProtocolRange(1, 2), new[] { "jobs.v1" }));
+        var manifest = Path.Combine(root.Path, "catalog", "1.2.3", "manifest.json");
+        var changed = File.ReadAllText(manifest).Replace("\"minimum\":1", "\"minimum\":2",
+            StringComparison.Ordinal);
+        File.WriteAllText(manifest, changed);
+
+        Assert.Throws<InvalidDataException>(() => catalog.List());
+    }
+
+    [Fact]
+    public void CatalogRejectsExecutableReparseAttributeThroughValidationSeam()
+    {
+        using var root = TemporaryDirectory.Create();
+        var executable = Path.Combine(root.Path, "catalog", "1.2.3", "worker.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
+        File.WriteAllText(executable, "worker");
+        var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"), path =>
+            string.Equals(path, executable, StringComparison.OrdinalIgnoreCase)
+                ? FileAttributes.ReparsePoint
+                : FileAttributes.Normal);
+
+        Assert.Throws<ArgumentException>(() => catalog.Register(new InstalledWorker(new Version(1, 2, 3),
+            executable, new ProtocolRange(1, 2), Array.Empty<string>())));
+    }
+
+    [Fact]
+    public void CatalogRejectsCorruptOversizedAndMismatchedFinalManifests()
+    {
+        using var root = TemporaryDirectory.Create();
+        var executable = Path.Combine(root.Path, "catalog", "1.2.3", "worker.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
+        File.WriteAllText(executable, "worker");
+        var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"));
+        catalog.Register(new InstalledWorker(new Version(1, 2, 3), executable,
+            new ProtocolRange(1, 2), Array.Empty<string>()));
+        var manifest = Path.Combine(root.Path, "catalog", "1.2.3", "manifest.json");
+        var valid = File.ReadAllText(manifest);
+        File.WriteAllText(manifest, new string('x', 65 * 1024));
+        Assert.Throws<InvalidDataException>(() => catalog.List());
+
+        File.WriteAllText(manifest, "{not-json");
+        Assert.Throws<InvalidDataException>(() => catalog.List());
+
+        File.WriteAllText(manifest, "{}");
+        Assert.Throws<InvalidDataException>(() => catalog.List());
+
+        var mismatchedDirectory = Path.Combine(root.Path, "catalog", "9.9.9");
+        Directory.CreateDirectory(mismatchedDirectory);
+        File.WriteAllText(manifest, valid);
+        File.Copy(manifest, Path.Combine(mismatchedDirectory, "manifest.json"), true);
+        Assert.Throws<InvalidDataException>(() => catalog.List());
+    }
+
+    [Fact]
+    public void CatalogRejectsExecutableMutationAndOutsideRegistration()
+    {
+        using var root = TemporaryDirectory.Create();
+        var executable = Path.Combine(root.Path, "catalog", "1.2.3", "worker.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
+        File.WriteAllText(executable, "worker");
+        var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"));
+        catalog.Register(new InstalledWorker(new Version(1, 2, 3), executable,
+            new ProtocolRange(1, 2), Array.Empty<string>()));
+        File.AppendAllText(executable, "changed");
+        Assert.Throws<InvalidDataException>(() => catalog.List());
+
+        var outside = Path.Combine(root.Path, "outside.exe");
+        File.WriteAllText(outside, "outside");
+        Assert.Throws<ArgumentException>(() => catalog.Register(new InstalledWorker(new Version(2, 0),
+            outside, new ProtocolRange(1, 2), Array.Empty<string>())));
+    }
+
+    [Fact]
+    public void SelectorRejectsNullAndAmbiguousRegistrations()
+    {
+        Assert.Throws<ArgumentNullException>(() => WorkerSelector.SelectNewestCompatible(null!, Client(
+            new ProtocolRange(1, 1))));
+        Assert.Throws<ArgumentNullException>(() => WorkerSelector.SelectNewestCompatible(new[]
+        {
+            Worker("1.0.0", new ProtocolRange(1, 1))
+        }, null!));
+        Assert.Throws<InvalidOperationException>(() => WorkerSelector.SelectNewestCompatible(new[]
+        {
+            Worker("1.0.0", new ProtocolRange(1, 1)),
+            Worker("1.0.0", new ProtocolRange(1, 1), "other")
+        }, Client(new ProtocolRange(1, 1))));
+        Assert.Throws<InvalidOperationException>(() => WorkerSelector.SelectNewestCompatible(new[]
+        {
+            Worker("1.0.0", new ProtocolRange(1, 1), "jobs.v1", "jobs.v1")
+        }, Client(new ProtocolRange(1, 1))));
+        Assert.Throws<InvalidOperationException>(() => WorkerSelector.SelectNewestCompatible(new[]
+        {
+            Worker("1.0.0", new ProtocolRange(1, 1), new string('x', 129))
+        }, Client(new ProtocolRange(1, 1))));
+        Assert.Throws<InvalidOperationException>(() => WorkerSelector.SelectNewestCompatible(new[]
+        {
+            new InstalledWorker(new Version(1, 0), "relative.exe", new ProtocolRange(1, 1),
+                Array.Empty<string>())
+        }, Client(new ProtocolRange(1, 1))));
+        Assert.Throws<InvalidOperationException>(() => WorkerSelector.SelectNewestCompatible(new[]
+        {
+            new InstalledWorker(new Version(1, 0), "C:\\Motif\\worker.exe", null!, Array.Empty<string>())
+        }, Client(new ProtocolRange(1, 1))));
+    }
+
+    [Fact]
     public async Task ExistingCompatibleWorkerIsConnectedWithoutStartingProcess()
     {
         var connector = new FakeConnector(FakeConnector.Connected());

@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using SIL.Motif.Contract.Worker;
 
@@ -19,6 +21,7 @@ public sealed record InstalledWorker(
 public sealed class InstalledWorkerCatalog
 {
     private const int MaximumManifestBytes = 64 * 1024;
+    private readonly Func<string, FileAttributes> _fileAttributes;
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, object> Gates =
         new System.Collections.Concurrent.ConcurrentDictionary<string, object>(StringComparer.OrdinalIgnoreCase);
 
@@ -30,12 +33,19 @@ public sealed class InstalledWorkerCatalog
 
     /// <summary>Creates a catalog at an injected root, primarily for isolated callers and tests.</summary>
     public InstalledWorkerCatalog(string root)
+        : this(root, File.GetAttributes)
+    {
+    }
+
+    /// <summary>Creates a catalog with an injectable file-attribute reader for validation tests.</summary>
+    public InstalledWorkerCatalog(string root, Func<string, FileAttributes>? fileAttributes)
     {
         if (string.IsNullOrWhiteSpace(root))
             throw new ArgumentException("A catalog root is required.", nameof(root));
         if (!Path.IsPathRooted(root))
             throw new ArgumentException("The catalog root must be absolute.", nameof(root));
         Root = CanonicalPath(root);
+        _fileAttributes = fileAttributes ?? File.GetAttributes;
     }
 
     /// <summary>The canonical directory containing versioned worker registrations.</summary>
@@ -65,7 +75,7 @@ public sealed class InstalledWorkerCatalog
             var temporary = manifestPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
             try
             {
-                File.WriteAllText(temporary, Serialize(canonical));
+                File.WriteAllText(temporary, Serialize(canonical, versionDirectory));
                 File.Move(temporary, manifestPath);
             }
             catch (IOException)
@@ -99,7 +109,7 @@ public sealed class InstalledWorkerCatalog
             {
                 var manifest = Path.Combine(directory, "manifest.json");
                 if (!File.Exists(manifest))
-                    throw new InvalidDataException("The worker catalog contains a registration without a manifest.");
+                    continue;
                 workers.Add(ReadManifest(manifest));
             }
             return workers.OrderByDescending(worker => worker.ProductVersion).ToArray();
@@ -127,7 +137,7 @@ public sealed class InstalledWorkerCatalog
         }
     }
 
-    private static void ValidateWorker(InstalledWorker worker, bool requireExecutable)
+    private void ValidateWorker(InstalledWorker worker, bool requireExecutable)
     {
         if (worker is null)
             throw new ArgumentNullException(nameof(worker));
@@ -140,6 +150,9 @@ public sealed class InstalledWorkerCatalog
         if (string.IsNullOrWhiteSpace(worker.ExecutablePath) || !Path.IsPathRooted(worker.ExecutablePath))
             throw new ArgumentException("The worker executable path must be absolute.", nameof(worker));
         var path = CanonicalPath(worker.ExecutablePath);
+        if ((_fileAttributes(path) & FileAttributes.ReparsePoint) != 0)
+            throw new ArgumentException("The registered worker executable must not be a reparse point.",
+                nameof(worker));
         if (requireExecutable && (!File.Exists(path) || !IsExecutable(path)))
             throw new FileNotFoundException("The registered worker executable does not exist or is not executable.", path);
         ValidateCapabilities(worker.Capabilities);
@@ -224,15 +237,30 @@ public sealed class InstalledWorkerCatalog
             left.Capabilities.SequenceEqual(right.Capabilities, StringComparer.Ordinal);
     }
 
-    private static string Serialize(InstalledWorker worker)
+    private static string Serialize(InstalledWorker worker, string versionDirectory)
     {
+        var executableHash = Hash(worker.ExecutablePath);
         return JsonSerializer.Serialize(new Manifest(worker.ProductVersion.ToString(), worker.ExecutablePath,
             new ManifestProtocols(worker.Protocols.Minimum, worker.Protocols.Maximum), worker.Capabilities,
-            Hash(worker.ExecutablePath)),
+            executableHash, Digest(worker, versionDirectory, executableHash)),
             new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
     }
 
     private InstalledWorker ReadManifest(string path)
+    {
+        if ((_fileAttributes(path) & FileAttributes.ReparsePoint) != 0)
+            throw new InvalidDataException("The worker registration manifest must not be a reparse point.");
+        try
+        {
+            return ReadManifestCore(path);
+        }
+        catch (JsonException exception)
+        {
+            throw new InvalidDataException("The worker registration manifest is invalid.", exception);
+        }
+    }
+
+    private InstalledWorker ReadManifestCore(string path)
     {
         var information = new FileInfo(path);
         if (information.Length <= 0 || information.Length > MaximumManifestBytes)
@@ -255,15 +283,20 @@ public sealed class InstalledWorkerCatalog
             capabilities.Add(value.GetString()!);
         }
         var hash = RequiredString(root, "sha256");
+        var digest = RequiredString(root, "digest");
         try
         {
             var worker = new InstalledWorker(productVersion, executable,
                 new ProtocolRange(minimum, maximum), capabilities);
             ValidateWorker(worker, requireExecutable: true);
             var canonical = CanonicalWorker(worker);
-            ValidateBinding(canonical, Path.GetDirectoryName(path)!);
-            if (!string.Equals(hash, Hash(canonical.ExecutablePath), StringComparison.Ordinal))
+            var versionDirectory = Path.GetDirectoryName(path)!;
+            ValidateBinding(canonical, versionDirectory);
+            var executableHash = Hash(canonical.ExecutablePath);
+            if (!string.Equals(hash, executableHash, StringComparison.Ordinal))
                 throw new InvalidDataException("The registered worker executable changed after publication.");
+            if (!string.Equals(digest, Digest(canonical, versionDirectory, executableHash), StringComparison.Ordinal))
+                throw new InvalidDataException("The worker registration metadata changed after publication.");
             return canonical;
         }
         catch (Exception exception) when (exception is ArgumentException || exception is IOException)
@@ -311,7 +344,7 @@ public sealed class InstalledWorkerCatalog
     }
 
     private sealed record Manifest(string ProductVersion, string ExecutablePath,
-        ManifestProtocols Protocols, IReadOnlyList<string> Capabilities, string Sha256);
+        ManifestProtocols Protocols, IReadOnlyList<string> Capabilities, string Sha256, string Digest);
 
     private sealed record ManifestProtocols(int Minimum, int Maximum);
 
@@ -320,5 +353,20 @@ public sealed class InstalledWorkerCatalog
         using var stream = File.OpenRead(path);
         using var sha = SHA256.Create();
         return Convert.ToHexString(sha.ComputeHash(stream));
+    }
+
+    private static string Digest(InstalledWorker worker, string versionDirectory, string executableHash)
+    {
+        var relativePath = Path.GetRelativePath(versionDirectory, worker.ExecutablePath)
+            .Replace(Path.DirectorySeparatorChar, '/')
+            .Replace(Path.AltDirectorySeparatorChar, '/');
+        if (OperatingSystem.IsWindows())
+            relativePath = relativePath.ToUpperInvariant();
+        var canonical = string.Join("\n", worker.ProductVersion.ToString(), relativePath,
+            worker.Protocols.Minimum.ToString(CultureInfo.InvariantCulture),
+            worker.Protocols.Maximum.ToString(CultureInfo.InvariantCulture),
+            string.Join("\n", worker.Capabilities), executableHash);
+        using var sha = SHA256.Create();
+        return Convert.ToHexString(sha.ComputeHash(Encoding.UTF8.GetBytes(canonical)));
     }
 }

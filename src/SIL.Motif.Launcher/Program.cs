@@ -204,6 +204,7 @@ public sealed class WorkerLauncher
                 exception);
         }
 
+        EnsureBeforeDeadline(deadline);
         IWorkerProcess process;
         try
         {
@@ -291,7 +292,7 @@ public sealed class WorkerLauncher
 
     private void EnsureBeforeDeadline(long deadline)
     {
-        if (_clock.Timestamp > deadline)
+        if (_clock.Timestamp >= deadline)
             throw new WorkerLaunchException("Worker startup timed out; reinstall or update Motif and try again.");
     }
 
@@ -412,33 +413,44 @@ public static class Program
     /// <summary>Runs the bounded launcher command against an injectable orchestration seam.</summary>
     public static async Task<int> RunAsync(string[] args, WorkerLauncher launcher)
     {
+        return await RunAsync(args, launcher, Console.Out, Console.Error).ConfigureAwait(false);
+    }
+
+    /// <summary>Runs the launcher with injected output streams for bounded CLI diagnostics.</summary>
+    public static async Task<int> RunAsync(string[] args, WorkerLauncher launcher,
+        TextWriter output, TextWriter error)
+    {
+        if (output is null)
+            throw new ArgumentNullException(nameof(output));
+        if (error is null)
+            throw new ArgumentNullException(nameof(error));
         try
         {
             var request = Parse(args);
             if (launcher is null)
                 throw new ArgumentNullException(nameof(launcher));
             await launcher.EnsureConnectedAsync(request).ConfigureAwait(false);
-            Console.WriteLine("Connected to the Motif worker.");
+            await output.WriteLineAsync("Connected to the Motif worker.").ConfigureAwait(false);
             return Success;
         }
         catch (WorkerEndpointIncompatibleException exception)
         {
-            Console.Error.WriteLine(exception.Message);
+            await error.WriteLineAsync(exception.Message).ConfigureAwait(false);
             return ExistingWorkerIncompatible;
         }
         catch (WorkerCatalogException exception)
         {
-            Console.Error.WriteLine(exception.Message);
+            await error.WriteLineAsync(exception.Message).ConfigureAwait(false);
             return CatalogFailure;
         }
         catch (WorkerLaunchException exception)
         {
-            Console.Error.WriteLine(exception.Message);
+            await error.WriteLineAsync(exception.Message).ConfigureAwait(false);
             return exception.NoCompatibleWorker ? NoCompatibleInstall : StartupFailure;
         }
         catch (Exception exception) when (exception is ArgumentException || exception is FormatException)
         {
-            Console.Error.WriteLine("The client compatibility request is invalid.");
+            await error.WriteLineAsync("The client compatibility request is invalid.").ConfigureAwait(false);
             return StartupFailure;
         }
     }
