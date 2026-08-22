@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 
 namespace SIL.Motif.Contract.Worker;
 
@@ -7,39 +8,32 @@ namespace SIL.Motif.Contract.Worker;
 public static class WorkerCommands
 {
     public const string Handshake = "handshake";
-    public const string GetStatus = "status";
-    public const string GetJob = "job.get";
-    public const string WaitForJob = "job.wait";
-    public const string CancelJob = "job.cancel";
-    public const string RetryJob = "job.retry";
-    public const string RefreshBaseline = "baseline.refresh";
-    public const string DryRun = "proposal.dry-run";
-    public const string Apply = "proposal.apply";
-    public const string RegisterLiveHost = "host.register";
-    public const string UnregisterLiveHost = "host.unregister";
-    public const string Reconcile = "host.reconcile";
 
     public const string BaselineRefreshRequested = "baseline.refresh.requested";
     public const string ApplyRequested = "apply.requested";
     public const string ReconciliationRequested = "reconciliation.requested";
     public const string CancellationRequested = "cancellation.requested";
 
-    private static readonly HashSet<string> KnownCommands = new(StringComparer.Ordinal)
-    {
-        Handshake, GetStatus, GetJob, WaitForJob, CancelJob, RetryJob, RefreshBaseline, DryRun, Apply,
-        RegisterLiveHost, UnregisterLiveHost, Reconcile,
-    };
+    private static readonly IReadOnlyCollection<string> CommandValues =
+        new ReadOnlyCollection<string>(new[]
+        {
+            Handshake,
+        });
 
-    private static readonly HashSet<string> KnownEvents = new(StringComparer.Ordinal)
-    {
-        BaselineRefreshRequested, ApplyRequested, ReconciliationRequested, CancellationRequested,
-    };
+    private static readonly IReadOnlyCollection<string> EventValues =
+        new ReadOnlyCollection<string>(new[]
+        {
+            BaselineRefreshRequested, ApplyRequested, ReconciliationRequested, CancellationRequested,
+        });
+
+    private static readonly HashSet<string> KnownCommands = new(CommandValues, StringComparer.Ordinal);
+    private static readonly HashSet<string> KnownEvents = new(EventValues, StringComparer.Ordinal);
 
     /// <summary>Every command accepted by the protocol.</summary>
-    public static IReadOnlyCollection<string> All => KnownCommands;
+    public static IReadOnlyCollection<string> All => CommandValues;
 
     /// <summary>Every event accepted by the protocol.</summary>
-    public static IReadOnlyCollection<string> Events => KnownEvents;
+    public static IReadOnlyCollection<string> Events => EventValues;
 
     /// <summary>Returns whether a command discriminator is known.</summary>
     public static bool IsKnown(string? command) => command is not null && KnownCommands.Contains(command);

@@ -33,7 +33,7 @@ Older and newer clients need one small, explicit way to decide whether they can 
 - [ ] **Step 1: Write failing round-trip and negotiation tests**
 
 Pin protocol intersection, missing required capabilities, unknown JSON properties, bounded ids, event versus
-response framing, one-use binary offers, every command payload discriminator, and product-version
+response framing, one-use binary offers, every currently settled transport discriminator, and product-version
 non-authority. Use these public shapes in the tests:
 
 ```csharp
@@ -53,7 +53,14 @@ Run `./test.ps1`. Expected: compilation fails because the worker contract types 
 - [ ] **Step 3: Implement the closed transport types**
 
 Implement immutable `ProtocolRange`, `WorkerHandshakeRequest`, `WorkerHandshakeOffer`,
-`WorkerHandshakeResult`, the closed command DTO set, and:
+`WorkerHandshakeResult`, and `WorkerCommands` as the closed transport discriminator registry for
+discriminators settled at this stage.
+
+Each later owning plan must add its closed typed command/response DTO and registry entry before adding
+a handler. The generic envelopes remain `JsonElement` framing, but a handler may never accept a command
+without its typed DTO and schema.
+
+The transport envelope shapes are:
 
 ```csharp
 public sealed record WorkerEnvelope(

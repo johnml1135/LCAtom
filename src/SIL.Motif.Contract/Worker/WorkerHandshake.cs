@@ -9,14 +9,20 @@ namespace SIL.Motif.Contract.Worker;
 /// <summary>Client identity and compatibility interval presented during connection setup.</summary>
 public sealed record WorkerHandshakeRequest
 {
-    [JsonConstructor]
     public WorkerHandshakeRequest(
-        string clientId, string productVersion, ProtocolRange protocols, IReadOnlyList<string> capabilities)
+        string clientId, string productVersion, ProtocolRange protocols, IEnumerable<string> capabilities)
     {
         ClientId = WorkerProtocolValidation.Identifier(clientId, nameof(clientId));
         ProductVersion = WorkerProtocolValidation.Identifier(productVersion, nameof(productVersion));
         Protocols = protocols ?? throw new ArgumentNullException(nameof(protocols));
         Capabilities = WorkerProtocolValidation.CopyCapabilities(capabilities, nameof(capabilities));
+    }
+
+    [JsonConstructor]
+    public WorkerHandshakeRequest(
+        string clientId, string productVersion, ProtocolRange protocols, IReadOnlyList<string> capabilities)
+        : this(clientId, productVersion, protocols, (IEnumerable<string>)capabilities)
+    {
     }
 
     /// <summary>The client identity used for diagnostics.</summary>
@@ -38,13 +44,19 @@ public sealed record WorkerHandshakeRequest
 /// <summary>Worker identity and compatibility interval offered to a connecting client.</summary>
 public sealed record WorkerHandshakeOffer
 {
-    [JsonConstructor]
     public WorkerHandshakeOffer(
-        string productVersion, ProtocolRange protocols, IReadOnlyList<string> capabilities)
+        string productVersion, ProtocolRange protocols, IEnumerable<string> capabilities)
     {
         ProductVersion = WorkerProtocolValidation.Identifier(productVersion, nameof(productVersion));
         Protocols = protocols ?? throw new ArgumentNullException(nameof(protocols));
         Capabilities = WorkerProtocolValidation.CopyCapabilities(capabilities, nameof(capabilities));
+    }
+
+    [JsonConstructor]
+    public WorkerHandshakeOffer(
+        string productVersion, ProtocolRange protocols, IReadOnlyList<string> capabilities)
+        : this(productVersion, protocols, (IEnumerable<string>)capabilities)
+    {
     }
 
     /// <summary>The informational worker product version.</summary>
@@ -63,10 +75,11 @@ public sealed record WorkerHandshakeOffer
 /// <summary>Negotiated protocol generation and effective capability set.</summary>
 public sealed record WorkerHandshakeResult
 {
-    internal WorkerHandshakeResult(int protocolVersion, IReadOnlyList<string> capabilities)
+    [JsonConstructor]
+    public WorkerHandshakeResult(int protocolVersion, IReadOnlyList<string> capabilities)
     {
-        ProtocolVersion = protocolVersion;
-        Capabilities = capabilities;
+        ProtocolVersion = WorkerEnvelope.ValidateProtocolVersion(protocolVersion);
+        Capabilities = WorkerProtocolValidation.CopyCapabilities(capabilities, nameof(capabilities));
     }
 
     /// <summary>The single protocol generation shared by both peers.</summary>
@@ -74,6 +87,9 @@ public sealed record WorkerHandshakeResult
 
     /// <summary>Capabilities available to the connected client.</summary>
     public IReadOnlyList<string> Capabilities { get; }
+
+    [JsonExtensionData]
+    public IDictionary<string, JsonElement>? UnknownProperties { get; set; }
 }
 
 /// <summary>Negotiates a safe protocol generation and capability set.</summary>
@@ -101,6 +117,6 @@ public static class WorkerHandshake
                 nameof(worker));
         }
 
-        return new WorkerHandshakeResult(protocolVersion, client.Capabilities.ToArray());
+        return new WorkerHandshakeResult(protocolVersion, client.Capabilities);
     }
 }

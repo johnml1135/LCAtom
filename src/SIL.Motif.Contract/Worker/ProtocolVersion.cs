@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 
 namespace SIL.Motif.Contract.Worker;
@@ -27,13 +28,15 @@ internal static class WorkerProtocolValidation
         if (values is null)
             throw new ArgumentNullException(parameterName);
 
-        var result = values.ToArray();
-        if (result.Length > MaximumCapabilities)
-            throw new ArgumentException("Capability list is longer than the protocol bound.", parameterName);
-
+        var result = new List<string>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var capability in result)
+        using var enumerator = values.GetEnumerator();
+        while (enumerator.MoveNext())
         {
+            if (result.Count >= MaximumCapabilities)
+                throw new ArgumentException("Capability list is longer than the protocol bound.", parameterName);
+
+            var capability = enumerator.Current;
             if (string.IsNullOrWhiteSpace(capability) || capability.Length > MaximumCapabilityLength ||
                 capability.Any(char.IsControl))
             {
@@ -41,10 +44,12 @@ internal static class WorkerProtocolValidation
             }
             if (!seen.Add(capability))
                 throw new ArgumentException("Capability names must be unique.", parameterName);
+
+            result.Add(capability);
         }
 
-        Array.Sort(result, StringComparer.Ordinal);
-        return result;
+        result.Sort(StringComparer.Ordinal);
+        return new ReadOnlyCollection<string>(result);
     }
 
     internal static IReadOnlyList<string> CopyCapabilities(
