@@ -143,14 +143,22 @@ public sealed class WorkerLauncherReviewTests
     private sealed class ConvergingConnector : IWorkerConnector
     {
         private int _attempts;
+        private int _initialProbes;
+        private readonly TaskCompletionSource<bool> _bothInitialProbes =
+            new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         public int Attempts => _attempts;
-        public Task<IWorkerConnection> ConnectAsync(string endpointName, WorkerHandshakeRequest request,
+        public async Task<IWorkerConnection> ConnectAsync(string endpointName, WorkerHandshakeRequest request,
             TimeSpan timeout, CancellationToken cancellationToken)
         {
             var attempt = Interlocked.Increment(ref _attempts);
-            return attempt <= 2
-                ? Task.FromException<IWorkerConnection>(new WorkerEndpointUnavailableException("absent"))
-                : Task.FromResult<IWorkerConnection>(new ConnectedConnection());
+            if (attempt <= 2)
+            {
+                if (Interlocked.Increment(ref _initialProbes) == 2)
+                    _bothInitialProbes.TrySetResult(true);
+                await _bothInitialProbes.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
+                throw new WorkerEndpointUnavailableException("absent");
+            }
+            return new ConnectedConnection();
         }
     }
 

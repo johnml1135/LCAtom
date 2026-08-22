@@ -396,14 +396,20 @@ public sealed class WorkerClientTests
     {
         var pipeName = "motif-client-" + Guid.NewGuid().ToString("N");
         var server = NewServer(pipeName);
+        var startEvents = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstWriteStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseServer = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var serverTask = RunServerAsync(server, async (stream, offer) =>
         {
             await ReadJsonAsync(stream);
             await WriteJsonAsync(stream, new WorkerHandshakeOffer("1.0.0", new ProtocolRange(1, 1), Array.Empty<string>()));
+            await startEvents.Task.WaitAsync(TimeSpan.FromSeconds(5));
             try
             {
                 for (var index = 0; index < 32; index++)
                 {
+                    if (index == 0)
+                        firstWriteStarted.TrySetResult(true);
                     await WriteJsonAsync(stream, new WorkerEventEnvelope("race-" + index,
                         WorkerCommands.ApplyRequested, JsonDocument.Parse("{}").RootElement.Clone(), 1));
                     await Task.Yield();
@@ -412,27 +418,43 @@ public sealed class WorkerClientTests
             catch (IOException)
             {
             }
-        });
-        using var connection = await ConnectAsync(pipeName);
-        EventHandler<WorkerEventEnvelope> handler = (_, _) => { };
-        var subscriptionTask = Task.Run(() =>
-        {
-            for (var index = 0; index < 100; index++)
+            finally
             {
-                try
-                {
-                    connection.EventReceived += handler;
-                    connection.EventReceived -= handler;
-                }
-                catch (ObjectDisposedException)
-                {
-                    return;
-                }
+                await releaseServer.Task.WaitAsync(TimeSpan.FromSeconds(5));
             }
         });
-        connection.Dispose();
-        await subscriptionTask.WaitAsync(TimeSpan.FromSeconds(5));
-        await connection.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        WorkerConnection? connection = null;
+        try
+        {
+            connection = await ConnectAsync(pipeName);
+            EventHandler<WorkerEventEnvelope> handler = (_, _) => { };
+            var subscriptionTask = Task.Run(() =>
+            {
+                for (var index = 0; index < 100; index++)
+                {
+                    try
+                    {
+                        connection.EventReceived += handler;
+                        connection.EventReceived -= handler;
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        return;
+                    }
+                }
+            });
+            startEvents.TrySetResult(true);
+            await firstWriteStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            connection.Dispose();
+            await subscriptionTask.WaitAsync(TimeSpan.FromSeconds(5));
+            await connection.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            startEvents.TrySetResult(true);
+            releaseServer.TrySetResult(true);
+            connection?.Dispose();
+        }
         await serverTask.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
