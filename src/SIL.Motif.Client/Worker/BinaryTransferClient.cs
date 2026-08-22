@@ -16,49 +16,107 @@ internal static class BinaryTransferClient
         BinaryTransferOffer offer,
         Stream source,
         CancellationToken cancellationToken,
-        Func<BinaryTransferCompletion, CancellationToken, Task> sendCompletion)
+        Func<BinaryTransferCompletion, DateTimeOffset, CancellationToken, Task> sendCompletion)
     {
         if (!string.Equals(offer.Direction, "upload", StringComparison.Ordinal))
             throw new InvalidOperationException("Only upload offers can be sent by this client.");
         if (DateTimeOffset.UtcNow >= offer.ExpiresAt)
             throw new InvalidOperationException("The binary transfer offer has expired.");
 
+        var remaining = offer.ExpiresAt - DateTimeOffset.UtcNow;
+        if (remaining <= TimeSpan.Zero)
+            throw new InvalidOperationException("The binary transfer offer has expired.");
+        using var expiryCancellation = new CancellationTokenSource();
+        expiryCancellation.CancelAfter(remaining);
+        using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, expiryCancellation.Token);
+        var transferCancellation = linkedCancellation.Token;
         var binaryPipe = new NamedPipeClientStream(".", offer.PipeName, PipeDirection.Out, PipeOptions.Asynchronous);
         BinaryTransferCompletion completion;
         try
         {
             using (binaryPipe)
             {
-                using var cancellation = cancellationToken.Register(binaryPipe.Dispose);
+                using var cancellation = transferCancellation.Register(binaryPipe.Dispose);
                 await binaryPipe.ConnectAsync().ConfigureAwait(false);
-                cancellationToken.ThrowIfCancellationRequested();
+                ThrowIfExpired(offer, expiryCancellation, transferCancellation);
 
                 using var digest = SHA256.Create();
                 var buffer = new byte[BufferSize];
                 long count = 0;
                 while (true)
                 {
-                    var read = await source.ReadAsync(buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false);
+                    var read = await ReadWithDeadlineAsync(
+                        offer, source, buffer, transferCancellation, expiryCancellation).ConfigureAwait(false);
                     if (read == 0)
                         break;
                     if (count > offer.MaximumBytes - read)
                         throw new InvalidOperationException("The binary transfer exceeds the offered maximum.");
-                    await binaryPipe.WriteAsync(buffer, 0, read, cancellationToken).ConfigureAwait(false);
+                    await binaryPipe.WriteAsync(buffer, 0, read, transferCancellation).ConfigureAwait(false);
                     digest.TransformBlock(buffer, 0, read, null, 0);
                     count += read;
                 }
                 digest.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
-                await binaryPipe.FlushAsync(cancellationToken).ConfigureAwait(false);
+                await binaryPipe.FlushAsync(transferCancellation).ConfigureAwait(false);
+                ThrowIfExpired(offer, expiryCancellation, transferCancellation);
                 completion = new BinaryTransferCompletion(offer.TransferId, count, ToLowerHex(digest.Hash!));
             }
 
-            await sendCompletion(completion, cancellationToken).ConfigureAwait(false);
+            ThrowIfExpired(offer, expiryCancellation, transferCancellation);
+            await sendCompletion(completion, offer.ExpiresAt, transferCancellation).ConfigureAwait(false);
         }
-        catch
+        catch (Exception exception)
         {
             binaryPipe.Dispose();
+            if (expiryCancellation.IsCancellationRequested)
+                throw new InvalidOperationException("The binary transfer offer has expired.", exception);
             throw;
         }
+    }
+
+    private static void ThrowIfExpired(
+        BinaryTransferOffer offer, CancellationTokenSource expiryCancellation, CancellationToken transferCancellation)
+    {
+        if (expiryCancellation.IsCancellationRequested || DateTimeOffset.UtcNow >= offer.ExpiresAt)
+            throw new InvalidOperationException("The binary transfer offer has expired.");
+        transferCancellation.ThrowIfCancellationRequested();
+    }
+
+    private static async Task<int> ReadWithDeadlineAsync(
+        BinaryTransferOffer offer,
+        Stream source,
+        byte[] buffer,
+        CancellationToken transferCancellation,
+        CancellationTokenSource expiryCancellation)
+    {
+        ThrowIfExpired(offer, expiryCancellation, transferCancellation);
+        var readTask = source.ReadAsync(buffer, 0, buffer.Length, transferCancellation);
+        if (readTask.IsCompleted)
+            return await readTask.ConfigureAwait(false);
+
+        var remaining = offer.ExpiresAt - DateTimeOffset.UtcNow;
+        if (remaining <= TimeSpan.Zero)
+        {
+            ObserveFailure(readTask);
+            throw new InvalidOperationException("The binary transfer offer has expired.");
+        }
+        var deadlineTask = Task.Delay(remaining, transferCancellation);
+        if (await Task.WhenAny(readTask, deadlineTask).ConfigureAwait(false) == readTask)
+            return await readTask.ConfigureAwait(false);
+
+        ObserveFailure(readTask);
+        ThrowIfExpired(offer, expiryCancellation, transferCancellation);
+        throw new InvalidOperationException("The binary transfer offer has expired.");
+    }
+
+    private static void ObserveFailure(Task task)
+    {
+        task.ContinueWith(
+            completed =>
+            {
+                var ignored = completed.Exception;
+            }, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 
     private static string ToLowerHex(byte[] digest)
