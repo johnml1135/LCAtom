@@ -410,9 +410,11 @@ public sealed class WorkerConnection : IDisposable
             lock (_stateGate)
             {
                 _writeGate.Dispose();
-                _eventDispatchSignal.Dispose();
                 _shutdownCancellation.Dispose();
             }
+            await _eventDispatchLoop.ConfigureAwait(false);
+            lock (_stateGate)
+                _eventDispatchSignal.Dispose();
         }
         catch (Exception exception)
         {
