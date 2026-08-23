@@ -24,6 +24,75 @@ namespace SIL.Motif.Tests.Worker;
 public sealed class WorkerServerTests
 {
     [Fact]
+    public async Task RuntimeCompositionAllowsExactlyOneConcurrentCaller()
+    {
+        await using var server = WorkerServer.CreateForTests(
+            "worker-runtime-compose-" + Guid.NewGuid().ToString("N"), false);
+        var catalog = new ProjectDatabaseCatalog(MotifSchema.CurrentSchema, new Version(1, 0));
+        using var barrier = new Barrier(2);
+        var results = await Task.WhenAll(Enumerable.Range(0, 2).Select(_ => Task.Run(() =>
+        {
+            barrier.SignalAndWait();
+            try
+            {
+                return (Registry: server.CreateRuntimeRegistry(catalog,
+                    (jobs, key) => null!),
+                    Error: (Exception?)null);
+            }
+            catch (Exception error)
+            {
+                return (Registry: (ProjectRuntimeRegistry?)null, Error: error);
+            }
+        })));
+
+        Assert.Single(results, result => result.Registry is not null);
+        var failure = Assert.Single(results, result => result.Error is not null).Error;
+        Assert.IsType<InvalidOperationException>(failure);
+    }
+
+    [Fact]
+    public async Task RuntimeCompositionIsRejectedAfterStartAndDispose()
+    {
+        var catalog = new ProjectDatabaseCatalog(MotifSchema.CurrentSchema, new Version(1, 0));
+        await using (var started = WorkerServer.CreateForTests(
+            "worker-runtime-compose-started-" + Guid.NewGuid().ToString("N"), false))
+        {
+            using var registry = started.CreateRuntimeRegistry(catalog,
+                (jobs, key) => null!);
+            using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var running = started.StartAsync(cancellation.Token);
+            Assert.Throws<InvalidOperationException>(() => started.CreateRuntimeRegistry(catalog,
+                (jobs, key) => null!));
+            cancellation.Cancel();
+            await running.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+
+        var disposed = WorkerServer.CreateForTests(
+            "worker-runtime-compose-disposed-" + Guid.NewGuid().ToString("N"), false);
+        await disposed.DisposeAsync();
+        Assert.Throws<ObjectDisposedException>(() => disposed.CreateRuntimeRegistry(catalog,
+            (jobs, key) => null!));
+    }
+
+    [Fact]
+    public async Task DisposalContinuesAfterOwnedRuntimeRegistryFailure()
+    {
+        var server = WorkerServer.CreateForTests(
+            "worker-runtime-dispose-failure-" + Guid.NewGuid().ToString("N"));
+        server.SetRuntimeRegistryDisposeOverrideForTests(_ =>
+            throw new InvalidOperationException("injected runtime disposal failure"));
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            server.DisposeAsync().AsTask());
+
+        Assert.Equal("injected runtime disposal failure", failure.Message);
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => server.EventSink.SendAsync(
+            new ProjectLocator("C:\\workspace\\demo.fwdata", "project"),
+            WorkerCommands.ApplyRequested, System.Text.Json.JsonDocument.Parse("{}").RootElement.Clone(),
+            CancellationToken.None));
+    }
+
+    [Fact]
     public async Task LifetimeExitsAfterIdleTimeoutWhenNoWorkIsRegistered()
     {
         var clock = new ManualClock();

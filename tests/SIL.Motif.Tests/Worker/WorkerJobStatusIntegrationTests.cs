@@ -22,8 +22,8 @@ public sealed class WorkerJobStatusIntegrationTests
     [Fact]
     public async Task JobStatus_RoundsTripsOverNamedPipeFromOneReadyRuntime()
     {
-        var root = Path.Combine(Path.GetTempPath(), "motif-job-status-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
+        using var temporary = new TemporaryRoot("motif-job-status-");
+        var root = temporary.RootPath;
         await using var server = WorkerServer.CreateForTests("worker-job-status-" + Guid.NewGuid().ToString("N"), false);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         var ownership = WorkspaceOwnership.Bootstrap(Path.Combine(root, "owned"));
@@ -67,8 +67,8 @@ public sealed class WorkerJobStatusIntegrationTests
     [Fact]
     public async Task MissingJob_IsMappedToTypedKeyNotFoundException()
     {
-        var root = Path.Combine(Path.GetTempPath(), "motif-job-status-missing-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
+        using var temporary = new TemporaryRoot("motif-job-status-missing-");
+        var root = temporary.RootPath;
         await using var server = WorkerServer.CreateForTests("worker-job-status-missing-" + Guid.NewGuid().ToString("N"), false);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var ownership = WorkspaceOwnership.Bootstrap(Path.Combine(root, "owned"));
@@ -93,8 +93,7 @@ public sealed class WorkerJobStatusIntegrationTests
     [Fact]
     public async Task MalformedRequestInputsAreRejectedBeforeSending()
     {
-        await Assert.ThrowsAsync<ArgumentNullException>(() => new WorkerJobClient(null!)
-            .GetStatusAsync(null!, "job-1", CancellationToken.None));
+        Assert.Throws<ArgumentNullException>(() => new JobStatusRequest(null!, "job-1"));
         Assert.Throws<ArgumentException>(() => new JobStatusRequest(
             new ProjectLocator("C:\\workspace\\demo.fwdata", "project"), " "));
     }
@@ -119,8 +118,8 @@ public sealed class WorkerJobStatusIntegrationTests
     [Fact]
     public async Task NonReadyAndDifferentProjectRuntimesAreRefusedWithoutOpeningDatabase()
     {
-        var root = Path.Combine(Path.GetTempPath(), "motif-job-status-refusal-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
+        using var temporary = new TemporaryRoot("motif-job-status-refusal-");
+        var root = temporary.RootPath;
         var ownership = WorkspaceOwnership.Bootstrap(Path.Combine(root, "owned"));
         var catalog = new ProjectDatabaseCatalog(MotifSchema.CurrentSchema, new Version(1, 0));
         using var work = new WorkerWorkTracker();
@@ -143,8 +142,8 @@ public sealed class WorkerJobStatusIntegrationTests
     [Fact]
     public async Task DifferentProjectPathIsRefusedOverPipeWithoutOpeningItsDatabase()
     {
-        var root = Path.Combine(Path.GetTempPath(), "motif-job-status-pipe-different-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
+        using var temporary = new TemporaryRoot("motif-job-status-pipe-different-");
+        var root = temporary.RootPath;
         await using var server = WorkerServer.CreateForTests("worker-job-status-pipe-different-" + Guid.NewGuid().ToString("N"), false);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var ownership = WorkspaceOwnership.Bootstrap(Path.Combine(root, "owned"));
@@ -172,8 +171,8 @@ public sealed class WorkerJobStatusIntegrationTests
     [Fact]
     public async Task ReleasedRuntimeIsRefusedOverPipeBeforeDatabaseRead()
     {
-        var root = Path.Combine(Path.GetTempPath(), "motif-job-status-pipe-not-ready-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
+        using var temporary = new TemporaryRoot("motif-job-status-pipe-not-ready-");
+        var root = temporary.RootPath;
         await using var server = WorkerServer.CreateForTests("worker-job-status-pipe-not-ready-" + Guid.NewGuid().ToString("N"), false);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var ownership = WorkspaceOwnership.Bootstrap(Path.Combine(root, "owned"));
@@ -214,5 +213,22 @@ public sealed class WorkerJobStatusIntegrationTests
 
         cancellation.Cancel();
         await running.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    private sealed class TemporaryRoot : IDisposable
+    {
+        public TemporaryRoot(string prefix)
+        {
+            RootPath = Path.Combine(Path.GetTempPath(), prefix + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(RootPath);
+        }
+
+        public string RootPath { get; }
+
+        public void Dispose()
+        {
+            try { Directory.Delete(RootPath, true); }
+            catch (DirectoryNotFoundException) { }
+        }
     }
 }

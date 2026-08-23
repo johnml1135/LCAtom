@@ -36,6 +36,7 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
     private readonly ConcurrentDictionary<Task, byte> _handlers = new();
     private readonly object _gate = new object();
     private bool _ownsRuntimeRegistry;
+    private Action<ProjectRuntimeRegistry>? _runtimeRegistryDisposeOverride;
     private string? _ownedTestRoot;
     private bool _started;
     private bool _disposed;
@@ -118,12 +119,31 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
         Func<JobRepository, string, WorkerRecoveryCoordinator> recoveryFactory,
         Func<DateTimeOffset>? now = null)
     {
-        if (_runtimeRegistry is not null)
-            throw new InvalidOperationException("The worker runtime registry is already composed.");
-        if (_workTracker is not WorkerWorkTracker work)
-            throw new InvalidOperationException("Runtime composition requires the worker work tracker.");
-        _runtimeRegistry = new ProjectRuntimeRegistry(catalog, recoveryFactory, work, now, _hostRegistry);
-        return _runtimeRegistry;
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            if (_started)
+                throw new InvalidOperationException("Runtime composition is closed after the server starts.");
+            if (_runtimeRegistry is not null)
+                throw new InvalidOperationException("The worker runtime registry is already composed.");
+            if (_workTracker is not WorkerWorkTracker work)
+                throw new InvalidOperationException("Runtime composition requires the worker work tracker.");
+            _runtimeRegistry = new ProjectRuntimeRegistry(catalog, recoveryFactory, work, now, _hostRegistry);
+            _ownsRuntimeRegistry = true;
+            return _runtimeRegistry;
+        }
+    }
+
+    /// <summary>Injects a disposal failure for testing cleanup ordering and aggregation.</summary>
+    internal void SetRuntimeRegistryDisposeOverrideForTests(Action<ProjectRuntimeRegistry> dispose)
+    {
+        ArgumentNullException.ThrowIfNull(dispose);
+        lock (_gate)
+        {
+            if (!_ownsRuntimeRegistry || _runtimeRegistry is null)
+                throw new InvalidOperationException("Only an owned test registry can be overridden.");
+            _runtimeRegistryDisposeOverride = dispose;
+        }
     }
 
     /// <summary>Derives the stable control pipe name for the current Windows user.</summary>
@@ -176,6 +196,7 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
     /// <summary>Stops accepting connections and releases process ownership.</summary>
     public async ValueTask DisposeAsync()
     {
+        var failures = new List<Exception>();
         lock (_gate)
         {
             if (_disposed)
@@ -188,34 +209,48 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
             try { await _acceptLoop.ConfigureAwait(false); } catch { }
         }
         foreach (var connection in _connections.Values)
-            await connection.DisposeAsync().ConfigureAwait(false);
+        {
+            try { await connection.DisposeAsync().ConfigureAwait(false); }
+            catch (Exception exception) { failures.Add(exception); }
+        }
         while (!_handlers.IsEmpty)
         {
             var handlers = _handlers.Keys.ToArray();
             try { await Task.WhenAll(handlers).ConfigureAwait(false); }
-            catch { }
+            catch (Exception exception) { failures.Add(exception); }
         }
         if (_ownsRuntimeRegistry)
-            _runtimeRegistry?.Dispose();
+        {
+            try
+            {
+                if (_runtimeRegistry is not null)
+                    (_runtimeRegistryDisposeOverride ?? (registry => registry.Dispose()))(_runtimeRegistry);
+            }
+            catch (Exception exception) { failures.Add(exception); }
+        }
         if (_ownedTestRoot is not null)
         {
             try { Directory.Delete(_ownedTestRoot, true); }
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
         }
-        await _eventSink.DisposeAsync().ConfigureAwait(false);
-        _hostRegistry.Dispose();
-        Exception? ownershipFailure = null;
+        try { await _eventSink.DisposeAsync().ConfigureAwait(false); }
+        catch (Exception exception) { failures.Add(exception); }
+        try { _hostRegistry.Dispose(); }
+        catch (Exception exception) { failures.Add(exception); }
         if (IsOwner)
         {
             try { _ownerMutex.Release(); }
-            catch (Exception exception) { ownershipFailure = exception; }
+            catch (Exception exception) { failures.Add(exception); }
         }
         try { _ownerMutex.Dispose(); }
-        catch (Exception exception) { ownershipFailure ??= exception; }
-        _shutdown.Dispose();
-        if (ownershipFailure is not null)
-            throw new InvalidOperationException("The worker owner mutex could not be released.", ownershipFailure);
+        catch (Exception exception) { failures.Add(exception); }
+        try { _shutdown.Dispose(); }
+        catch (Exception exception) { failures.Add(exception); }
+        if (failures.Count == 1)
+            throw failures[0];
+        if (failures.Count > 1)
+            throw new AggregateException("Worker shutdown encountered cleanup failures.", failures);
     }
 
     private async Task AcceptLoopAsync(CancellationToken cancellationToken)

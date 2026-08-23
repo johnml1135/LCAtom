@@ -142,6 +142,9 @@ public sealed class WorkerProtocolTests
         var request = new JobStatusRequest(
             new ProjectLocator("C:\\workspace\\demo.fwdata", "fieldworks-project"), "job-1");
         var requestJson = JsonSerializer.Serialize(request, WorkerJson.CreateOptions());
+        Assert.Equal(
+            "{\"Project\":{\"FullFwDataPath\":\"C:\\\\workspace\\\\demo.fwdata\",\"FieldWorksProjectIdentity\":\"fieldworks-project\"},\"JobId\":\"job-1\"}",
+            requestJson);
         var parsedRequest = JsonSerializer.Deserialize<JobStatusRequest>(
             requestJson.TrimEnd('}') + ",\"futureField\":true}", WorkerJson.CreateOptions());
 
@@ -153,11 +156,30 @@ public sealed class WorkerProtocolTests
             JobStatus.WaitingForBaseline, 2, "2026-08-23T12:00:00Z", false,
             JobFailureCategory.None, 4);
         var responseJson = JsonSerializer.Serialize(response, WorkerJson.CreateOptions());
+        Assert.Equal(
+            "{\"JobId\":\"job-1\",\"ProjectKey\":\"workspace-key\",\"Found\":true,\"Kind\":\"dry-run\",\"Status\":\"waiting-for-baseline\",\"Attempt\":2,\"UpdatedUtc\":\"2026-08-23T12:00:00Z\",\"CancellationRequested\":false,\"FailureCategory\":\"none\",\"Version\":4}",
+            responseJson);
         var parsedResponse = JsonSerializer.Deserialize<JobStatusResponse>(
             responseJson.TrimEnd('}') + ",\"futureField\":true}", WorkerJson.CreateOptions());
 
         Assert.Equal(response, parsedResponse);
         Assert.Contains("waiting-for-baseline", responseJson, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("{\"JobId\":\"job-1\"}")]
+    [InlineData("{\"Project\":{\"FullFwDataPath\":\"C:\\\\workspace\\\\demo.fwdata\",\"FieldWorksProjectIdentity\":\"fieldworks-project\"}}")]
+    public void JobStatusRequest_RejectsMissingRequiredProperties(string json)
+    {
+        Assert.ThrowsAny<Exception>(() => JsonSerializer.Deserialize<JobStatusRequest>(
+            json, WorkerJson.CreateOptions()));
+    }
+
+    [Fact]
+    public void JobStatusResponse_RejectsMissingRequiredProperties()
+    {
+        Assert.ThrowsAny<Exception>(() => JsonSerializer.Deserialize<JobStatusResponse>(
+            "{\"Found\":false}", WorkerJson.CreateOptions()));
     }
 
     [Theory]

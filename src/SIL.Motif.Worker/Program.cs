@@ -19,7 +19,7 @@ internal static class Program
             "SIL", "Motif");
         var ownership = WorkspaceOwnership.Bootstrap(workerRoot);
         var catalog = new ProjectDatabaseCatalog(MotifSchema.CurrentSchema, new Version(1, 0));
-        using var runtimes = server.CreateRuntimeRegistry(catalog,
+        server.CreateRuntimeRegistry(catalog,
             (jobs, key) => new WorkerRecoveryCoordinator(new WorkerRecovery(jobs),
                 new WorkspaceCleaner(ownership)));
         if (!server.TryAcquireOwnership())
