@@ -462,6 +462,8 @@ state remains. An ordinary connected client with no work does not hold the proce
 `TryReleaseIfIdle` succeeds only when there is no active job, no live host registration, no command using the
 runtime, and no pending event. The public registry constructor requires both activity predicates; the
 WorkerServer composition boundary supplies the real project host registry and event-sink pending-state query.
+Public callers also supply one `ProjectRuntimeActivity` boundary and perform activity mutations through it;
+the idle decision and those mutations use that same synchronization root.
 
 Use this concrete construction boundary:
 
@@ -480,7 +482,8 @@ public sealed class ProjectRuntimeRegistry : IDisposable
         Func<JobRepository, string, WorkerRecoveryCoordinator> recoveryFactory,
         WorkerWorkTracker work,
         Func<string, bool> hasLiveHost,
-        Func<string, bool> hasPendingEvents);
+        Func<string, bool> hasPendingEvents,
+        ProjectRuntimeActivity activity);
 
     public ProjectRuntime GetOrOpen(ProjectLocator project)
     {

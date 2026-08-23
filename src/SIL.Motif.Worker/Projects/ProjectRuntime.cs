@@ -47,10 +47,10 @@ public sealed class ProjectRuntime : IDisposable
     /// <summary>Gets the stable key used for all runtime and job routing.</summary>
     public string WorkspaceKey { get; }
 
-    /// <summary>Gets the exclusively opened Motif store.</summary>
+    /// <summary>Gets the exclusively opened Motif store; callers must hold an operation lease while accessing it.</summary>
     public MotifDatabase Database { get; }
 
-    /// <summary>Gets repositories bound to the exclusively opened Motif store.</summary>
+    /// <summary>Gets repositories bound to the store; callers must hold an operation lease while accessing them.</summary>
     public JobRepository Jobs { get; }
 
     /// <summary>Gets the current admission state.</summary>
@@ -218,10 +218,21 @@ public sealed class ProjectRuntime : IDisposable
 
     private void DisposeResources()
     {
-        lock (_state) _workLease?.Dispose();
-        _workLease = null;
-        _operations.Dispose();
-        Database.Dispose();
+        Exception? gateFailure = null;
+        try { _operations.Dispose(); }
+        catch (Exception exception) { gateFailure = exception; }
+        finally
+        {
+            lock (_state) _workLease?.Dispose();
+            _workLease = null;
+        }
+        try { Database.Dispose(); }
+        catch (Exception exception)
+        {
+            if (gateFailure is not null) throw new AggregateException(gateFailure, exception);
+            throw;
+        }
+        if (gateFailure is not null) throw gateFailure;
     }
 
     private sealed class OperationLease : IDisposable

@@ -15,6 +15,7 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
 {
     internal const int PendingCorrelationCapacity = 128;
     private readonly object _gate = new();
+    private readonly object _activity;
     private readonly IProjectHostRegistry _hosts;
     private readonly bool _ownsHosts;
     private readonly Dictionary<string, PendingEvent> _pending = new(StringComparer.Ordinal);
@@ -31,6 +32,7 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
     private WorkerEventSink(IProjectHostRegistry hosts, bool ownsHosts)
     {
         _hosts = hosts ?? throw new ArgumentNullException(nameof(hosts));
+        _activity = hosts is ProjectHostRegistry projectHosts ? projectHosts.ActivitySync : new object();
         _ownsHosts = ownsHosts;
     }
 
@@ -39,6 +41,7 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
     {
         if (stream is null) throw new ArgumentNullException(nameof(stream));
         if (writeGate is null) throw new ArgumentNullException(nameof(writeGate));
+        lock (_activity)
         lock (_gate)
         {
             ThrowIfDisposed();
@@ -50,6 +53,7 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
     internal void UnregisterLiveHost(ProjectLocator project, string connectionId, string hostSessionId)
     {
         var key = ProjectWorkspaceKey.Compute(project);
+        lock (_activity)
         lock (_gate)
         {
             if (_disposed) return;
@@ -60,6 +64,7 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
 
     internal bool HasPendingEvents(string workspaceKey)
     {
+        lock (_activity)
         lock (_gate)
         {
             foreach (var pending in _pending.Values)
@@ -74,6 +79,7 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(project);
         var key = ProjectWorkspaceKey.Compute(project);
+        lock (_activity)
         lock (_gate)
         {
             ThrowIfDisposed();
@@ -104,6 +110,7 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
     public void AcceptResult(WorkerEventResultEnvelope result)
     {
         ArgumentNullException.ThrowIfNull(result);
+        lock (_activity)
         lock (_gate)
         {
             if (!_pending.TryGetValue(result.EventId, out var pending))
@@ -122,6 +129,7 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
     public ValueTask DisposeAsync()
     {
         Task disposeTask;
+        lock (_activity)
         lock (_gate)
         {
             if (_disposeTask is null)
@@ -145,6 +153,7 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
             throw new ArgumentException("Unknown worker event discriminator.", nameof(eventName));
         WorkerEventEnvelope envelope;
         TaskCompletionSource<WorkerEventResultEnvelope> completion;
+        lock (_activity)
         lock (_gate)
         {
             ThrowIfDisposed();

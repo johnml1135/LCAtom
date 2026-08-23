@@ -26,12 +26,20 @@ internal sealed class ProjectHostRegistry : IProjectHostRegistry
     private readonly Dictionary<string, ProjectHostRegistration> _registrations = new(StringComparer.Ordinal);
     private bool _disposed;
 
+    internal object ActivitySync => _sync;
+
     public void Register(ProjectLocator project, ProjectHostRegistration registration)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(registration);
         if (string.IsNullOrWhiteSpace(registration.ConnectionId))
             throw new ArgumentException("A connection id is required.", nameof(registration));
+        if (string.IsNullOrWhiteSpace(registration.HostSessionId))
+            throw new ArgumentException("A host session id is required.", nameof(registration));
+        if (registration.ProtocolVersion <= 0)
+            throw new ArgumentOutOfRangeException(nameof(registration), "The protocol version must be positive.");
+        ArgumentNullException.ThrowIfNull(registration.Stream);
+        ArgumentNullException.ThrowIfNull(registration.WriteGate);
         var key = ProjectWorkspaceKey.Compute(project);
         lock (_sync)
         {

@@ -81,7 +81,7 @@ public sealed class ProjectRuntimeTests : IDisposable
                     throw new InvalidOperationException("recovery failed");
                 return new WorkerRecoveryCoordinator(new WorkerRecovery(jobs, _clock),
                     new WorkspaceCleaner(ownership));
-            }, work, _ => false, _ => false, () => _clock.UtcNow);
+            }, work, _ => false, _ => false, new ProjectRuntimeActivity(), () => _clock.UtcNow);
 
         Assert.Throws<InvalidOperationException>(() => registry.GetOrOpen(project));
         Assert.False(registry.TryGet(ProjectWorkspaceKey.Compute(project), out _));
@@ -89,6 +89,7 @@ public sealed class ProjectRuntimeTests : IDisposable
         using var otherRegistry = new ProjectRuntimeRegistry(catalog,
             (jobs, key) => new WorkerRecoveryCoordinator(new WorkerRecovery(jobs, _clock),
                 new WorkspaceCleaner(ownership)), otherWork, _ => false, _ => false,
+            new ProjectRuntimeActivity(),
             () => _clock.UtcNow);
         var other = otherRegistry.GetOrOpen(project);
         other.Dispose();
@@ -113,6 +114,70 @@ public sealed class ProjectRuntimeTests : IDisposable
         Assert.False(laterShared.IsCompleted);
         exclusiveLease.Dispose();
         using var laterSharedLease = await laterShared.WaitAsync(TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public async Task GateCancellationAndDisposalDoNotCorruptWaitingExclusiveCount()
+    {
+        using var gate = new ProjectOperationGate();
+        using var held = await gate.AcquireOperationAsync(CancellationToken.None);
+        using var cancellation = new CancellationTokenSource();
+        var cancelled = gate.AcquireExclusiveAsync(cancellation.Token);
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelled);
+        var later = gate.AcquireOperationAsync(CancellationToken.None);
+        held.Dispose();
+        using var laterLease = await later.WaitAsync(TimeSpan.FromSeconds(1));
+        laterLease.Dispose();
+        var dispose = Task.Run(gate.Dispose);
+        await dispose.WaitAsync(TimeSpan.FromSeconds(1));
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => gate.AcquireOperationAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task RuntimeDisposeWaitsForAnActiveOperationBeforeClosingTheDatabase()
+    {
+        var project = Project("C:/workspace/dispose-active.fwdata", "project");
+        using var work = new WorkerWorkTracker();
+        using var registry = Registry(work);
+        var runtime = registry.GetOrOpen(project);
+        var lease = await runtime.AcquireOperationAsync(CancellationToken.None);
+        var disposing = Task.Run(runtime.Dispose);
+        await Task.Delay(50);
+        Assert.False(disposing.IsCompleted);
+        lease.Dispose();
+        await disposing.WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.Equal(ProjectRuntimeAdmission.Disposed, runtime.Admission);
+    }
+
+    [Fact]
+    public async Task DifferentProjectRecoveryDoesNotWaitForBlockedRecovery()
+    {
+        var first = Project("C:/workspace/blocked-a.fwdata", "a");
+        var second = Project("C:/workspace/blocked-b.fwdata", "b");
+        var firstKey = ProjectWorkspaceKey.Compute(first);
+        using var work = new WorkerWorkTracker();
+        var ownership = WorkspaceOwnership.Bootstrap(Path.Combine(_root, "parallel-owned"));
+        var catalog = new ProjectDatabaseCatalog(MotifSchema.CurrentSchema, new Version(1, 0));
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        using var registry = new ProjectRuntimeRegistry(catalog, (jobs, key) =>
+        {
+            if (key == firstKey)
+            {
+                entered.Set();
+                release.Wait(TimeSpan.FromSeconds(5));
+            }
+            return new WorkerRecoveryCoordinator(new WorkerRecovery(jobs, _clock),
+                new WorkspaceCleaner(ownership));
+        }, work, _ => false, _ => false, new ProjectRuntimeActivity(), () => _clock.UtcNow);
+
+        var openingFirst = Task.Run(() => registry.GetOrOpen(first));
+        Assert.True(entered.Wait(TimeSpan.FromSeconds(1)));
+        var openingSecond = Task.Run(() => registry.GetOrOpen(second));
+        await openingSecond.WaitAsync(TimeSpan.FromSeconds(1));
+        release.Set();
+        await openingFirst.WaitAsync(TimeSpan.FromSeconds(1));
     }
 
     [Fact]
@@ -193,6 +258,23 @@ public sealed class ProjectRuntimeTests : IDisposable
     }
 
     [Fact]
+    public void HostRegistrationRejectsInvalidGenerationAndTransportValues()
+    {
+        using var hosts = new ProjectHostRegistry();
+        var project = Project("C:/workspace/invalid-host.fwdata", "project");
+        using var stream = new MemoryStream();
+        using var gate = new SemaphoreSlim(1, 1);
+        Assert.Throws<ArgumentException>(() => hosts.Register(project,
+            new ProjectHostRegistration("connection", "", 1, stream, gate)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => hosts.Register(project,
+            new ProjectHostRegistration("connection", "session", 0, stream, gate)));
+        Assert.Throws<ArgumentNullException>(() => hosts.Register(project,
+            new ProjectHostRegistration("connection", "session", 1, null!, gate)));
+        Assert.Throws<ArgumentNullException>(() => hosts.Register(project,
+            new ProjectHostRegistration("connection", "session", 1, stream, null!)));
+    }
+
+    [Fact]
     public void ActiveDurableJobHoldsAndThenReleasesWorkerLease()
     {
         var project = Project("C:/workspace/jobs.fwdata", "project");
@@ -216,7 +298,7 @@ public sealed class ProjectRuntimeTests : IDisposable
         return new ProjectRuntimeRegistry(catalog,
             (jobs, key) => new WorkerRecoveryCoordinator(new WorkerRecovery(jobs, _clock),
                 new WorkspaceCleaner(ownership)), work, _ => false,
-            hasPendingEvents ?? (_ => false), () => _clock.UtcNow);
+            hasPendingEvents ?? (_ => false), new ProjectRuntimeActivity(), () => _clock.UtcNow);
     }
 
     private ProjectLocator Project(string path, string identity) =>

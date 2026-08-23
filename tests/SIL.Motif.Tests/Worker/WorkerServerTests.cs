@@ -138,6 +138,42 @@ public sealed class WorkerServerTests
     }
 
     [Fact]
+    public async Task DisposalDrainsAClientStalledBeforeHandshake()
+    {
+        await using var server = WorkerServer.CreateForTests("worker-stalled-" + Guid.NewGuid().ToString("N"));
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var running = server.StartAsync(cancellation.Token);
+        using var pipe = new NamedPipeClientStream(".", server.EndpointName, PipeDirection.InOut,
+            PipeOptions.Asynchronous);
+        await pipe.ConnectAsync(5000, cancellation.Token);
+        await server.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2));
+        await running.WaitAsync(TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
+    public async Task OneConnectionCanOwnAndReleaseMultipleProjectRoutes()
+    {
+        var name = "worker-multi-project-" + Guid.NewGuid().ToString("N");
+        await using var server = WorkerServer.CreateForTests(name);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var running = server.StartAsync(cancellation.Token);
+        using var client = await new SIL.Motif.Client.Worker.WorkerClient().ConnectAsync(
+            server.EndpointName, Handshake(), TimeSpan.FromSeconds(5), cancellation.Token);
+        var first = EventProject("same-connection-a");
+        var second = EventProject("same-connection-b");
+        server.RegisterLiveHost(first, client.ServerConnectionId!);
+        server.RegisterLiveHost(second, client.ServerConnectionId!);
+        client.Dispose();
+        await client.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+        await Assert.ThrowsAnyAsync<Exception>(() => server.EventSink.RequestApplyAsync(
+            first, JsonDocument.Parse("{}").RootElement.Clone(), CancellationToken.None));
+        await Assert.ThrowsAnyAsync<Exception>(() => server.EventSink.RequestApplyAsync(
+            second, JsonDocument.Parse("{}").RootElement.Clone(), CancellationToken.None));
+        cancellation.Cancel();
+        await running.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
     public async Task OrdinaryClientCoexistsWithExplicitlyRegisteredLiveHost()
     {
         var name = "worker-test-" + Guid.NewGuid().ToString("N");

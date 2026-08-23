@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Pipes;
+using System.Linq;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text.Json;
@@ -29,6 +31,7 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
     private readonly CancellationTokenSource _shutdown = new CancellationTokenSource();
     private readonly ConcurrentDictionary<string, WorkerControlConnection> _connections =
         new ConcurrentDictionary<string, WorkerControlConnection>(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<Task, byte> _handlers = new();
     private readonly object _gate = new object();
     private bool _started;
     private bool _disposed;
@@ -163,6 +166,12 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
         }
         foreach (var connection in _connections.Values)
             await connection.DisposeAsync().ConfigureAwait(false);
+        while (!_handlers.IsEmpty)
+        {
+            var handlers = _handlers.Keys.ToArray();
+            try { await Task.WhenAll(handlers).ConfigureAwait(false); }
+            catch { }
+        }
         await _eventSink.DisposeAsync().ConfigureAwait(false);
         _hostRegistry.Dispose();
         Exception? ownershipFailure = null;
@@ -193,7 +202,10 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
             {
                 return;
             }
-            _ = HandleConnectionAsync(pipe, linked.Token);
+            var handler = HandleConnectionAsync(pipe, linked.Token);
+            _handlers.TryAdd(handler, 0);
+            _ = handler.ContinueWith(completed => _handlers.TryRemove(completed, out _),
+                CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
         }
     }
 
@@ -247,9 +259,10 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
         private readonly int _protocolVersion;
         private readonly WorkerEventSink _eventSink;
         private readonly SemaphoreSlim _writeGate = new SemaphoreSlim(1, 1);
-        private bool _liveHost;
-        private ProjectLocator? _hostProject;
-        private string? _hostSessionId;
+        private readonly object _hostSync = new();
+        private readonly Dictionary<string, (ProjectLocator Project, string SessionId)> _hostProjects =
+            new(StringComparer.Ordinal);
+        private bool _disposed;
 
         public WorkerControlConnection(Stream stream, int protocolVersion, WorkerEventSink eventSink,
             string connectionId)
@@ -265,35 +278,34 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
         public void RegisterLiveHost(ProjectLocator project)
         {
             var sessionId = Guid.NewGuid().ToString("N");
-            _eventSink.RegisterLiveHost(project, Id, sessionId, _stream,
-                _protocolVersion, _writeGate);
-            _hostProject = project;
-            _hostSessionId = sessionId;
-            _liveHost = true;
+            var key = ProjectWorkspaceKey.Compute(project);
+            lock (_hostSync)
+            {
+                if (_disposed) throw new ObjectDisposedException(nameof(WorkerControlConnection));
+                _eventSink.RegisterLiveHost(project, Id, sessionId, _stream,
+                    _protocolVersion, _writeGate);
+                _hostProjects[key] = (project, sessionId);
+            }
         }
 
         public void UnregisterLiveHost()
         {
-            if (!_liveHost)
-                return;
-            if (_hostProject is not null && _hostSessionId is not null)
-                _eventSink.UnregisterLiveHost(_hostProject, Id, _hostSessionId);
-            _hostProject = null;
-            _hostSessionId = null;
-            _liveHost = false;
+            lock (_hostSync)
+            {
+                foreach (var registration in _hostProjects.Values)
+                    _eventSink.UnregisterLiveHost(registration.Project, Id, registration.SessionId);
+                _hostProjects.Clear();
+            }
         }
 
         public void UnregisterLiveHost(ProjectLocator project)
         {
-            if (!_liveHost || _hostProject is null) return;
-            if (!ReferenceEquals(project, _hostProject) &&
-                !StringComparer.Ordinal.Equals(ProjectWorkspaceKey.Compute(project),
-                    ProjectWorkspaceKey.Compute(_hostProject))) return;
-            if (_hostSessionId is null) return;
-            _eventSink.UnregisterLiveHost(project, Id, _hostSessionId);
-            _hostProject = null;
-            _hostSessionId = null;
-            _liveHost = false;
+            var key = ProjectWorkspaceKey.Compute(project);
+            lock (_hostSync)
+            {
+                if (!_hostProjects.Remove(key, out var registration)) return;
+                _eventSink.UnregisterLiveHost(registration.Project, Id, registration.SessionId);
+            }
         }
 
         public Task WriteAsync(object value, CancellationToken cancellationToken) =>
@@ -330,6 +342,12 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
 
         public ValueTask DisposeAsync()
         {
+            lock (_hostSync)
+            {
+                if (_disposed) return ValueTask.CompletedTask;
+                _disposed = true;
+            }
+            UnregisterLiveHost();
             _stream.Dispose();
             return ValueTask.CompletedTask;
         }
