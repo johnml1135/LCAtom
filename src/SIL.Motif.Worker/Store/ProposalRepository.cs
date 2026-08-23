@@ -217,7 +217,8 @@ public sealed class ProposalRepository : IProposalRepository
             ? null
             : new DecisionRecord(proposalId, reader.GetString(12), reader.GetString(7), reader.GetString(8),
                 reader.GetString(9), reader.IsDBNull(10) ? null : reader.GetString(10), reader.GetString(11));
-        var bytes = (byte[])reader[2];
+        if (reader.IsDBNull(2) || reader[2] is not byte[] bytes)
+            throw new InvalidDataException("Stored Proposal JSON must be a non-null BLOB.");
         string json;
         try
         {

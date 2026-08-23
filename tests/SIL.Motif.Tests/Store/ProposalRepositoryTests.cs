@@ -82,6 +82,27 @@ public sealed class ProposalRepositoryTests : IDisposable
         Assert.Throws<InvalidDataException>(() => repository.Get(id));
     }
 
+    [Fact]
+    public void RejectsTextProposalJsonCorruptionAsInvalidData()
+    {
+        var project = new ProjectLocator(Path.Combine(_root, "text-corrupt.fwdata"), "text-corrupt");
+        using var database = MotifDatabase.OpenOwned(Path.Combine(_root, "text-corrupt.motif.db"), project,
+            MotifSchema.CurrentSchema, new Version(1, 0));
+        var id = CanonicalId.Mint("proposal/");
+        var repository = new ProposalRepository(database);
+        repository.SaveRevision(new ProposalRevisionRecord(id, "sha256:text", "{\"proposalId\":\"" + id.Value + "\"}",
+            "proposed", null, null, null));
+        using (var connection = database.OpenConnection())
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "UPDATE ProposalRevisions SET ProposalJson = CAST($json AS TEXT);";
+            command.Parameters.AddWithValue("$json", "text corruption");
+            command.ExecuteNonQuery();
+        }
+
+        Assert.Throws<InvalidDataException>(() => repository.Get(id));
+    }
+
     public void Dispose()
     {
         try { Directory.Delete(_root, true); }

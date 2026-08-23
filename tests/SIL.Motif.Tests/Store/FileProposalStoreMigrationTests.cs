@@ -137,6 +137,49 @@ public sealed class FileProposalStoreMigrationTests : IDisposable
     }
 
     [Fact]
+    public void RejectsSourceMutationBeforeCommitAndLeavesItRetryable()
+    {
+        var source = SeedSource(Path.Combine(_root, "before-commit"));
+        var project = new ProjectLocator(Path.Combine(_root, "before-commit.fwdata"), "project");
+        using var database = MotifDatabase.OpenOwned(Path.Combine(_root, "before-commit.motif.db"), project,
+            MotifSchema.CurrentSchema, new Version(1, 0));
+
+        Assert.Throws<InvalidDataException>(() => FileProposalStoreMigration.ImportInto(source.Layout, database,
+            renameSourceAfterCommit: false, beforeCommit: () => File.AppendAllText(source.ObjectPath, " ")));
+        Assert.True(File.Exists(source.ObjectPath));
+        Assert.Equal(0L, Count(database, "MigrationLedger"));
+    }
+
+    [Fact]
+    public void RejectsImmutableByteMutationBeforeArchive()
+    {
+        var source = SeedSource(Path.Combine(_root, "before-archive"));
+        var project = new ProjectLocator(Path.Combine(_root, "before-archive.fwdata"), "project");
+        using var database = MotifDatabase.OpenOwned(Path.Combine(_root, "before-archive.motif.db"), project,
+            MotifSchema.CurrentSchema, new Version(1, 0));
+
+        Assert.Throws<InvalidDataException>(() => FileProposalStoreMigration.ImportInto(source.Layout, database,
+            beforeArchive: () => File.AppendAllText(source.ObjectPath, " ")));
+        Assert.True(Directory.Exists(source.Layout.RootDirectory));
+        Assert.Throws<InvalidDataException>(() => FileProposalStoreMigration.ImportInto(source.Layout, database));
+        Assert.True(Directory.Exists(source.Layout.RootDirectory));
+    }
+
+    [Fact]
+    public void ArchivesChangedFileSnapshotAfterRetryWhenOnlyNewDraftWasAdded()
+    {
+        var source = SeedSource(Path.Combine(_root, "before-archive-draft"));
+        var project = new ProjectLocator(Path.Combine(_root, "before-archive-draft.fwdata"), "project");
+        using var database = MotifDatabase.OpenOwned(Path.Combine(_root, "before-archive-draft.motif.db"), project,
+            MotifSchema.CurrentSchema, new Version(1, 0));
+        Assert.Throws<InvalidDataException>(() => FileProposalStoreMigration.ImportInto(source.Layout, database,
+            beforeArchive: () => File.WriteAllText(Path.Combine(source.Layout.DraftsDirectory, "new.json"), "{\"proposalId\":\"" + source.ProposalId + "\",\"draft\":true}")));
+        var retry = FileProposalStoreMigration.ImportInto(source.Layout, database);
+        Assert.True(retry.SourceRenamed);
+        Assert.False(Directory.Exists(source.Layout.RootDirectory));
+    }
+
+    [Fact]
     public void ImportsEveryHistoricalRevisionAndPreservesAnchorJson()
     {
         var root = Path.Combine(_root, "history");
@@ -221,6 +264,14 @@ public sealed class FileProposalStoreMigrationTests : IDisposable
     }
 
     private sealed record SeededSource(LegacyProposalStoreLayout Layout, string ObjectPath, byte[] ObjectBytes, string ProposalId, string Digest);
+
+    private static long Count(MotifDatabase database, string table)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM " + table + ";";
+        return Convert.ToInt64(command.ExecuteScalar());
+    }
 
     public void Dispose()
     {

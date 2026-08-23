@@ -56,6 +56,28 @@ public static class LegacyBulkStoreMigration
             ["AssessmentPins"] = ["AssessmentId", "PinnedBy"]
         };
 
+    private static readonly IReadOnlyDictionary<string, bool[]> ExpectedNotNull =
+        new Dictionary<string, bool[]>(StringComparer.Ordinal)
+        {
+            ["Corpora"] = [false, true],
+            ["CorpusDocuments"] = [true, true, true, true, true, true, true, true, false, false, false],
+            ["Assessments"] = [false, true, true, true, false, true, true, true, true, true, true, true],
+            ["AssessedWords"] = [false, true, true, true, true],
+            ["ParsedAnalyses"] = [true, true, false, true, true, true],
+            ["AssessmentPins"] = [true, true, true]
+        };
+
+    private static readonly IReadOnlyDictionary<string, ForeignKeySpec[]> ExpectedForeignKeys =
+        new Dictionary<string, ForeignKeySpec[]>(StringComparer.Ordinal)
+        {
+            ["Corpora"] = [],
+            ["CorpusDocuments"] = [new("Corpora", "CorpusId", "CorpusId", "NO ACTION", "NO ACTION", "NONE")],
+            ["Assessments"] = [],
+            ["AssessedWords"] = [new("Assessments", "AssessmentId", "AssessmentId", "NO ACTION", "NO ACTION", "NONE")],
+            ["ParsedAnalyses"] = [new("AssessedWords", "AssessedWordId", "AssessedWordId", "NO ACTION", "NO ACTION", "NONE")],
+            ["AssessmentPins"] = [new("Assessments", "AssessmentId", "AssessmentId", "NO ACTION", "NO ACTION", "NONE")]
+        };
+
     /// <summary>Copies known corpus and Assessment tables in one destination transaction.</summary>
     public static LegacyMigrationResult ImportInto(string legacyPath, MotifDatabase destination,
         Action<string>? afterBoundary = null, bool renameSourceAfterCommit = true,
@@ -88,6 +110,7 @@ public static class LegacyBulkStoreMigration
                 var available = ReadTables(connection, transaction);
                 ValidateSourceSchema(connection, transaction, available);
                 VerifySourceForeignKeys(connection, transaction);
+                ValidateLogicalKeys(connection, transaction);
                 var digest = LogicalDigest(connection, transaction);
                 if (FileProposalStoreMigration.LedgerExists(connection, "legacy-bulk", fullPath, digest, transaction))
                 {
@@ -128,13 +151,13 @@ public static class LegacyBulkStoreMigration
                 detach.CommandText = "DETACH DATABASE legacy;";
                 detach.ExecuteNonQuery();
             }
-            catch (SqliteException) { }
+            catch (Exception exception) when (exception is SqliteException or InvalidOperationException) { }
 
             if (committed && shouldArchive)
             {
                 beforeArchive?.Invoke();
                 EnsureSourceDigest(fullPath, committedDigest!);
-                ArchiveSourceBundle(fullPath);
+                ArchiveSourceBundle(fullPath, committedDigest!);
             }
         }
     }
@@ -146,6 +169,9 @@ public static class LegacyBulkStoreMigration
         command.CommandText = $"ATTACH DATABASE '{uri.Replace("'", "''", StringComparison.Ordinal)}' AS legacy;";
         command.ExecuteNonQuery();
     }
+
+    internal static void AttachReadOnlyForTesting(SqliteConnection connection, string path) =>
+        AttachReadOnly(connection, path);
 
     private static HashSet<string> ReadTables(SqliteConnection connection, SqliteTransaction transaction,
         string schema = "legacy")
@@ -165,6 +191,7 @@ public static class LegacyBulkStoreMigration
     private static string LogicalDigest(SqliteConnection connection, SqliteTransaction transaction, string schema)
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        AppendSchemaMetadata(hash, connection, transaction, schema);
         foreach (var map in Maps)
         {
             AppendString(hash, map.Name);
@@ -185,6 +212,58 @@ public static class LegacyBulkStoreMigration
         return "sha256:" + Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
     }
 
+    private static void AppendSchemaMetadata(IncrementalHash hash, SqliteConnection connection,
+        SqliteTransaction transaction, string schema)
+    {
+        schema = string.IsNullOrEmpty(schema) ? "main" : schema;
+        foreach (var map in Maps)
+        {
+            AppendString(hash, map.Name);
+            foreach (var column in ReadSourceColumns(connection, transaction, map.Name, schema))
+            {
+                AppendString(hash, column.Name);
+                AppendString(hash, column.Type);
+                AppendValue(hash, column.NotNull ? 1L : 0L);
+                AppendValue(hash, column.DefaultValue is null ? DBNull.Value : column.DefaultValue);
+                AppendValue(hash, (long)column.PrimaryKey);
+            }
+
+            using var foreignKeys = connection.CreateCommand();
+            foreignKeys.Transaction = transaction;
+            foreignKeys.CommandText = $"PRAGMA {schema}.foreign_key_list({Quote(map.Name)});";
+            using var foreignKeyReader = foreignKeys.ExecuteReader();
+            while (foreignKeyReader.Read())
+                for (var index = 2; index <= 7; index++) AppendString(hash, foreignKeyReader.GetString(index));
+        }
+
+        foreach (var index in KnownIndexes.OrderBy(index => index.Key, StringComparer.Ordinal))
+        {
+            AppendString(hash, index.Key);
+            using var details = connection.CreateCommand();
+            details.Transaction = transaction;
+            details.CommandText = $"PRAGMA {schema}.index_list({Quote(index.Value.Table)});";
+            using var detailReader = details.ExecuteReader();
+            while (detailReader.Read())
+            {
+                if (!StringComparer.Ordinal.Equals(detailReader.GetString(1), index.Key)) continue;
+                AppendString(hash, index.Value.Table);
+                AppendValue(hash, (long)detailReader.GetInt32(2));
+                AppendString(hash, detailReader.GetString(3));
+                AppendValue(hash, (long)detailReader.GetInt32(4));
+            }
+            using var columns = connection.CreateCommand();
+            columns.Transaction = transaction;
+            columns.CommandText = $"PRAGMA {schema}.index_info({Quote(index.Key)});";
+            using var columnReader = columns.ExecuteReader();
+            while (columnReader.Read()) AppendString(hash, columnReader.GetString(2));
+        }
+
+        using var sequence = connection.CreateCommand();
+        sequence.Transaction = transaction;
+        sequence.CommandText = $"SELECT COUNT(*) FROM {schema}.sqlite_master WHERE name = 'sqlite_sequence';";
+        AppendValue(hash, Convert.ToInt64(sequence.ExecuteScalar(), CultureInfo.InvariantCulture));
+    }
+
     private static ColumnInfo[] ReadSourceColumns(SqliteConnection connection, SqliteTransaction transaction, string table,
         string schema = "legacy")
     {
@@ -194,7 +273,8 @@ public static class LegacyBulkStoreMigration
         using var reader = command.ExecuteReader();
         var columns = new List<ColumnInfo>();
         while (reader.Read())
-            columns.Add(new ColumnInfo(reader.GetString(1), reader.GetString(2), reader.GetInt32(5)));
+            columns.Add(new ColumnInfo(reader.GetString(1), reader.GetString(2), reader.GetInt32(3) != 0,
+                reader.IsDBNull(4) ? null : reader.GetString(4), reader.GetInt32(5)));
         return columns.ToArray();
     }
 
@@ -237,7 +317,12 @@ public static class LegacyBulkStoreMigration
             if (columns.Where((column, index) => column.PrimaryKey !=
                     (expectedPrimaryKeys.TryGetValue(index + 1, out var rank) ? rank : 0)).Any())
                 throw new InvalidDataException($"Legacy table {map.Name} does not match its recognized primary key shape.");
+            var notNull = ExpectedNotNull[map.Name];
+            if (columns.Where((column, index) => column.NotNull != notNull[index] || column.DefaultValue is not null).Any())
+                throw new InvalidDataException($"Legacy table {map.Name} does not match its nullability/default shape.");
+            ValidateSourceForeignKeyShape(connection, transaction, map.Name, schema);
         }
+        ValidateSourceTableInvariant(connection, transaction, schema, "AssessedWords", "AUTOINCREMENT");
     }
 
     private static int CopyTable(SqliteConnection connection, SqliteTransaction transaction, TableMap map,
@@ -261,6 +346,8 @@ public static class LegacyBulkStoreMigration
             var existing = FindExisting(connection, transaction, map, values);
             if (existing is not null)
             {
+                if (CountExisting(connection, transaction, map, values) != 1)
+                    throw new InvalidDataException($"Destination contains duplicate logical keys in {map.Name}.");
                 for (var index = 0; index < values.Length; index++)
                     if (!ValueEquals(existing[index], values[index]))
                         throw new InvalidDataException($"Legacy row conflicts with destination row in {map.Name}.");
@@ -283,8 +370,14 @@ public static class LegacyBulkStoreMigration
             using var reader = list.ExecuteReader();
             var found = false;
             while (reader.Read())
-                if (StringComparer.Ordinal.Equals(reader.GetString(1), index.Key)) found = true;
-            if (!found) continue;
+            {
+                if (!StringComparer.Ordinal.Equals(reader.GetString(1), index.Key)) continue;
+                found = true;
+                if (reader.GetInt32(2) != 0 || !StringComparer.Ordinal.Equals(reader.GetString(3), "c") ||
+                    reader.GetInt32(4) != 0)
+                    throw new InvalidDataException($"Legacy index {index.Key} has unexpected registration details.");
+            }
+            if (!found) throw new InvalidDataException($"Legacy index {index.Key} is missing.");
 
             using var columns = connection.CreateCommand();
             columns.Transaction = transaction;
@@ -295,6 +388,33 @@ public static class LegacyBulkStoreMigration
             if (!actual.SequenceEqual(index.Value.Columns, StringComparer.Ordinal))
                 throw new InvalidDataException($"Legacy index {index.Key} does not match its recognized shape.");
         }
+    }
+
+    private static void ValidateSourceForeignKeyShape(SqliteConnection connection, SqliteTransaction transaction,
+        string table, string schema)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = $"PRAGMA {schema}.foreign_key_list({Quote(table)});";
+        using var reader = command.ExecuteReader();
+        var actual = new List<ForeignKeySpec>();
+        while (reader.Read())
+            actual.Add(new ForeignKeySpec(reader.GetString(2), reader.GetString(3), reader.GetString(4),
+                reader.GetString(5), reader.GetString(6), reader.GetString(7)));
+        if (!actual.SequenceEqual(ExpectedForeignKeys[table]))
+            throw new InvalidDataException($"Legacy table {table} has an unexpected foreign-key shape.");
+    }
+
+    private static void ValidateSourceTableInvariant(SqliteConnection connection, SqliteTransaction transaction,
+        string schema, string table, string invariant)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = $"SELECT sql FROM {schema}.sqlite_master WHERE type = 'table' AND name = $table;";
+        command.Parameters.AddWithValue("$table", table);
+        var sql = command.ExecuteScalar() as string;
+        if (sql is null || sql.IndexOf(invariant, StringComparison.OrdinalIgnoreCase) < 0)
+            throw new InvalidDataException($"Legacy table {table} is missing required invariant {invariant}.");
     }
 
     private static object?[]? FindExisting(SqliteConnection connection, SqliteTransaction transaction, TableMap map,
@@ -311,6 +431,18 @@ public static class LegacyBulkStoreMigration
         var existing = new object?[map.Columns.Length];
         reader.GetValues(existing);
         return existing;
+    }
+
+    private static long CountExisting(SqliteConnection connection, SqliteTransaction transaction, TableMap map,
+        object?[] values)
+    {
+        var keyIndexes = map.Keys.Select(key => Array.IndexOf(map.Columns, key)).ToArray();
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = $"SELECT COUNT(*) FROM {Quote(map.Name)} WHERE " +
+            string.Join(" AND ", keyIndexes.Select(index => Quote(map.Columns[index]) + " IS $k" + index)) + ";";
+        foreach (var index in keyIndexes) AddValue(command, "$k" + index, values[index]);
+        return Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture);
     }
 
     private static void Insert(SqliteConnection connection, SqliteTransaction transaction, TableMap map, object?[] values)
@@ -361,6 +493,8 @@ public static class LegacyBulkStoreMigration
                 var existing = FindExisting(connection, transaction, map, values);
                 if (existing is null || values.Where((value, index) => !ValueEquals(value, existing[index])).Any())
                     throw new InvalidDataException($"Destination row verification failed for {map.Name}.");
+                if (CountExisting(connection, transaction, map, values) != 1)
+                    throw new InvalidDataException($"Destination contains duplicate logical keys in {map.Name}.");
                 matched++;
             }
             using var count = connection.CreateCommand();
@@ -427,6 +561,20 @@ public static class LegacyBulkStoreMigration
         if (reader.Read()) throw new InvalidDataException("Legacy source contains a foreign-key violation.");
     }
 
+    private static void ValidateLogicalKeys(SqliteConnection connection, SqliteTransaction transaction,
+        string schema = "legacy")
+    {
+        foreach (var map in Maps)
+        {
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            var keys = string.Join(", ", map.Keys.Select(Quote));
+            command.CommandText = $"SELECT 1 FROM {schema}.{Quote(map.Name)} GROUP BY {keys} HAVING COUNT(*) > 1 LIMIT 1;";
+            if (command.ExecuteScalar() is not null)
+                throw new InvalidDataException($"Legacy table {map.Name} contains duplicate logical keys.");
+        }
+    }
+
     private static void VerifyForeignKeys(SqliteConnection connection, SqliteTransaction transaction)
     {
         using var command = connection.CreateCommand();
@@ -454,12 +602,19 @@ public static class LegacyBulkStoreMigration
 
     private static void EnsureSourceDigest(string path, string expectedDigest)
     {
-        using var connection = new SqliteConnection("Data Source=" + path + ";Mode=ReadOnly;Pooling=False");
+        var options = new SqliteConnectionStringBuilder
+        {
+            DataSource = path,
+            Mode = SqliteOpenMode.ReadOnly,
+            Pooling = false
+        };
+        using var connection = new SqliteConnection(options.ToString());
         connection.Open();
         using var transaction = connection.BeginTransaction();
         var available = ReadTables(connection, transaction, "main");
         ValidateSourceSchema(connection, transaction, available, "main");
         VerifySourceForeignKeys(connection, transaction, "main");
+        ValidateLogicalKeys(connection, transaction, "main");
         var actual = LogicalDigest(connection, transaction, "");
         transaction.Commit();
         if (!string.Equals(actual, expectedDigest, StringComparison.Ordinal))
@@ -468,7 +623,7 @@ public static class LegacyBulkStoreMigration
 
     private static string Quote(string identifier) => "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
 
-    private static void ArchiveSourceBundle(string path)
+    private static void ArchiveSourceBundle(string path, string expectedDigest)
     {
         var baseArchive = path + ".migrated";
         var archive = baseArchive;
@@ -488,6 +643,7 @@ public static class LegacyBulkStoreMigration
                 File.Move(source, target);
                 moved.Add((source, target));
             }
+            EnsureSourceDigest(archive, expectedDigest);
         }
         catch
         {
@@ -498,7 +654,9 @@ public static class LegacyBulkStoreMigration
     }
 
     private sealed record TableMap(string Name, string[] Columns, string[] Keys);
-    private sealed record ColumnInfo(string Name, string Type, int PrimaryKey);
+    private sealed record ColumnInfo(string Name, string Type, bool NotNull, string? DefaultValue, int PrimaryKey);
+    private sealed record ForeignKeySpec(string Table, string From, string To, string OnUpdate, string OnDelete,
+        string Match);
 }
 
 /// <summary>Summarizes a legacy bulk migration.</summary>

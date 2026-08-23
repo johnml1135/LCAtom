@@ -177,6 +177,100 @@ public sealed class MotifDatabaseMigrationTests : IDisposable
         Assert.Equal(2, PragmaFromPath(path, "user_version"));
     }
 
+    [Theory]
+    [InlineData("Proposals")]
+    [InlineData("ProposalRevisions")]
+    [InlineData("Drafts")]
+    [InlineData("Decisions")]
+    [InlineData("Receipts")]
+    [InlineData("Reports")]
+    [InlineData("AppliedIndex")]
+    [InlineData("MigrationLedger")]
+    public void Generation3RejectsMissingWorkflowObjects(string objectName)
+    {
+        var path = DatabasePath("missing-v3-" + objectName + ".fwdata");
+        using (MotifDatabase.OpenOwned(path, Locator("missing-v3-" + objectName + ".fwdata"), 3,
+                   new Version(1, 0))) { }
+        using (var connection = NewConnection(path))
+            Execute(connection, "DROP TABLE " + objectName + ";");
+
+        Assert.Throws<InvalidDataException>(() => MotifDatabase.OpenOwned(
+            path, Locator("missing-v3-" + objectName + ".fwdata"), 3, new Version(1, 0)));
+    }
+
+    [Fact]
+    public void Generation3RejectsUnexpectedWorkflowObjectsAndAnchorShape()
+    {
+        var path = DatabasePath("malformed-v3-workflow.fwdata");
+        using (MotifDatabase.OpenOwned(path, Locator("malformed-v3-workflow.fwdata"), 3, new Version(1, 0))) { }
+        using (var connection = NewConnection(path))
+        {
+            Execute(connection, "ALTER TABLE Proposals RENAME COLUMN AnchorJson TO WrongAnchor; CREATE TABLE UnexpectedWorkflow (Id TEXT);");
+        }
+        Assert.Throws<InvalidDataException>(() => MotifDatabase.OpenOwned(
+            path, Locator("malformed-v3-workflow.fwdata"), 3, new Version(1, 0)));
+
+        var fkPath = DatabasePath("malformed-v3-fk.fwdata");
+        using (MotifDatabase.OpenOwned(fkPath, Locator("malformed-v3-fk.fwdata"), 3, new Version(1, 0))) { }
+        using (var connection = NewConnection(fkPath))
+        {
+            Execute(connection, "DROP TABLE Decisions; CREATE TABLE Decisions (ProposalId TEXT NOT NULL REFERENCES Reports(ReportId), " +
+                "IntentDigest TEXT NOT NULL, Outcome TEXT NOT NULL, ActorType TEXT NOT NULL, ActorId TEXT NOT NULL, " +
+                "Comment TEXT NULL, TimestampUtc TEXT NOT NULL, PRIMARY KEY (ProposalId, IntentDigest));");
+        }
+        Assert.Throws<InvalidDataException>(() => MotifDatabase.OpenOwned(
+            fkPath, Locator("malformed-v3-fk.fwdata"), 3, new Version(1, 0)));
+    }
+
+    [Fact]
+    public void Generation3PinsEveryWorkflowTableColumnAndForeignKeyInventory()
+    {
+        var path = DatabasePath("workflow-v3-inventory.fwdata");
+        using (MotifDatabase.OpenOwned(path, Locator("workflow-v3-inventory.fwdata"), 3, new Version(1, 0))) { }
+        using var connection = NewConnection(path);
+        var expected = new Dictionary<string, string[]>(StringComparer.Ordinal)
+        {
+            ["Proposals"] = ["ProposalId|TEXT|0|1|", "CurrentIntentDigest|TEXT|1|0|", "Status|TEXT|1|0|", "Label|TEXT|0|0|", "Comment|TEXT|0|0|", "SupersededBy|TEXT|0|0|", "AnchorJson|TEXT|0|0|"],
+            ["ProposalRevisions"] = ["ProposalId|TEXT|1|1|", "IntentDigest|TEXT|1|2|", "ProposalJson|BLOB|1|0|", "CreatedUtc|TEXT|1|0|"],
+            ["Drafts"] = ["DraftName|TEXT|0|1|", "ProposalId|TEXT|1|0|", "DraftJson|TEXT|1|0|"],
+            ["Decisions"] = ["ProposalId|TEXT|1|1|", "IntentDigest|TEXT|1|2|", "Outcome|TEXT|1|0|", "ActorType|TEXT|1|0|", "ActorId|TEXT|1|0|", "Comment|TEXT|0|0|", "TimestampUtc|TEXT|1|0|"],
+            ["Receipts"] = ["ReceiptId|TEXT|0|1|", "ProposalId|TEXT|1|0|", "IntentDigest|TEXT|1|0|", "ReceiptJson|TEXT|1|0|", "RecordedUtc|TEXT|1|0|"],
+            ["Reports"] = ["ReportId|TEXT|0|1|", "ProposalId|TEXT|0|0|", "AssessmentId|TEXT|0|0|", "ReportJson|TEXT|1|0|", "EvidenceJson|TEXT|0|0|", "CreatedUtc|TEXT|1|0|"],
+            ["AppliedIndex"] = ["ProposalId|TEXT|0|1|", "IntentDigest|TEXT|1|0|", "AppliedUtc|TEXT|1|0|", "RecordJson|TEXT|0|0|"],
+            ["MigrationLedger"] = ["SourceKind|TEXT|1|1|", "SourcePath|TEXT|1|2|", "SourceDigest|TEXT|1|3|", "ImportedUtc|TEXT|1|0|"]
+        };
+        foreach (var pair in expected)
+        {
+            using var columns = connection.CreateCommand();
+            columns.CommandText = "SELECT name, type, \"notnull\", pk, COALESCE(dflt_value, '') FROM pragma_table_info($table) ORDER BY cid;";
+            columns.Parameters.AddWithValue("$table", pair.Key);
+            var actual = new List<string>();
+            using var reader = columns.ExecuteReader();
+            while (reader.Read()) actual.Add(string.Join("|", reader.GetString(0), reader.GetString(1), reader.GetInt32(2), reader.GetInt32(3), reader.GetString(4)));
+            Assert.Equal(pair.Value, actual);
+        }
+
+        var foreignKeys = new Dictionary<string, string[]>(StringComparer.Ordinal)
+        {
+            ["ProposalRevisions"] = ["Proposals|ProposalId|ProposalId|NO ACTION|NO ACTION|NONE"],
+            ["Decisions"] = ["Proposals|ProposalId|ProposalId|NO ACTION|NO ACTION|NONE"],
+            ["Receipts"] = ["Proposals|ProposalId|ProposalId|NO ACTION|NO ACTION|NONE"],
+            ["Reports"] = ["Assessments|AssessmentId|AssessmentId|NO ACTION|NO ACTION|NONE", "Proposals|ProposalId|ProposalId|NO ACTION|NO ACTION|NONE"],
+            ["AppliedIndex"] = ["Proposals|ProposalId|ProposalId|NO ACTION|NO ACTION|NONE"],
+            ["Drafts"] = []
+        };
+        foreach (var pair in foreignKeys)
+        {
+            using var fks = connection.CreateCommand();
+            fks.CommandText = "SELECT \"table\", \"from\", \"to\", on_update, on_delete, \"match\" FROM pragma_foreign_key_list($table) ORDER BY id, seq;";
+            fks.Parameters.AddWithValue("$table", pair.Key);
+            var actual = new List<string>();
+            using var reader = fks.ExecuteReader();
+            while (reader.Read()) actual.Add(string.Join("|", reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetString(5)));
+            Assert.Equal(pair.Value, actual);
+        }
+    }
+
     [Fact]
     public void CurrentSchemaRejectsUnexpectedUserObjects()
     {

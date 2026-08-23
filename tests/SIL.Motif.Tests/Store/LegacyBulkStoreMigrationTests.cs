@@ -52,23 +52,9 @@ public sealed class LegacyBulkStoreMigrationTests : IDisposable
         using (var legacy = new SqliteConnection("Data Source=" + legacyPath + ";Pooling=False"))
         {
             legacy.Open();
+            MotifSchema.EnsureLegacyTables(legacy);
             using var command = legacy.CreateCommand();
             command.CommandText = """
-                CREATE TABLE Corpora (CorpusId TEXT PRIMARY KEY, ProvenanceJson TEXT NOT NULL);
-                CREATE TABLE CorpusDocuments (CorpusId TEXT NOT NULL, DocumentId TEXT NOT NULL,
-                    OrdinalIndex INTEGER NOT NULL, Title TEXT NOT NULL, Source TEXT NOT NULL, Text TEXT NOT NULL,
-                    ContentSha256 TEXT NOT NULL, IngestedUtc TEXT NOT NULL, Licence TEXT, CapabilitiesJson TEXT, AttributesJson TEXT,
-                    PRIMARY KEY (CorpusId, DocumentId));
-                CREATE TABLE Assessments (AssessmentId TEXT PRIMARY KEY, CorpusId TEXT NOT NULL, CorpusWordsJson TEXT NOT NULL,
-                    CorpusSha256 TEXT NOT NULL, CorpusProvenanceJson TEXT, OutcomeDigest TEXT NOT NULL, SemanticDigest TEXT NOT NULL,
-                    GrammarSourceSha256 TEXT NOT NULL, ModelFingerprint TEXT NOT NULL, Pipeline TEXT NOT NULL,
-                    DiagnosticCount INTEGER NOT NULL, SavedUtc TEXT NOT NULL);
-                CREATE TABLE AssessedWords (AssessedWordId INTEGER PRIMARY KEY, AssessmentId TEXT NOT NULL,
-                    OrdinalIndex INTEGER NOT NULL, Word TEXT NOT NULL, Outcome TEXT NOT NULL);
-                CREATE TABLE ParsedAnalyses (AssessedWordId INTEGER NOT NULL, OrdinalIndex INTEGER NOT NULL,
-                    CategoryGuid TEXT, MorphemeGuidsJson TEXT NOT NULL, RootIndex INTEGER NOT NULL, IdentityDigest TEXT NOT NULL);
-                CREATE TABLE AssessmentPins (AssessmentId TEXT NOT NULL, PinnedBy TEXT NOT NULL, PinnedUtc TEXT NOT NULL,
-                    PRIMARY KEY (AssessmentId, PinnedBy));
                 INSERT INTO Corpora VALUES ('c1','{"source":"legacy"}');
                 INSERT INTO CorpusDocuments VALUES ('c1','d1',0,'Title','source','Tēxt','sha-doc','2026-08-22T12:00:00Z',NULL,'{"cap":true}','{"tag":"x"}');
                 INSERT INTO Assessments VALUES ('a1','c1','["word"]','sha-corpus','{"p":1}','sha-outcome','sha-semantic','sha-grammar','model','pipeline',2,'2026-08-22T12:01:00Z');
@@ -139,12 +125,7 @@ public sealed class LegacyBulkStoreMigrationTests : IDisposable
         var project = new ProjectLocator(Path.Combine(_root, "read-only.fwdata"), "project");
         using var database = MotifDatabase.OpenOwned(Path.Combine(_root, "read-only.motif.db"), project, MotifSchema.CurrentSchema, new Version(1, 0));
         using var connection = database.OpenConnection();
-        var uri = new Uri(Path.GetFullPath(legacyPath)).AbsoluteUri + "?mode=ro";
-        using (var attach = connection.CreateCommand())
-        {
-            attach.CommandText = "ATTACH DATABASE '" + uri.Replace("'", "''", StringComparison.Ordinal) + "' AS legacy;";
-            attach.ExecuteNonQuery();
-        }
+        LegacyBulkStoreMigration.AttachReadOnlyForTesting(connection, legacyPath);
         foreach (var sql in new[] { "INSERT INTO legacy.Corpora VALUES ('c2','{}');", "UPDATE legacy.Corpora SET ProvenanceJson = '{}' WHERE CorpusId = 'c1';", "CREATE TABLE legacy.NewTable (Id INTEGER);" })
         {
             using var write = connection.CreateCommand();
@@ -154,6 +135,21 @@ public sealed class LegacyBulkStoreMigrationTests : IDisposable
         using var detach = connection.CreateCommand();
         detach.CommandText = "DETACH DATABASE legacy;";
         detach.ExecuteNonQuery();
+    }
+
+    [Fact]
+    public void ImportsReadOnlySourceWhosePathContainsSemicolon()
+    {
+        var root = Path.Combine(_root, "semi;colon");
+        var legacyPath = CreateLegacySource(root);
+        var project = new ProjectLocator(Path.Combine(root, "project.fwdata"), "project");
+        using var database = MotifDatabase.OpenOwned(Path.Combine(root, "project.motif.db"), project,
+            MotifSchema.CurrentSchema, new Version(1, 0));
+
+        var result = LegacyBulkStoreMigration.ImportInto(legacyPath, database, renameSourceAfterCommit: false);
+
+        Assert.Equal(6, result.RowCount);
+        Assert.True(File.Exists(legacyPath));
     }
 
     [Fact]
@@ -180,6 +176,64 @@ public sealed class LegacyBulkStoreMigrationTests : IDisposable
         Assert.NotEmpty(result.SourceDigest);
         using var connection = database.OpenConnection();
         Assert.Equal("{\"wal\":true}", Scalar(connection, "SELECT ProvenanceJson FROM Corpora WHERE CorpusId = 'c2';"));
+    }
+
+    [Theory]
+    [InlineData("before-commit")]
+    [InlineData("before-archive")]
+    public void DetectsLegacySourceMutationAtCommitBoundaries(string boundary)
+    {
+        var root = Path.Combine(_root, boundary);
+        var path = CreateLegacySource(root);
+        using (var writer = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Pooling = false }.ToString()))
+        {
+            writer.Open();
+            using var mode = writer.CreateCommand();
+            mode.CommandText = "PRAGMA journal_mode = WAL;";
+            mode.ExecuteScalar();
+        }
+        var project = new ProjectLocator(Path.Combine(root, "project.fwdata"), "project");
+        using var database = MotifDatabase.OpenOwned(Path.Combine(root, "project.motif.db"), project,
+            MotifSchema.CurrentSchema, new Version(1, 0));
+        Action mutate = () =>
+        {
+            using var writer = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Pooling = false }.ToString());
+            writer.Open();
+            using var update = writer.CreateCommand();
+            update.CommandText = "UPDATE Corpora SET ProvenanceJson = '{\"mutated\":true}' WHERE CorpusId = 'c1';";
+            update.ExecuteNonQuery();
+        };
+        Action append = () =>
+        {
+            using var writer = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Pooling = false }.ToString());
+            writer.Open();
+            using var insert = writer.CreateCommand();
+            insert.CommandText = "INSERT INTO Corpora VALUES ('c2','{\"added\":true}');";
+            insert.ExecuteNonQuery();
+        };
+
+        Assert.Throws<InvalidDataException>(() => LegacyBulkStoreMigration.ImportInto(path, database,
+            renameSourceAfterCommit: boundary == "before-archive",
+            beforeCommit: boundary == "before-commit" ? mutate : null,
+            beforeArchive: boundary == "before-archive" ? append : null));
+        Assert.True(File.Exists(path));
+        using var verify = database.OpenConnection();
+        Assert.Equal(boundary == "before-archive" ? 1L : 0L,
+            Convert.ToInt64(Scalar(verify, "SELECT COUNT(*) FROM MigrationLedger;")));
+        if (boundary == "before-commit")
+        {
+            var retry = LegacyBulkStoreMigration.ImportInto(path, database, renameSourceAfterCommit: false);
+            Assert.Equal(6, retry.RowCount);
+            using var retryVerify = database.OpenConnection();
+            Assert.Equal("{\"mutated\":true}", Scalar(retryVerify, "SELECT ProvenanceJson FROM Corpora WHERE CorpusId = 'c1';"));
+        }
+        if (boundary == "before-archive")
+        {
+            var retry = LegacyBulkStoreMigration.ImportInto(path, database);
+            Assert.True(retry.SourceRenamed);
+            using var archivedVerify = database.OpenConnection();
+            Assert.Equal("{\"added\":true}", Scalar(archivedVerify, "SELECT ProvenanceJson FROM Corpora WHERE CorpusId = 'c2';"));
+        }
     }
 
     [Fact]
@@ -224,29 +278,39 @@ public sealed class LegacyBulkStoreMigrationTests : IDisposable
         Assert.Equal(0L, Convert.ToInt64(Scalar(verify, "SELECT COUNT(*) FROM MigrationLedger;")));
     }
 
+    [Fact]
+    public void RejectsDuplicateParsedAnalysisLogicalKeys()
+    {
+        var root = Path.Combine(_root, "duplicate-analysis");
+        var path = CreateLegacySource(root);
+        using (var source = new SqliteConnection("Data Source=" + path + ";Pooling=False"))
+        {
+            source.Open();
+            using var command = source.CreateCommand();
+            command.CommandText = "INSERT INTO ParsedAnalyses VALUES (1, 0, NULL, '[\"m2\"]', 0, 'other');";
+            command.ExecuteNonQuery();
+        }
+        var project = new ProjectLocator(Path.Combine(root, "project.fwdata"), "project");
+        using var database = MotifDatabase.OpenOwned(Path.Combine(root, "project.motif.db"), project,
+            MotifSchema.CurrentSchema, new Version(1, 0));
+
+        Assert.Throws<InvalidDataException>(() => LegacyBulkStoreMigration.ImportInto(path, database,
+            renameSourceAfterCommit: false));
+        Assert.True(File.Exists(path));
+        using var connection = database.OpenConnection();
+        Assert.Equal(0L, Convert.ToInt64(Scalar(connection, "SELECT COUNT(*) FROM MigrationLedger;")));
+    }
+
     private string CreateLegacySource(string root)
     {
         Directory.CreateDirectory(root);
         var path = Path.Combine(root, "legacy.db");
-        using var legacy = new SqliteConnection("Data Source=" + path + ";Pooling=False");
+        var options = new SqliteConnectionStringBuilder { DataSource = path, Pooling = false };
+        using var legacy = new SqliteConnection(options.ToString());
         legacy.Open();
+        MotifSchema.EnsureLegacyTables(legacy);
         using var command = legacy.CreateCommand();
         command.CommandText = """
-            CREATE TABLE Corpora (CorpusId TEXT PRIMARY KEY, ProvenanceJson TEXT NOT NULL);
-            CREATE TABLE CorpusDocuments (CorpusId TEXT NOT NULL, DocumentId TEXT NOT NULL,
-                OrdinalIndex INTEGER NOT NULL, Title TEXT NOT NULL, Source TEXT NOT NULL, Text TEXT NOT NULL,
-                ContentSha256 TEXT NOT NULL, IngestedUtc TEXT NOT NULL, Licence TEXT, CapabilitiesJson TEXT, AttributesJson TEXT,
-                PRIMARY KEY (CorpusId, DocumentId));
-            CREATE TABLE Assessments (AssessmentId TEXT PRIMARY KEY, CorpusId TEXT NOT NULL, CorpusWordsJson TEXT NOT NULL,
-                CorpusSha256 TEXT NOT NULL, CorpusProvenanceJson TEXT, OutcomeDigest TEXT NOT NULL, SemanticDigest TEXT NOT NULL,
-                GrammarSourceSha256 TEXT NOT NULL, ModelFingerprint TEXT NOT NULL, Pipeline TEXT NOT NULL,
-                DiagnosticCount INTEGER NOT NULL, SavedUtc TEXT NOT NULL);
-            CREATE TABLE AssessedWords (AssessedWordId INTEGER PRIMARY KEY, AssessmentId TEXT NOT NULL,
-                OrdinalIndex INTEGER NOT NULL, Word TEXT NOT NULL, Outcome TEXT NOT NULL);
-            CREATE TABLE ParsedAnalyses (AssessedWordId INTEGER NOT NULL, OrdinalIndex INTEGER NOT NULL,
-                CategoryGuid TEXT, MorphemeGuidsJson TEXT NOT NULL, RootIndex INTEGER NOT NULL, IdentityDigest TEXT NOT NULL);
-            CREATE TABLE AssessmentPins (AssessmentId TEXT NOT NULL, PinnedBy TEXT NOT NULL, PinnedUtc TEXT NOT NULL,
-                PRIMARY KEY (AssessmentId, PinnedBy));
             INSERT INTO Corpora VALUES ('c1','{"source":"legacy"}');
             INSERT INTO CorpusDocuments VALUES ('c1','d1',0,'Title','source','Tēxt','sha-doc','2026-08-22T12:00:00Z',NULL,'{"cap":true}','{"tag":"x"}');
             INSERT INTO Assessments VALUES ('a1','c1','["word"]','sha-corpus','{"p":1}','sha-outcome','sha-semantic','sha-grammar','model','pipeline',2,'2026-08-22T12:01:00Z');

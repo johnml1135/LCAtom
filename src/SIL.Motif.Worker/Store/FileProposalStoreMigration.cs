@@ -34,7 +34,7 @@ public static class FileProposalStoreMigration
             {
                 beforeArchive?.Invoke();
                 EnsureSourceDigest(source, digest);
-                ArchiveSource(source.RootDirectory);
+                ArchiveSource(source.RootDirectory, digest);
                 return new ProposalMigrationResult(Array.Empty<string>(), sourceFiles.Count, digest, true);
             }
             return ProposalMigrationResult.Empty(digest);
@@ -104,14 +104,14 @@ public static class FileProposalStoreMigration
             {
                 beforeArchive?.Invoke();
                 EnsureSourceDigest(source, digest);
-                ArchiveSource(source.RootDirectory);
+                ArchiveSource(source.RootDirectory, digest);
             }
             return new ProposalMigrationResult(imported, sourceFiles.Count, digest, renameSourceAfterCommit);
         }
         catch
         {
             try { transaction.Rollback(); }
-            catch (SqliteException) { }
+            catch (Exception exception) when (exception is SqliteException or InvalidOperationException) { }
             throw;
         }
     }
@@ -404,7 +404,7 @@ public static class FileProposalStoreMigration
             throw new InvalidDataException("The file Proposal source changed before archival.");
     }
 
-    private static void ArchiveSource(string path)
+    private static void ArchiveSource(string path, string expectedDigest)
     {
         var baseArchive = path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + ".migrated";
         var archive = baseArchive;
@@ -412,6 +412,16 @@ public static class FileProposalStoreMigration
         while (Directory.Exists(archive) || File.Exists(archive))
             archive = baseArchive + "-" + suffix++;
         Directory.Move(path, archive);
+        try
+        {
+            EnsureSourceDigest(new LegacyProposalStoreLayout(archive), expectedDigest);
+        }
+        catch
+        {
+            if (!Directory.Exists(path) && Directory.Exists(archive))
+                Directory.Move(archive, path);
+            throw;
+        }
     }
 
     internal sealed record SourceFile(string Name, byte[] Bytes, string Text);
