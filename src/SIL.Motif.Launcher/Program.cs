@@ -85,6 +85,9 @@ public interface IWorkerConnection : IDisposable
 {
     /// <summary>The handshake negotiated with the endpoint.</summary>
     WorkerHandshakeResult Negotiated { get; }
+
+    /// <summary>The complete worker offer received from the endpoint.</summary>
+    WorkerHandshakeOffer? Offer => null;
 }
 
 /// <summary>Connects to the stable endpoint through an injectable transport seam.</summary>
@@ -227,6 +230,20 @@ public sealed class WorkerLauncher
                 .ConfigureAwait(false);
             if (connection is not null)
             {
+                if (connection.Offer is not null)
+                {
+                    try
+                    {
+                        WorkerMetadataAgreement.RequireMatch(connection.Offer, candidate);
+                    }
+                    catch (InvalidDataException exception)
+                    {
+                        connection.Dispose();
+                        throw new WorkerLaunchException(
+                            "The selected worker reported metadata different from its installed manifest; " +
+                            "reinstall or update Motif and try again.", exception);
+                    }
+                }
                 connection.Dispose();
                 return;
             }
@@ -346,6 +363,8 @@ public sealed class WorkerClientConnector : IWorkerConnector
         }
 
         public WorkerHandshakeResult Negotiated => _connection.Negotiated;
+
+        public WorkerHandshakeOffer? Offer => _connection.Offer;
 
         public void Dispose() => _connection.Dispose();
     }

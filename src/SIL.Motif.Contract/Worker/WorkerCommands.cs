@@ -9,6 +9,9 @@ public static class WorkerCommands
 {
     public const string Handshake = "handshake";
 
+    /// <summary>The publish-side metadata filename that binds an executable to its manifest.</summary>
+    public const string BuildMetadataFileName = "worker.metadata.json";
+
     public const string BaselineRefreshRequested = "baseline.refresh.requested";
     public const string ApplyRequested = "apply.requested";
     public const string ReconciliationRequested = "reconciliation.requested";

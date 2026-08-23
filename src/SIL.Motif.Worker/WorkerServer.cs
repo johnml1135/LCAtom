@@ -30,27 +30,26 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
     private Task? _acceptLoop;
 
     /// <summary>Creates a server using the actual Windows user SID.</summary>
-    public WorkerServer(string productVersion = "0.0.0", IWorkerWorkTracker? workTracker = null)
-        : this(CurrentSid(), productVersion, workTracker)
+    public WorkerServer(IWorkerWorkTracker? workTracker = null)
+        : this(CurrentSid(), workTracker)
     {
     }
 
-    internal WorkerServer(string userNamespace, string productVersion = "0.0.0",
-        IWorkerWorkTracker? workTracker = null)
+    internal WorkerServer(string userNamespace, IWorkerWorkTracker? workTracker = null)
     {
         _userSid = WindowsIdentity.GetCurrent().User?.Value ?? "unknown-user";
         _userNamespace = string.IsNullOrWhiteSpace(userNamespace) ? _userSid : userNamespace;
         EndpointName = GetControlPipeNameForNamespace(_userNamespace);
         OwnerName = GetOwnerMutexNameForNamespace(_userNamespace);
         _ownerMutex = new WorkerMutexOwner(OwnerName);
-        _offer = new WorkerHandshakeOffer(productVersion, new ProtocolRange(1, 1), Array.Empty<string>());
+        _offer = WorkerBuildMetadataProvider.Current.ToHandshakeOffer();
         _workTracker = workTracker ?? new WorkerWorkTracker();
         _eventSink = new WorkerEventSink();
     }
 
     /// <summary>Creates an isolated server identity for protocol tests only.</summary>
     internal static WorkerServer CreateForTests(string userNamespace) =>
-        new WorkerServer(userNamespace, "0.0.0", null);
+        new WorkerServer(userNamespace, null);
 
     /// <summary>The predictable control endpoint for clients in this user namespace.</summary>
     public string EndpointName { get; }

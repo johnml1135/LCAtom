@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using SIL.Motif.Contract.Worker;
 
@@ -8,6 +9,50 @@ namespace SIL.Motif.Launcher;
 /// <summary>Chooses an installed worker using wire compatibility before product ordering.</summary>
 public static class WorkerSelector
 {
+    /// <summary>Requires an installed registration to agree with compiled build metadata.</summary>
+    public static void RequireMatch(WorkerBuildMetadata compiled, InstalledWorker manifest)
+    {
+        if (compiled is null)
+            throw new ArgumentNullException(nameof(compiled));
+        if (manifest is null)
+            throw new ArgumentNullException(nameof(manifest));
+        WorkerBuildMetadata fromManifest;
+        try
+        {
+            fromManifest = new WorkerBuildMetadata(manifest.ProductVersion.ToString(), manifest.Protocols,
+                manifest.Capabilities);
+        }
+        catch (Exception exception) when (exception is ArgumentException || exception is ArgumentNullException)
+        {
+            throw new InvalidDataException("The installed worker metadata is invalid.", exception);
+        }
+        if (!string.Equals(compiled.ProductVersion, fromManifest.ProductVersion, StringComparison.Ordinal) ||
+            compiled.Protocols.Minimum != fromManifest.Protocols.Minimum ||
+            compiled.Protocols.Maximum != fromManifest.Protocols.Maximum ||
+            !compiled.Capabilities.SequenceEqual(fromManifest.Capabilities, StringComparer.Ordinal) ||
+            !string.Equals(compiled.MetadataDigest, fromManifest.MetadataDigest, StringComparison.Ordinal))
+            throw new InvalidDataException("The installed worker metadata does not match the compiled worker.");
+    }
+
+    /// <summary>Requires a connected handshake offer to agree with its installed registration.</summary>
+    public static void RequireMatch(WorkerHandshakeOffer offer, InstalledWorker manifest)
+    {
+        if (offer is null)
+            throw new ArgumentNullException(nameof(offer));
+        if (manifest is null)
+            throw new ArgumentNullException(nameof(manifest));
+        WorkerBuildMetadata compiled;
+        try
+        {
+            compiled = new WorkerBuildMetadata(offer.ProductVersion, offer.Protocols, offer.Capabilities);
+        }
+        catch (Exception exception) when (exception is ArgumentException || exception is ArgumentNullException)
+        {
+            throw new InvalidDataException("The connected worker metadata is invalid.", exception);
+        }
+        RequireMatch(compiled, manifest);
+    }
+
     /// <summary>Returns the newest worker that overlaps protocol and capability requirements.</summary>
     public static InstalledWorker SelectNewestCompatible(
         IEnumerable<InstalledWorker> installed,
@@ -63,4 +108,16 @@ public static class WorkerSelector
 
     private static bool HasProtocolOverlap(ProtocolRange left, ProtocolRange right) =>
         Math.Max(left.Minimum, right.Minimum) <= Math.Min(left.Maximum, right.Maximum);
+}
+
+/// <summary>Validates that compiled, installed, and connected worker metadata agree.</summary>
+public static class WorkerMetadataAgreement
+{
+    /// <summary>Requires an installed registration to agree with compiled build metadata.</summary>
+    public static void RequireMatch(WorkerBuildMetadata compiled, InstalledWorker manifest) =>
+        WorkerSelector.RequireMatch(compiled, manifest);
+
+    /// <summary>Requires a connected handshake offer to agree with its installed registration.</summary>
+    public static void RequireMatch(WorkerHandshakeOffer offer, InstalledWorker manifest) =>
+        WorkerSelector.RequireMatch(offer, manifest);
 }

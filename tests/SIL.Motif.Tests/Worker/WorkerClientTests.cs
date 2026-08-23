@@ -41,6 +41,9 @@ public sealed class WorkerClientTests
 
         var handshakeRequest = new WorkerHandshakeRequest("client-1", "1.0.0", new ProtocolRange(1, 1), Array.Empty<string>());
         using var connection = await new WorkerClient().ConnectAsync(pipeName, handshakeRequest, TimeSpan.FromSeconds(5), CancellationToken.None);
+        Assert.Equal("3.5.0", connection.Offer.ProductVersion);
+        Assert.Equal(new ProtocolRange(1, 1), connection.Offer.Protocols);
+        Assert.Empty(connection.Offer.Capabilities);
         var events = new ConcurrentQueue<WorkerEventEnvelope>();
         var eventSeen = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         connection.EventReceived += (_, value) =>

@@ -5,6 +5,11 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
+    <WorkerProductVersion Condition="'$(Version)' == ''">1.0.0</WorkerProductVersion>
+    <WorkerProductVersion Condition="'$(Version)' != ''">$(Version)</WorkerProductVersion>
+    <WorkerProtocolMinimum>1</WorkerProtocolMinimum>
+    <WorkerProtocolMaximum>1</WorkerProtocolMaximum>
+    <WorkerMetadataCanonicalJson>{&quot;productVersion&quot;:&quot;$(WorkerProductVersion)&quot;,&quot;min&quot;:$(WorkerProtocolMinimum),&quot;max&quot;:$(WorkerProtocolMaximum),&quot;capabilities&quot;:[]}</WorkerMetadataCanonicalJson>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\SIL.Motif.Contract\SIL.Motif.Contract.csproj" />
@@ -12,4 +17,28 @@
     <ProjectReference Include="..\SIL.Motif.Host\SIL.Motif.Host.csproj" />
     <PackageReference Include="System.IO.Pipes.AccessControl" Version="5.0.0" />
   </ItemGroup>
+
+  <Target Name="GenerateWorkerBuildMetadata" BeforeTargets="CoreCompile">
+    <ItemGroup>
+      <_WorkerMetadataLines Include="namespace SIL.Motif.Worker;" />
+      <_WorkerMetadataLines Include="{" />
+      <_WorkerMetadataLines Include="internal static class WorkerBuildMetadataGenerated" />
+      <_WorkerMetadataLines Include="{" />
+      <_WorkerMetadataLines Include="  public const string ProductVersion = &quot;$(WorkerProductVersion)&quot;%3B" />
+      <_WorkerMetadataLines Include="  public const int ProtocolMinimum = $(WorkerProtocolMinimum)%3B" />
+      <_WorkerMetadataLines Include="  public const int ProtocolMaximum = $(WorkerProtocolMaximum)%3B" />
+      <_WorkerMetadataLines Include="}" />
+      <_WorkerMetadataLines Include="}" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(IntermediateOutputPath)WorkerBuildMetadata.g.cs" Overwrite="true"
+      Lines="@(_WorkerMetadataLines)" />
+    <ItemGroup>
+      <Compile Include="$(IntermediateOutputPath)WorkerBuildMetadata.g.cs" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="PublishWorkerBuildMetadata" AfterTargets="Publish">
+    <WriteLinesToFile File="$(PublishDir)worker.metadata.json" Lines="$(WorkerMetadataCanonicalJson)"
+      Overwrite="true" />
+  </Target>
 </Project>

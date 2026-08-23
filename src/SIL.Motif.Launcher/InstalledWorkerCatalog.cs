@@ -54,6 +54,36 @@ public sealed class InstalledWorkerCatalog
     /// <summary>Registers an executable without replacing an existing version registration.</summary>
     public InstalledWorker Register(InstalledWorker worker)
     {
+        if (worker is null)
+            throw new ArgumentNullException(nameof(worker));
+        var sidecar = ReadMetadataIfPresent(worker.ExecutablePath);
+        if (sidecar is not null)
+            WorkerMetadataAgreement.RequireMatch(sidecar, worker);
+        return RegisterCore(worker);
+    }
+
+    /// <summary>Registers an executable after checking its compiled metadata record.</summary>
+    public InstalledWorker Register(InstalledWorker worker, WorkerBuildMetadata compiled)
+    {
+        WorkerMetadataAgreement.RequireMatch(compiled, worker);
+        return RegisterCore(worker);
+    }
+
+    /// <summary>Reads metadata beside an executable and registers that compiled worker.</summary>
+    public InstalledWorker Register(string executablePath)
+    {
+        if (string.IsNullOrWhiteSpace(executablePath))
+            throw new ArgumentException("A worker executable path is required.", nameof(executablePath));
+        var path = CanonicalPath(executablePath);
+        var metadata = ReadMetadataIfPresent(path) ??
+            throw new InvalidDataException("The worker build metadata sidecar is missing.");
+        if (!Version.TryParse(metadata.ProductVersion, out var version) || version is null)
+            throw new InvalidDataException("The worker build metadata has an invalid product version.");
+        return Register(new InstalledWorker(version, path, metadata.Protocols, metadata.Capabilities), metadata);
+    }
+
+    private InstalledWorker RegisterCore(InstalledWorker worker)
+    {
         ValidateWorker(worker, requireExecutable: true);
         var canonical = CanonicalWorker(worker);
         var versionDirectory = Path.Combine(Root, canonical.ProductVersion.ToString());
@@ -133,7 +163,30 @@ public sealed class InstalledWorkerCatalog
             var registered = ReadManifest(manifest);
             if (!Equivalent(registered, canonical))
                 throw new InvalidDataException("The selected worker registration changed after selection.");
+            var sidecar = ReadMetadataIfPresent(registered.ExecutablePath);
+            if (sidecar is not null)
+                WorkerMetadataAgreement.RequireMatch(sidecar, registered);
             return registered;
+        }
+    }
+
+    private static WorkerBuildMetadata? ReadMetadataIfPresent(string? executablePath)
+    {
+        if (string.IsNullOrWhiteSpace(executablePath))
+            return null;
+        var directory = Path.GetDirectoryName(executablePath);
+        if (string.IsNullOrWhiteSpace(directory))
+            return null;
+        var sidecar = Path.Combine(directory, WorkerCommands.BuildMetadataFileName);
+        if (!File.Exists(sidecar))
+            return null;
+        try
+        {
+            return WorkerBuildMetadata.Parse(File.ReadAllText(sidecar));
+        }
+        catch (Exception exception) when (exception is ArgumentException || exception is IOException)
+        {
+            throw new InvalidDataException("The worker build metadata sidecar is invalid.", exception);
         }
     }
 

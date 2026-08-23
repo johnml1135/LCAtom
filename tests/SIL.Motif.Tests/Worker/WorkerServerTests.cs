@@ -215,6 +215,22 @@ public sealed class WorkerServerTests
     }
 
     [Fact]
+    public async Task HandshakeOfferUsesCompiledWorkerMetadata()
+    {
+        var name = "worker-test-" + Guid.NewGuid().ToString("N");
+        await using var server = WorkerServer.CreateForTests(name);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        _ = server.StartAsync(cancellation.Token);
+        using var client = await new SIL.Motif.Client.Worker.WorkerClient().ConnectAsync(
+            server.EndpointName, Handshake(), TimeSpan.FromSeconds(5), cancellation.Token);
+
+        var expected = WorkerBuildMetadataProvider.Current.ToHandshakeOffer();
+        Assert.Equal(expected.ProductVersion, client.Offer.ProductVersion);
+        Assert.Equal(expected.Protocols, client.Offer.Protocols);
+        Assert.Equal(expected.Capabilities, client.Offer.Capabilities);
+    }
+
+    [Fact]
     public void PipeSecurityContainsOnlyTheOwningUserAndSystemRules()
     {
         var sid = WindowsIdentity.GetCurrent().User!.Value;

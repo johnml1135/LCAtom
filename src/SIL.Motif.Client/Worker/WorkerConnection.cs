@@ -49,6 +49,7 @@ public sealed class WorkerConnection : IDisposable
     private const int TransferReuseCapacity = 128;
     private readonly Stream _stream;
     private readonly WorkerHandshakeResult _negotiated;
+    private readonly WorkerHandshakeOffer _offer;
     private readonly string? _serverConnectionId;
     private readonly object _stateGate = new object();
     private readonly SemaphoreSlim _writeGate = new SemaphoreSlim(1, 1);
@@ -77,11 +78,12 @@ public sealed class WorkerConnection : IDisposable
     private readonly Task _readLoop;
     private readonly Task _eventDispatchLoop;
 
-    internal WorkerConnection(Stream stream, WorkerHandshakeResult negotiated, string? serverConnectionId = null)
+    internal WorkerConnection(Stream stream, WorkerHandshakeResult negotiated, WorkerHandshakeOffer offer)
     {
         _stream = stream ?? throw new ArgumentNullException(nameof(stream));
         _negotiated = negotiated ?? throw new ArgumentNullException(nameof(negotiated));
-        _serverConnectionId = serverConnectionId;
+        _offer = offer ?? throw new ArgumentNullException(nameof(offer));
+        _serverConnectionId = offer.ConnectionId;
         _completion = _completionSource.Task;
         _completion.ContinueWith(
             task =>
@@ -102,6 +104,9 @@ public sealed class WorkerConnection : IDisposable
 
     /// <summary>The protocol generation and capabilities selected during connection setup.</summary>
     public WorkerHandshakeResult Negotiated => _negotiated;
+
+    /// <summary>The complete worker offer received during connection setup.</summary>
+    public WorkerHandshakeOffer Offer => _offer;
 
     /// <summary>The server-issued identity used to select this connection as the live host.</summary>
     public string? ServerConnectionId => _serverConnectionId;
