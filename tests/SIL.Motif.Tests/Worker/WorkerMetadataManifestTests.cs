@@ -1,6 +1,8 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text;
 using SIL.Motif.Contract.Worker;
 using SIL.Motif.Launcher;
 using SIL.Motif.Worker;
@@ -85,6 +87,78 @@ public sealed class WorkerMetadataManifestTests
 
         Assert.Throws<InvalidDataException>(() => catalog.ValidateInstalled(worker));
     }
+
+    [Fact]
+    public void CatalogRejectsRegistrationWhenSidecarIsMissing()
+    {
+        using var root = TemporaryDirectory.Create();
+        var executable = Path.Combine(root.Path, "catalog", "3.4.2", "worker.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
+        File.WriteAllText(executable, "worker");
+        var metadata = new WorkerBuildMetadata("3.4.2", new ProtocolRange(1, 1), Array.Empty<string>());
+        var worker = new InstalledWorker(new Version(3, 4, 2), executable,
+            metadata.Protocols, metadata.Capabilities);
+        var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"));
+
+        Assert.Throws<InvalidDataException>(() => catalog.Register(worker));
+        Assert.False(File.Exists(Path.Combine(root.Path, "catalog", "3.4.2", "manifest.json")));
+    }
+
+    [Fact]
+    public void ValidateInstalledRejectsDeletedSidecar()
+    {
+        using var root = TemporaryDirectory.Create();
+        var executable = Path.Combine(root.Path, "catalog", "3.4.2", "worker.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
+        File.WriteAllText(executable, "worker");
+        var metadata = new WorkerBuildMetadata("3.4.2", new ProtocolRange(1, 1), Array.Empty<string>());
+        var worker = new InstalledWorker(new Version(3, 4, 2), executable,
+            metadata.Protocols, metadata.Capabilities);
+        var sidecar = Path.Combine(Path.GetDirectoryName(executable)!, WorkerCommands.BuildMetadataFileName);
+        File.WriteAllText(sidecar, metadata.ToCanonicalJson());
+        var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"));
+        catalog.Register(worker);
+        File.Delete(sidecar);
+
+        Assert.Throws<InvalidDataException>(() => catalog.ValidateInstalled(worker));
+    }
+
+    [Fact]
+    public void PublishedSidecarBytesAreExactCanonicalUtf8()
+    {
+        using var root = TemporaryDirectory.Create();
+        var project = FindRepositoryFile("src", "SIL.Motif.Worker", "SIL.Motif.Worker.csproj");
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            Arguments = "publish \"" + project + "\" --configuration Debug --no-restore --output \"" +
+                root.Path + "\"",
+            WorkingDirectory = FindRepositoryRoot(),
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        using var process = Process.Start(startInfo)!;
+        var output = process.StandardOutput.ReadToEnd();
+        var error = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+
+        Assert.True(process.ExitCode == 0, output + Environment.NewLine + error);
+        var sidecar = File.ReadAllBytes(Path.Combine(root.Path, WorkerCommands.BuildMetadataFileName));
+        Assert.Equal(Encoding.UTF8.GetBytes(WorkerBuildMetadataProvider.Current.ToCanonicalJson()), sidecar);
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Motif.sln")))
+            directory = directory.Parent!;
+        return directory?.FullName ?? throw new InvalidOperationException("The repository root was not found.");
+    }
+
+    private static string FindRepositoryFile(params string[] parts) =>
+        parts.Aggregate(FindRepositoryRoot(), Path.Combine);
 
     private sealed class TemporaryDirectory : IDisposable
     {

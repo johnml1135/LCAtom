@@ -45,6 +45,7 @@ public sealed class WorkerLauncherReviewTests
         var first = new InstalledWorker(new Version(1, 0), executable,
             new ProtocolRange(1, 1), Array.Empty<string>());
         var second = first with { Protocols = new ProtocolRange(1, 2) };
+        WriteSidecar(first);
         var catalogs = new[] { new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog")),
             new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog")) };
 
@@ -53,7 +54,7 @@ public sealed class WorkerLauncherReviewTests
             Task.Run(() => TryRegister(catalogs[1], second)));
 
         Assert.Single(results.Where(result => result is null));
-        Assert.Single(results.Where(result => result is InvalidOperationException));
+        Assert.Single(results.Where(result => result is InvalidDataException));
         Assert.Single(catalogs[0].List());
         Assert.Empty(Directory.GetFiles(catalogs[0].Root, "*.tmp", SearchOption.AllDirectories));
     }
@@ -81,13 +82,34 @@ public sealed class WorkerLauncherReviewTests
         Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
         File.WriteAllText(executable, "worker");
         var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"));
-        catalog.Register(new InstalledWorker(new Version(1, 0), executable,
+        Register(catalog, new InstalledWorker(new Version(1, 0), executable,
             new ProtocolRange(1, 1), Array.Empty<string>()));
         var starter = new CountingStarter();
         var launcher = new WorkerLauncher(catalog, new UnavailableConnector(), starter, "endpoint",
             TimeSpan.FromSeconds(10), new ExactDeadlineClock(), new NoopDelay());
 
         await Assert.ThrowsAsync<WorkerLaunchException>(() => launcher.EnsureConnectedAsync(Client()));
+
+        Assert.Equal(0, starter.Starts);
+    }
+
+    [Fact]
+    public async Task LauncherDoesNotStartWhenInstalledSidecarWasDeleted()
+    {
+        using var root = TemporaryDirectory.Create();
+        var executable = Path.Combine(root.Path, "catalog", "1.0", "worker.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
+        File.WriteAllText(executable, "worker");
+        var candidate = new InstalledWorker(new Version(1, 0), executable,
+            new ProtocolRange(1, 1), Array.Empty<string>());
+        var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"));
+        Register(catalog, candidate);
+        File.Delete(Path.Combine(Path.GetDirectoryName(executable)!, WorkerCommands.BuildMetadataFileName));
+        var starter = new CountingStarter();
+        var launcher = NewLauncher(catalog, new UnavailableConnector(), starter);
+
+        await Assert.ThrowsAsync<WorkerCatalogException>(() =>
+            launcher.EnsureConnectedAsync(Client(), CancellationToken.None));
 
         Assert.Equal(0, starter.Starts);
     }
@@ -108,7 +130,7 @@ public sealed class WorkerLauncherReviewTests
         Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
         File.WriteAllText(executable, "worker");
         var startupCatalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "startup"));
-        startupCatalog.Register(new InstalledWorker(new Version(1, 0), executable,
+        Register(startupCatalog, new InstalledWorker(new Version(1, 0), executable,
             new ProtocolRange(1, 1), Array.Empty<string>()));
         Assert.Equal(4, await SIL.Motif.Launcher.Program.RunAsync(Array.Empty<string>(),
             NewLauncher(startupCatalog, new UnavailableConnector(), new ExitedStarter())));
@@ -144,7 +166,7 @@ public sealed class WorkerLauncherReviewTests
         Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
         File.WriteAllText(executable, "worker");
         var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"));
-        catalog.Register(new InstalledWorker(new Version(1, 0), executable,
+        Register(catalog, new InstalledWorker(new Version(1, 0), executable,
             new ProtocolRange(1, 1), Array.Empty<string>()));
         var connector = new ConvergingConnector();
         var starter = new CountingStarter();
@@ -178,6 +200,22 @@ public sealed class WorkerLauncherReviewTests
         }
     }
 
+    private static InstalledWorker Register(InstalledWorkerCatalog catalog, InstalledWorker worker)
+    {
+        WriteSidecar(worker);
+        return catalog.Register(worker);
+    }
+
+    private static void WriteSidecar(InstalledWorker worker)
+    {
+        var directory = Path.GetDirectoryName(worker.ExecutablePath)!;
+        Directory.CreateDirectory(directory);
+        var metadata = new WorkerBuildMetadata(worker.ProductVersion.ToString(), worker.Protocols,
+            worker.Capabilities);
+        File.WriteAllText(Path.Combine(directory, WorkerCommands.BuildMetadataFileName),
+            metadata.ToCanonicalJson());
+    }
+
     private static WorkerHandshakeRequest Client() => new WorkerHandshakeRequest(
         "review", "1.0", new ProtocolRange(1, 1), Array.Empty<string>());
 
@@ -201,7 +239,8 @@ public sealed class WorkerLauncherReviewTests
     {
         public Task<IWorkerConnection> ConnectAsync(string endpointName, WorkerHandshakeRequest request,
             TimeSpan timeout, CancellationToken cancellationToken) =>
-            Task.FromResult<IWorkerConnection>(new ConnectedConnection());
+            Task.FromResult<IWorkerConnection>(new ConnectedConnection(
+                new WorkerHandshakeOffer("running", new ProtocolRange(1, 1), Array.Empty<string>(), "running")));
     }
 
     private sealed class IncompatibleConnector : IWorkerConnector
@@ -257,13 +296,17 @@ public sealed class WorkerLauncherReviewTests
                 await _bothInitialProbes.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
                 throw new WorkerEndpointUnavailableException("absent");
             }
-            return new ConnectedConnection();
+            return new ConnectedConnection(
+                new WorkerHandshakeOffer("1.0", new ProtocolRange(1, 1), Array.Empty<string>(), "running"));
         }
     }
 
     private sealed class ConnectedConnection : IWorkerConnection
     {
+        public ConnectedConnection(WorkerHandshakeOffer offer) { Offer = offer; }
+
         public WorkerHandshakeResult Negotiated { get; } = new WorkerHandshakeResult(1, Array.Empty<string>());
+        public WorkerHandshakeOffer Offer { get; }
         public void Dispose() { }
     }
 

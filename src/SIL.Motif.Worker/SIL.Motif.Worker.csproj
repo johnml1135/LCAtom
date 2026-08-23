@@ -37,8 +37,23 @@
     </ItemGroup>
   </Target>
 
+  <UsingTask TaskName="WriteExactUtf8File" TaskFactory="RoslynCodeTaskFactory"
+    AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <File ParameterType="System.String" Required="true" />
+      <Contents ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Text" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        System.IO.File.WriteAllText(File, Contents, new System.Text.UTF8Encoding(false));
+        return true;
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
   <Target Name="PublishWorkerBuildMetadata" AfterTargets="Publish">
-    <WriteLinesToFile File="$(PublishDir)worker.metadata.json" Lines="$(WorkerMetadataCanonicalJson)"
-      Overwrite="true" />
+    <WriteExactUtf8File File="$(PublishDir)worker.metadata.json" Contents="$(WorkerMetadataCanonicalJson)" />
   </Target>
 </Project>

@@ -77,13 +77,13 @@ public sealed class WorkerSelectorTests
             new ProtocolRange(1, 2), new[] { "jobs.v1" });
         var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"));
 
-        catalog.Register(worker);
-        catalog.Register(worker);
+        Register(catalog, worker);
+        Register(catalog, worker);
         Assert.Single(catalog.List());
 
         var changed = worker with { ExecutablePath = Path.Combine(root.Path, "catalog", "1.2.3", "other.exe") };
         File.WriteAllText(changed.ExecutablePath, "worker");
-        Assert.Throws<InvalidOperationException>(() => catalog.Register(changed));
+        Assert.Throws<InvalidOperationException>(() => Register(catalog, changed));
     }
 
     [Fact]
@@ -107,7 +107,7 @@ public sealed class WorkerSelectorTests
         Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
         File.WriteAllText(executable, "worker");
         var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"));
-        catalog.Register(new InstalledWorker(new Version(1, 2, 3), executable,
+        Register(catalog, new InstalledWorker(new Version(1, 2, 3), executable,
             new ProtocolRange(1, 2), new[] { "jobs.v1" }));
         var manifest = Path.Combine(root.Path, "catalog", "1.2.3", "manifest.json");
         var changed = File.ReadAllText(manifest).Replace("\"minimum\":1", "\"minimum\":2",
@@ -129,7 +129,7 @@ public sealed class WorkerSelectorTests
                 ? FileAttributes.ReparsePoint
                 : FileAttributes.Normal);
 
-        Assert.Throws<ArgumentException>(() => catalog.Register(new InstalledWorker(new Version(1, 2, 3),
+        Assert.Throws<ArgumentException>(() => Register(catalog, new InstalledWorker(new Version(1, 2, 3),
             executable, new ProtocolRange(1, 2), Array.Empty<string>())));
     }
 
@@ -141,7 +141,7 @@ public sealed class WorkerSelectorTests
         Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
         File.WriteAllText(executable, "worker");
         var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"));
-        catalog.Register(new InstalledWorker(new Version(1, 2, 3), executable,
+        Register(catalog, new InstalledWorker(new Version(1, 2, 3), executable,
             new ProtocolRange(1, 2), Array.Empty<string>()));
         var manifest = Path.Combine(root.Path, "catalog", "1.2.3", "manifest.json");
         var valid = File.ReadAllText(manifest);
@@ -169,14 +169,14 @@ public sealed class WorkerSelectorTests
         Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
         File.WriteAllText(executable, "worker");
         var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"));
-        catalog.Register(new InstalledWorker(new Version(1, 2, 3), executable,
+        Register(catalog, new InstalledWorker(new Version(1, 2, 3), executable,
             new ProtocolRange(1, 2), Array.Empty<string>()));
         File.AppendAllText(executable, "changed");
         Assert.Throws<InvalidDataException>(() => catalog.List());
 
         var outside = Path.Combine(root.Path, "outside.exe");
         File.WriteAllText(outside, "outside");
-        Assert.Throws<ArgumentException>(() => catalog.Register(new InstalledWorker(new Version(2, 0),
+        Assert.Throws<ArgumentException>(() => Register(catalog, new InstalledWorker(new Version(2, 0),
             outside, new ProtocolRange(1, 2), Array.Empty<string>())));
     }
 
@@ -216,7 +216,8 @@ public sealed class WorkerSelectorTests
     [Fact]
     public async Task ExistingCompatibleWorkerIsConnectedWithoutStartingProcess()
     {
-        var connector = new FakeConnector(FakeConnector.Connected());
+        var connector = new FakeConnector(FakeConnector.Connected(
+            new WorkerHandshakeOffer("running", new ProtocolRange(1, 1), Array.Empty<string>(), "running")));
         var starter = new FakeStarter();
         var launcher = NewLauncher(connector, starter);
         var request = Client(new ProtocolRange(1, 1));
@@ -239,8 +240,9 @@ public sealed class WorkerSelectorTests
         var candidate = new InstalledWorker(new Version(3, 0), executable,
             new ProtocolRange(1, 1), Array.Empty<string>());
         var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"));
-        catalog.Register(candidate);
-        var connector = new FakeConnector(FakeConnector.Unavailable(), FakeConnector.Connected());
+        Register(catalog, candidate);
+        var connector = new FakeConnector(FakeConnector.Unavailable(), FakeConnector.Connected(
+            new WorkerHandshakeOffer("3.0", new ProtocolRange(1, 1), Array.Empty<string>(), "id")));
         var starter = new FakeStarter();
         var launcher = NewLauncher(connector, starter, catalog);
 
@@ -250,6 +252,70 @@ public sealed class WorkerSelectorTests
         Assert.Equal(candidate, process.Worker);
         Assert.True(process.Hidden);
         Assert.Equal(2, connector.Attempts);
+    }
+
+    [Fact]
+    public async Task StartedCandidateConnectionRequiresAFullOffer()
+    {
+        using var root = TemporaryDirectory.Create();
+        var executable = Path.Combine(root.Path, "catalog", "3.0", "worker.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
+        File.WriteAllText(executable, "worker");
+        var candidate = new InstalledWorker(new Version(3, 0), executable,
+            new ProtocolRange(1, 1), Array.Empty<string>());
+        var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"));
+        Register(catalog, candidate);
+        var connector = new FakeConnector(FakeConnector.Unavailable(), FakeConnector.MissingOffer());
+        var starter = new FakeStarter();
+        var launcher = NewLauncher(connector, starter, catalog);
+
+        await Assert.ThrowsAsync<WorkerLaunchException>(() =>
+            launcher.EnsureConnectedAsync(Client(new ProtocolRange(1, 1)), CancellationToken.None));
+
+        Assert.Single(starter.Started);
+    }
+
+    [Fact]
+    public async Task StartedCandidateConnectionRequiresMatchingOffer()
+    {
+        using var root = TemporaryDirectory.Create();
+        var executable = Path.Combine(root.Path, "catalog", "3.0", "worker.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
+        File.WriteAllText(executable, "worker");
+        var candidate = new InstalledWorker(new Version(3, 0), executable,
+            new ProtocolRange(1, 1), Array.Empty<string>());
+        var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"));
+        Register(catalog, candidate);
+        var mismatched = new WorkerHandshakeOffer("4.0", new ProtocolRange(1, 1), Array.Empty<string>(), "id");
+        var connector = new FakeConnector(FakeConnector.Unavailable(), FakeConnector.Connected(mismatched));
+        var starter = new FakeStarter();
+        var launcher = NewLauncher(connector, starter, catalog);
+
+        await Assert.ThrowsAsync<WorkerLaunchException>(() =>
+            launcher.EnsureConnectedAsync(Client(new ProtocolRange(1, 1)), CancellationToken.None));
+
+        Assert.Single(starter.Started);
+    }
+
+    [Fact]
+    public async Task StartedCandidateConnectionSucceedsWithMatchingOffer()
+    {
+        using var root = TemporaryDirectory.Create();
+        var executable = Path.Combine(root.Path, "catalog", "3.0", "worker.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
+        File.WriteAllText(executable, "worker");
+        var candidate = new InstalledWorker(new Version(3, 0), executable,
+            new ProtocolRange(1, 1), Array.Empty<string>());
+        var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"));
+        Register(catalog, candidate);
+        var offer = new WorkerHandshakeOffer("3.0", new ProtocolRange(1, 1), Array.Empty<string>(), "id");
+        var connector = new FakeConnector(FakeConnector.Unavailable(), FakeConnector.Connected(offer));
+        var starter = new FakeStarter();
+        var launcher = NewLauncher(connector, starter, catalog);
+
+        await launcher.EnsureConnectedAsync(Client(new ProtocolRange(1, 1)), CancellationToken.None);
+
+        Assert.Single(starter.Started);
     }
 
     [Fact]
@@ -301,7 +367,7 @@ public sealed class WorkerSelectorTests
         Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
         File.WriteAllText(executable, "worker");
         var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"));
-        catalog.Register(new InstalledWorker(new Version(1, 0), executable,
+        Register(catalog, new InstalledWorker(new Version(1, 0), executable,
             new ProtocolRange(1, 1), Array.Empty<string>()));
         var connector = new FakeConnector(FakeConnector.Unavailable());
         var starter = new FakeStarter(exited: true, exitCode: 17);
@@ -329,6 +395,17 @@ public sealed class WorkerSelectorTests
     private static InstalledWorker Worker(string version, ProtocolRange protocols, params string[] capabilities) =>
         new InstalledWorker(Version.Parse(version), "C:\\Motif\\worker.exe", protocols, capabilities);
 
+    private static InstalledWorker Register(InstalledWorkerCatalog catalog, InstalledWorker worker)
+    {
+        var directory = System.IO.Path.GetDirectoryName(worker.ExecutablePath)!;
+        Directory.CreateDirectory(directory);
+        var metadata = new WorkerBuildMetadata(worker.ProductVersion.ToString(), worker.Protocols,
+            worker.Capabilities);
+        File.WriteAllText(Path.Combine(directory, WorkerCommands.BuildMetadataFileName),
+            metadata.ToCanonicalJson());
+        return catalog.Register(worker);
+    }
+
     private sealed class FakeConnector : IWorkerConnector
     {
         private readonly Queue<Func<Task<IWorkerConnection>>> _responses;
@@ -351,8 +428,11 @@ public sealed class WorkerSelectorTests
             return (_responses.Count == 0 ? Unavailable() : _responses.Dequeue())();
         }
 
-        public static Func<Task<IWorkerConnection>> Connected() => () =>
-            Task.FromResult<IWorkerConnection>(new FakeConnection());
+        public static Func<Task<IWorkerConnection>> Connected(WorkerHandshakeOffer offer) => () =>
+            Task.FromResult<IWorkerConnection>(new FakeConnection(offer));
+
+        public static Func<Task<IWorkerConnection>> MissingOffer() => () =>
+            Task.FromResult<IWorkerConnection>(new FakeConnection(null!));
 
         public static Func<Task<IWorkerConnection>> Unavailable() => () =>
             Task.FromException<IWorkerConnection>(new WorkerEndpointUnavailableException("endpoint absent"));
@@ -367,8 +447,15 @@ public sealed class WorkerSelectorTests
 
     private sealed class FakeConnection : IWorkerConnection
     {
+        public FakeConnection(WorkerHandshakeOffer? offer)
+        {
+            Offer = offer!;
+        }
+
         public WorkerHandshakeResult Negotiated { get; } =
             new WorkerHandshakeResult(1, Array.Empty<string>());
+
+        public WorkerHandshakeOffer Offer { get; }
 
         public void Dispose() { }
     }
