@@ -117,7 +117,7 @@ public interface IWorkerProcess : IDisposable
     /// <summary>The exact shell-free startup configuration used by the process seam.</summary>
     ProcessStartInfo StartInfo { get; }
 
-    /// <summary>Terminates a candidate that did not establish the endpoint it advertised.</summary>
+    /// <summary>Terminates a rejected candidate and returns only after its process exit is confirmed.</summary>
     void Terminate();
 }
 
@@ -228,6 +228,7 @@ public sealed class WorkerLauncher
         }
 
         var accepted = false;
+        Exception? launchFailure = null;
         try
         {
             while (_clock.Timestamp <= deadline)
@@ -276,6 +277,11 @@ public sealed class WorkerLauncher
                 "Worker startup failed: the endpoint did not become ready before startup timed out; " +
                 "reinstall or update Motif and try again.");
         }
+        catch (Exception exception)
+        {
+            launchFailure = exception;
+            throw;
+        }
         finally
         {
             try
@@ -283,9 +289,20 @@ public sealed class WorkerLauncher
                 if (!accepted && !process.HasExited)
                     process.Terminate();
             }
+            catch (Exception cleanupFailure) when (launchFailure is not null)
+            {
+                launchFailure.Data["workerTerminationFailure"] = cleanupFailure;
+            }
             finally
             {
-                process.Dispose();
+                try
+                {
+                    process.Dispose();
+                }
+                catch (Exception cleanupFailure) when (launchFailure is not null)
+                {
+                    launchFailure.Data["workerProcessDisposalFailure"] = cleanupFailure;
+                }
             }
         }
     }
@@ -443,8 +460,32 @@ public sealed class WorkerProcessStarter : IWorkerProcessStarter
 
         public void Terminate()
         {
-            if (!_process.HasExited)
-                _process.Kill(entireProcessTree: true);
+            try
+            {
+                if (_process.HasExited)
+                    return;
+                try
+                {
+                    _process.Kill(entireProcessTree: true);
+                }
+                catch (InvalidOperationException)
+                {
+                    if (_process.HasExited)
+                        return;
+                    throw;
+                }
+                if (!_process.WaitForExit(5000))
+                    throw new WorkerLaunchException(
+                        "The rejected worker did not exit within the termination deadline.");
+            }
+            catch (WorkerLaunchException)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                throw new WorkerLaunchException("The rejected worker could not be terminated.", exception);
+            }
         }
 
         public void Dispose() => _process.Dispose();

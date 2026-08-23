@@ -409,6 +409,38 @@ public sealed class WorkerSelectorTests
     }
 
     [Fact]
+    public async Task RejectedCandidateExitsBeforeLauncherFailureReturns()
+    {
+        using var root = TemporaryDirectory.Create();
+        var executable = Path.Combine(root.Path, "catalog", "3.0", "worker.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
+        File.WriteAllText(executable, "worker");
+        var candidate = new InstalledWorker(new Version(3, 0), executable,
+            new ProtocolRange(1, 1), Array.Empty<string>());
+        var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"));
+        Register(catalog, candidate);
+        var state = new CandidateEndpointState();
+        var connector = new CandidateEndpointConnector(state);
+        var starter = new BlockingTerminationStarter(state);
+        var launcher = NewLauncher(connector, starter, catalog);
+
+        var firstAttempt = Task.Run(() =>
+            launcher.EnsureConnectedAsync(Client(new ProtocolRange(1, 1)), CancellationToken.None));
+        var process = await starter.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await process.TerminationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.False(firstAttempt.IsCompleted);
+        process.AllowTermination();
+        await Assert.ThrowsAsync<WorkerLaunchException>(() => firstAttempt);
+
+        var laterStarter = new FakeStarter();
+        await NewLauncher(connector, laterStarter, catalog)
+            .EnsureConnectedAsync(Client(new ProtocolRange(1, 1)), CancellationToken.None);
+        Assert.Equal(0, connector.RejectedCandidateReconnects);
+        Assert.Empty(laterStarter.Started);
+    }
+
+    [Fact]
     public async Task IncompatibleExistingEndpointFailsWithoutStartingAnotherWorker()
     {
         var connector = new FakeConnector(FakeConnector.Incompatible());
@@ -471,7 +503,7 @@ public sealed class WorkerSelectorTests
         Assert.InRange(connector.Attempts, 1, 2);
     }
 
-    private static WorkerLauncher NewLauncher(FakeConnector connector, FakeStarter starter,
+    private static WorkerLauncher NewLauncher(IWorkerConnector connector, IWorkerProcessStarter starter,
         InstalledWorkerCatalog? catalog = null)
     {
         return new WorkerLauncher(catalog ?? new InstalledWorkerCatalog(Path.Combine(Path.GetTempPath(),
@@ -575,6 +607,84 @@ public sealed class WorkerSelectorTests
             Started.Add(process);
             return process;
         }
+    }
+
+    private sealed class CandidateEndpointState
+    {
+        public bool Started { get; set; }
+        public bool Exited { get; set; }
+    }
+
+    private sealed class CandidateEndpointConnector : IWorkerConnector
+    {
+        private readonly CandidateEndpointState _state;
+        private bool _rejectedOfferReturned;
+
+        public CandidateEndpointConnector(CandidateEndpointState state) => _state = state;
+
+        public int RejectedCandidateReconnects { get; private set; }
+
+        public Task<IWorkerConnection> ConnectAsync(string endpointName, WorkerHandshakeRequest request,
+            TimeSpan timeout, CancellationToken cancellationToken)
+        {
+            if (!_state.Started)
+                return Task.FromException<IWorkerConnection>(
+                    new WorkerEndpointUnavailableException("endpoint absent"));
+            if (!_state.Exited)
+            {
+                if (_rejectedOfferReturned)
+                    RejectedCandidateReconnects++;
+                _rejectedOfferReturned = true;
+                return Task.FromResult<IWorkerConnection>(new FakeConnection(
+                    new WorkerHandshakeOffer("4.0", new ProtocolRange(1, 1), Array.Empty<string>(), "rejected")));
+            }
+            return Task.FromResult<IWorkerConnection>(new FakeConnection(
+                new WorkerHandshakeOffer("running", new ProtocolRange(1, 1), Array.Empty<string>(), "stable")));
+        }
+    }
+
+    private sealed class BlockingTerminationStarter : IWorkerProcessStarter
+    {
+        private readonly CandidateEndpointState _state;
+
+        public BlockingTerminationStarter(CandidateEndpointState state) => _state = state;
+
+        public TaskCompletionSource<BlockingTerminationProcess> Started { get; } =
+            new TaskCompletionSource<BlockingTerminationProcess>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public IWorkerProcess Start(InstalledWorker worker)
+        {
+            _state.Started = true;
+            var process = new BlockingTerminationProcess(_state);
+            Started.TrySetResult(process);
+            return process;
+        }
+    }
+
+    private sealed class BlockingTerminationProcess : IWorkerProcess
+    {
+        private readonly CandidateEndpointState _state;
+        private readonly ManualResetEventSlim _allowTermination = new ManualResetEventSlim();
+
+        public BlockingTerminationProcess(CandidateEndpointState state) => _state = state;
+
+        public TaskCompletionSource<bool> TerminationStarted { get; } =
+            new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool HasExited => _state.Exited;
+        public int ExitCode => 0;
+        public ProcessStartInfo StartInfo { get; } = new ProcessStartInfo();
+
+        public void AllowTermination() => _allowTermination.Set();
+
+        public void Terminate()
+        {
+            TerminationStarted.TrySetResult(true);
+            if (!_allowTermination.Wait(TimeSpan.FromSeconds(5)))
+                throw new WorkerLaunchException("The fake worker did not receive its termination release.");
+            _state.Exited = true;
+        }
+
+        public void Dispose() => _allowTermination.Dispose();
     }
 
     private sealed class FakeProcess : IWorkerProcess
