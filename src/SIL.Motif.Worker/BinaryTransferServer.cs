@@ -18,6 +18,7 @@ namespace SIL.Motif.Worker;
 public sealed class BinaryTransferServer : IAsyncDisposable
 {
     private const int BufferSize = 64 * 1024;
+    private const int MaximumDeleteAttempts = 4;
     /// <summary>Default simultaneous unpublished-offer envelope.</summary>
     public const int DefaultMaximumActiveOffers = 128;
     /// <summary>Default aggregate bytes reserved by unpublished offers.</summary>
@@ -28,6 +29,7 @@ public sealed class BinaryTransferServer : IAsyncDisposable
     private readonly string? _userSid;
     private readonly int _maximumActiveOffers;
     private readonly long _maximumReservedBytes;
+    private readonly Action<string> _deleteFile;
     private readonly object _lifecycleGate = new object();
     private Action? _onOfferRegistered;
     private Action? _onDisposed;
@@ -43,13 +45,14 @@ public sealed class BinaryTransferServer : IAsyncDisposable
     public BinaryTransferServer(string tempDirectory, IWorkerClock? clock = null, string? userSid = null,
         int maximumActiveOffers = DefaultMaximumActiveOffers,
         long maximumReservedBytes = DefaultMaximumReservedBytes)
-        : this(tempDirectory, clock, userSid, maximumActiveOffers, maximumReservedBytes, null, null, null)
+        : this(tempDirectory, clock, userSid, maximumActiveOffers, maximumReservedBytes, null, null, null, null)
     {
     }
 
     private BinaryTransferServer(string tempDirectory, IWorkerClock? clock, string? userSid,
         int maximumActiveOffers, long maximumReservedBytes,
-        Action? onOfferRegistered, Action? onDisposed, Action? onConnectionAccepted)
+        Action? onOfferRegistered, Action? onDisposed, Action? onConnectionAccepted,
+        Action<string>? deleteFile)
     {
         if (maximumActiveOffers <= 0)
             throw new ArgumentOutOfRangeException(nameof(maximumActiveOffers));
@@ -62,6 +65,7 @@ public sealed class BinaryTransferServer : IAsyncDisposable
         _userSid = userSid;
         _maximumActiveOffers = maximumActiveOffers;
         _maximumReservedBytes = maximumReservedBytes;
+        _deleteFile = deleteFile ?? File.Delete;
         _onOfferRegistered = onOfferRegistered;
         _onDisposed = onDisposed;
         _onConnectionAccepted = onConnectionAccepted;
@@ -69,9 +73,9 @@ public sealed class BinaryTransferServer : IAsyncDisposable
 
     internal static BinaryTransferServer CreateWithLifecycleProbes(string tempDirectory,
         Action? onOfferRegistered = null, Action? onDisposed = null,
-        Action? onConnectionAccepted = null) =>
+        Action? onConnectionAccepted = null, Action<string>? deleteFile = null) =>
         new BinaryTransferServer(tempDirectory, null, null, DefaultMaximumActiveOffers,
-            DefaultMaximumReservedBytes, onOfferRegistered, onDisposed, onConnectionAccepted);
+            DefaultMaximumReservedBytes, onOfferRegistered, onDisposed, onConnectionAccepted, deleteFile);
 
     /// <summary>Exposes the same restricted ACL used by every binary pipe.</summary>
     public static PipeSecurity CreatePipeSecurity(string? userSid = null) =>
@@ -85,7 +89,7 @@ public sealed class BinaryTransferServer : IAsyncDisposable
     {
         foreach (var failure in _cleanupFailures)
         {
-            if (TryDeleteTemporaryFile(failure.Key, failure.Value))
+            if (TryDeleteTemporaryFile(failure.Key, failure.Value) == TemporaryDeleteResult.Deleted)
                 _cleanupFailures.TryRemove(failure.Key, out _);
         }
     }
@@ -147,20 +151,31 @@ public sealed class BinaryTransferServer : IAsyncDisposable
             transfer.Cancel.Cancel();
             try { await transfer.AcceptTask.ConfigureAwait(false); }
             catch { }
-            RemoveAndDelete(transfer);
+            await RemoveAndDeleteAsync(transfer).ConfigureAwait(false);
             throw;
         }
+        Task? rejectedCleanup = null;
+        var ownsCompletion = false;
         lock (transfer.Gate)
         {
             if (transfer.State != TransferState.Received)
-                throw new InvalidOperationException("The binary transfer is no longer publishable.");
-            transfer.State = TransferState.Completing;
+                rejectedCleanup = transfer.CleanupCompletion?.Task;
+            else
+            {
+                transfer.State = TransferState.Completing;
+                ownsCompletion = true;
+            }
         }
+        if (rejectedCleanup is not null)
+            await rejectedCleanup.ConfigureAwait(false);
+        if (!ownsCompletion)
+            throw new InvalidOperationException("The binary transfer is no longer publishable.");
         if (_clock.MonotonicNow >= transfer.MonotonicDeadline)
-            return Reject(transfer, "The binary transfer offer has expired.");
+            return await RejectAsync(transfer, "The binary transfer offer has expired.").ConfigureAwait(false);
         if (completion.ByteCount != transfer.ByteCount ||
             !string.Equals(completion.Sha256, transfer.Sha256, StringComparison.OrdinalIgnoreCase))
-            return Reject(transfer, "The binary transfer completion does not match received bytes.");
+            return await RejectAsync(transfer,
+                "The binary transfer completion does not match received bytes.").ConfigureAwait(false);
         var readyPath = Path.Combine(_tempDirectory, transfer.Offer.TransferId + ".ready");
         try
         {
@@ -168,7 +183,7 @@ public sealed class BinaryTransferServer : IAsyncDisposable
         }
         catch
         {
-            RemoveAndDelete(transfer);
+            await RemoveAndDeleteAsync(transfer).ConfigureAwait(false);
             throw;
         }
         lock (transfer.Gate)
@@ -185,7 +200,7 @@ public sealed class BinaryTransferServer : IAsyncDisposable
         transfer.Cancel.Cancel();
         try { await transfer.AcceptTask.ConfigureAwait(false); }
         catch { }
-        RemoveAndDelete(transfer);
+        await RemoveAndDeleteAsync(transfer).ConfigureAwait(false);
     }
 
     /// <summary>Removes all unpublished temporary files owned by this server.</summary>
@@ -204,7 +219,7 @@ public sealed class BinaryTransferServer : IAsyncDisposable
         {
             transfer.Cancel.Cancel();
             try { await transfer.AcceptTask.ConfigureAwait(false); } catch { }
-            RemoveAndDelete(transfer);
+            await RemoveAndDeleteAsync(transfer).ConfigureAwait(false);
         }
         _transfers.Clear();
     }
@@ -248,7 +263,7 @@ public sealed class BinaryTransferServer : IAsyncDisposable
         }
         catch
         {
-            RemoveAndDelete(transfer);
+            await RemoveAndDeleteAsync(transfer).ConfigureAwait(false);
             throw;
         }
         finally
@@ -272,51 +287,90 @@ public sealed class BinaryTransferServer : IAsyncDisposable
     private async Task RemoveAfterFailureAsync(Transfer transfer)
     {
         try { await transfer.AcceptTask.ConfigureAwait(false); }
-        catch { RemoveAndDelete(transfer); }
+        catch { await RemoveAndDeleteAsync(transfer).ConfigureAwait(false); }
     }
 
-    private string Reject(Transfer transfer, string message)
+    private async Task<string> RejectAsync(Transfer transfer, string message)
     {
-        RemoveAndDelete(transfer);
+        await RemoveAndDeleteAsync(transfer).ConfigureAwait(false);
         throw new InvalidOperationException(message);
     }
 
-    private void RemoveAndDelete(Transfer transfer)
+    private async Task RemoveAndDeleteAsync(Transfer transfer)
     {
+        TaskCompletionSource<bool> cleanupCompletion;
+        var ownsCleanup = false;
         lock (transfer.Gate)
         {
             if (transfer.State == TransferState.Published)
                 return;
-            transfer.State = TransferState.Rejected;
-            _transfers.TryRemove(transfer.Offer.TransferId, out _);
+            if (transfer.CleanupCompletion is null)
+            {
+                transfer.CleanupCompletion = new TaskCompletionSource<bool>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                transfer.State = TransferState.Rejected;
+                ownsCleanup = true;
+            }
+            cleanupCompletion = transfer.CleanupCompletion;
         }
+        if (!ownsCleanup)
+        {
+            await cleanupCompletion.Task.ConfigureAwait(false);
+            return;
+        }
+
         ReleaseCapacity(transfer);
-        if (TryDeleteTemporaryFile(transfer.TempPath, transfer.Offer.TransferId))
-            _cleanupFailures.TryRemove(transfer.TempPath, out _);
-        else
-            _cleanupFailures.TryAdd(transfer.TempPath, transfer.Offer.TransferId);
+        try
+        {
+            await DeleteTemporaryFileWithRetryAsync(transfer.TempPath,
+                transfer.Offer.TransferId).ConfigureAwait(false);
+        }
+        finally
+        {
+            _transfers.TryRemove(transfer.Offer.TransferId, out _);
+            cleanupCompletion.TrySetResult(true);
+        }
     }
 
-    private bool TryDeleteTemporaryFile(string path, string transferId)
+    private async Task DeleteTemporaryFileWithRetryAsync(string path, string transferId)
+    {
+        for (var attempt = 1; attempt <= MaximumDeleteAttempts; attempt++)
+        {
+            var result = TryDeleteTemporaryFile(path, transferId);
+            if (result == TemporaryDeleteResult.Deleted)
+            {
+                _cleanupFailures.TryRemove(path, out _);
+                return;
+            }
+            if (result == TemporaryDeleteResult.Unsafe)
+                break;
+            if (attempt < MaximumDeleteAttempts)
+                await Task.Delay(TimeSpan.FromMilliseconds(5 * attempt)).ConfigureAwait(false);
+        }
+        _cleanupFailures.TryAdd(path, transferId);
+    }
+
+    private TemporaryDeleteResult TryDeleteTemporaryFile(string path, string transferId)
     {
         var full = Path.GetFullPath(path);
         var expected = Path.Combine(_tempDirectory, transferId + ".tmp");
         if (!full.StartsWith(_tempDirectoryPrefix, StringComparison.OrdinalIgnoreCase) ||
             !StringComparer.OrdinalIgnoreCase.Equals(full, expected) ||
             !StringComparer.OrdinalIgnoreCase.Equals(Path.GetDirectoryName(full), _tempDirectory))
-            return false;
+            return TemporaryDeleteResult.Unsafe;
         try
         {
-            if (!IsSafeTemporaryRoot()) return false;
-            if (Directory.Exists(full)) return false;
-            if (!File.Exists(full)) return true;
+            if (!IsSafeTemporaryRoot()) return TemporaryDeleteResult.Unsafe;
+            if (Directory.Exists(full)) return TemporaryDeleteResult.Unsafe;
+            if (!File.Exists(full)) return TemporaryDeleteResult.Deleted;
             if ((File.GetAttributes(full) & FileAttributes.ReparsePoint) != 0 || !IsSafeTemporaryRoot())
-                return false;
-            File.Delete(full);
-            return !File.Exists(full) && !Directory.Exists(full);
+                return TemporaryDeleteResult.Unsafe;
+            _deleteFile(full);
+            if (Directory.Exists(full)) return TemporaryDeleteResult.Unsafe;
+            return File.Exists(full) ? TemporaryDeleteResult.RetryableFailure : TemporaryDeleteResult.Deleted;
         }
-        catch (IOException) { return false; }
-        catch (UnauthorizedAccessException) { return false; }
+        catch (IOException) { return TemporaryDeleteResult.RetryableFailure; }
+        catch (UnauthorizedAccessException) { return TemporaryDeleteResult.RetryableFailure; }
     }
 
     private bool IsSafeTemporaryRoot() =>
@@ -367,9 +421,11 @@ public sealed class BinaryTransferServer : IAsyncDisposable
         public string? Sha256 { get; set; }
         public TransferState State { get; set; }
         public bool CapacityReleased { get; set; }
+        public TaskCompletionSource<bool>? CleanupCompletion { get; set; }
     }
 
     private enum TransferState { Receiving, Received, Completing, Published, Rejected }
+    private enum TemporaryDeleteResult { Deleted, RetryableFailure, Unsafe }
 
     private sealed class SystemClock : IWorkerClock
     {

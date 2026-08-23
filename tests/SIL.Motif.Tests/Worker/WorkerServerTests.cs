@@ -730,6 +730,34 @@ public sealed class WorkerServerTests
     }
 
     [Fact]
+    public async Task BinaryTransferFailureRetriesTransientOwnedFileDeletionBeforeReturning()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "motif-worker-" + Guid.NewGuid().ToString("N"));
+        var deleteAttempts = 0;
+        await using var server = BinaryTransferServer.CreateWithLifecycleProbes(directory,
+            deleteFile: path =>
+            {
+                if (Interlocked.Increment(ref deleteAttempts) <= 3)
+                    throw new IOException("Injected transient sharing violation.");
+                File.Delete(path);
+            });
+        var offer = server.CreateOffer(1, TimeSpan.FromSeconds(10));
+        using (var client = new NamedPipeClientStream(".", offer.PipeName, PipeDirection.Out,
+                   PipeOptions.Asynchronous))
+        {
+            await client.ConnectAsync(5000);
+            await client.WriteAsync(new byte[] { 1, 2 });
+        }
+
+        await Assert.ThrowsAnyAsync<Exception>(() => server.CompleteAsync(
+            new BinaryTransferCompletion(offer.TransferId, 2, new string('0', 64))));
+
+        Assert.True(deleteAttempts >= 4);
+        Assert.Empty(Directory.GetFiles(directory));
+        Assert.Empty(server.CleanupFailures);
+    }
+
+    [Fact]
     public async Task CancellingCompletionDrainsReceivingTransferBeforeReleasingCapacity()
     {
         var directory = Path.Combine(Path.GetTempPath(), "motif-worker-" + Guid.NewGuid().ToString("N"));
