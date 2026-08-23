@@ -288,9 +288,21 @@ public sealed class JobRepository
         }
         catch (SqliteException exception) when (exception.SqliteErrorCode is 5 or 6)
         {
-            var observed = Get(jobId);
+            var observed = ReadAfterBusy(jobId);
             if (observed is not null && IsExhaustedInfrastructure(observed)) return observed;
             throw;
+        }
+    }
+
+    private JobRecord? ReadAfterBusy(string jobId)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            try { return Get(jobId); }
+            catch (SqliteException exception) when (exception.SqliteErrorCode is 5 or 6 && attempt < 2)
+            {
+                Thread.Sleep(25);
+            }
         }
     }
 
