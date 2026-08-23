@@ -8,6 +8,8 @@ public sealed class MotifDatabase : IDisposable
 {
     private readonly string _path;
     private readonly FileStream _ownership;
+    private readonly object _stateGate = new();
+    private readonly HashSet<SqliteConnection> _connections = [];
     private bool _disposed;
 
     private MotifDatabase(string path, FileStream ownership)
@@ -30,7 +32,22 @@ public sealed class MotifDatabase : IDisposable
         string path,
         ProjectLocator project,
         int supportedSchema,
-        Version workerVersion)
+        Version workerVersion) => OpenOwnedCore(path, project, supportedSchema, workerVersion, null);
+
+    internal static MotifDatabase OpenOwnedForTesting(
+        string path,
+        ProjectLocator project,
+        int supportedSchema,
+        Version workerVersion,
+        Action<int> afterMigrationStep) =>
+        OpenOwnedCore(path, project, supportedSchema, workerVersion, afterMigrationStep);
+
+    private static MotifDatabase OpenOwnedCore(
+        string path,
+        ProjectLocator project,
+        int supportedSchema,
+        Version workerVersion,
+        Action<int>? afterMigrationStep)
     {
         if (string.IsNullOrWhiteSpace(path)) throw new ArgumentException("A database path is required.", nameof(path));
         ArgumentNullException.ThrowIfNull(project);
@@ -74,6 +91,7 @@ public sealed class MotifDatabase : IDisposable
 
             if (schema > 0)
             {
+                MotifSchema.ValidateSchema(connection, schema);
                 var metadata = MotifSchema.ReadMetadata(connection);
                 EnsureLocatorMatches(metadata.Project, project);
                 if (workerVersion < metadata.MinimumWorkerVersion)
@@ -84,17 +102,28 @@ public sealed class MotifDatabase : IDisposable
             try
             {
                 if (applicationId == 0) SetApplicationId(connection);
-                MotifSchema.Migrate(connection, null, schema, supportedSchema, project);
+                MotifSchema.Migrate(connection, null, schema, supportedSchema, project, afterMigrationStep);
                 Execute(connection, "COMMIT;");
             }
             catch
             {
-                Execute(connection, "ROLLBACK;");
+                try { Execute(connection, "ROLLBACK;"); }
+                catch (SqliteException) { }
                 throw;
             }
 
             MotifSchema.EnableWal(connection);
             return new MotifDatabase(fullPath, ownership);
+        }
+        catch (SqliteException exception) when (MotifSchema.IsCorruption(exception))
+        {
+            ownership?.Dispose();
+            throw new InvalidDataException("The Motif database is corrupt or is not a database.", exception);
+        }
+        catch (SqliteException exception)
+        {
+            ownership?.Dispose();
+            throw new IOException("The Motif database is unavailable.", exception);
         }
         catch
         {
@@ -106,42 +135,136 @@ public sealed class MotifDatabase : IDisposable
     /// <summary>Opens a configured connection while this worker owns the database.</summary>
     public SqliteConnection OpenConnection()
     {
-        if (_disposed) throw new ObjectDisposedException(nameof(MotifDatabase));
-        return OpenConfiguredConnection(_path);
+        lock (_stateGate)
+        {
+            if (_disposed) throw new ObjectDisposedException(nameof(MotifDatabase));
+            SqliteConnection connection;
+            try
+            {
+                connection = OpenConfiguredConnection(_path, RemoveConnection);
+            }
+            catch (SqliteException exception) when (MotifSchema.IsCorruption(exception))
+            {
+                throw new InvalidDataException("The Motif database is corrupt or is not a database.", exception);
+            }
+            catch (SqliteException exception)
+            {
+                throw new IOException("The Motif database is unavailable.", exception);
+            }
+            _connections.Add(connection);
+            return connection;
+        }
+    }
+
+    internal int TrackedConnectionCount
+    {
+        get
+        {
+            lock (_stateGate) return _connections.Count;
+        }
     }
 
     /// <summary>Releases ownership so another worker can open the database.</summary>
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
-        _ownership.Dispose();
+        List<SqliteConnection> connections;
+        lock (_stateGate)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            connections = [.. _connections];
+            _connections.Clear();
+        }
+
+        try
+        {
+            foreach (var connection in connections)
+            {
+                if (connection is OwnedSqliteConnection owned)
+                    owned.DisposeFromOwner();
+                else
+                    connection.Dispose();
+            }
+        }
+        finally
+        {
+            _ownership.Dispose();
+        }
     }
 
     private static SqliteConnection OpenInspectionConnection(string path)
+        => OpenConnectionCore(path, MotifSchema.ConfigureSession);
+
+    private static SqliteConnection OpenConfiguredConnection(
+        string path,
+        Action<SqliteConnection>? onDisposed = null)
+        => OpenConnectionCore(path, MotifSchema.ConfigureConnection, onDisposed);
+
+    internal static SqliteConnection OpenConfiguredConnectionForTesting(
+        string path,
+        Action<SqliteConnection> configure) => OpenConnectionCore(path, configure);
+
+    private static SqliteConnection OpenConnectionCore(
+        string path,
+        Action<SqliteConnection> configure,
+        Action<SqliteConnection>? onDisposed = null)
     {
-        var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        var connectionString = new SqliteConnectionStringBuilder
         {
             DataSource = path,
             Pooling = false,
             Mode = SqliteOpenMode.ReadWriteCreate
-        }.ToString());
-        connection.Open();
-        MotifSchema.ConfigureSession(connection);
-        return connection;
+        }.ToString();
+        var connection = onDisposed is null
+            ? new SqliteConnection(connectionString)
+            : new OwnedSqliteConnection(connectionString, onDisposed);
+        try
+        {
+            connection.Open();
+            configure(connection);
+            return connection;
+        }
+        catch
+        {
+            connection.Dispose();
+            throw;
+        }
     }
 
-    private static SqliteConnection OpenConfiguredConnection(string path)
+    private void RemoveConnection(SqliteConnection connection)
     {
-        var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        lock (_stateGate)
+            _connections.Remove(connection);
+    }
+
+    private sealed class OwnedSqliteConnection : SqliteConnection
+    {
+        private readonly Action<SqliteConnection> _onDisposed;
+        private bool _disposedByOwner;
+
+        public OwnedSqliteConnection(string connectionString, Action<SqliteConnection> onDisposed)
+            : base(connectionString) => _onDisposed = onDisposed;
+
+        protected override void Dispose(bool disposing)
         {
-            DataSource = path,
-            Pooling = false,
-            Mode = SqliteOpenMode.ReadWriteCreate
-        }.ToString());
-        connection.Open();
-        MotifSchema.ConfigureConnection(connection);
-        return connection;
+            try { base.Dispose(disposing); }
+            finally
+            {
+                if (disposing) _onDisposed(this);
+            }
+        }
+
+        public void DisposeFromOwner()
+        {
+            _disposedByOwner = true;
+            Dispose();
+        }
+
+        public override void Open()
+        {
+            if (_disposedByOwner) throw new ObjectDisposedException(nameof(OwnedSqliteConnection));
+            base.Open();
+        }
     }
 
     private static FileStream AcquireOwnership(string path)

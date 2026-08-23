@@ -56,6 +56,85 @@ public sealed class MotifDatabaseMigrationTests : IDisposable
     }
 
     [Fact]
+    public void ConfigurationFailureDisposesTheOpenedHandle()
+    {
+        var path = DatabasePath("configuration-failure.fwdata");
+        using (MotifDatabase.OpenOwned(path, Locator("configuration-failure.fwdata"), 1, new Version(1, 0))) { }
+
+        Assert.Throws<InvalidOperationException>(() => MotifDatabase.OpenConfiguredConnectionForTesting(
+            path, connection =>
+            {
+                using var command = connection.CreateCommand();
+                command.CommandText = "BEGIN EXCLUSIVE;";
+                command.ExecuteNonQuery();
+                throw new InvalidOperationException("injected configuration failure");
+            }));
+        using var reopened = MotifDatabase.OpenOwned(
+            path, Locator("configuration-failure.fwdata"), 1, new Version(1, 0));
+    }
+
+    [Fact]
+    public void DisposingOwnerClosesReturnedConnectionsBeforeReleasingOwnership()
+    {
+        var path = DatabasePath("drain.fwdata");
+        var owner = MotifDatabase.OpenOwned(path, Locator("drain.fwdata"), 1, new Version(1, 0));
+        var connection = owner.OpenConnection();
+        Assert.Equal(1, owner.TrackedConnectionCount);
+
+        owner.Dispose();
+
+        Assert.Equal(System.Data.ConnectionState.Closed, connection.State);
+        Assert.Throws<ObjectDisposedException>(() => connection.Open());
+        using var reopened = MotifDatabase.OpenOwned(path, Locator("drain.fwdata"), 1, new Version(1, 0));
+    }
+
+    [Fact]
+    public void ClosedConnectionRemainsOwnedUntilItIsDisposed()
+    {
+        var path = DatabasePath("closed.fwdata");
+        var owner = MotifDatabase.OpenOwned(path, Locator("closed.fwdata"), 1, new Version(1, 0));
+        var connection = owner.OpenConnection();
+        connection.Close();
+
+        owner.Dispose();
+
+        Assert.Throws<ObjectDisposedException>(() => connection.Open());
+    }
+
+    [Fact]
+    public async Task ConcurrentDisposeAndOpenDoesNotReturnPostReleaseConnection()
+    {
+        var path = DatabasePath("race.fwdata");
+        using var owner = MotifDatabase.OpenOwned(path, Locator("race.fwdata"), 1, new Version(1, 0));
+        var returned = new List<SqliteConnection>();
+        var opening = Task.Run(() =>
+        {
+            try { returned.Add(owner.OpenConnection()); }
+            catch (ObjectDisposedException) { }
+        });
+
+        owner.Dispose();
+        await opening;
+
+        Assert.All(returned, connection => Assert.Equal(System.Data.ConnectionState.Closed, connection.State));
+        using var reopened = MotifDatabase.OpenOwned(path, Locator("race.fwdata"), 1, new Version(1, 0));
+    }
+
+    [Fact]
+    public void ClosedConnectionsAreRemovedFromOwnershipTracking()
+    {
+        var path = DatabasePath("cycles.fwdata");
+        using var owner = MotifDatabase.OpenOwned(path, Locator("cycles.fwdata"), 1, new Version(1, 0));
+
+        for (var i = 0; i < 100; i++)
+        {
+            using var connection = owner.OpenConnection();
+        }
+
+        Assert.Equal(0, owner.TrackedConnectionCount);
+    }
+
+    [Fact]
     public void UpgradeIsTransactionalAndKeepsExistingRows()
     {
         using (var initial = Open("upgrade.fwdata", supportedSchema: 1))
@@ -68,6 +147,164 @@ public sealed class MotifDatabaseMigrationTests : IDisposable
         using var upgradedConnection = upgraded.OpenConnection();
         Assert.Equal(MotifSchema.CurrentSchema, PragmaInt(upgradedConnection, "user_version"));
         Assert.NotNull(Scalar(upgradedConnection, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'Assessments';"));
+    }
+
+    [Theory]
+    [InlineData("MotifMetadata")]
+    [InlineData("Corpora")]
+    [InlineData("CorpusDocuments")]
+    [InlineData("Assessments")]
+    [InlineData("AssessedWords")]
+    [InlineData("ParsedAnalyses")]
+    [InlineData("AssessmentPins")]
+    [InlineData("IX_AssessedWords_Assessment")]
+    [InlineData("IX_AssessedWords_Word")]
+    [InlineData("IX_ParsedAnalyses_Word")]
+    public void CurrentSchemaRejectsMissingRequiredObjects(string objectName)
+    {
+        var path = DatabasePath("missing-" + objectName + ".fwdata");
+        using (MotifDatabase.OpenOwned(path, Locator("missing-" + objectName + ".fwdata"), 2, new Version(1, 0))) { }
+        using (var connection = NewConnection(path))
+            Execute(connection, objectName.StartsWith("IX_", StringComparison.Ordinal)
+                ? "DROP INDEX " + objectName + ";"
+                : "DROP TABLE " + objectName + ";");
+
+        Assert.Throws<InvalidDataException>(() => MotifDatabase.OpenOwned(
+            path, Locator("missing-" + objectName + ".fwdata"), 2, new Version(1, 0)));
+        Assert.Equal(2, PragmaFromPath(path, "user_version"));
+    }
+
+    [Fact]
+    public void CurrentSchemaRejectsUnexpectedUserObjects()
+    {
+        var path = DatabasePath("unexpected-object.fwdata");
+        using (MotifDatabase.OpenOwned(path, Locator("unexpected-object.fwdata"), 2, new Version(1, 0))) { }
+        using (var connection = NewConnection(path))
+            Execute(connection, "CREATE TABLE UnexpectedUserTable (Value TEXT NOT NULL);");
+
+        Assert.Throws<InvalidDataException>(() => MotifDatabase.OpenOwned(
+            path, Locator("unexpected-object.fwdata"), 2, new Version(1, 0)));
+        Assert.Equal(2, PragmaFromPath(path, "user_version"));
+    }
+
+    [Fact]
+    public void CurrentSchemaRejectsMalformedForeignKeyShape()
+    {
+        var path = DatabasePath("malformed-fk.fwdata");
+        using (MotifDatabase.OpenOwned(path, Locator("malformed-fk.fwdata"), 2, new Version(1, 0))) { }
+        using (var connection = NewConnection(path))
+        {
+            Execute(connection, "DROP TABLE CorpusDocuments; CREATE TABLE CorpusDocuments " +
+                "(CorpusId TEXT NOT NULL, DocumentId TEXT NOT NULL, OrdinalIndex INTEGER NOT NULL, " +
+                "Title TEXT NOT NULL, Source TEXT NOT NULL, Text TEXT NOT NULL, ContentSha256 TEXT NOT NULL, " +
+                "IngestedUtc TEXT NOT NULL, Licence TEXT NULL, CapabilitiesJson TEXT NULL, AttributesJson TEXT NULL, " +
+                "PRIMARY KEY (CorpusId, DocumentId));");
+        }
+
+        Assert.Throws<InvalidDataException>(() => MotifDatabase.OpenOwned(
+            path, Locator("malformed-fk.fwdata"), 2, new Version(1, 0)));
+    }
+
+    [Theory]
+    [InlineData("type", "AssessmentId INTEGER NOT NULL")]
+    [InlineData("nullability", "AssessmentId TEXT NULL")]
+    [InlineData("primary-key", "AssessmentId TEXT NOT NULL")]
+    public void CurrentSchemaRejectsMalformedColumnShape(string mutation, string assessmentIdColumn)
+    {
+        var path = DatabasePath("malformed-column-" + mutation + ".fwdata");
+        using (MotifDatabase.OpenOwned(path, Locator("malformed-column-" + mutation + ".fwdata"), 2, new Version(1, 0))) { }
+        using (var connection = NewConnection(path))
+        {
+            Execute(connection, "DROP TABLE AssessmentPins; CREATE TABLE AssessmentPins (" + assessmentIdColumn + ", " +
+                "PinnedBy TEXT NOT NULL, PinnedUtc TEXT NOT NULL, PRIMARY KEY (AssessmentId, PinnedBy));");
+        }
+
+        Assert.Throws<InvalidDataException>(() => MotifDatabase.OpenOwned(
+            path, Locator("malformed-column-" + mutation + ".fwdata"), 2, new Version(1, 0)));
+    }
+
+    [Theory]
+    [InlineData("partial", "CREATE INDEX IX_AssessedWords_Assessment ON AssessedWords(AssessmentId) WHERE Word IS NOT NULL;")]
+    [InlineData("columns", "CREATE INDEX IX_AssessedWords_Assessment ON AssessedWords(Word);")]
+    public void CurrentSchemaRejectsMalformedNamedIndex(string mutation, string createIndex)
+    {
+        var path = DatabasePath("malformed-index-" + mutation + ".fwdata");
+        using (MotifDatabase.OpenOwned(path, Locator("malformed-index-" + mutation + ".fwdata"), 2, new Version(1, 0))) { }
+        using (var connection = NewConnection(path))
+            Execute(connection, "DROP INDEX IX_AssessedWords_Assessment; " + createIndex);
+
+        Assert.Throws<InvalidDataException>(() => MotifDatabase.OpenOwned(
+            path, Locator("malformed-index-" + mutation + ".fwdata"), 2, new Version(1, 0)));
+    }
+
+    [Fact]
+    public void CurrentSchemaRejectsForeignKeyActionChange()
+    {
+        var path = DatabasePath("malformed-fk-action.fwdata");
+        using (MotifDatabase.OpenOwned(path, Locator("malformed-fk-action.fwdata"), 2, new Version(1, 0))) { }
+        using (var connection = NewConnection(path))
+        {
+            Execute(connection, "DROP TABLE AssessmentPins; CREATE TABLE AssessmentPins (" +
+                "AssessmentId TEXT NOT NULL REFERENCES Assessments(AssessmentId) ON DELETE CASCADE, " +
+                "PinnedBy TEXT NOT NULL, PinnedUtc TEXT NOT NULL, PRIMARY KEY (AssessmentId, PinnedBy));");
+        }
+
+        Assert.Throws<InvalidDataException>(() => MotifDatabase.OpenOwned(
+            path, Locator("malformed-fk-action.fwdata"), 2, new Version(1, 0)));
+    }
+
+    [Fact]
+    public void CurrentSchemaRequiresMetadataCheckConstraint()
+    {
+        var path = DatabasePath("missing-metadata-check.fwdata");
+        using (MotifDatabase.OpenOwned(path, Locator("missing-metadata-check.fwdata"), 2, new Version(1, 0))) { }
+        using (var connection = NewConnection(path))
+        {
+            Execute(connection, "DROP TABLE MotifMetadata; CREATE TABLE MotifMetadata (" +
+                "Id INTEGER PRIMARY KEY, FullFwDataPath TEXT NOT NULL, FieldWorksProjectIdentity TEXT NOT NULL, " +
+                "MinimumWorkerVersion TEXT NOT NULL, CreatedUtc TEXT NOT NULL);");
+        }
+
+        Assert.Throws<InvalidDataException>(() => MotifDatabase.OpenOwned(
+            path, Locator("missing-metadata-check.fwdata"), 2, new Version(1, 0)));
+    }
+
+    [Fact]
+    public void CurrentSchemaRequiresAssessedWordsAutoincrement()
+    {
+        var path = DatabasePath("missing-autoincrement.fwdata");
+        using (MotifDatabase.OpenOwned(path, Locator("missing-autoincrement.fwdata"), 2, new Version(1, 0))) { }
+        using (var connection = NewConnection(path))
+        {
+            Execute(connection, "DROP TABLE AssessedWords; CREATE TABLE AssessedWords (" +
+                "AssessedWordId INTEGER PRIMARY KEY, AssessmentId TEXT NOT NULL REFERENCES Assessments(AssessmentId), " +
+                "OrdinalIndex INTEGER NOT NULL, Word TEXT NOT NULL, Outcome TEXT NOT NULL);");
+        }
+
+        Assert.Throws<InvalidDataException>(() => MotifDatabase.OpenOwned(
+            path, Locator("missing-autoincrement.fwdata"), 2, new Version(1, 0)));
+    }
+
+    [Fact]
+    public void CorruptDatabaseBytesAreReportedAsInvalidData()
+    {
+        var path = DatabasePath("corrupt-bytes.fwdata");
+        File.WriteAllBytes(path, new byte[] { 0x4D, 0x4F, 0x54, 0x49, 0x46, 0x00, 0x01 });
+
+        Assert.Throws<InvalidDataException>(() => MotifDatabase.OpenOwned(
+            path, Locator("corrupt-bytes.fwdata"), 2, new Version(1, 0)));
+    }
+
+    [Fact]
+    public void AvailabilityErrorsAreNotClassifiedAsCorruption()
+    {
+        Assert.True(MotifSchema.IsCorruptionCode(26));
+        Assert.True(MotifSchema.IsCorruptionCode(11));
+        Assert.False(MotifSchema.IsCorruptionCode(5));
+        Assert.False(MotifSchema.IsCorruptionCode(6));
+        Assert.False(MotifSchema.IsCorruptionCode(8));
+        Assert.False(MotifSchema.IsCorruptionCode(10));
+        Assert.False(MotifSchema.IsCorruptionCode(13));
     }
 
     [Fact]
@@ -179,6 +416,30 @@ public sealed class MotifDatabaseMigrationTests : IDisposable
         using var check = NewConnection(path);
         Assert.Equal(1, PragmaInt(check, "user_version"));
         Assert.Null(Scalar(check, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'Assessments';"));
+    }
+
+    [Fact]
+    public void InjectedPostDdlFailureRollsBackAndCleanRetrySucceeds()
+    {
+        var path = DatabasePath("injected-failure.fwdata");
+        using (MotifDatabase.OpenOwned(path, Locator("injected-failure.fwdata"), 1, new Version(1, 0))) { }
+
+        Assert.Throws<InvalidOperationException>(() => MotifDatabase.OpenOwnedForTesting(
+            path, Locator("injected-failure.fwdata"), 2, new Version(1, 0),
+            schema =>
+            {
+                if (schema == 2) throw new InvalidOperationException("injected migration failure");
+            }));
+
+        using (var check = NewConnection(path))
+        {
+            Assert.Equal(1, PragmaInt(check, "user_version"));
+            Assert.NotNull(Scalar(check, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'MotifMetadata';"));
+            Assert.Null(Scalar(check, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'Assessments';"));
+        }
+
+        using var retry = MotifDatabase.OpenOwned(path, Locator("injected-failure.fwdata"), 2, new Version(1, 0));
+        Assert.Equal(2, PragmaInt(retry.OpenConnection(), "user_version"));
     }
 
     [Fact]

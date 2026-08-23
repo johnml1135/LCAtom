@@ -49,7 +49,8 @@ public static class MotifSchema
         SqliteTransaction? transaction,
         int currentSchema,
         int targetSchema,
-        ProjectLocator project)
+        ProjectLocator project,
+        Action<int>? afterMigrationStep = null)
     {
         for (var schema = currentSchema + 1; schema <= targetSchema; schema++)
         {
@@ -65,6 +66,8 @@ public static class MotifSchema
                     throw new NotSupportedException($"Motif schema {schema} is not known to this worker.");
             }
 
+            ValidateSchema(connection, schema, transaction);
+            afterMigrationStep?.Invoke(schema);
             SetUserVersion(connection, transaction, schema);
         }
 
@@ -82,6 +85,55 @@ public static class MotifSchema
             }
         }
     }
+
+    internal static void ValidateSchema(
+        SqliteConnection connection,
+        int schema,
+        SqliteTransaction? transaction = null)
+    {
+        var expectedTables = schema switch
+        {
+            1 => new HashSet<string>(StringComparer.Ordinal) { "MotifMetadata" },
+            2 => new HashSet<string>(StringComparer.Ordinal)
+            {
+                "MotifMetadata", "Corpora", "CorpusDocuments", "Assessments", "AssessedWords",
+                "ParsedAnalyses", "AssessmentPins"
+            },
+            _ => throw new NotSupportedException($"Motif schema {schema} is not known to this worker.")
+        };
+        var expectedIndexes = schema == 2
+            ? new HashSet<string>(StringComparer.Ordinal)
+            {
+                "IX_AssessedWords_Assessment", "IX_AssessedWords_Word", "IX_ParsedAnalyses_Word"
+            }
+            : [];
+
+        using (var objects = connection.CreateCommand())
+        {
+            objects.Transaction = transaction;
+            objects.CommandText = "SELECT type, name FROM sqlite_master " +
+                "WHERE name NOT LIKE 'sqlite_%' AND type IN ('table', 'index', 'view', 'trigger');";
+            using var reader = objects.ExecuteReader();
+            while (reader.Read())
+            {
+                var type = reader.GetString(0);
+                var name = reader.GetString(1);
+                if ((type == "table" && expectedTables.Contains(name)) ||
+                    (type == "index" && expectedIndexes.Contains(name)))
+                    continue;
+                throw new InvalidDataException($"Motif schema {schema} contains unexpected {type} {name}.");
+            }
+        }
+
+        foreach (var table in expectedTables)
+            ValidateTable(connection, transaction, table, ColumnsFor(table), ForeignKeysFor(table));
+        foreach (var index in expectedIndexes)
+            ValidateIndex(connection, transaction, index, IndexColumnsFor(index));
+    }
+
+    internal static bool IsCorruption(SqliteException exception) => IsCorruptionCode(exception.SqliteErrorCode);
+
+    internal static bool IsCorruptionCode(int errorCode) => errorCode is 1 or 11 or 17 or 20 or 24 or 26;
 
     internal static void EnsureLegacyTables(SqliteConnection connection)
     {
@@ -124,9 +176,13 @@ public static class MotifSchema
         {
             throw;
         }
+        catch (SqliteException exception) when (IsCorruption(exception))
+        {
+            throw new InvalidDataException("Motif database metadata is corrupt.", exception);
+        }
         catch (Exception exception) when (
             exception is FormatException or ArgumentException or InvalidOperationException or
-            InvalidCastException or SqliteException)
+            InvalidCastException)
         {
             throw new InvalidDataException("Motif database metadata is corrupt.", exception);
         }
@@ -167,6 +223,193 @@ public static class MotifSchema
         command.CommandText = CorpusAndAssessmentDdl;
         command.ExecuteNonQuery();
     }
+
+    private static void ValidateTable(
+        SqliteConnection connection,
+        SqliteTransaction? transaction,
+        string table,
+        IReadOnlyList<ColumnShape> expectedColumns,
+        IReadOnlyList<ForeignKeyShape> expectedForeignKeys)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT name, type, \"notnull\", dflt_value, pk " +
+            "FROM pragma_table_info($table) ORDER BY cid;";
+        command.Parameters.AddWithValue("$table", table);
+        using var reader = command.ExecuteReader();
+        var actual = new List<ColumnShape>();
+        while (reader.Read())
+        {
+            actual.Add(new ColumnShape(
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.GetInt32(2) != 0,
+                reader.IsDBNull(3) ? null : reader.GetString(3),
+                reader.GetInt32(4)));
+        }
+
+        if (actual.Count != expectedColumns.Count ||
+            actual.Where((column, index) => !column.Matches(expectedColumns[index])).Any())
+            throw new InvalidDataException($"Motif table {table} does not match its registered schema.");
+
+        ValidateForeignKeys(connection, transaction, table, expectedForeignKeys);
+        ValidateTableInvariant(connection, transaction, table);
+    }
+
+    private static void ValidateTableInvariant(SqliteConnection connection, SqliteTransaction? transaction, string table)
+    {
+        var requiredSql = table switch
+        {
+            "MotifMetadata" => "CHECK (Id = 1)",
+            "AssessedWords" => "AUTOINCREMENT",
+            _ => null
+        };
+        if (requiredSql is null) return;
+
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = $table;";
+        command.Parameters.AddWithValue("$table", table);
+        var sql = command.ExecuteScalar() as string;
+        if (sql is null || sql.IndexOf(requiredSql, StringComparison.OrdinalIgnoreCase) < 0)
+            throw new InvalidDataException($"Motif table {table} is missing a required invariant.");
+    }
+
+    private static void ValidateIndex(
+        SqliteConnection connection,
+        SqliteTransaction? transaction,
+        string index,
+        IReadOnlyList<string> expectedColumns)
+    {
+        using var list = connection.CreateCommand();
+        list.Transaction = transaction;
+        list.CommandText = "SELECT \"unique\" FROM pragma_index_list($table) WHERE name = $index;";
+        list.Parameters.AddWithValue("$table", IndexTableFor(index));
+        list.Parameters.AddWithValue("$index", index);
+        if (Convert.ToInt32(list.ExecuteScalar(), CultureInfo.InvariantCulture) != 0)
+            throw new InvalidDataException($"Motif index {index} has an unexpected uniqueness constraint.");
+
+        using var columns = connection.CreateCommand();
+        columns.Transaction = transaction;
+        columns.CommandText = "SELECT name FROM pragma_index_info($index) ORDER BY seqno;";
+        columns.Parameters.AddWithValue("$index", index);
+        using var reader = columns.ExecuteReader();
+        var actual = new List<string>();
+        while (reader.Read()) actual.Add(reader.GetString(0));
+        reader.Dispose();
+        if (!actual.SequenceEqual(expectedColumns, StringComparer.Ordinal))
+            throw new InvalidDataException($"Motif index {index} does not match its registered schema.");
+
+        using var details = connection.CreateCommand();
+        details.Transaction = transaction;
+        details.CommandText = "SELECT origin, partial FROM pragma_index_list($table) WHERE name = $index;";
+        details.Parameters.AddWithValue("$table", IndexTableFor(index));
+        details.Parameters.AddWithValue("$index", index);
+        using var detailReader = details.ExecuteReader();
+        if (!detailReader.Read() || !StringComparer.Ordinal.Equals(detailReader.GetString(0), "c") ||
+            detailReader.GetInt32(1) != 0)
+            throw new InvalidDataException($"Motif index {index} has unexpected registration details.");
+    }
+
+    private static void ValidateForeignKeys(
+        SqliteConnection connection,
+        SqliteTransaction? transaction,
+        string table,
+        IReadOnlyList<ForeignKeyShape> expected)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT \"table\", \"from\", \"to\", on_update, on_delete, match " +
+            "FROM pragma_foreign_key_list($table) ORDER BY id, seq;";
+        command.Parameters.AddWithValue("$table", table);
+        using var reader = command.ExecuteReader();
+        var actual = new List<ForeignKeyShape>();
+        while (reader.Read())
+            actual.Add(new ForeignKeyShape(
+                reader.GetString(0), reader.GetString(1), reader.GetString(2),
+                reader.GetString(3), reader.GetString(4), reader.GetString(5)));
+        if (!actual.SequenceEqual(expected))
+            throw new InvalidDataException($"Motif table {table} has an unexpected foreign-key shape.");
+    }
+
+    private static string IndexTableFor(string index) => index switch
+    {
+        "IX_AssessedWords_Assessment" or "IX_AssessedWords_Word" => "AssessedWords",
+        "IX_ParsedAnalyses_Word" => "ParsedAnalyses",
+        _ => throw new InvalidDataException($"Motif index {index} is not registered.")
+    };
+
+    private static IReadOnlyList<string> IndexColumnsFor(string index) => index switch
+    {
+        "IX_AssessedWords_Assessment" => ["AssessmentId"],
+        "IX_AssessedWords_Word" => ["AssessmentId", "Word"],
+        "IX_ParsedAnalyses_Word" => ["AssessedWordId"],
+        _ => throw new InvalidDataException($"Motif index {index} is not registered.")
+    };
+
+    private static IReadOnlyList<ForeignKeyShape> ForeignKeysFor(string table) => table switch
+    {
+        "CorpusDocuments" => [new("Corpora", "CorpusId", "CorpusId", "NO ACTION", "NO ACTION", "NONE")],
+        "AssessedWords" => [new("Assessments", "AssessmentId", "AssessmentId", "NO ACTION", "NO ACTION", "NONE")],
+        "ParsedAnalyses" => [new("AssessedWords", "AssessedWordId", "AssessedWordId", "NO ACTION", "NO ACTION", "NONE")],
+        "AssessmentPins" => [new("Assessments", "AssessmentId", "AssessmentId", "NO ACTION", "NO ACTION", "NONE")],
+        _ => []
+    };
+
+    private static IReadOnlyList<ColumnShape> ColumnsFor(string table) => table switch
+    {
+        "MotifMetadata" =>
+        [C("Id", "INTEGER", false, 1), C("FullFwDataPath", "TEXT", true),
+            C("FieldWorksProjectIdentity", "TEXT", true), C("MinimumWorkerVersion", "TEXT", true),
+            C("CreatedUtc", "TEXT", true)],
+        "Corpora" => [C("CorpusId", "TEXT", false, 1), C("ProvenanceJson", "TEXT", true)],
+        "CorpusDocuments" =>
+        [C("CorpusId", "TEXT", true, 1), C("DocumentId", "TEXT", true, 2), C("OrdinalIndex", "INTEGER", true),
+            C("Title", "TEXT", true), C("Source", "TEXT", true), C("Text", "TEXT", true),
+            C("ContentSha256", "TEXT", true), C("IngestedUtc", "TEXT", true), C("Licence", "TEXT"),
+            C("CapabilitiesJson", "TEXT"), C("AttributesJson", "TEXT")],
+        "Assessments" =>
+        [C("AssessmentId", "TEXT", false, 1), C("CorpusId", "TEXT", true), C("CorpusWordsJson", "TEXT", true),
+            C("CorpusSha256", "TEXT", true), C("CorpusProvenanceJson", "TEXT"), C("OutcomeDigest", "TEXT", true),
+            C("SemanticDigest", "TEXT", true), C("GrammarSourceSha256", "TEXT", true),
+            C("ModelFingerprint", "TEXT", true), C("Pipeline", "TEXT", true), C("DiagnosticCount", "INTEGER", true),
+            C("SavedUtc", "TEXT", true)],
+        "AssessedWords" =>
+        [C("AssessedWordId", "INTEGER", false, 1), C("AssessmentId", "TEXT", true), C("OrdinalIndex", "INTEGER", true),
+            C("Word", "TEXT", true), C("Outcome", "TEXT", true)],
+        "ParsedAnalyses" =>
+        [C("AssessedWordId", "INTEGER", true), C("OrdinalIndex", "INTEGER", true), C("CategoryGuid", "TEXT"),
+            C("MorphemeGuidsJson", "TEXT", true), C("RootIndex", "INTEGER", true), C("IdentityDigest", "TEXT", true)],
+        "AssessmentPins" =>
+        [C("AssessmentId", "TEXT", true, 1), C("PinnedBy", "TEXT", true, 2), C("PinnedUtc", "TEXT", true)],
+        _ => throw new InvalidDataException($"Motif table {table} is not registered.")
+    };
+
+    private static ColumnShape C(string name, string type, bool notNull = false, int primaryKey = 0) =>
+        new(name, type, notNull, null, primaryKey);
+
+    private sealed record ColumnShape(
+        string Name,
+        string Type,
+        bool NotNull,
+        string? DefaultValue,
+        int PrimaryKey)
+    {
+        public bool Matches(ColumnShape expected) =>
+            StringComparer.OrdinalIgnoreCase.Equals(Name, expected.Name) &&
+            StringComparer.OrdinalIgnoreCase.Equals(Type, expected.Type) &&
+            NotNull == expected.NotNull &&
+            DefaultValue == expected.DefaultValue &&
+            PrimaryKey == expected.PrimaryKey;
+    }
+
+    private sealed record ForeignKeyShape(
+        string Table,
+        string From,
+        string To,
+        string OnUpdate,
+        string OnDelete,
+        string Match);
 
     private static void ValidateExistingTable(
         SqliteConnection connection,
