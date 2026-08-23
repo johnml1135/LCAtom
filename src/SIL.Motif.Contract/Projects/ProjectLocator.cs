@@ -73,7 +73,8 @@ public sealed record ProjectLocator
         }
 
         if (segments.Count == 0 || IsDotSegment(segments[segments.Count - 1]) ||
-            !segments[segments.Count - 1].EndsWith(".fwdata", StringComparison.OrdinalIgnoreCase))
+            !segments[segments.Count - 1].EndsWith(".fwdata", StringComparison.OrdinalIgnoreCase) ||
+            segments[segments.Count - 1].Length == ".fwdata".Length)
             throw new ArgumentException("A project data-file path must name a .fwdata file.",
                 nameof(value));
 
