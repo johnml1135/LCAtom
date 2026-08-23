@@ -274,6 +274,16 @@ public sealed class WorkerServerTests
     }
 
     [Fact]
+    public async Task StartRefusesToAdvertiseJobCapabilityWithoutRuntimeComposition()
+    {
+        await using var server = WorkerServer.CreateForTests("worker-uncomposed-" + Guid.NewGuid().ToString("N"), false);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => server.StartAsync(cancellation.Token));
+        Assert.False(server.IsOwner);
+    }
+
+    [Fact]
     public void PipeSecurityContainsOnlyTheOwningUserAndSystemRules()
     {
         var sid = WindowsIdentity.GetCurrent().User!.Value;
@@ -478,7 +488,7 @@ public sealed class WorkerServerTests
     [Fact]
     public async Task WorkerServerRuntimeCompositionUsesHostAndPendingActivity()
     {
-        await using var server = WorkerServer.CreateForTests("worker-runtime-" + Guid.NewGuid().ToString("N"));
+        await using var server = WorkerServer.CreateForTests("worker-runtime-" + Guid.NewGuid().ToString("N"), false);
         var root = Path.Combine(Path.GetTempPath(), "motif-server-runtime-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try

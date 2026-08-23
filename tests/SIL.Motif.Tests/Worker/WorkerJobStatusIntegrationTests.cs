@@ -24,7 +24,7 @@ public sealed class WorkerJobStatusIntegrationTests
     {
         var root = Path.Combine(Path.GetTempPath(), "motif-job-status-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
-        await using var server = WorkerServer.CreateForTests("worker-job-status-" + Guid.NewGuid().ToString("N"));
+        await using var server = WorkerServer.CreateForTests("worker-job-status-" + Guid.NewGuid().ToString("N"), false);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         var ownership = WorkspaceOwnership.Bootstrap(Path.Combine(root, "owned"));
         var catalog = new ProjectDatabaseCatalog(MotifSchema.CurrentSchema, new Version(1, 0));
@@ -69,7 +69,7 @@ public sealed class WorkerJobStatusIntegrationTests
     {
         var root = Path.Combine(Path.GetTempPath(), "motif-job-status-missing-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
-        await using var server = WorkerServer.CreateForTests("worker-job-status-missing-" + Guid.NewGuid().ToString("N"));
+        await using var server = WorkerServer.CreateForTests("worker-job-status-missing-" + Guid.NewGuid().ToString("N"), false);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var ownership = WorkspaceOwnership.Bootstrap(Path.Combine(root, "owned"));
         var catalog = new ProjectDatabaseCatalog(MotifSchema.CurrentSchema, new Version(1, 0));
@@ -95,9 +95,8 @@ public sealed class WorkerJobStatusIntegrationTests
     {
         await Assert.ThrowsAsync<ArgumentNullException>(() => new WorkerJobClient(null!)
             .GetStatusAsync(null!, "job-1", CancellationToken.None));
-        await Assert.ThrowsAnyAsync<ArgumentException>(() => new WorkerJobClient(null!)
-            .GetStatusAsync(new ProjectLocator("C:\\workspace\\demo.fwdata", "project"), " ",
-                CancellationToken.None));
+        Assert.Throws<ArgumentException>(() => new JobStatusRequest(
+            new ProjectLocator("C:\\workspace\\demo.fwdata", "project"), " "));
     }
 
     [Fact]
@@ -138,6 +137,64 @@ public sealed class WorkerJobStatusIntegrationTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => handler.HandleAsync(
             payload.RootElement.Clone(), CancellationToken.None));
         Assert.False(File.Exists(ProjectDatabaseCatalog.DatabasePathFor(differentProject)));
+        Assert.False(runtimes.TryGet(ProjectWorkspaceKey.Compute(differentProject), out _));
+    }
+
+    [Fact]
+    public async Task DifferentProjectPathIsRefusedOverPipeWithoutOpeningItsDatabase()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "motif-job-status-pipe-different-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        await using var server = WorkerServer.CreateForTests("worker-job-status-pipe-different-" + Guid.NewGuid().ToString("N"), false);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var ownership = WorkspaceOwnership.Bootstrap(Path.Combine(root, "owned"));
+        var catalog = new ProjectDatabaseCatalog(MotifSchema.CurrentSchema, new Version(1, 0));
+        using var runtimes = server.CreateRuntimeRegistry(catalog,
+            (jobs, key) => new WorkerRecoveryCoordinator(new WorkerRecovery(jobs),
+                new WorkspaceCleaner(ownership)));
+        var readyProject = new ProjectLocator(Path.Combine(root, "ready.fwdata"), "ready");
+        _ = runtimes.GetOrOpen(readyProject);
+        var differentProject = new ProjectLocator(Path.Combine(root, "different.fwdata"), "different");
+        var running = server.StartAsync(cancellation.Token);
+        using var connection = await new WorkerClient().ConnectAsync(server.EndpointName,
+            new WorkerHandshakeRequest("test-client", "1.0.0", new ProtocolRange(1, 1),
+                new[] { "jobs.v1" }), TimeSpan.FromSeconds(5), cancellation.Token);
+
+        await Assert.ThrowsAnyAsync<Exception>(() => new WorkerJobClient(connection)
+            .GetStatusAsync(differentProject, "job-1", cancellation.Token));
+
+        Assert.False(File.Exists(ProjectDatabaseCatalog.DatabasePathFor(differentProject)));
+        Assert.False(runtimes.TryGet(ProjectWorkspaceKey.Compute(differentProject), out _));
+        cancellation.Cancel();
+        await running.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task ReleasedRuntimeIsRefusedOverPipeBeforeDatabaseRead()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "motif-job-status-pipe-not-ready-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        await using var server = WorkerServer.CreateForTests("worker-job-status-pipe-not-ready-" + Guid.NewGuid().ToString("N"), false);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var ownership = WorkspaceOwnership.Bootstrap(Path.Combine(root, "owned"));
+        var catalog = new ProjectDatabaseCatalog(MotifSchema.CurrentSchema, new Version(1, 0));
+        using var runtimes = server.CreateRuntimeRegistry(catalog,
+            (jobs, key) => new WorkerRecoveryCoordinator(new WorkerRecovery(jobs),
+                new WorkspaceCleaner(ownership)));
+        var project = new ProjectLocator(Path.Combine(root, "released.fwdata"), "released");
+        var runtime = runtimes.GetOrOpen(project);
+        Assert.True(runtimes.TryReleaseIfIdle(runtime.WorkspaceKey));
+        Assert.False(runtimes.TryGet(runtime.WorkspaceKey, out _));
+        var running = server.StartAsync(cancellation.Token);
+        using var connection = await new WorkerClient().ConnectAsync(server.EndpointName,
+            new WorkerHandshakeRequest("test-client", "1.0.0", new ProtocolRange(1, 1),
+                new[] { "jobs.v1" }), TimeSpan.FromSeconds(5), cancellation.Token);
+
+        await Assert.ThrowsAnyAsync<Exception>(() => new WorkerJobClient(connection)
+            .GetStatusAsync(project, "job-1", cancellation.Token));
+
+        cancellation.Cancel();
+        await running.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
     [Fact]

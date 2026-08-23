@@ -12,6 +12,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using SIL.Motif.Contract.Projects;
 using SIL.Motif.Contract.Worker;
+using SIL.Motif.Host.Store;
 using SIL.Motif.Worker.Jobs;
 using SIL.Motif.Worker.Projects;
 using SIL.Motif.Worker.Store;
@@ -34,6 +35,8 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
         new ConcurrentDictionary<string, WorkerControlConnection>(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<Task, byte> _handlers = new();
     private readonly object _gate = new object();
+    private bool _ownsRuntimeRegistry;
+    private string? _ownedTestRoot;
     private bool _started;
     private bool _disposed;
     private Task? _acceptLoop;
@@ -58,8 +61,22 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
     }
 
     /// <summary>Creates an isolated server identity for protocol tests only.</summary>
-    internal static WorkerServer CreateForTests(string userNamespace) =>
-        new WorkerServer(userNamespace, null);
+    internal static WorkerServer CreateForTests(string userNamespace, bool composeRuntime = true)
+    {
+        var server = new WorkerServer(userNamespace, null);
+        if (composeRuntime)
+        {
+            var root = Path.Combine(Path.GetTempPath(), "motif-worker-test-" + Guid.NewGuid().ToString("N"));
+            var ownership = WorkspaceOwnership.Bootstrap(root);
+            var catalog = new ProjectDatabaseCatalog(MotifSchema.CurrentSchema, new Version(1, 0));
+            server.CreateRuntimeRegistry(catalog,
+                (jobs, key) => new WorkerRecoveryCoordinator(new WorkerRecovery(jobs),
+                    new WorkspaceCleaner(ownership)));
+            server._ownsRuntimeRegistry = true;
+            server._ownedTestRoot = root;
+        }
+        return server;
+    }
 
     /// <summary>The predictable control endpoint for clients in this user namespace.</summary>
     public string EndpointName { get; }
@@ -143,6 +160,9 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
         lock (_gate)
         {
             ThrowIfDisposed();
+            if (_runtimeRegistry is null)
+                throw new InvalidOperationException(
+                    "The worker runtime must be composed before the server can accept connections.");
             if (!TryAcquireOwnership())
                 return Task.CompletedTask;
             if (_started)
@@ -174,6 +194,14 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
             var handlers = _handlers.Keys.ToArray();
             try { await Task.WhenAll(handlers).ConfigureAwait(false); }
             catch { }
+        }
+        if (_ownsRuntimeRegistry)
+            _runtimeRegistry?.Dispose();
+        if (_ownedTestRoot is not null)
+        {
+            try { Directory.Delete(_ownedTestRoot, true); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
         }
         await _eventSink.DisposeAsync().ConfigureAwait(false);
         _hostRegistry.Dispose();

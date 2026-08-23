@@ -22,6 +22,7 @@ public sealed record JobStatusRequest
         if (string.IsNullOrWhiteSpace(value))
             throw new ArgumentException("A valid job id is required.", nameof(value));
         if (value!.IndexOfAny(new[] { '\r', '\n', '\0' }) >= 0)
+            throw new ArgumentException("A job id cannot contain control characters.", nameof(value));
         if (value.Length > 256)
             throw new ArgumentException("The job id exceeds its bound.", nameof(value));
         return value;

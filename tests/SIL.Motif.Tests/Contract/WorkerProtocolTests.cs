@@ -160,6 +160,25 @@ public sealed class WorkerProtocolTests
         Assert.Contains("waiting-for-baseline", responseJson, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(" ")]
+    [InlineData("job\r")]
+    [InlineData("job\n")]
+    [InlineData("job\0")]
+    public void JobStatusRequest_RejectsBlankAndControlCharacterIds(string jobId)
+    {
+        Assert.Throws<ArgumentException>(() => new JobStatusRequest(
+            new ProjectLocator("C:\\workspace\\demo.fwdata", "fieldworks-project"), jobId));
+    }
+
+    [Fact]
+    public void JobStatusRequest_RejectsOversizedIds()
+    {
+        Assert.Throws<ArgumentException>(() => new JobStatusRequest(
+            new ProjectLocator("C:\\workspace\\demo.fwdata", "fieldworks-project"),
+            new string('x', 257)));
+    }
+
     [Fact]
     public void JobStatusCommand_IsClosedAndCapabilityBound()
     {

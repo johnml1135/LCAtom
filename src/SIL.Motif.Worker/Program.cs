@@ -1,6 +1,10 @@
 using System;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using SIL.Motif.Host.Store;
+using SIL.Motif.Worker.Jobs;
+using SIL.Motif.Worker.Store;
 
 namespace SIL.Motif.Worker;
 
@@ -11,6 +15,13 @@ internal static class Program
         var idleTimeout = ReadIdleTimeout(args);
         using var tracker = new WorkerWorkTracker();
         await using var server = new WorkerServer(workTracker: tracker);
+        var workerRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "SIL", "Motif");
+        var ownership = WorkspaceOwnership.Bootstrap(workerRoot);
+        var catalog = new ProjectDatabaseCatalog(MotifSchema.CurrentSchema, new Version(1, 0));
+        using var runtimes = server.CreateRuntimeRegistry(catalog,
+            (jobs, key) => new WorkerRecoveryCoordinator(new WorkerRecovery(jobs),
+                new WorkspaceCleaner(ownership)));
         if (!server.TryAcquireOwnership())
         {
             Console.WriteLine("existing endpoint: " + server.EndpointName);
