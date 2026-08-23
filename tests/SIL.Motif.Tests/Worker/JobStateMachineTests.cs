@@ -45,7 +45,10 @@ public sealed class JobStateMachineTests : IDisposable
         foreach (var from in Enum.GetValues<JobStatus>())
         foreach (var to in Enum.GetValues<JobStatus>())
         {
-            var current = NewJob() with { Status = from, Version = 4 };
+            var assessmentOutcome = from == JobStatus.Running &&
+                (to is JobStatus.CompletedDryRunOnly or JobStatus.CompletedWithAssessmentFailure);
+            var current = NewJob() with { Status = from, Version = 4, DryRunPublished = assessmentOutcome,
+                DryRunJson = assessmentOutcome ? "{\"dryRun\":true}" : null };
             var legal = JobStateMachine.LegalNextStatuses(from).Contains(to);
             if (from == to || !legal)
                 Assert.Throws<InvalidOperationException>(() => machine.Transition(current, to));
@@ -63,11 +66,38 @@ public sealed class JobStateMachineTests : IDisposable
         job = machine.RequestCancellation(job);
         job = machine.RequestCancellation(job);
         Assert.True(job.CancellationRequested);
-        job = machine.Transition(job, JobStatus.Cancelled, "{\"assessmentDisposition\":\"cancelled\"}");
+        Assert.Throws<InvalidOperationException>(() => machine.Transition(job, JobStatus.Completed));
+        job = machine.UpdateProgress(job, "{\"assessmentProgress\":50}");
+        Assert.Equal("{\"assessmentProgress\":50}", job.ProgressJson);
+        job = machine.Transition(job, JobStatus.Cancelled);
         Assert.Equal("{\"assessmentDisposition\":\"cancelled\"}", job.ResultJson);
-        Assert.Equal("{\"dryRun\":true}", job.ProgressJson);
+        Assert.Equal("{\"dryRun\":true}", job.DryRunJson);
         Assert.True(job.DryRunPublished);
         Assert.Throws<InvalidOperationException>(() => machine.RequestCancellation(job));
+        Assert.Throws<InvalidOperationException>(() => machine.Transition(
+            NewJob() with { Status = JobStatus.Running, DryRunPublished = true, DryRunJson = "{\"dryRun\":true}" },
+            JobStatus.Cancelled, "{\"assessmentDisposition\":\"wrong\"}"));
+    }
+
+    [Fact]
+    public void AssessmentOutcomeStatusesRequirePublishedDryRun()
+    {
+        var machine = new JobStateMachine(new FixedClock("2026-08-22T12:00:00Z"));
+        var running = NewJob() with { Status = JobStatus.Running };
+        Assert.Throws<InvalidOperationException>(() => machine.Transition(running, JobStatus.CompletedDryRunOnly));
+        Assert.Throws<InvalidOperationException>(() => machine.Transition(running, JobStatus.CompletedWithAssessmentFailure));
+        var published = machine.PublishDryRun(running, "{\"dryRun\":true}");
+        Assert.Equal(JobStatus.CompletedDryRunOnly, machine.Transition(published, JobStatus.CompletedDryRunOnly).Status);
+    }
+
+    [Fact]
+    public void DryRunPublicationCannotFollowCancellationOrOverwriteExistingPublication()
+    {
+        var machine = new JobStateMachine(new FixedClock("2026-08-22T12:00:00Z"));
+        var cancelled = machine.RequestCancellation(NewJob() with { Status = JobStatus.Running });
+        Assert.Throws<InvalidOperationException>(() => machine.PublishDryRun(cancelled, "{\"dryRun\":true}"));
+        var published = machine.PublishDryRun(NewJob() with { Status = JobStatus.Running }, "{\"first\":true}");
+        Assert.Throws<InvalidOperationException>(() => machine.PublishDryRun(published, "{\"second\":true}"));
     }
 
     [Fact]
@@ -111,6 +141,95 @@ public sealed class JobStateMachineTests : IDisposable
     }
 
     [Fact]
+    public void RepositoryKeepsPublishedDryRunImmutableWhileProgressAndCancellationChange()
+    {
+        var project = new ProjectLocator(Path.Combine(_root, "immutable.fwdata"), "immutable");
+        var path = Path.Combine(_root, "immutable.motif.db");
+        using (var database = MotifDatabase.OpenOwned(path, project, MotifSchema.CurrentSchema, new Version(1, 0)))
+        {
+            var repository = new JobRepository(database, new FixedClock("2026-08-22T12:00:00Z"));
+            var running = repository.Transition(repository.Create(NewJob()).JobId, JobStatus.Running);
+            var published = repository.PublishDryRun(running.JobId, "{\"dryRun\":true}", running.Version);
+            var progressed = repository.UpdateProgress(published.JobId, "{\"assessmentProgress\":50}", published.Version);
+            Assert.Equal("{\"dryRun\":true}", progressed.DryRunJson);
+            Assert.Equal("{\"assessmentProgress\":50}", progressed.ProgressJson);
+            var cancelled = repository.RequestCancellation(progressed.JobId, progressed.Version);
+            var completed = repository.Transition(cancelled.JobId, JobStatus.Cancelled, cancelled.Version);
+            Assert.Equal("{\"dryRun\":true}", completed.DryRunJson);
+            Assert.Equal("{\"assessmentProgress\":50}", completed.ProgressJson);
+            Assert.Equal("{\"assessmentDisposition\":\"cancelled\"}", completed.ResultJson);
+        }
+        using var reopened = MotifDatabase.OpenOwned(path, project, MotifSchema.CurrentSchema, new Version(1, 0));
+        var durable = new JobRepository(reopened).Get("job");
+        Assert.Equal("{\"dryRun\":true}", durable!.DryRunJson);
+        Assert.Equal("{\"assessmentProgress\":50}", durable.ProgressJson);
+        Assert.Equal("{\"assessmentDisposition\":\"cancelled\"}", durable.ResultJson);
+    }
+
+    [Fact]
+    public void QueuedCancellationRequestSurvivesReopen()
+    {
+        var project = new ProjectLocator(Path.Combine(_root, "queued-cancel.fwdata"), "queued-cancel");
+        var path = Path.Combine(_root, "queued-cancel.motif.db");
+        using (var database = MotifDatabase.OpenOwned(path, project, MotifSchema.CurrentSchema, new Version(1, 0)))
+        {
+            var repository = new JobRepository(database, new FixedClock("2026-08-22T12:00:00Z"));
+            var created = repository.Create(NewJob());
+            repository.RequestCancellation(created.JobId, created.Version);
+        }
+        using var reopened = MotifDatabase.OpenOwned(path, project, MotifSchema.CurrentSchema, new Version(1, 0));
+        var job = new JobRepository(reopened).Get("job");
+        Assert.True(job!.CancellationRequested);
+        Assert.Equal(JobStatus.Queued, job.Status);
+    }
+
+    [Fact]
+    public void MalformedPersistedJsonAndCrossFieldRowsAreRejected()
+    {
+        var project = new ProjectLocator(Path.Combine(_root, "malformed-job.fwdata"), "malformed-job");
+        var path = Path.Combine(_root, "malformed-job.motif.db");
+        using var database = MotifDatabase.OpenOwned(path, project, MotifSchema.CurrentSchema, new Version(1, 0));
+        var repository = new JobRepository(database);
+        repository.Create(NewJob());
+        using (var connection = database.OpenConnection())
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "UPDATE Jobs SET InputJson = 'true';";
+            command.ExecuteNonQuery();
+        }
+        Assert.Throws<InvalidDataException>(() => repository.Get("job"));
+        using (var connection = database.OpenConnection())
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "UPDATE Jobs SET InputJson = '{\"proposal\":[]}', CancellationRequested = 1, Status = 'completed';";
+            command.ExecuteNonQuery();
+        }
+        Assert.Throws<InvalidDataException>(() => repository.Get("job"));
+    }
+
+    [Fact]
+    public void GenerationFourValidationRejectsMissingUniqueJobIndexAndRollsBackFailedMigration()
+    {
+        var project = new ProjectLocator(Path.Combine(_root, "migration-check.fwdata"), "migration-check");
+        var path = Path.Combine(_root, "migration-check.motif.db");
+        using (MotifDatabase.OpenOwned(path, project, 3, new Version(1, 0))) { }
+        Assert.Throws<InvalidOperationException>(() => MotifDatabase.OpenOwnedForTesting(path, project,
+            MotifSchema.CurrentSchema, new Version(1, 0), generation =>
+            {
+                if (generation == 4) throw new InvalidOperationException("injected migration failure");
+            }));
+        using (MotifDatabase.OpenOwned(path, project, MotifSchema.CurrentSchema, new Version(1, 0))) { }
+        using (var database = MotifDatabase.OpenOwned(path, project, MotifSchema.CurrentSchema, new Version(1, 0)))
+        using (var connection = database.OpenConnection())
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "DROP INDEX IX_Jobs_Lineage_Attempt;";
+            command.ExecuteNonQuery();
+        }
+        Assert.Throws<InvalidDataException>(() => MotifDatabase.OpenOwned(path, project, MotifSchema.CurrentSchema, new Version(1, 0)));
+    }
+
+    [Fact]
     public void RejectsApplyJobsAndPinsJsonBoundaries()
     {
         var project = new ProjectLocator(Path.Combine(_root, "apply.fwdata"), "apply");
@@ -119,6 +238,7 @@ public sealed class JobStateMachineTests : IDisposable
         var repository = new JobRepository(database, new FixedClock("2026-08-22T12:00:00Z"));
         Assert.Throws<InvalidOperationException>(() => repository.Create(NewJob() with { Kind = JobKinds.Apply }));
         Assert.Throws<ArgumentException>(() => repository.Create(NewJob() with { InputJson = "true" }));
+        Assert.Throws<ArgumentException>(() => repository.Create(NewJob() with { DryRunJson = "{\"dryRun\":true}" }));
         var oversized = "{\"x\":\"" + new string('a', JobJson.MaxStructuredJsonUtf8Bytes) + "\"}";
         Assert.Throws<ArgumentException>(() => repository.Create(NewJob() with { InputJson = oversized }));
     }
@@ -131,6 +251,7 @@ public sealed class JobStateMachineTests : IDisposable
         var changed = machine.Transition(current, JobStatus.Running);
         Assert.Equal(DateTimeOffset.Parse(current.UpdatedUtc), DateTimeOffset.Parse(changed.UpdatedUtc));
         Assert.Throws<ArgumentException>(() => machine.Transition(current with { CreatedUtc = "2026-08-22T11:00:00-04:00" }, JobStatus.Running));
+        Assert.Throws<ArgumentException>(() => machine.Transition(current with { CreatedUtc = "2026-08-22T11:00:00" }, JobStatus.Running));
     }
 
     [Fact]
@@ -148,7 +269,7 @@ public sealed class JobStateMachineTests : IDisposable
             reader.IsDBNull(3) ? "" : reader.GetString(3), reader.GetInt32(4)));
         Assert.Equal(new[] { "JobId|TEXT|0||1", "ProjectKey|TEXT|1||0", "Kind|TEXT|1||0", "Status|TEXT|1||0",
             "Attempt|INTEGER|1|1|0", "LineageId|TEXT|1||0", "InputJson|TEXT|1||0", "ResultJson|TEXT|0||0",
-            "ProgressJson|TEXT|0||0", "CancellationRequested|INTEGER|1|0|0", "CreatedUtc|TEXT|1||0",
+            "ProgressJson|TEXT|0||0", "DryRunJson|TEXT|0||0", "CancellationRequested|INTEGER|1|0|0", "CreatedUtc|TEXT|1||0",
             "UpdatedUtc|TEXT|1||0", "Version|INTEGER|1|0|0", "DryRunPublished|INTEGER|1|0|0" }, shapes);
         using var indexes = connection.CreateCommand();
         indexes.CommandText = "SELECT name, \"unique\" FROM pragma_index_list('Jobs') WHERE origin = 'c' ORDER BY name;";

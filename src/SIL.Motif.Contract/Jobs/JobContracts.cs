@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -108,7 +107,8 @@ public sealed record JobRecord(
     string? LineageId = null,
     bool CancellationRequested = false,
     long Version = 0,
-    bool DryRunPublished = false)
+    bool DryRunPublished = false,
+    string? DryRunJson = null)
 {
     public string LogicalJobId => LineageId ?? JobId;
 }
@@ -130,4 +130,3 @@ public static class JobKinds
 {
     public const string Apply = "apply";
 }
-

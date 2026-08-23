@@ -470,7 +470,8 @@ public static class MotifSchema
         [C("JobId", "TEXT", false, 1), C("ProjectKey", "TEXT", true), C("Kind", "TEXT", true),
             C("Status", "TEXT", true), C("Attempt", "INTEGER", true, defaultValue: "1"),
             C("LineageId", "TEXT", true), C("InputJson", "TEXT", true), C("ResultJson", "TEXT"),
-            C("ProgressJson", "TEXT"), C("CancellationRequested", "INTEGER", true, defaultValue: "0"),
+            C("ProgressJson", "TEXT"), C("DryRunJson", "TEXT"),
+            C("CancellationRequested", "INTEGER", true, defaultValue: "0"),
             C("CreatedUtc", "TEXT", true), C("UpdatedUtc", "TEXT", true),
             C("Version", "INTEGER", true, defaultValue: "0"), C("DryRunPublished", "INTEGER", true, defaultValue: "0")],
         _ => throw new InvalidDataException($"Motif table {table} is not registered.")
@@ -672,6 +673,7 @@ public static class MotifSchema
             InputJson TEXT NOT NULL,
             ResultJson TEXT NULL,
             ProgressJson TEXT NULL,
+            DryRunJson TEXT NULL,
             CancellationRequested INTEGER NOT NULL DEFAULT 0 CHECK (CancellationRequested IN (0, 1)),
             CreatedUtc TEXT NOT NULL,
             UpdatedUtc TEXT NOT NULL,
