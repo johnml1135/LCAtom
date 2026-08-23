@@ -22,7 +22,7 @@ Motif must distinguish saved project states and same-named project copies withou
 **Files:**
 - Create: `src/SIL.Motif.Contract/Baselines/BaselineToken.cs`
 - Create: `src/SIL.Motif.Contract/Projects/LiveProjectObservation.cs`
-- Create: `src/SIL.Motif.Contract/Projects/ProjectLocator.cs`
+- Use: `src/SIL.Motif.Contract/Projects/ProjectLocator.cs`
 - Create: `src/SIL.Motif.Worker/Projects/ProjectWorkspaceKey.cs`
 - Test: `tests/SIL.Motif.Tests/Worker/ProjectWorkspaceKeyTests.cs`
 - Test: `tests/SIL.Motif.Tests/Contract/BaselineTokenTests.cs`
@@ -35,7 +35,7 @@ timestamp, host session, and edit generation are freshness evidence but not sema
 
 - [ ] **Step 2: Run red**
 
-Run `./test.ps1`. Expected: Baseline and project locator types are absent.
+Run `./test.ps1`. Expected: Baseline observation, token, and workspace-key types are absent.
 
 - [ ] **Step 3: Implement immutable types**
 
@@ -55,13 +55,11 @@ public sealed record LiveProjectObservation(
     bool HasUnsavedChanges,
     string SavedSemanticDigest);
 
-public sealed record ProjectLocator(
-    string FullFwDataPath,
-    string FieldWorksProjectIdentity);
 ```
 
-`ProjectWorkspaceKey.Compute` hashes a canonical tuple of normalized full path and identity. It must not use
-project name alone or migrate an old path implicitly.
+The paired-database plan already defines `ProjectLocator`, because database registration needs that identity
+before Baseline work begins. `ProjectWorkspaceKey.Compute` hashes its canonical tuple of normalized full path
+and identity. It must not use project name alone or migrate an old path implicitly.
 
 - [ ] **Step 4: Run green and commit**
 

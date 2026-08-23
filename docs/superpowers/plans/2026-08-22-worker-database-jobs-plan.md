@@ -20,6 +20,7 @@ durable facts rather than process memory.
 One process must recognize, upgrade, and protect each project's Motif database before any workflow uses it.
 
 **Files:**
+- Create: `src/SIL.Motif.Contract/Projects/ProjectLocator.cs`
 - Replace: `src/SIL.Motif.Host/Store/SqliteMotifDatabase.cs`
 - Create: `src/SIL.Motif.Host/Store/MotifDatabase.cs`
 - Create: `src/SIL.Motif.Host/Store/MotifSchema.cs`
@@ -53,6 +54,16 @@ public sealed class MotifDatabase
 }
 ```
 
+Create the minimal shared locator contract here because database identity needs it before Baseline scheduling:
+
+```csharp
+public sealed record ProjectLocator(
+    string FullFwDataPath,
+    string FieldWorksProjectIdentity);
+```
+
+The Baseline plan consumes this contract and adds workspace-key coverage; it does not create a second locator.
+
 Move the existing Corpus and Assessment DDL into ordered migrations. No Client, CLI, or FieldWorks-facing
 assembly may reference `Microsoft.Data.Sqlite` after this move. `ProjectDatabaseCatalog` is the only
 production component that constructs `MotifDatabase`; the Host assembly contains the `net10.0` implementation
@@ -63,7 +74,7 @@ because its existing Corpus and Assessment repositories already live there.
 Run `./test.ps1`, then:
 
 ```powershell
-git add src/SIL.Motif.Host src/SIL.Motif.Worker tests/SIL.Motif.Tests/Store
+git add src/SIL.Motif.Contract src/SIL.Motif.Host src/SIL.Motif.Worker tests/SIL.Motif.Tests/Store
 git commit -m "feat: centralize motif database ownership"
 ```
 
