@@ -18,6 +18,7 @@ internal static class Program
         var workerRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "SIL", "Motif");
         var ownership = WorkspaceOwnership.Bootstrap(workerRoot);
+        server.ConfigureTransfers(ownership);
         var catalog = new ProjectDatabaseCatalog(MotifSchema.CurrentSchema, new Version(1, 0));
         server.CreateRuntimeRegistry(catalog,
             (jobs, key) => new WorkerRecoveryCoordinator(new WorkerRecovery(jobs),

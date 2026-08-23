@@ -144,7 +144,15 @@ public sealed class BinaryTransferServer : IAsyncDisposable
             throw new ArgumentNullException(nameof(completion));
         if (!_transfers.TryGetValue(completion.TransferId, out var transfer))
             throw new InvalidOperationException("The binary transfer identifier is unknown or already used.");
-        await transfer.AcceptTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await transfer.AcceptTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            RemoveAndDelete(transfer);
+            throw;
+        }
         lock (transfer.Gate)
         {
             if (transfer.State != TransferState.Received)
@@ -171,6 +179,16 @@ public sealed class BinaryTransferServer : IAsyncDisposable
         _transfers.TryRemove(transfer.Offer.TransferId, out _);
         ReleaseCapacity(transfer);
         return readyPath;
+    }
+
+    internal async Task CancelAsync(string transferId)
+    {
+        if (string.IsNullOrWhiteSpace(transferId) || !_transfers.TryGetValue(transferId, out var transfer))
+            return;
+        transfer.Cancel.Cancel();
+        try { await transfer.AcceptTask.ConfigureAwait(false); }
+        catch { }
+        RemoveAndDelete(transfer);
     }
 
     /// <summary>Removes all unpublished temporary files owned by this server.</summary>

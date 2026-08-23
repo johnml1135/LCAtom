@@ -13,6 +13,7 @@ using System.Threading.Tasks;
 using SIL.Motif.Contract.Projects;
 using SIL.Motif.Contract.Worker;
 using SIL.Motif.Host.Store;
+using SIL.Motif.Worker.Baselines;
 using SIL.Motif.Worker.Jobs;
 using SIL.Motif.Worker.Projects;
 using SIL.Motif.Worker.Store;
@@ -30,6 +31,9 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
     private readonly ProjectHostRegistry _hostRegistry;
     private readonly WorkerEventSink _eventSink;
     private ProjectRuntimeRegistry? _runtimeRegistry;
+    private BinaryTransferServer? _binaryTransferServer;
+    private BaselineTransferRegistry? _baselineTransfers;
+    private string? _transferRoot;
     private readonly CancellationTokenSource _shutdown = new CancellationTokenSource();
     private readonly ConcurrentDictionary<string, WorkerControlConnection> _connections =
         new ConcurrentDictionary<string, WorkerControlConnection>(StringComparer.Ordinal);
@@ -62,19 +66,22 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
     }
 
     /// <summary>Creates an isolated server identity for protocol tests only.</summary>
-    internal static WorkerServer CreateForTests(string userNamespace, bool composeRuntime = true)
+    internal static WorkerServer CreateForTests(string userNamespace, bool composeRuntime = true,
+        string? workerRoot = null)
     {
         var server = new WorkerServer(userNamespace, null);
+        var root = workerRoot ?? Path.Combine(
+            Path.GetTempPath(), "motif-worker-test-" + Guid.NewGuid().ToString("N"));
+        var ownership = WorkspaceOwnership.Bootstrap(root);
+        server.ConfigureTransfers(ownership);
+        server._ownedTestRoot = root;
         if (composeRuntime)
         {
-            var root = Path.Combine(Path.GetTempPath(), "motif-worker-test-" + Guid.NewGuid().ToString("N"));
-            var ownership = WorkspaceOwnership.Bootstrap(root);
             var catalog = new ProjectDatabaseCatalog(MotifSchema.CurrentSchema, new Version(1, 0));
             server.CreateRuntimeRegistry(catalog,
                 (jobs, key) => new WorkerRecoveryCoordinator(new WorkerRecovery(jobs),
                     new WorkspaceCleaner(ownership)));
             server._ownsRuntimeRegistry = true;
-            server._ownedTestRoot = root;
         }
         return server;
     }
@@ -93,6 +100,9 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
 
     /// <summary>The duplex event sink attached to the explicitly registered live host.</summary>
     public WorkerEventSink EventSink => _eventSink;
+
+    internal BaselineTransferRegistry BaselineTransfers => _baselineTransfers ??
+        throw new InvalidOperationException("The worker transfer lifecycle is not composed.");
 
     /// <summary>Registers a connection as the live host for one project workspace.</summary>
     public void RegisterLiveHost(ProjectLocator project, string connectionId)
@@ -131,6 +141,23 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
             _runtimeRegistry = new ProjectRuntimeRegistry(catalog, recoveryFactory, work, now, _hostRegistry);
             _ownsRuntimeRegistry = true;
             return _runtimeRegistry;
+        }
+    }
+
+    internal void ConfigureTransfers(IWorkspaceOwnership ownership, IWorkerClock? clock = null)
+    {
+        ArgumentNullException.ThrowIfNull(ownership);
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            if (_started)
+                throw new InvalidOperationException("Transfer composition is closed after the server starts.");
+            if (_binaryTransferServer is not null || _baselineTransfers is not null)
+                throw new InvalidOperationException("The worker transfer lifecycle is already composed.");
+            var transferRoot = Path.Combine(ownership.WorkerRoot, "transfers");
+            _binaryTransferServer = new BinaryTransferServer(transferRoot, clock, _userSid);
+            _baselineTransfers = new BaselineTransferRegistry(transferRoot, _binaryTransferServer, clock);
+            _transferRoot = transferRoot;
         }
     }
 
@@ -183,10 +210,14 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
             if (_runtimeRegistry is null)
                 throw new InvalidOperationException(
                     "The worker runtime must be composed before the server can accept connections.");
+            if (_baselineTransfers is null)
+                throw new InvalidOperationException(
+                    "The worker transfer lifecycle must be composed before the server can accept connections.");
             if (!TryAcquireOwnership())
                 return Task.CompletedTask;
             if (_started)
                 return _acceptLoop ?? Task.CompletedTask;
+            BaselineTransferRegistry.CleanupStartup(_transferRoot!);
             _started = true;
             _acceptLoop = AcceptLoopAsync(cancellationToken);
             return _acceptLoop;
@@ -217,6 +248,16 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
         {
             var handlers = _handlers.Keys.ToArray();
             try { await Task.WhenAll(handlers).ConfigureAwait(false); }
+            catch (Exception exception) { failures.Add(exception); }
+        }
+        if (_baselineTransfers is not null)
+        {
+            try { await _baselineTransfers.DisposeAsync().ConfigureAwait(false); }
+            catch (Exception exception) { failures.Add(exception); }
+        }
+        if (_binaryTransferServer is not null)
+        {
+            try { await _binaryTransferServer.DisposeAsync().ConfigureAwait(false); }
             catch (Exception exception) { failures.Add(exception); }
         }
         if (_ownsRuntimeRegistry)
@@ -287,11 +328,15 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
                 var frame = await WorkerWire.ReadAsync(pipe, cancellationToken).ConfigureAwait(false);
                 var handshake = WorkerWire.Deserialize<WorkerHandshakeRequest>(frame);
                 var negotiated = WorkerHandshake.Negotiate(handshake, _offer);
-                var handlers = _runtimeRegistry is null
+                var handlers = _runtimeRegistry is null || _baselineTransfers is null
                     ? Array.Empty<IWorkerCommandHandler>()
-                    : new IWorkerCommandHandler[] { new JobStatusCommandHandler(_runtimeRegistry) };
+                    : new IWorkerCommandHandler[]
+                    {
+                        new JobStatusCommandHandler(_runtimeRegistry),
+                        new BaselineTransferOfferCommandHandler(_baselineTransfers, connectionId)
+                    };
                 connection = new WorkerControlConnection(pipe, negotiated.ProtocolVersion, negotiated.Capabilities,
-                    _eventSink, new WorkerCommandDispatcher(handlers), connectionId);
+                    _eventSink, new WorkerCommandDispatcher(handlers), _baselineTransfers!, connectionId);
                 var offer = new WorkerHandshakeOffer(_offer.ProductVersion, _offer.Protocols,
                     _offer.Capabilities, connectionId);
                 _connections[connection.Id] = connection;
@@ -332,6 +377,7 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
         private readonly HashSet<string> _capabilities;
         private readonly WorkerEventSink _eventSink;
         private readonly WorkerCommandDispatcher _dispatcher;
+        private readonly BaselineTransferRegistry _baselineTransfers;
         private readonly SemaphoreSlim _writeGate = new SemaphoreSlim(1, 1);
         private readonly object _hostSync = new();
         private readonly Dictionary<string, (ProjectLocator Project, string SessionId)> _hostProjects =
@@ -339,13 +385,15 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
         private bool _disposed;
 
         public WorkerControlConnection(Stream stream, int protocolVersion, IReadOnlyList<string> capabilities,
-            WorkerEventSink eventSink, WorkerCommandDispatcher dispatcher, string connectionId)
+            WorkerEventSink eventSink, WorkerCommandDispatcher dispatcher,
+            BaselineTransferRegistry baselineTransfers, string connectionId)
         {
             _stream = stream;
             _protocolVersion = protocolVersion;
             _capabilities = new HashSet<string>(capabilities, StringComparer.Ordinal);
             _eventSink = eventSink;
             _dispatcher = dispatcher;
+            _baselineTransfers = baselineTransfers;
             Id = connectionId;
         }
 
@@ -403,7 +451,12 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
                 {
                     if (document.RootElement.TryGetProperty("EventId", out _))
                         throw new InvalidDataException("A worker event result is not a client command.");
-                    throw new InvalidDataException("A worker request command is required.");
+                    if (!HasBinaryCompletionProperties(document.RootElement))
+                        throw new InvalidDataException("A worker request command is required.");
+                    var completion = WorkerWire.Deserialize<BinaryTransferCompletion>(frame);
+                    await _baselineTransfers.CompleteAsync(Id, completion, cancellationToken)
+                        .ConfigureAwait(false);
+                    continue;
                 }
                 var request = WorkerWire.Deserialize<WorkerEnvelope>(frame);
                 if (request.ProtocolVersion != _protocolVersion)
@@ -426,17 +479,29 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
             }
         }
 
-        public ValueTask DisposeAsync()
+        public async ValueTask DisposeAsync()
         {
             lock (_hostSync)
             {
-                if (_disposed) return ValueTask.CompletedTask;
+                if (_disposed) return;
                 _disposed = true;
             }
-            UnregisterLiveHost();
-            _stream.Dispose();
-            return ValueTask.CompletedTask;
+            try
+            {
+                UnregisterLiveHost();
+                await _baselineTransfers.ReleaseConnectionAsync(Id).ConfigureAwait(false);
+            }
+            finally
+            {
+                _stream.Dispose();
+            }
         }
+
+        private static bool HasBinaryCompletionProperties(JsonElement element) =>
+            element.ValueKind == JsonValueKind.Object &&
+            element.TryGetProperty("TransferId", out _) &&
+            element.TryGetProperty("ByteCount", out _) &&
+            element.TryGetProperty("Sha256", out _);
 
         private async Task WriteSerializedAsync(object value, CancellationToken cancellationToken)
         {
