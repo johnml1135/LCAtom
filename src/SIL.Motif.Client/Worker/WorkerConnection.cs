@@ -481,7 +481,7 @@ public sealed class WorkerConnection : IDisposable
 
 internal static class WorkerFrame
 {
-    private static readonly JsonSerializerOptions JsonOptions = CreateOptions();
+    private static readonly JsonSerializerOptions JsonOptions = WorkerJson.CreateOptions();
 
     public static Task ConnectAsync(NamedPipeClientStream stream, TimeSpan timeout,
         CancellationToken cancellationToken)
@@ -540,13 +540,6 @@ internal static class WorkerFrame
                 throw new EndOfStreamException("The control pipe closed mid-frame.");
             offset += count;
         }
-    }
-
-    private static JsonSerializerOptions CreateOptions()
-    {
-        var options = new JsonSerializerOptions();
-        options.Converters.Add(new JsonStringEnumConverter());
-        return options;
     }
 
     private static int ReadInt32LittleEndian(byte[] bytes)

@@ -8,6 +8,7 @@ namespace SIL.Motif.Contract.Worker;
 public static class WorkerCommands
 {
     public const string Handshake = "handshake";
+    public const string JobStatus = "job.status";
 
     /// <summary>The publish-side metadata filename that binds an executable to its manifest.</summary>
     public const string BuildMetadataFileName = "worker.metadata.json";
@@ -20,7 +21,7 @@ public static class WorkerCommands
     private static readonly IReadOnlyCollection<string> CommandValues =
         new ReadOnlyCollection<string>(new[]
         {
-            Handshake,
+            Handshake, JobStatus,
         });
 
     private static readonly IReadOnlyCollection<string> EventValues =
@@ -40,6 +41,14 @@ public static class WorkerCommands
 
     /// <summary>Returns whether a command discriminator is known.</summary>
     public static bool IsKnown(string? command) => command is not null && KnownCommands.Contains(command);
+
+    /// <summary>Gets the capability required to dispatch a known command.</summary>
+    public static string? RequiredCapability(string command) => command switch
+    {
+        Handshake => null,
+        JobStatus => "jobs.v1",
+        _ => throw new ArgumentException("Unknown worker command discriminator.", nameof(command))
+    };
 
     /// <summary>Returns whether an event discriminator is known.</summary>
     public static bool IsKnownEvent(string? @event) => @event is not null && KnownEvents.Contains(@event);

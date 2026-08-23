@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using SIL.Motif.Contract.Jobs;
+using SIL.Motif.Contract.Projects;
 using SIL.Motif.Contract.Worker;
 using Xunit;
 
@@ -135,6 +137,69 @@ public sealed class WorkerProtocolTests
     }
 
     [Fact]
+    public void JobStatusContracts_RoundTripWithStableNamesAndIgnoreUnknownProperties()
+    {
+        var request = new JobStatusRequest(
+            new ProjectLocator("C:\\workspace\\demo.fwdata", "fieldworks-project"), "job-1");
+        var requestJson = JsonSerializer.Serialize(request, WorkerJson.CreateOptions());
+        var parsedRequest = JsonSerializer.Deserialize<JobStatusRequest>(
+            requestJson.TrimEnd('}') + ",\"futureField\":true}", WorkerJson.CreateOptions());
+
+        Assert.NotNull(parsedRequest);
+        Assert.Equal(request, parsedRequest);
+        Assert.DoesNotContain("futureField", JsonSerializer.Serialize(parsedRequest, WorkerJson.CreateOptions()));
+
+        var response = new JobStatusResponse("job-1", "workspace-key", true, "dry-run",
+            JobStatus.WaitingForBaseline, 2, "2026-08-23T12:00:00Z", false,
+            JobFailureCategory.None, 4);
+        var responseJson = JsonSerializer.Serialize(response, WorkerJson.CreateOptions());
+        var parsedResponse = JsonSerializer.Deserialize<JobStatusResponse>(
+            responseJson.TrimEnd('}') + ",\"futureField\":true}", WorkerJson.CreateOptions());
+
+        Assert.Equal(response, parsedResponse);
+        Assert.Contains("waiting-for-baseline", responseJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void JobStatusCommand_IsClosedAndCapabilityBound()
+    {
+        Assert.True(WorkerCommands.IsKnown(WorkerCommands.JobStatus));
+        Assert.Equal("jobs.v1", WorkerCommands.RequiredCapability(WorkerCommands.JobStatus));
+        Assert.False(WorkerCommands.IsKnown("job.status.future"));
+
+        var handshake = new WorkerHandshakeRequest("client", "1.0.0", new ProtocolRange(1, 1),
+            Array.Empty<string>());
+        var offer = new WorkerHandshakeOffer("1.0.0", new ProtocolRange(1, 1), new[] { "jobs.v1" });
+        var negotiated = WorkerHandshake.Negotiate(handshake, offer);
+
+        Assert.DoesNotContain("jobs.v1", negotiated.Capabilities);
+        Assert.Throws<ArgumentException>(() => new WorkerEnvelope(
+            "request-1", "job.status.future", JsonDocument.Parse("{}").RootElement.Clone(), 1));
+    }
+
+    [Fact]
+    public void JobStatusPayload_IsNotAnotherRegisteredCommandPayload()
+    {
+        var request = new JobStatusRequest(
+            new ProjectLocator("C:\\workspace\\demo.fwdata", "fieldworks-project"), "job-1");
+        var payload = JsonSerializer.SerializeToUtf8Bytes(request, WorkerJson.CreateOptions());
+
+        Assert.ThrowsAny<Exception>(() => JsonSerializer.Deserialize<WorkerHandshakeRequest>(
+            payload, WorkerJson.CreateOptions()));
+    }
+
+    [Fact]
+    public void WorkerJson_ReturnsFreshOptionsAndUsesClosedEnumConverters()
+    {
+        var first = WorkerJson.CreateOptions();
+        var second = WorkerJson.CreateOptions();
+        var json = JsonSerializer.Serialize(JobStatus.Cancelled, first);
+
+        Assert.NotSame(first, second);
+        Assert.Equal("\"cancelled\"", json);
+    }
+
+    [Fact]
     public void Envelope_RejectsUnknownCommand()
     {
         var payload = JsonDocument.Parse("{}").RootElement.Clone();
@@ -224,7 +289,7 @@ public sealed class WorkerProtocolTests
         var commands = WorkerCommands.All.ToArray();
         var events = WorkerCommands.Events.ToArray();
 
-        Assert.Equal(new[] { WorkerCommands.Handshake }, commands);
+        Assert.Equal(new[] { WorkerCommands.Handshake, WorkerCommands.JobStatus }, commands);
         Assert.Equal(new[]
         {
             WorkerCommands.BaselineRefreshRequested,
@@ -233,6 +298,7 @@ public sealed class WorkerProtocolTests
             WorkerCommands.CancellationRequested,
         }, events);
         Assert.Contains(WorkerCommands.Handshake, commands);
+        Assert.Contains(WorkerCommands.JobStatus, commands);
         Assert.Contains(WorkerCommands.BaselineRefreshRequested, WorkerCommands.Events);
         Assert.Equal(commands.Length, commands.Distinct(StringComparer.Ordinal).Count());
         Assert.All(commands, command => Assert.True(WorkerCommands.IsKnown(command)));

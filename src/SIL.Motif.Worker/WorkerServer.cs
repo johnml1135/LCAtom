@@ -28,6 +28,7 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
     private readonly IWorkerWorkTracker? _workTracker;
     private readonly ProjectHostRegistry _hostRegistry;
     private readonly WorkerEventSink _eventSink;
+    private ProjectRuntimeRegistry? _runtimeRegistry;
     private readonly CancellationTokenSource _shutdown = new CancellationTokenSource();
     private readonly ConcurrentDictionary<string, WorkerControlConnection> _connections =
         new ConcurrentDictionary<string, WorkerControlConnection>(StringComparer.Ordinal);
@@ -100,9 +101,12 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
         Func<JobRepository, string, WorkerRecoveryCoordinator> recoveryFactory,
         Func<DateTimeOffset>? now = null)
     {
+        if (_runtimeRegistry is not null)
+            throw new InvalidOperationException("The worker runtime registry is already composed.");
         if (_workTracker is not WorkerWorkTracker work)
             throw new InvalidOperationException("Runtime composition requires the worker work tracker.");
-        return new ProjectRuntimeRegistry(catalog, recoveryFactory, work, now, _hostRegistry);
+        _runtimeRegistry = new ProjectRuntimeRegistry(catalog, recoveryFactory, work, now, _hostRegistry);
+        return _runtimeRegistry;
     }
 
     /// <summary>Derives the stable control pipe name for the current Windows user.</summary>
@@ -220,7 +224,11 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
                 var frame = await WorkerWire.ReadAsync(pipe, cancellationToken).ConfigureAwait(false);
                 var handshake = WorkerWire.Deserialize<WorkerHandshakeRequest>(frame);
                 var negotiated = WorkerHandshake.Negotiate(handshake, _offer);
-                connection = new WorkerControlConnection(pipe, negotiated.ProtocolVersion, _eventSink, connectionId);
+                var handlers = _runtimeRegistry is null
+                    ? Array.Empty<IWorkerCommandHandler>()
+                    : new IWorkerCommandHandler[] { new JobStatusCommandHandler(_runtimeRegistry) };
+                connection = new WorkerControlConnection(pipe, negotiated.ProtocolVersion, negotiated.Capabilities,
+                    _eventSink, new WorkerCommandDispatcher(handlers), connectionId);
                 var offer = new WorkerHandshakeOffer(_offer.ProductVersion, _offer.Protocols,
                     _offer.Capabilities, connectionId);
                 _connections[connection.Id] = connection;
@@ -258,19 +266,23 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
     {
         private readonly Stream _stream;
         private readonly int _protocolVersion;
+        private readonly HashSet<string> _capabilities;
         private readonly WorkerEventSink _eventSink;
+        private readonly WorkerCommandDispatcher _dispatcher;
         private readonly SemaphoreSlim _writeGate = new SemaphoreSlim(1, 1);
         private readonly object _hostSync = new();
         private readonly Dictionary<string, (ProjectLocator Project, string SessionId)> _hostProjects =
             new(StringComparer.Ordinal);
         private bool _disposed;
 
-        public WorkerControlConnection(Stream stream, int protocolVersion, WorkerEventSink eventSink,
-            string connectionId)
+        public WorkerControlConnection(Stream stream, int protocolVersion, IReadOnlyList<string> capabilities,
+            WorkerEventSink eventSink, WorkerCommandDispatcher dispatcher, string connectionId)
         {
             _stream = stream;
             _protocolVersion = protocolVersion;
+            _capabilities = new HashSet<string>(capabilities, StringComparer.Ordinal);
             _eventSink = eventSink;
+            _dispatcher = dispatcher;
             Id = connectionId;
         }
 
@@ -331,12 +343,22 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
                     throw new InvalidDataException("A worker request command is required.");
                 }
                 var request = WorkerWire.Deserialize<WorkerEnvelope>(frame);
-                if (!string.Equals(request.Command, WorkerCommands.Handshake, StringComparison.Ordinal))
-                    throw new InvalidDataException("The command discriminator is not registered.");
                 if (request.ProtocolVersion != _protocolVersion)
                     throw new InvalidDataException("The request protocol does not match negotiation.");
+                if (string.Equals(request.Command, WorkerCommands.Handshake, StringComparison.Ordinal))
+                {
+                    await WriteSerializedAsync(new WorkerEnvelope(
+                        request.RequestId, WorkerCommands.Handshake, EmptyPayload(), _protocolVersion), cancellationToken)
+                        .ConfigureAwait(false);
+                    continue;
+                }
+                var capability = WorkerCommands.RequiredCapability(request.Command);
+                if (capability is not null && !_capabilities.Contains(capability))
+                    throw new InvalidDataException("The command capability was not negotiated.");
+                var payload = await _dispatcher.DispatchAsync(request.Command, request.Payload, cancellationToken)
+                    .ConfigureAwait(false);
                 await WriteSerializedAsync(new WorkerEnvelope(
-                    request.RequestId, WorkerCommands.Handshake, EmptyPayload(), _protocolVersion), cancellationToken)
+                    request.RequestId, request.Command, payload, _protocolVersion), cancellationToken)
                     .ConfigureAwait(false);
             }
         }
@@ -374,7 +396,7 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
 internal static class WorkerWire
 {
     public const int MaximumFrameBytes = 1024 * 1024;
-    private static readonly JsonSerializerOptions Options = CreateOptions();
+    private static readonly JsonSerializerOptions Options = WorkerJson.CreateOptions();
 
     public static async Task WriteAsync(Stream stream, object value, CancellationToken cancellationToken)
     {
@@ -422,10 +444,4 @@ internal static class WorkerWire
         }
     }
 
-    private static JsonSerializerOptions CreateOptions()
-    {
-        var options = new JsonSerializerOptions();
-        options.Converters.Add(new JsonStringEnumConverter());
-        return options;
-    }
 }
