@@ -108,9 +108,9 @@ public sealed class BinaryTransferServer : IAsyncDisposable
         {
             ThrowIfDisposed();
             if (_transfers.Count >= _maximumActiveOffers)
-                throw new InvalidOperationException("The active binary-offer envelope is full.");
+                throw new BinaryTransferCapacityException("The active binary-offer envelope is full.");
             if (maximumBytes > _maximumReservedBytes - _reservedBytes)
-                throw new InvalidOperationException("The reserved binary-byte envelope is full.");
+                throw new BinaryTransferCapacityException("The reserved binary-byte envelope is full.");
             var id = Guid.NewGuid().ToString("N");
             var offer = new BinaryTransferOffer(id, "upload",
                 "motif-transfer-" + Guid.NewGuid().ToString("N"), maximumBytes,
@@ -150,6 +150,9 @@ public sealed class BinaryTransferServer : IAsyncDisposable
         }
         catch
         {
+            transfer.Cancel.Cancel();
+            try { await transfer.AcceptTask.ConfigureAwait(false); }
+            catch { }
             RemoveAndDelete(transfer);
             throw;
         }
@@ -364,6 +367,12 @@ public sealed class BinaryTransferServer : IAsyncDisposable
         public Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken) =>
             Task.Delay(delay, cancellationToken);
     }
+}
+
+/// <summary>Reports exhaustion of the bounded binary-transfer offer envelope.</summary>
+internal sealed class BinaryTransferCapacityException : InvalidOperationException
+{
+    public BinaryTransferCapacityException(string message) : base(message) { }
 }
 
 internal static class PipeSecurityFactory

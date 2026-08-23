@@ -126,6 +126,157 @@ public sealed class BaselineTransferIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task ClaimFailsOnlyAfterDisconnectHasDeletedReadyFile()
+    {
+        var transferRoot = Path.Combine(_root, "release-race");
+        using var releaseOwns = new ManualResetEventSlim(false);
+        using var allowCleanup = new ManualResetEventSlim(false);
+        await using var binary = new BinaryTransferServer(transferRoot);
+        await using var registry = new BaselineTransferRegistry(transferRoot, binary,
+            onReleaseRemoved: () =>
+            {
+                releaseOwns.Set();
+                allowCleanup.Wait();
+            });
+        var project = Project("release-race");
+        var bytes = Encoding.UTF8.GetBytes("claimed or cleaned");
+        var offer = registry.CreateOffer("connection", project, bytes.Length, TimeSpan.FromMinutes(1));
+        await UploadAsync(offer, bytes);
+        await registry.CompleteAsync("connection", Completion(offer, bytes), CancellationToken.None);
+        var readyPath = Path.Combine(transferRoot, offer.TransferId + ".ready");
+        var releasing = Task.Run(() => registry.ReleaseConnectionAsync("connection"));
+        Assert.True(releaseOwns.Wait(TimeSpan.FromSeconds(1)));
+
+        var claiming = Task.Run(() => registry.Claim("connection", project, offer.TransferId));
+
+        try
+        {
+            Assert.False(File.Exists(readyPath));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => claiming);
+        }
+        finally
+        {
+            allowCleanup.Set();
+        }
+        await releasing;
+        Assert.False(File.Exists(readyPath));
+    }
+
+    [Fact]
+    public async Task DisconnectPreservesReadyFileWhenClaimWinsOwnership()
+    {
+        var transferRoot = Path.Combine(_root, "claim-race");
+        using var releaseCandidate = new ManualResetEventSlim(false);
+        using var allowRelease = new ManualResetEventSlim(false);
+        await using var binary = new BinaryTransferServer(transferRoot);
+        await using var registry = new BaselineTransferRegistry(transferRoot, binary,
+            onReleaseCandidate: () =>
+            {
+                releaseCandidate.Set();
+                allowRelease.Wait();
+            });
+        var project = Project("claim-race");
+        var bytes = Encoding.UTF8.GetBytes("claim owns these bytes");
+        var offer = registry.CreateOffer("connection", project, bytes.Length, TimeSpan.FromMinutes(1));
+        await UploadAsync(offer, bytes);
+        await registry.CompleteAsync("connection", Completion(offer, bytes), CancellationToken.None);
+        var releasing = Task.Run(() => registry.ReleaseConnectionAsync("connection"));
+        Assert.True(releaseCandidate.Wait(TimeSpan.FromSeconds(1)));
+
+        var claimed = registry.Claim("connection", project, offer.TransferId);
+
+        try
+        {
+            Assert.True(File.Exists(claimed.TemporaryPath));
+            Assert.Equal(bytes, await File.ReadAllBytesAsync(claimed.TemporaryPath));
+        }
+        finally
+        {
+            allowRelease.Set();
+        }
+        await releasing;
+        Assert.True(File.Exists(claimed.TemporaryPath));
+    }
+
+    [Fact]
+    public async Task CleanupRefusesDeletionAfterTransferRootBecomesAReparsePoint()
+    {
+        var transferRoot = Path.Combine(_root, "replace-root");
+        var parkedRoot = Path.Combine(_root, "parked-root");
+        var outside = Path.Combine(_root, "outside-delete-target");
+        await using var binary = new BinaryTransferServer(transferRoot);
+        await using var registry = new BaselineTransferRegistry(transferRoot, binary);
+        var project = Project("replace-root");
+        var bytes = Encoding.UTF8.GetBytes("verified before replacement");
+        var offer = registry.CreateOffer("connection", project, bytes.Length, TimeSpan.FromMinutes(1));
+        await UploadAsync(offer, bytes);
+        await registry.CompleteAsync("connection", Completion(offer, bytes), CancellationToken.None);
+        Directory.Move(transferRoot, parkedRoot);
+        Directory.CreateDirectory(outside);
+        var outsideSentinel = Path.Combine(outside, offer.TransferId + ".ready");
+        await File.WriteAllTextAsync(outsideSentinel, "outside");
+        try { Directory.CreateSymbolicLink(transferRoot, outside); }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
+            PlatformNotSupportedException)
+        {
+            Directory.Move(parkedRoot, transferRoot);
+            return;
+        }
+
+        try
+        {
+            await registry.ReleaseConnectionAsync("connection");
+            Assert.True(File.Exists(outsideSentinel));
+            Assert.True(File.Exists(Path.Combine(parkedRoot, offer.TransferId + ".ready")));
+        }
+        finally
+        {
+            if (Directory.Exists(transferRoot) &&
+                (File.GetAttributes(transferRoot) & FileAttributes.ReparsePoint) != 0)
+                Directory.Delete(transferRoot);
+            if (!Directory.Exists(transferRoot))
+                Directory.Move(parkedRoot, transferRoot);
+        }
+    }
+
+    [Fact]
+    public async Task OfferHandlerDoesNotReportDisposedRegistryAsCapacityExhaustion()
+    {
+        var transferRoot = Path.Combine(_root, "disposed-handler");
+        await using var binary = new BinaryTransferServer(transferRoot);
+        var registry = new BaselineTransferRegistry(transferRoot, binary);
+        var handler = new BaselineTransferOfferCommandHandler(registry, "connection");
+        await registry.DisposeAsync();
+        using var request = JsonDocument.Parse(JsonSerializer.Serialize(
+            new BaselineOfferRequest(Project("disposed-handler")), WorkerJson.CreateOptions()));
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(() =>
+            handler.HandleAsync(request.RootElement, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task OfferHandlerReportsOnlyTransferEnvelopeExhaustionAsCapacityUnavailable()
+    {
+        var transferRoot = Path.Combine(_root, "capacity-handler");
+        await using var binary = new BinaryTransferServer(transferRoot, maximumActiveOffers: 1);
+        await using var registry = new BaselineTransferRegistry(transferRoot, binary);
+        var handler = new BaselineTransferOfferCommandHandler(registry, "connection");
+        using var request = JsonDocument.Parse(JsonSerializer.Serialize(
+            new BaselineOfferRequest(Project("capacity-handler")), WorkerJson.CreateOptions()));
+        var first = await handler.HandleAsync(request.RootElement, CancellationToken.None);
+
+        var second = await handler.HandleAsync(request.RootElement, CancellationToken.None);
+
+        var firstResponse = JsonSerializer.Deserialize<BaselineOfferResponse>(
+            first.GetRawText(), WorkerJson.CreateOptions())!;
+        var secondResponse = JsonSerializer.Deserialize<BaselineOfferResponse>(
+            second.GetRawText(), WorkerJson.CreateOptions())!;
+        Assert.NotNull(firstResponse.Offer);
+        Assert.Equal(BaselineFailureCode.CapacityUnavailable, secondResponse.Failure?.Code);
+        Assert.True(secondResponse.Failure?.Retryable);
+    }
+
+    [Fact]
     public async Task ExpiredReadyTransferCannotBeClaimedAndIsDeleted()
     {
         var transferRoot = Path.Combine(_root, "expiry");

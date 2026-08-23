@@ -18,17 +18,21 @@ internal sealed class BaselineTransferRegistry : IAsyncDisposable
     private readonly string _rootPrefix;
     private readonly BinaryTransferServer _binary;
     private readonly IWorkerClock _clock;
+    private readonly Action? _onReleaseCandidate;
+    private readonly Action? _onReleaseRemoved;
     private readonly ConcurrentDictionary<string, Registration> _registrations =
         new(StringComparer.Ordinal);
     private bool _disposed;
 
     public BaselineTransferRegistry(string transferRoot, BinaryTransferServer binary,
-        IWorkerClock? clock = null)
+        IWorkerClock? clock = null, Action? onReleaseCandidate = null, Action? onReleaseRemoved = null)
     {
         _transferRoot = RequireTransferRoot(transferRoot);
         _rootPrefix = _transferRoot + Path.DirectorySeparatorChar;
         _binary = binary ?? throw new ArgumentNullException(nameof(binary));
         _clock = clock ?? new RegistryClock();
+        _onReleaseCandidate = onReleaseCandidate;
+        _onReleaseRemoved = onReleaseRemoved;
     }
 
     public BinaryTransferOffer CreateOffer(string connectionId, ProjectLocator project,
@@ -39,8 +43,7 @@ internal sealed class BaselineTransferRegistry : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(project);
         var offer = _binary.CreateOffer(maximumBytes, lifetime, cancellationToken);
         var registration = new Registration(connectionId, ProjectWorkspaceKey.Compute(project), offer);
-        if (!_registrations.TryAdd(offer.TransferId, registration))
-            throw new InvalidOperationException("A Baseline transfer identifier was unexpectedly reused.");
+        _registrations[offer.TransferId] = registration;
         if (cancellationToken.CanBeCanceled)
             registration.ExternalCancellation = cancellationToken.Register(
                 () => _ = CancelRegistrationAsync(registration));
@@ -148,17 +151,19 @@ internal sealed class BaselineTransferRegistry : IAsyncDisposable
             .Where(item => StringComparer.Ordinal.Equals(item.ConnectionId, connectionId)).ToArray();
         foreach (var registration in owned)
         {
-            if (!_registrations.TryRemove(registration.Offer.TransferId, out _)) continue;
-            string? readyPath;
+            _onReleaseCandidate?.Invoke();
             lock (registration.Gate)
             {
+                if (registration.State is RegistrationState.Claimed or RegistrationState.Cancelled)
+                    continue;
                 registration.State = RegistrationState.Cancelled;
-                readyPath = registration.ReadyPath;
+                if (registration.ReadyPath is not null)
+                    DeleteOwnedFile(registration.ReadyPath);
+                _registrations.TryRemove(registration.Offer.TransferId, out _);
             }
+            _onReleaseRemoved?.Invoke();
             StopMonitoring(registration);
             await _binary.CancelAsync(registration.Offer.TransferId).ConfigureAwait(false);
-            if (readyPath is not null)
-                DeleteOwnedFile(readyPath);
         }
     }
 
@@ -264,6 +269,9 @@ internal sealed class BaselineTransferRegistry : IAsyncDisposable
             return;
         try
         {
+            if (!Directory.Exists(_transferRoot) ||
+                (File.GetAttributes(_transferRoot) & FileAttributes.ReparsePoint) != 0)
+                return;
             if (File.Exists(full) && (File.GetAttributes(full) & FileAttributes.ReparsePoint) == 0)
                 File.Delete(full);
         }

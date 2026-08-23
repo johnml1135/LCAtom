@@ -33,7 +33,7 @@ internal sealed class BaselineTransferOfferCommandHandler : IWorkerCommandHandle
                 MaximumBundleBytes, OfferLifetime, cancellationToken);
             response = new BaselineOfferResponse(offer, null);
         }
-        catch (InvalidOperationException exception)
+        catch (BinaryTransferCapacityException exception)
         {
             response = new BaselineOfferResponse(null, new BaselineCommandFailure(
                 BaselineFailureCode.CapacityUnavailable, true, exception.Message));

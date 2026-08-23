@@ -730,6 +730,34 @@ public sealed class WorkerServerTests
     }
 
     [Fact]
+    public async Task CancellingCompletionDrainsReceivingTransferBeforeReleasingCapacity()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "motif-worker-" + Guid.NewGuid().ToString("N"));
+        await using var server = new BinaryTransferServer(directory, maximumActiveOffers: 1,
+            maximumReservedBytes: 10);
+        var offer = server.CreateOffer(10, TimeSpan.FromSeconds(10));
+        using var client = new NamedPipeClientStream(".", offer.PipeName, PipeDirection.Out,
+            PipeOptions.Asynchronous);
+        await client.ConnectAsync(5000);
+        await client.WriteAsync(new byte[] { 1 });
+        await client.FlushAsync();
+        var temporaryPath = Path.Combine(directory, offer.TransferId + ".tmp");
+        Assert.True(SpinWait.SpinUntil(() => File.Exists(temporaryPath), TimeSpan.FromSeconds(1)));
+        using var cancellation = new CancellationTokenSource();
+        var completing = server.CompleteAsync(
+            new BinaryTransferCompletion(offer.TransferId, 1, new string('0', 64)), cancellation.Token);
+
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => completing);
+        Assert.False(File.Exists(temporaryPath));
+        Assert.DoesNotContain(temporaryPath, server.CleanupFailures);
+        _ = server.CreateOffer(10, TimeSpan.FromSeconds(10));
+        Assert.Throws<BinaryTransferCapacityException>(() =>
+            server.CreateOffer(1, TimeSpan.FromSeconds(10)));
+    }
+
+    [Fact]
     public async Task BinaryTransferUsesMonotonicDeadlineAcrossWallClockJump()
     {
         var directory = Path.Combine(Path.GetTempPath(), "motif-worker-" + Guid.NewGuid().ToString("N"));
@@ -930,7 +958,8 @@ public sealed class WorkerServerTests
             maximumReservedBytes: 10);
         var first = server.CreateOffer(6, TimeSpan.FromSeconds(10));
         var second = server.CreateOffer(4, TimeSpan.FromSeconds(10));
-        Assert.Throws<InvalidOperationException>(() => server.CreateOffer(1, TimeSpan.FromSeconds(10)));
+        Assert.Throws<BinaryTransferCapacityException>(() =>
+            server.CreateOffer(1, TimeSpan.FromSeconds(10)));
 
         var firstBytes = Encoding.UTF8.GetBytes("first");
         using (var client = new NamedPipeClientStream(".", first.PipeName, PipeDirection.Out,
