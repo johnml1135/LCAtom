@@ -11,14 +11,14 @@ public static class MotifSchema
     public const int ApplicationId = 0x4D4F5446;
 
     /// <summary>The newest ordered schema generation implemented by this assembly.</summary>
-    public const int CurrentSchema = 3;
+    public const int CurrentSchema = 4;
 
     /// <summary>The connection busy timeout used for short-lived worker database sessions.</summary>
     public const int BusyTimeoutMilliseconds = 15000;
 
     internal static Version MinimumWorkerVersion(int schema) => schema switch
     {
-        1 or 2 or 3 => new Version(1, 0),
+        1 or 2 or 3 or 4 => new Version(1, 0),
         _ => throw new NotSupportedException($"Motif schema {schema} is not known to this worker.")
     };
 
@@ -65,6 +65,9 @@ public static class MotifSchema
                 case 3:
                     CreateProposalWorkflowTables(connection, transaction);
                     break;
+                case 4:
+                    CreateJobTables(connection, transaction);
+                    break;
                 default:
                     throw new NotSupportedException($"Motif schema {schema} is not known to this worker.");
             }
@@ -108,6 +111,12 @@ public static class MotifSchema
                 "ParsedAnalyses", "AssessmentPins", "Proposals", "ProposalRevisions", "Drafts",
                 "Decisions", "Receipts", "Reports", "AppliedIndex", "MigrationLedger"
             },
+            4 => new HashSet<string>(StringComparer.Ordinal)
+            {
+                "MotifMetadata", "Corpora", "CorpusDocuments", "Assessments", "AssessedWords",
+                "ParsedAnalyses", "AssessmentPins", "Proposals", "ProposalRevisions", "Drafts",
+                "Decisions", "Receipts", "Reports", "AppliedIndex", "MigrationLedger", "Jobs"
+            },
             _ => throw new NotSupportedException($"Motif schema {schema} is not known to this worker.")
         };
         var expectedIndexes = schema >= 2
@@ -116,6 +125,11 @@ public static class MotifSchema
                 "IX_AssessedWords_Assessment", "IX_AssessedWords_Word", "IX_ParsedAnalyses_Word"
             }
             : [];
+        if (schema >= 4)
+        {
+            expectedIndexes.Add("IX_Jobs_Lineage_Attempt");
+            expectedIndexes.Add("IX_Jobs_Status_Updated");
+        }
 
         using (var objects = connection.CreateCommand())
         {
@@ -241,6 +255,14 @@ public static class MotifSchema
         command.ExecuteNonQuery();
     }
 
+    private static void CreateJobTables(SqliteConnection connection, SqliteTransaction? transaction)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = JobDdl;
+        command.ExecuteNonQuery();
+    }
+
     private static void ValidateTable(
         SqliteConnection connection,
         SqliteTransaction? transaction,
@@ -279,17 +301,23 @@ public static class MotifSchema
         {
             "MotifMetadata" => "CHECK (Id = 1)",
             "AssessedWords" => "AUTOINCREMENT",
+            "Jobs" => null,
             _ => null
         };
-        if (requiredSql is null) return;
-
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = $table;";
         command.Parameters.AddWithValue("$table", table);
         var sql = command.ExecuteScalar() as string;
-        if (sql is null || sql.IndexOf(requiredSql, StringComparison.OrdinalIgnoreCase) < 0)
+        if (sql is null || (requiredSql is not null && sql.IndexOf(requiredSql, StringComparison.OrdinalIgnoreCase) < 0))
             throw new InvalidDataException($"Motif table {table} is missing a required invariant.");
+        if (table == "Jobs")
+        {
+            foreach (var invariant in new[] { "CHECK (Attempt > 0)", "CHECK (CancellationRequested IN (0, 1))",
+                "CHECK (Version >= 0)", "CHECK (DryRunPublished IN (0, 1))" })
+                if (sql.IndexOf(invariant, StringComparison.OrdinalIgnoreCase) < 0)
+                    throw new InvalidDataException($"Motif table {table} is missing a required invariant.");
+        }
     }
 
     private static void ValidateIndex(
@@ -303,7 +331,8 @@ public static class MotifSchema
         list.CommandText = "SELECT \"unique\" FROM pragma_index_list($table) WHERE name = $index;";
         list.Parameters.AddWithValue("$table", IndexTableFor(index));
         list.Parameters.AddWithValue("$index", index);
-        if (Convert.ToInt32(list.ExecuteScalar(), CultureInfo.InvariantCulture) != 0)
+        var unique = Convert.ToInt32(list.ExecuteScalar(), CultureInfo.InvariantCulture) != 0;
+        if (unique != IsUniqueIndex(index))
             throw new InvalidDataException($"Motif index {index} has an unexpected uniqueness constraint.");
 
         using var columns = connection.CreateCommand();
@@ -353,14 +382,19 @@ public static class MotifSchema
     {
         "IX_AssessedWords_Assessment" or "IX_AssessedWords_Word" => "AssessedWords",
         "IX_ParsedAnalyses_Word" => "ParsedAnalyses",
+        "IX_Jobs_Lineage_Attempt" or "IX_Jobs_Status_Updated" => "Jobs",
         _ => throw new InvalidDataException($"Motif index {index} is not registered.")
     };
+
+    private static bool IsUniqueIndex(string index) => index == "IX_Jobs_Lineage_Attempt";
 
     private static IReadOnlyList<string> IndexColumnsFor(string index) => index switch
     {
         "IX_AssessedWords_Assessment" => ["AssessmentId"],
         "IX_AssessedWords_Word" => ["AssessmentId", "Word"],
         "IX_ParsedAnalyses_Word" => ["AssessedWordId"],
+        "IX_Jobs_Lineage_Attempt" => ["LineageId", "Attempt"],
+        "IX_Jobs_Status_Updated" => ["Status", "UpdatedUtc"],
         _ => throw new InvalidDataException($"Motif index {index} is not registered.")
     };
 
@@ -376,6 +410,7 @@ public static class MotifSchema
         "Reports" => [new("Assessments", "AssessmentId", "AssessmentId", "NO ACTION", "NO ACTION", "NONE"),
             new("Proposals", "ProposalId", "ProposalId", "NO ACTION", "NO ACTION", "NONE")],
         "AppliedIndex" => [new("Proposals", "ProposalId", "ProposalId", "NO ACTION", "NO ACTION", "NONE")],
+        "Jobs" => [],
         _ => []
     };
 
@@ -431,11 +466,18 @@ public static class MotifSchema
         "MigrationLedger" =>
         [C("SourceKind", "TEXT", true, 1), C("SourcePath", "TEXT", true, 2),
             C("SourceDigest", "TEXT", true, 3), C("ImportedUtc", "TEXT", true)],
+        "Jobs" =>
+        [C("JobId", "TEXT", false, 1), C("ProjectKey", "TEXT", true), C("Kind", "TEXT", true),
+            C("Status", "TEXT", true), C("Attempt", "INTEGER", true, defaultValue: "1"),
+            C("LineageId", "TEXT", true), C("InputJson", "TEXT", true), C("ResultJson", "TEXT"),
+            C("ProgressJson", "TEXT"), C("CancellationRequested", "INTEGER", true, defaultValue: "0"),
+            C("CreatedUtc", "TEXT", true), C("UpdatedUtc", "TEXT", true),
+            C("Version", "INTEGER", true, defaultValue: "0"), C("DryRunPublished", "INTEGER", true, defaultValue: "0")],
         _ => throw new InvalidDataException($"Motif table {table} is not registered.")
     };
 
-    private static ColumnShape C(string name, string type, bool notNull = false, int primaryKey = 0) =>
-        new(name, type, notNull, null, primaryKey);
+    private static ColumnShape C(string name, string type, bool notNull = false, int primaryKey = 0,
+        string? defaultValue = null) => new(name, type, notNull, defaultValue, primaryKey);
 
     private sealed record ColumnShape(
         string Name,
@@ -617,5 +659,26 @@ public static class MotifSchema
             ImportedUtc TEXT NOT NULL,
             PRIMARY KEY (SourceKind, SourcePath, SourceDigest)
         );
+        """;
+
+    private const string JobDdl = """
+        CREATE TABLE IF NOT EXISTS Jobs (
+            JobId TEXT PRIMARY KEY,
+            ProjectKey TEXT NOT NULL,
+            Kind TEXT NOT NULL,
+            Status TEXT NOT NULL,
+            Attempt INTEGER NOT NULL DEFAULT 1 CHECK (Attempt > 0),
+            LineageId TEXT NOT NULL,
+            InputJson TEXT NOT NULL,
+            ResultJson TEXT NULL,
+            ProgressJson TEXT NULL,
+            CancellationRequested INTEGER NOT NULL DEFAULT 0 CHECK (CancellationRequested IN (0, 1)),
+            CreatedUtc TEXT NOT NULL,
+            UpdatedUtc TEXT NOT NULL,
+            Version INTEGER NOT NULL DEFAULT 0 CHECK (Version >= 0),
+            DryRunPublished INTEGER NOT NULL DEFAULT 0 CHECK (DryRunPublished IN (0, 1))
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS IX_Jobs_Lineage_Attempt ON Jobs(LineageId, Attempt);
+        CREATE INDEX IF NOT EXISTS IX_Jobs_Status_Updated ON Jobs(Status, UpdatedUtc);
         """;
 }
