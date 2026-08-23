@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.IO.Pipes;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -18,12 +19,22 @@ public sealed class BaselineClientTests
     private const string OtherDigest = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
     [Fact]
-    public async Task OfferAndPublish_UseFreshCorrelatedRequestsAndNegotiatedProtocol()
+    public async Task Publish_UploadsTheOfferedTransferBeforePublishingIt()
     {
         var pipeName = "motif-baseline-client-" + Guid.NewGuid().ToString("N");
+        var binaryPipeName = "motif-baseline-binary-" + Guid.NewGuid().ToString("N");
         await using var server = NewServer(pipeName);
-        var offer = new BinaryTransferOffer("transfer-1", "upload", "pipe-1", 4096,
+        await using var binaryServer = new NamedPipeServerStream(binaryPipeName, PipeDirection.In, 1,
+            PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+        var offer = new BinaryTransferOffer("transfer-1", "upload", binaryPipeName, 4096,
             DateTimeOffset.UtcNow.AddMinutes(1));
+        var uploadedBytes = Task.Run(async () =>
+        {
+            await binaryServer.WaitForConnectionAsync();
+            using var received = new MemoryStream();
+            await binaryServer.CopyToAsync(received);
+            return received.ToArray();
+        });
         var serverTask = Task.Run(async () =>
         {
             await server.WaitForConnectionAsync();
@@ -40,6 +51,12 @@ public sealed class BaselineClientTests
             await WriteJsonAsync(server, Envelope(offerRequestId, WorkerCommands.BaselineOffer,
                 new BaselineOfferResponse(offer, null)));
 
+            var completion = await ReadJsonAsync(server);
+            Assert.Equal("transfer-1", completion.GetProperty("TransferId").GetString());
+            Assert.Equal(3, completion.GetProperty("ByteCount").GetInt64());
+            Assert.Equal("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+                completion.GetProperty("Sha256").GetString());
+
             var publishRequest = await ReadJsonAsync(server);
             Assert.Equal(WorkerCommands.BaselinePublish, publishRequest.GetProperty("Command").GetString());
             Assert.Equal(1, publishRequest.GetProperty("ProtocolVersion").GetInt32());
@@ -54,11 +71,11 @@ public sealed class BaselineClientTests
 
         using var connection = await ConnectAsync(pipeName, "baseline.v1", "jobs.v1");
         var client = new BaselineClient(connection);
+        using var bundle = new MemoryStream(Encoding.UTF8.GetBytes("abc"));
 
-        var receivedOffer = await client.RequestOfferAsync(Project(), CancellationToken.None);
-        var publication = await client.PublishAsync(Project(), receivedOffer.TransferId, Token(), CancellationToken.None);
+        var publication = await client.PublishAsync(Project(), bundle, Token(), CancellationToken.None);
 
-        Assert.Equal(offer, receivedOffer);
+        Assert.Equal(Encoding.UTF8.GetBytes("abc"), await uploadedBytes.WaitAsync(TimeSpan.FromSeconds(5)));
         Assert.Equal("project-key", publication.ProjectKey);
         Assert.Equal(Token(), publication.Token);
         await serverTask.WaitAsync(TimeSpan.FromSeconds(5));
@@ -83,9 +100,10 @@ public sealed class BaselineClientTests
 
         using var connection = await ConnectAsync(pipeName, "jobs.v1");
         var client = new BaselineClient(connection);
+        using var bundle = new MemoryStream();
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            client.RequestOfferAsync(Project(), CancellationToken.None));
+            client.PublishAsync(Project(), bundle, Token(), CancellationToken.None));
         await serverTask.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
@@ -108,9 +126,10 @@ public sealed class BaselineClientTests
         });
 
         using var connection = await ConnectAsync(pipeName, "baseline.v1");
+        using var bundle = new MemoryStream();
 
         var exception = await Assert.ThrowsAsync<BaselineCommandException>(() =>
-            new BaselineClient(connection).RequestOfferAsync(Project(), CancellationToken.None));
+            new BaselineClient(connection).PublishAsync(Project(), bundle, Token(), CancellationToken.None));
 
         Assert.Equal(failure, exception.Failure);
         Assert.Equal(failure.Message, exception.Message);
@@ -135,9 +154,10 @@ public sealed class BaselineClientTests
         });
 
         using var connection = await ConnectAsync(pipeName, "baseline.v1");
+        using var bundle = new MemoryStream();
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>
-            new BaselineClient(connection).RequestOfferAsync(Project(), CancellationToken.None));
+            new BaselineClient(connection).PublishAsync(Project(), bundle, Token(), CancellationToken.None));
         await serverTask.WaitAsync(TimeSpan.FromSeconds(5));
     }
 

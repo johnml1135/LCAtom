@@ -36,11 +36,22 @@ public sealed class BaselineClient
         _connection = connection ?? throw new ArgumentNullException(nameof(connection));
     }
 
-    /// <summary>Requests a one-use upload offer without transferring any bundle bytes.</summary>
-    public async Task<BinaryTransferOffer> RequestOfferAsync(ProjectLocator project,
-        CancellationToken cancellationToken)
+    /// <summary>Uploads and publishes one Baseline bundle through the worker-issued transfer offer.</summary>
+    public async Task<BaselinePublicationResult> PublishAsync(ProjectLocator project, Stream bundle,
+        BaselineToken token, CancellationToken cancellationToken)
     {
         RequireCapability();
+        if (bundle is null)
+            throw new ArgumentNullException(nameof(bundle));
+        var offer = await RequestOfferAsync(project, cancellationToken).ConfigureAwait(false);
+        await _connection.UploadAsync(offer, bundle, cancellationToken).ConfigureAwait(false);
+        return await PublishTransferAsync(project, offer.TransferId, token, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<BinaryTransferOffer> RequestOfferAsync(ProjectLocator project,
+        CancellationToken cancellationToken)
+    {
         var response = await SendAsync<BaselineOfferRequest, BaselineOfferResponse>(
             WorkerCommands.BaselineOffer, new BaselineOfferRequest(project), cancellationToken)
             .ConfigureAwait(false);
@@ -49,11 +60,9 @@ public sealed class BaselineClient
         return response.Offer!;
     }
 
-    /// <summary>Publishes one already-transferred Baseline bundle without uploading bytes.</summary>
-    public async Task<BaselinePublicationResult> PublishAsync(ProjectLocator project, string transferId,
+    private async Task<BaselinePublicationResult> PublishTransferAsync(ProjectLocator project, string transferId,
         BaselineToken token, CancellationToken cancellationToken)
     {
-        RequireCapability();
         var response = await SendAsync<BaselinePublishRequest, BaselinePublishResponse>(
             WorkerCommands.BaselinePublish, new BaselinePublishRequest(project, transferId, token),
             cancellationToken).ConfigureAwait(false);
