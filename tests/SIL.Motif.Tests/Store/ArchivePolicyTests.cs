@@ -65,6 +65,46 @@ public sealed class ArchivePolicyTests
         }
     }
 
+    [Fact]
+    public void AllTerminalProposalStatesLeaveActiveListsImmediatelyAndRespectRetention()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "motif-proposal-archive-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var locator = new ProjectLocator(Path.Combine(root, "project.fwdata"), "project");
+            using var database = MotifDatabase.OpenOwned(Path.Combine(root, "project.motif.db"), locator,
+                MotifSchema.CurrentSchema, new Version(1, 0));
+            var now = DateTimeOffset.Parse("2026-08-23T12:00:00Z");
+            var repository = new ProposalRepository(database, new FixedClock("2026-08-23T12:00:00Z"));
+            var archived = new List<CanonicalId>();
+            foreach (var status in new[] { "applied", "rejected", "superseded", "withdrawn" })
+            {
+                var id = CanonicalId.Mint("proposal/");
+                archived.Add(id);
+                repository.SaveRevision(new ProposalRevisionRecord(id, "sha256:" + status,
+                    "{}", status, null, null, null));
+            }
+            var stale = CanonicalId.Mint("proposal/");
+            repository.SaveRevision(new ProposalRevisionRecord(stale, "sha256:stale", "{}", "proposed",
+                null, null, null, "2020-01-01T00:00:00Z"));
+
+            var active = repository.List(new ProposalListFilter());
+            Assert.Single(active);
+            Assert.Equal(stale, active[0].ProposalId);
+            Assert.Equal(5, repository.List(new ProposalListFilter(IncludeArchived: true)).Count);
+            Assert.Equal(4, repository.ListArchived(now, new ArchivePolicy(TimeSpan.Zero)).Count);
+            Assert.Empty(repository.ListArchived(now, ArchivePolicy.Default));
+            Assert.Throws<InvalidOperationException>(() => repository.DeleteArchived(stale));
+            foreach (var id in archived) repository.DeleteArchived(id);
+            Assert.Single(repository.List(new ProposalListFilter(IncludeArchived: true)));
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch (DirectoryNotFoundException) { }
+        }
+    }
+
     private sealed class FixedClock(string value) : SIL.Motif.Contract.Jobs.IJobClock
     {
         public DateTimeOffset UtcNow => DateTimeOffset.Parse(value);

@@ -543,6 +543,67 @@ public sealed class MotifDatabaseMigrationTests : IDisposable
     }
 
     [Fact]
+    public void GenerationFiveRowsReceiveTypedArchiveFactsAndAppliedIndexLosesProposalForeignKey()
+    {
+        var path = DatabasePath("recovery-v5.fwdata");
+        using (Open("recovery-v5.fwdata", supportedSchema: 5)) { }
+        var proposalId = "proposal-recovery";
+        using (var connection = NewConnection(path))
+        {
+            Execute(connection, "INSERT INTO Proposals (ProposalId, CurrentIntentDigest, Status) " +
+                "VALUES ('proposal-recovery', 'digest', 'applied');");
+            Execute(connection, "INSERT INTO ProposalRevisions (ProposalId, IntentDigest, ProposalJson, CreatedUtc) " +
+                "VALUES ('proposal-recovery', 'digest', X'7B7D', '2026-08-01T00:00:00Z');");
+            Execute(connection, "INSERT INTO AppliedIndex (ProposalId, IntentDigest, AppliedUtc) " +
+                "VALUES ('proposal-recovery', 'digest', '2026-08-01T00:00:00Z');");
+            foreach (var row in new[]
+            {
+                (Status: "cancelled", Cancellation: 1, Id: "cancelled-job"),
+                (Status: "interrupted", Cancellation: 1, Id: "cancelled-interrupted"),
+                (Status: "interrupted", Cancellation: 0, Id: "interrupted-job"),
+                (Status: "failed", Cancellation: 0, Id: "failed-job"),
+                (Status: "queued", Cancellation: 0, Id: "queued-job")
+            })
+                Execute(connection, $"INSERT INTO Jobs (JobId, ProjectKey, Kind, Status, Attempt, LineageId, InputJson, " +
+                    $"CancellationRequested, CreatedUtc, UpdatedUtc, Version, DryRunPublished) VALUES " +
+                    $"('{row.Id}', 'project', 'dry-run', '{row.Status}', 1, '{row.Id}', '{{}}', {row.Cancellation}, " +
+                    "'2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z', 0, 0);");
+        }
+
+        using var upgraded = Open("recovery-v5.fwdata", supportedSchema: MotifSchema.CurrentSchema);
+        using var check = upgraded.OpenConnection();
+        Assert.Equal("cancellation", Scalar(check, "SELECT FailureCategory FROM Jobs WHERE JobId = 'cancelled-job';"));
+        Assert.Equal("cancellation", Scalar(check, "SELECT FailureCategory FROM Jobs WHERE JobId = 'cancelled-interrupted';"));
+        Assert.Equal("infrastructure", Scalar(check, "SELECT FailureCategory FROM Jobs WHERE JobId = 'interrupted-job';"));
+        Assert.Equal("unknown", Scalar(check, "SELECT FailureCategory FROM Jobs WHERE JobId = 'failed-job';"));
+        Assert.Equal("none", Scalar(check, "SELECT FailureCategory FROM Jobs WHERE JobId = 'queued-job';"));
+        Assert.All(new[] { "cancelled-job", "cancelled-interrupted", "interrupted-job", "failed-job" }, job =>
+            Assert.Equal("2026-08-01T00:00:00Z", Scalar(check, "SELECT ArchivedUtc FROM Jobs WHERE JobId = '" + job + "';")));
+        Assert.Same(DBNull.Value, Scalar(check, "SELECT ArchivedUtc FROM Jobs WHERE JobId = 'queued-job';"));
+        Assert.Equal(1L, Scalar(check, "SELECT COUNT(*) FROM AppliedIndex WHERE ProposalId = '" + proposalId + "';"));
+        Assert.Equal(0L, Scalar(check, "SELECT COUNT(*) FROM pragma_foreign_key_list('AppliedIndex');"));
+        Assert.Equal(6, PragmaInt(check, "user_version"));
+    }
+
+    [Fact]
+    public void GenerationSixBoundaryFailureRollsBackAndCanBeRetried()
+    {
+        var path = DatabasePath("recovery-rollback.fwdata");
+        using (Open("recovery-rollback.fwdata", supportedSchema: 5)) { }
+        Assert.Throws<InvalidOperationException>(() => MotifDatabase.OpenOwnedForTesting(
+            path, Locator("recovery-rollback.fwdata"), MotifSchema.CurrentSchema, new Version(1, 0),
+            schema => { if (schema == 6) throw new InvalidOperationException("injected gen6 failure"); }));
+        using (var check = NewConnection(path))
+        {
+            Assert.Equal(5, PragmaInt(check, "user_version"));
+            Assert.Null(Scalar(check, "SELECT name FROM pragma_table_info('Jobs') WHERE name = 'FailureCategory';"));
+            Assert.NotNull(Scalar(check, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'AppliedIndex';"));
+        }
+        using var retried = Open("recovery-rollback.fwdata", supportedSchema: MotifSchema.CurrentSchema);
+        Assert.Equal(6, PragmaInt(retried.OpenConnection(), "user_version"));
+    }
+
+    [Fact]
     public void UnrecognizedAppIdZeroDatabaseIsRefusedWithoutAdoption()
     {
         var path = DatabasePath("unrecognized.fwdata");

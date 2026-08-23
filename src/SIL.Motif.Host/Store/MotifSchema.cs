@@ -314,7 +314,7 @@ public static class MotifSchema
             "UPDATE Jobs SET ArchivedUtc = UpdatedUtc WHERE Status IN " +
             "('completed','completed-dry-run-only','completed-with-assessment-failure','failed','cancelled','interrupted'); " +
             "UPDATE Jobs SET FailureCategory = CASE " +
-            "WHEN Status = 'interrupted' AND CancellationRequested = 1 THEN 'cancellation' " +
+            "WHEN Status = 'cancelled' OR (Status = 'interrupted' AND CancellationRequested = 1) THEN 'cancellation' " +
             "WHEN Status = 'interrupted' THEN 'infrastructure' " +
             "WHEN Status = 'failed' THEN 'unknown' ELSE 'none' END; " +
             "UPDATE Proposals SET ArchivedUtc = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE Status IN " +

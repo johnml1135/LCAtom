@@ -77,6 +77,17 @@ public sealed class JobRepository
         return command.ExecuteScalar() is not null;
     }
 
+    public bool IsAlreadyExhaustedInfrastructure(string jobId, int attempt)
+    {
+        using var connection = _database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT 1 FROM Jobs WHERE JobId = $id AND Attempt = $attempt AND Status = 'failed' " +
+            "AND FailureCategory = 'infrastructure' AND ResultJson = '{\"failure\":\"infrastructure-retry-exhausted\"}';";
+        command.Parameters.AddWithValue("$id", jobId);
+        command.Parameters.AddWithValue("$attempt", attempt);
+        return command.ExecuteScalar() is not null;
+    }
+
     public IReadOnlyList<JobRecord> ListActive(string? projectKey = null)
     {
         using var connection = _database.OpenConnection();
@@ -255,18 +266,6 @@ public sealed class JobRepository
         return changed;
     }
 
-    public IReadOnlyList<JobRecord> ListRetryableInterrupted()
-    {
-        using var connection = _database.OpenConnection();
-        using var command = connection.CreateCommand();
-        command.CommandText = SelectSql + " WHERE Status = 'interrupted' AND FailureCategory = 'infrastructure' " +
-            "AND Attempt < 3 ORDER BY Attempt, JobId;";
-        using var reader = command.ExecuteReader();
-        var records = new List<JobRecord>();
-        while (reader.Read()) records.Add(Read(reader));
-        return records;
-    }
-
     public IReadOnlyList<JobRecord> ListInterruptedInfrastructure()
     {
         using var connection = _database.OpenConnection();
@@ -310,33 +309,62 @@ public sealed class JobRepository
     {
         using var connection = _database.OpenConnection();
         using var command = connection.CreateCommand();
-        command.CommandText = SelectSql + " WHERE ArchivedUtc IS NOT NULL" +
-            (before is null ? "" : " AND ArchivedUtc <= $before") + " ORDER BY ArchivedUtc;";
-        if (before is not null) command.Parameters.AddWithValue("$before", before.Value.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
+        command.CommandText = SelectSql + " WHERE ArchivedUtc IS NOT NULL ORDER BY ArchivedUtc;";
+        using var reader = command.ExecuteReader();
+        var records = new List<JobRecord>();
+        while (reader.Read()) records.Add(Read(reader));
+        if (before is null) return records;
+        var cutoff = before.Value.ToUniversalTime();
+        return records.Where(record => ValidateUtc(record.ArchivedUtc!, nameof(record.ArchivedUtc)) <= cutoff).ToArray();
+    }
+
+    public IReadOnlyList<JobRecord> ListEligibleArchived(DateTimeOffset now, ArchivePolicy policy)
+    {
+        if (policy.Forever) return Array.Empty<JobRecord>();
+        var all = ListArchived();
+        return all.Where(record => IsEligibleArchive(record, all, now, policy)).ToArray();
+    }
+
+    public int PurgeArchived(DateTimeOffset now, ArchivePolicy policy)
+    {
+        using var connection = _database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+        if (policy.Forever) return 0;
+        var all = ReadAll(connection, transaction);
+        var candidates = all.Where(record => IsEligibleArchive(record, all, now, policy)).ToArray();
+        var count = 0;
+        foreach (var candidate in candidates)
+        {
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = "DELETE FROM Jobs WHERE JobId = $id AND Version = $version;";
+            command.Parameters.AddWithValue("$id", candidate.JobId);
+            command.Parameters.AddWithValue("$version", candidate.Version);
+            count += command.ExecuteNonQuery();
+        }
+        transaction.Commit();
+        return count;
+    }
+
+    private static IReadOnlyList<JobRecord> ReadAll(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = SelectSql + ";";
         using var reader = command.ExecuteReader();
         var records = new List<JobRecord>();
         while (reader.Read()) records.Add(Read(reader));
         return records;
     }
 
-    public IReadOnlyList<JobRecord> ListEligibleArchived(DateTimeOffset now, ArchivePolicy policy) =>
-        policy.Forever ? Array.Empty<JobRecord>() :
-        ListArchived(now.ToUniversalTime().Subtract(policy.Retention));
-
-    public int PurgeArchived(DateTimeOffset now, ArchivePolicy policy)
+    private static bool IsEligibleArchive(JobRecord record, IReadOnlyList<JobRecord> all,
+        DateTimeOffset now, ArchivePolicy policy)
     {
-        using var connection = _database.OpenConnection();
-        using var transaction = connection.BeginTransaction();
-        using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = "DELETE FROM Jobs WHERE Status IN " +
-            "('completed','completed-dry-run-only','completed-with-assessment-failure','failed','cancelled','interrupted') " +
-            "AND ArchivedUtc IS NOT NULL" + (policy.Forever ? " AND 1 = 0" : " AND ArchivedUtc <= $before") + ";";
-        if (!policy.Forever)
-            command.Parameters.AddWithValue("$before", now.ToUniversalTime().Subtract(policy.Retention).ToString("O", CultureInfo.InvariantCulture));
-        var count = command.ExecuteNonQuery();
-        transaction.Commit();
-        return count;
+        if (!JobStateMachine.IsTerminal(record.Status) || !policy.ShouldPurge(
+                ValidateUtc(record.ArchivedUtc!, nameof(record.ArchivedUtc)), now)) return false;
+        return !all.Any(later => later.LogicalJobId == record.LogicalJobId && later.Attempt > record.Attempt &&
+            (!JobStateMachine.IsTerminal(later.Status) || !policy.ShouldPurge(
+                ValidateUtc(later.ArchivedUtc!, nameof(later.ArchivedUtc)), now)));
     }
 
     public void DeleteArchived(string jobId)

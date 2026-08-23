@@ -34,7 +34,9 @@ public sealed class WorkerRecovery
                     _jobs.ExhaustInterruptedInfrastructure(job.JobId, job.Version, now);
                     exhausted.Add(job.JobId);
                 }
-                catch (InvalidOperationException) when (_jobs.HasLaterAttempt(job.LogicalJobId, job.Attempt)) { }
+                catch (InvalidOperationException) when
+                    (_jobs.IsAlreadyExhaustedInfrastructure(job.JobId, job.Attempt) ||
+                     _jobs.HasLaterAttempt(job.LogicalJobId, job.Attempt)) { }
                 continue;
             }
             try

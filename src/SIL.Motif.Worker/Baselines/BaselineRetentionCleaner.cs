@@ -21,12 +21,6 @@ public enum BaselinePinSources
     Receipt = 8
 }
 
-/// <summary>Answers durable active-work pins before a Baseline file is removed.</summary>
-public interface IBaselineReferenceQuery
-{
-    bool HasActiveReference(string baselinePath);
-}
-
 /// <summary>Provides the durable source categories that pin a Baseline.</summary>
 public interface IBaselinePinQuery
 {
@@ -49,7 +43,7 @@ public sealed class BaselineRetentionCleaner
 {
     private readonly IWorkspaceOwnership _ownership;
     private readonly IPublishedBaselineQuery _published;
-    private readonly IBaselineReferenceQuery _references;
+    private readonly IBaselinePinQuery _references;
     private readonly IJobClock _clock;
     private readonly ArchivePolicy _policy;
     private readonly IWorkspaceFileSystem _fileSystem;
@@ -57,7 +51,7 @@ public sealed class BaselineRetentionCleaner
     public BaselineRetentionCleaner(
         IWorkspaceOwnership ownership,
         IPublishedBaselineQuery published,
-        IBaselineReferenceQuery references,
+        IBaselinePinQuery references,
         ArchivePolicy? policy = null,
         IJobClock? clock = null,
         IWorkspaceFileSystem? fileSystem = null)
@@ -81,9 +75,7 @@ public sealed class BaselineRetentionCleaner
             if (!baseline.Superseded || !baseline.RetentionEligible ||
                 !_policy.ShouldPurge(baseline.PublishedUtc, _clock.UtcNow) ||
                 baseline.PinSources != BaselinePinSources.None ||
-                (_references is IBaselinePinQuery pinQuery
-                    ? pinQuery.GetPinSources(baseline.Path) != BaselinePinSources.None
-                    : _references.HasActiveReference(baseline.Path)))
+                (_references.GetPinSources(baseline.Path) != BaselinePinSources.None))
                 continue;
             if (!IsExactPublishedPath(projectKey, baseline.Path))
             {

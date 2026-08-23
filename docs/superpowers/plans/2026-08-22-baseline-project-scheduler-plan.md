@@ -246,3 +246,9 @@ Run `./test.ps1`, then:
 git add src/SIL.Motif.LiveHost src/SIL.Motif.Runner src/SIL.Motif.Worker tests/SIL.Motif.Tests/Worker
 git commit -m "feat: reuse baselines for isolated dry runs"
 ```
+
+### Task 4 recovery integration checkpoint
+
+When the project registry and `ProjectWorkspaceKey` are available, the open-project lifecycle must invoke
+the per-project recovery coordinator before admitting work. This checkpoint owns startup cleanup ordering;
+it does not authorize global filesystem discovery.

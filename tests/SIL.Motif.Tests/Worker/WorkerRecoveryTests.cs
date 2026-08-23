@@ -73,6 +73,59 @@ public sealed class WorkerRecoveryTests : IDisposable
         Assert.Equal(JobStatus.Interrupted, jobs.Get(first.JobId)!.Status);
         Assert.Equal(JobStatus.Interrupted, jobs.Get(secondRunning.JobId)!.Status);
         Assert.Equal(3, jobs.ListAttempts(first.LogicalJobId).Count);
+        Assert.Empty(new WorkerRecovery(jobs, clock).RecoverInterruptedJobs(clock.UtcNow).ExhaustedJobIds!);
+    }
+
+    [Theory]
+    [InlineData(JobFailureCategory.ParserRefusal)]
+    [InlineData(JobFailureCategory.Semantic)]
+    [InlineData(JobFailureCategory.Unknown)]
+    public void NonInfrastructureFailuresAreNeverRetried(JobFailureCategory category)
+    {
+        var project = new ProjectLocator(Path.Combine(_root, "refusal.fwdata"), "refusal");
+        using var database = MotifDatabase.OpenOwned(Path.Combine(_root, Guid.NewGuid() + ".motif.db"), project,
+            MotifSchema.CurrentSchema, new Version(1, 0));
+        var jobs = new JobRepository(database, new FixedClock("2026-08-23T12:00:00Z"));
+        var running = jobs.Transition(jobs.Create(NewJob() with { JobId = Guid.NewGuid().ToString("N") }), JobStatus.Running);
+        jobs.Transition(running.JobId, JobStatus.Failed, running.Version, category, "{\"error\":true}");
+
+        var result = new WorkerRecovery(jobs).RecoverInterruptedJobs(DateTimeOffset.Parse("2026-08-23T12:00:00Z"));
+
+        Assert.Empty(result.RetryJobs);
+        Assert.Single(jobs.ListAttempts(running.LogicalJobId));
+    }
+
+    [Fact]
+    public void RecoveryDoesNotRegressDurableTimestampsWhenSuppliedTimeIsOlder()
+    {
+        var project = new ProjectLocator(Path.Combine(_root, "monotonic.fwdata"), "monotonic");
+        using var database = MotifDatabase.OpenOwned(Path.Combine(_root, "monotonic.motif.db"), project,
+            MotifSchema.CurrentSchema, new Version(1, 0));
+        var clock = new FixedClock("2026-08-23T12:00:00Z");
+        var jobs = new JobRepository(database, clock);
+        var running = jobs.Transition(jobs.Create(NewJob() with
+        {
+            JobId = "monotonic",
+            CreatedUtc = "2026-08-23T13:00:00Z",
+            UpdatedUtc = "2026-08-23T13:00:00Z"
+        }), JobStatus.Running);
+
+        new WorkerRecovery(jobs, clock).RecoverInterruptedJobs(DateTimeOffset.Parse("2026-08-23T11:00:00Z"));
+
+        var interrupted = jobs.Get(running.JobId)!;
+        Assert.Equal(DateTimeOffset.Parse("2026-08-23T13:00:00Z"), DateTimeOffset.Parse(interrupted.UpdatedUtc));
+        Assert.Equal(DateTimeOffset.Parse("2026-08-23T13:00:00Z"), DateTimeOffset.Parse(interrupted.ArchivedUtc!));
+    }
+
+    [Fact]
+    public void ApplyCannotBeQueuedForAutomaticRecovery()
+    {
+        var project = new ProjectLocator(Path.Combine(_root, "apply.fwdata"), "apply");
+        using var database = MotifDatabase.OpenOwned(Path.Combine(_root, "apply.motif.db"), project,
+            MotifSchema.CurrentSchema, new Version(1, 0));
+        var jobs = new JobRepository(database);
+
+        Assert.Throws<InvalidOperationException>(() => jobs.Create(NewJob() with { JobId = "apply", Kind = JobKinds.Apply }));
     }
 
     [Fact]
@@ -101,6 +154,7 @@ public sealed class WorkerRecoveryTests : IDisposable
         Assert.Equal("{\"dryRun\":true}", exhausted.DryRunJson);
         Assert.Equal(3, jobs.ListAttempts(first.LogicalJobId).Count);
         Assert.Empty(new WorkerRecovery(jobs, clock).RecoverInterruptedJobs(clock.UtcNow).RetryJobs);
+        new WorkerRecovery(jobs, clock).RecoverInterruptedJobs(clock.UtcNow);
         _ = second;
     }
 

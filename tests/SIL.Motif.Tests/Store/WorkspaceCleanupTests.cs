@@ -29,6 +29,42 @@ public sealed class WorkspaceCleanupTests : IDisposable
         Assert.Empty(Directory.EnumerateFileSystemEntries(work));
     }
 
+    [Fact]
+    public void StartupDeletesWorkerOwnedFilesIncludingDerivedLookingSuffixes()
+    {
+        var work = Path.Combine(_root, "project", "work");
+        Directory.CreateDirectory(Path.Combine(work, "job"));
+        File.WriteAllText(Path.Combine(work, "job", "candidate.fwdata"), "derived");
+        File.WriteAllText(Path.Combine(work, "job", "candidate.motif.db"), "derived");
+
+        var result = new WorkspaceCleaner(new WorkspaceOwnership(_root)).CleanupStartup("project");
+
+        Assert.True(result.Succeeded);
+        Assert.Empty(Directory.EnumerateFileSystemEntries(work));
+    }
+
+    [Fact]
+    public void BroadAndFileValuedRootsAreRejected()
+    {
+        Assert.Throws<ArgumentException>(() => new WorkspaceOwnership(Path.GetTempPath()));
+        var file = Path.Combine(_root, "worker-root.txt");
+        File.WriteAllText(file, "not a root");
+        Assert.Throws<ArgumentException>(() => new WorkspaceOwnership(file));
+    }
+
+    [Fact]
+    public void StartupRejectsAnEnumeratedEntryOutsideTheExactWorkRoot()
+    {
+        var work = Path.Combine(_root, "project", "work");
+        var outside = Path.Combine(_root, "project", "outside.txt");
+        var fileSystem = new OutsideChildFileSystem(work, outside);
+
+        var result = new WorkspaceCleaner(new WorkspaceOwnership(_root), fileSystem).CleanupStartup("project");
+
+        Assert.NotEmpty(result.Failures);
+        Assert.False(fileSystem.Deleted);
+    }
+
     [Theory]
     [InlineData("..", "job")]
     [InlineData("project", "..")]
@@ -76,6 +112,20 @@ public sealed class WorkspaceCleanupTests : IDisposable
         public bool HasLiveLease(string projectKey) => LiveLease;
         public bool HasDurableReference(string projectKey) => DurableReference;
         public DateTimeOffset? LastUsedUtc(string projectKey) => LastUsed;
+    }
+
+    private sealed class OutsideChildFileSystem(string work, string outside) : IWorkspaceFileSystem
+    {
+        public bool Deleted { get; private set; }
+        public bool Exists(string path) => true;
+        public FileAttributes GetAttributes(string path) =>
+            string.Equals(path, work, StringComparison.OrdinalIgnoreCase)
+                ? FileAttributes.Directory
+                : FileAttributes.Normal;
+        public IReadOnlyList<string> EnumerateFileSystemEntries(string path) =>
+            string.Equals(path, work, StringComparison.OrdinalIgnoreCase) ? [outside] : [];
+        public void DeleteFile(string path) => Deleted = true;
+        public void DeleteDirectory(string path) => Deleted = true;
     }
 
     private sealed class FixedClock(string value) : IJobClock

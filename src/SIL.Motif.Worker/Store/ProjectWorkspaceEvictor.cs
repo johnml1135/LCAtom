@@ -71,8 +71,8 @@ public sealed class ProjectWorkspaceEvictor
             if (!_fileSystem.Exists(workspace)) return new(evicted, failures);
             if ((_fileSystem.GetAttributes(workspace) & FileAttributes.ReparsePoint) != 0)
                 return new([], [new(workspace, "Reparse-point workspace is refused.")]);
-            VerifyDescendants(workspace);
-            _fileSystem.DeleteDirectory(workspace);
+            var deleted = new List<string>();
+            DeleteTree(workspace, deleted);
             evicted.Add(workspace);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
@@ -87,15 +87,42 @@ public sealed class ProjectWorkspaceEvictor
         return new(evicted, failures);
     }
 
-    private void VerifyDescendants(string directory)
+    private void DeleteTree(string target, List<string> deleted)
     {
-        foreach (var entry in _fileSystem.EnumerateFileSystemEntries(directory))
+        if (!_ownership.IsOwned(target))
+            throw new InvalidOperationException("A workspace entry is outside the owned root.");
+        if (!_fileSystem.Exists(target)) return;
+        var attributes = _fileSystem.GetAttributes(target);
+        if ((attributes & FileAttributes.ReparsePoint) != 0)
+            throw new InvalidOperationException("A reparse workspace entry is refused.");
+        if ((attributes & FileAttributes.Directory) != 0)
         {
-            var attributes = _fileSystem.GetAttributes(entry);
+            foreach (var entry in _fileSystem.EnumerateFileSystemEntries(target))
+            {
+                if (!IsLexicallyContained(target, entry) || !_ownership.IsOwned(entry))
+                    throw new InvalidOperationException("A workspace entry is outside the exact project workspace.");
+                DeleteTree(entry, deleted);
+            }
+            attributes = _fileSystem.GetAttributes(target);
             if ((attributes & FileAttributes.ReparsePoint) != 0)
-                throw new InvalidOperationException("A protected or reparse descendant prevents eviction.");
-            if ((attributes & FileAttributes.Directory) != 0) VerifyDescendants(entry);
+                throw new InvalidOperationException("A reparse workspace entry is refused.");
+            _fileSystem.DeleteDirectory(target);
         }
+        else
+        {
+            attributes = _fileSystem.GetAttributes(target);
+            if ((attributes & FileAttributes.ReparsePoint) != 0)
+                throw new InvalidOperationException("A reparse workspace entry is refused.");
+            _fileSystem.DeleteFile(target);
+        }
+        deleted.Add(target);
+    }
+
+    private static bool IsLexicallyContained(string root, string candidate)
+    {
+        var relative = Path.GetRelativePath(Path.GetFullPath(root), Path.GetFullPath(candidate));
+        return relative != "." && relative != ".." && !relative.StartsWith(".." + Path.DirectorySeparatorChar) &&
+            !Path.IsPathRooted(relative);
     }
 
     private static bool IsSafeSegment(string value) => !string.IsNullOrWhiteSpace(value) && value is not ("." or "..") &&
@@ -107,6 +134,6 @@ public sealed class ProjectWorkspaceEvictor
         public FileAttributes GetAttributes(string path) => File.GetAttributes(path);
         public IReadOnlyList<string> EnumerateFileSystemEntries(string path) => Directory.GetFileSystemEntries(path);
         public void DeleteFile(string path) => File.Delete(path);
-        public void DeleteDirectory(string path) => Directory.Delete(path, true);
+        public void DeleteDirectory(string path) => Directory.Delete(path, false);
     }
 }

@@ -217,3 +217,9 @@ Run `./test.ps1`, then:
 git add src/SIL.Motif.Worker tests/SIL.Motif.Tests/Worker
 git commit -m "feat: clear ephemeral pangloss work"
 ```
+
+### Assessment archive integration checkpoint
+
+Once Assessment pinning exists, archive deletion must query active Reports and Assessment pins before removing
+any shared Assessment payload. The recovery/archive layer must not infer those references or delete shared data
+until this PanGloss-owned query is available.
