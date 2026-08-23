@@ -1,9 +1,14 @@
 using System.IO.Compression;
+using System.Reflection;
 using System.Security.Cryptography;
 using SIL.LCModel;
 using SIL.LCModel.Infrastructure;
+using SIL.Motif.Contract.Canonicalization;
+using SIL.Motif.Contract.Ids;
 using SIL.Motif.Host.LcmUtils;
 using SIL.Motif.LiveHost.Baselines;
+using SIL.Motif.Model.Snapshot;
+using SIL.Motif.Runner.Snapshotting;
 using SIL.Motif.Tests.TestFixtures;
 using SIL.WritingSystems;
 using Xunit;
@@ -16,12 +21,13 @@ public sealed class BaselineBundleTests : IDisposable
     private readonly string _root = Path.Combine(Path.GetTempPath(), "SIL.Motif.BaselineBundleTests", Guid.NewGuid().ToString("N"));
     private readonly LcmCache _cache;
     private readonly FwDataProjectLoader _loader = new();
+    private readonly SeededProject _seed;
 
     public BaselineBundleTests()
     {
         Directory.CreateDirectory(_root);
         _cache = NewLangProjFixture.CreateCache(_root);
-        SeededProject.Seed(_cache);
+        _seed = SeededProject.Seed(_cache);
 
         NonUndoableUnitOfWorkHelper.Do(_cache.ActionHandlerAccessor, () =>
         {
@@ -57,11 +63,12 @@ public sealed class BaselineBundleTests : IDisposable
 
         using var archive = new ZipArchive(new MemoryStream(archiveBytes), ZipArchiveMode.Read);
         var names = archive.Entries.Select(entry => entry.FullName).OrderBy(name => name, StringComparer.Ordinal).ToArray();
-        Assert.Contains(NewLangProjFixture.ProjectName + ".fwdata", names);
-        Assert.Contains(names, name => name.StartsWith("WritingSystemStore/", StringComparison.Ordinal) && name.EndsWith(".ldml", StringComparison.Ordinal));
-        Assert.All(names, name => Assert.True(
-            name == NewLangProjFixture.ProjectName + ".fwdata" ||
-            name.StartsWith("WritingSystemStore/", StringComparison.Ordinal)));
+        var expectedNames = new[] { NewLangProjFixture.ProjectName + ".fwdata" }
+            .Concat(Directory.EnumerateFiles(Path.Combine(projectFolder, "WritingSystemStore"), "*.ldml")
+                .Select(path => "WritingSystemStore/" + Path.GetFileName(path)))
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(expectedNames, names);
     }
 
     [Fact]
@@ -76,9 +83,8 @@ public sealed class BaselineBundleTests : IDisposable
             archive.ExtractToDirectory(extractedRoot);
 
         using var scratch = _loader.LoadScratchCache(Path.Combine(extractedRoot, NewLangProjFixture.ProjectName + ".fwdata"));
-        Assert.Equal(
-            _cache.ServiceLocator.GetInstance<ILexEntryRepository>().Count,
-            scratch.ServiceLocator.GetInstance<ILexEntryRepository>().Count);
+        Assert.Equal(BaselineSemanticDigest.Compute(_cache), BaselineSemanticDigest.Compute(scratch));
+        Assert.Equal(ModelIdentitySet(_cache), ModelIdentitySet(scratch));
         var expected = _cache.ServiceLocator.WritingSystems.AllWritingSystems.OrderBy(ws => ws.LanguageTag).ToArray();
         var actual = scratch.ServiceLocator.WritingSystems.AllWritingSystems.OrderBy(ws => ws.LanguageTag).ToArray();
         Assert.Equal(expected.Select(ws => ws.LanguageTag), actual.Select(ws => ws.LanguageTag));
@@ -105,6 +111,23 @@ public sealed class BaselineBundleTests : IDisposable
     }
 
     [Fact]
+    public void SemanticDigest_HashesTheRfc8785CanonicalAggregate()
+    {
+        NonUndoableUnitOfWorkHelper.Do(_cache.ActionHandlerAccessor, () =>
+        {
+            var entry = _cache.ServiceLocator.GetInstance<ILexEntryRepository>().GetObject(_seed.FirstEntryId);
+            entry.CitationForm.set_String(_cache.DefaultVernWs, "control\u000fcharacter");
+        });
+
+        var snapshots = ProjectSnapshots(_cache);
+        var expectedJson = ObjectSnapshotJsonWriter.WriteJson(snapshots);
+        var expectedCanonical = CanonicalJson.CanonicalizeToUtf8(expectedJson);
+        var expectedDigest = Digest(expectedCanonical);
+
+        Assert.Equal(expectedDigest, BaselineSemanticDigest.Compute(_cache));
+    }
+
+    [Fact]
     public async Task WriteAsync_ObservesCancellationWithoutCompletingTheArchive()
     {
         using var destination = new MemoryStream();
@@ -113,6 +136,22 @@ public sealed class BaselineBundleTests : IDisposable
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             new BaselineBundleWriter().WriteAsync(_cache, destination, cancellation.Token));
+    }
+
+    [Fact]
+    public void SemanticDigest_ObservesCancellationDuringProjection()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var projected = 0;
+
+        Assert.ThrowsAny<OperationCanceledException>(() => BaselineSemanticDigest.Compute(
+            _cache,
+            cancellation.Token,
+            _ =>
+            {
+                if (++projected == 2) cancellation.Cancel();
+            }));
+        Assert.Equal(2, projected);
     }
 
     public void Dispose()
@@ -126,6 +165,37 @@ public sealed class BaselineBundleTests : IDisposable
         using var sha = SHA256.Create();
         return "sha256:" + string.Concat(sha.ComputeHash(bytes).Select(value => value.ToString("x2")));
     }
+
+    private static IReadOnlyList<ObjectSnapshot> ProjectSnapshots(LcmCache cache)
+    {
+        var methods = typeof(LexEntrySnapshotter).Assembly.GetTypes()
+            .SelectMany(type => type.GetMethods(BindingFlags.Public | BindingFlags.Static))
+            .Where(method => method.Name == "Snapshot" && method.ReturnType == typeof(ObjectSnapshot))
+            .Where(method => method.GetParameters() is { Length: 2 } parameters &&
+                parameters[0].ParameterType == typeof(LcmCache))
+            .ToArray();
+        var snapshots = new List<ObjectSnapshot>();
+        foreach (var value in cache.ServiceLocator.GetInstance<ICmObjectRepository>().AllInstances())
+        {
+            var fields = new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.Ordinal);
+            var applicable = methods.Where(candidate =>
+                candidate.GetParameters()[1].ParameterType.IsInstanceOfType(value)).ToArray();
+            foreach (var method in applicable)
+            {
+                var part = (ObjectSnapshot)method.Invoke(null, new object[] { cache, value })!;
+                foreach (var field in part.AlternativesFields) fields.Add(field.Key, field.Value);
+            }
+            if (applicable.Length > 0)
+                snapshots.Add(new ObjectSnapshot(CanonicalId.FromGuid(value.Guid), fields));
+        }
+        return snapshots.OrderBy(snapshot => snapshot.CanonicalId.Value, StringComparer.Ordinal).ToArray();
+    }
+
+    private static string[] ModelIdentitySet(LcmCache cache) =>
+        cache.ServiceLocator.GetInstance<ICmObjectRepository>().AllInstances()
+            .Select(value => CanonicalId.FromGuid(value.Guid).Value + ":" + value.ClassID)
+            .OrderBy(value => value, StringComparer.Ordinal)
+            .ToArray();
 
     private sealed class MaximumWriteSizeStream : Stream
     {

@@ -42,7 +42,7 @@ public sealed class BaselineBundleWriter
         if (!Directory.Exists(writingSystemFolder))
             throw new InvalidOperationException("The saved project has no WritingSystemStore directory.");
 
-        var semanticDigest = BaselineSemanticDigest.Compute(savedCache);
+        var semanticDigest = BaselineSemanticDigest.Compute(savedCache, cancellationToken);
         using var hashingDestination = new HashingWriteStream(destination);
         using (var archive = new ZipArchive(hashingDestination, ZipArchiveMode.Create, true))
         {

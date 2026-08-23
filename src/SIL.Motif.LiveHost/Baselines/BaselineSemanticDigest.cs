@@ -5,8 +5,7 @@ using System.Linq;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Encodings.Web;
-using System.Text.Json;
+using System.Threading;
 using SIL.LCModel;
 using SIL.Motif.Contract.Canonicalization;
 using SIL.Motif.Contract.Ids;
@@ -36,49 +35,63 @@ public static class BaselineSemanticDigest
         .ToArray();
 
     /// <summary>Computes canonical SHA-256 over all populated fields exposed by generated snapshotters.</summary>
-    public static string Compute(LcmCache cache)
+    public static string Compute(LcmCache cache, CancellationToken cancellationToken = default) =>
+        Compute(cache, cancellationToken, null);
+
+    internal static string Compute(
+        LcmCache cache,
+        CancellationToken cancellationToken,
+        Action<ObjectSnapshot>? objectProjected)
     {
         if (cache is null) throw new ArgumentNullException(nameof(cache));
+        cancellationToken.ThrowIfCancellationRequested();
 
         using var sha = SHA256.Create();
         using (var crypto = new CryptoStream(Stream.Null, sha, CryptoStreamMode.Write))
-        using (var writer = new Utf8JsonWriter(crypto, new JsonWriterOptions
         {
-            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-        }))
-        {
-            writer.WriteStartObject();
+            crypto.WriteByte((byte)'{');
             var objects = cache.ServiceLocator.GetInstance<ICmObjectRepository>().AllInstances()
-                .Where(value => SnapshotMethods.Any(method =>
-                    method.GetParameters()[1].ParameterType.IsInstanceOfType(value)))
+                .Where(value => IsProjected(value, cancellationToken))
                 .OrderBy(value => CanonicalId.FromGuid(value.Guid).Value, StringComparer.Ordinal);
+            var index = 0;
             foreach (var value in objects)
             {
-                var snapshot = ProjectObject(cache, value);
-                writer.WritePropertyName(snapshot.CanonicalId.Value);
-                writer.WriteStartObject();
-                foreach (var field in snapshot.AlternativesFields.OrderBy(pair => pair.Key, StringComparer.Ordinal))
-                {
-                    writer.WritePropertyName(field.Key);
-                    writer.WriteStartObject();
-                    foreach (var alternative in field.Value.OrderBy(pair => pair.Key, StringComparer.Ordinal))
-                        writer.WriteString(alternative.Key, alternative.Value);
-                    writer.WriteEndObject();
-                }
-                writer.WriteEndObject();
+                cancellationToken.ThrowIfCancellationRequested();
+                var snapshot = ProjectObject(cache, value, cancellationToken);
+                index++;
+                objectProjected?.Invoke(snapshot);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (index > 1) crypto.WriteByte((byte)',');
+                var fragment = CanonicalJson.CanonicalizeToUtf8(
+                    ObjectSnapshotJsonWriter.WriteJson(new[] { snapshot }));
+                crypto.Write(fragment, 1, fragment.Length - 2);
             }
-            writer.WriteEndObject();
+            crypto.WriteByte((byte)'}');
         }
 
         return FormatDigest(sha.Hash!);
     }
 
-    private static ObjectSnapshot ProjectObject(LcmCache cache, ICmObject value)
+    private static bool IsProjected(ICmObject value, CancellationToken cancellationToken)
+    {
+        foreach (var method in SnapshotMethods)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (method.GetParameters()[1].ParameterType.IsInstanceOfType(value)) return true;
+        }
+        return false;
+    }
+
+    private static ObjectSnapshot ProjectObject(
+        LcmCache cache,
+        ICmObject value,
+        CancellationToken cancellationToken)
     {
         var canonicalId = CanonicalId.FromGuid(value.Guid);
         var fields = new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.Ordinal);
         foreach (var method in SnapshotMethods)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (!method.GetParameters()[1].ParameterType.IsInstanceOfType(value)) continue;
             var part = (ObjectSnapshot)method.Invoke(null, new object[] { cache, value })!;
             if (part.CanonicalId != canonicalId)
