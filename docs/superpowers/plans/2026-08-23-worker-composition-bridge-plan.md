@@ -80,6 +80,7 @@ metadata source.
 | `tests/SIL.Motif.Tests/Worker/ProjectWorkspaceKeyTests.cs` | Prove the key consumes the contract representation. |
 | `tests/SIL.Motif.Tests/Store/MotifDatabaseMigrationTests.cs` | Prove database identity and catalog use the same path. |
 | `tests/SIL.Motif.Tests/Worker/WorkerMetadataManifestTests.cs` | Prove compiled metadata and installed manifest agreement. |
+| `tests/SIL.Motif.Tests/Worker/WorkerLauncherReviewTests.cs` | Prove strict launcher startup and sidecar validation fixtures. |
 | `tests/SIL.Motif.Tests/Worker/ProjectRuntimeTests.cs` | Prove ownership, recovery admission, host routing, and leases. |
 | `tests/SIL.Motif.Tests/Worker/WorkerJobStatusIntegrationTests.cs` | Exercise the typed command through a real named pipe. |
 
@@ -231,6 +232,7 @@ capability values. A worker must advertise the same closed metadata that its imm
 - Create: `tests/SIL.Motif.Tests/Worker/WorkerMetadataManifestTests.cs`
 - Modify: `tests/SIL.Motif.Tests/Worker/WorkerClientTests.cs`
 - Modify: `tests/SIL.Motif.Tests/Worker/WorkerServerTests.cs`
+- Modify: `tests/SIL.Motif.Tests/Worker/WorkerLauncherReviewTests.cs`
 - Modify: `tests/SIL.Motif.Tests/Worker/WorkerSelectorTests.cs`
 
 - [ ] **Step 1: Write failing metadata agreement tests**
@@ -334,6 +336,7 @@ git add src/SIL.Motif.Contract/Worker/WorkerBuildMetadata.cs `
   tests/SIL.Motif.Tests/Worker/WorkerMetadataManifestTests.cs `
   tests/SIL.Motif.Tests/Worker/WorkerClientTests.cs `
   tests/SIL.Motif.Tests/Worker/WorkerServerTests.cs `
+  tests/SIL.Motif.Tests/Worker/WorkerLauncherReviewTests.cs `
   tests/SIL.Motif.Tests/Worker/WorkerSelectorTests.cs
 git commit -m "feat: bind worker handshake to build metadata"
 ```
