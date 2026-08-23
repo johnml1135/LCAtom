@@ -69,7 +69,7 @@ public sealed class MotifDatabase : IDisposable
             var hasTables = MotifSchema.HasUserTables(connection);
             if (applicationId == 0 && schema != 0)
                 throw new InvalidDataException("A Motif database with a schema must have its application id.");
-            if (applicationId == 0 && hasTables)
+            if (schema == 0 && hasTables)
                 throw new InvalidDataException("The existing database has no registered Motif schema.");
 
             if (schema > 0)

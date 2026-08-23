@@ -194,6 +194,23 @@ public sealed class MotifDatabaseMigrationTests : IDisposable
     }
 
     [Fact]
+    public void AppIdCorrectSchemaZeroDatabaseWithUserTablesIsRefusedWithoutAdoption()
+    {
+        var path = DatabasePath("unregistered-app-id.fwdata");
+        using (var connection = NewConnection(path))
+            Execute(connection, $"PRAGMA application_id = {MotifSchema.ApplicationId}; " +
+                "CREATE TABLE ArbitraryUserTable (Value TEXT NOT NULL);");
+
+        Assert.Throws<InvalidDataException>(() => MotifDatabase.OpenOwned(
+            path, Locator("unregistered-app-id.fwdata"), 2, new Version(1, 0)));
+
+        using var check = NewConnection(path);
+        Assert.Equal(MotifSchema.ApplicationId, PragmaInt(check, "application_id"));
+        Assert.Equal(0, PragmaInt(check, "user_version"));
+        Assert.NotNull(Scalar(check, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'ArbitraryUserTable';"));
+    }
+
+    [Fact]
     public void OnlyOneOwnerMayMigrateAndOpenAtATime()
     {
         var path = DatabasePath("exclusive.fwdata");
