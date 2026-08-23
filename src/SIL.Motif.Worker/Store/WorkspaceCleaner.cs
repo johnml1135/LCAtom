@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Text;
 
 namespace SIL.Motif.Worker.Store;
 
@@ -22,30 +23,38 @@ public interface IWorkspaceFileSystem
 /// <summary>Default ownership and filesystem boundaries for Motif derived work.</summary>
 public sealed class WorkspaceOwnership : IWorkspaceOwnership
 {
+    private const string MarkerName = ".motif-worker-root";
+    private const string MarkerValue = "SIL.Motif.WorkerRoot.v1";
+
     public WorkspaceOwnership(string workerRoot)
     {
-        try
+        WorkerRoot = Normalize(workerRoot);
+        ValidateNarrowRoot(WorkerRoot);
+        var marker = Path.Combine(WorkerRoot, MarkerName);
+        if (!Directory.Exists(WorkerRoot) || !File.Exists(marker) ||
+            !string.Equals(File.ReadAllText(marker, Encoding.UTF8).Trim(), MarkerValue, StringComparison.Ordinal))
+            throw new ArgumentException("The worker root must be explicitly bootstrapped.", nameof(workerRoot));
+        if ((File.GetAttributes(marker) & FileAttributes.ReparsePoint) != 0)
+            throw new ArgumentException("A reparse-point worker marker is refused.", nameof(workerRoot));
+    }
+
+    public static WorkspaceOwnership Bootstrap(string workerRoot)
+    {
+        var normalized = Normalize(workerRoot);
+        ValidateNarrowRoot(normalized);
+        Directory.CreateDirectory(normalized);
+        var marker = Path.Combine(normalized, MarkerName);
+        if (!File.Exists(marker))
         {
-            WorkerRoot = Path.GetFullPath(workerRoot ?? throw new ArgumentNullException(nameof(workerRoot)))
-                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            try
+            {
+                using var stream = new FileStream(marker, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+                using var writer = new StreamWriter(stream, new UTF8Encoding(false));
+                writer.Write(MarkerValue);
+            }
+            catch (IOException) when (File.Exists(marker)) { }
         }
-        catch (Exception exception) when (exception is ArgumentException or NotSupportedException)
-        {
-            throw new ArgumentException("A narrow worker root is required.", nameof(workerRoot), exception);
-        }
-        if (string.IsNullOrEmpty(WorkerRoot) ||
-            string.Equals(WorkerRoot, Path.GetPathRoot(WorkerRoot)?.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
-                StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(WorkerRoot, Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
-                StringComparison.OrdinalIgnoreCase) || IsForbidden(WorkerRoot))
-            throw new ArgumentException("A narrow worker root is required.", nameof(workerRoot));
-        if (File.Exists(WorkerRoot))
-            throw new ArgumentException("A file cannot be a worker root.", nameof(workerRoot));
-        if (Directory.Exists(WorkerRoot) &&
-            (File.GetAttributes(WorkerRoot) & FileAttributes.ReparsePoint) != 0)
-            throw new ArgumentException("A reparse point cannot be a worker root.", nameof(workerRoot));
-        if (Directory.Exists(WorkerRoot) && Directory.EnumerateFiles(WorkerRoot, "*.fwdata", SearchOption.TopDirectoryOnly).Any())
-            throw new ArgumentException("A FieldWorks project directory cannot be a worker root.", nameof(workerRoot));
+        return new WorkspaceOwnership(normalized);
     }
 
     public string WorkerRoot { get; }
@@ -73,6 +82,39 @@ public sealed class WorkspaceOwnership : IWorkspaceOwnership
                 System.Security.SecurityException) { return false; }
         }
         return true;
+    }
+
+    private static string Normalize(string workerRoot)
+    {
+        try
+        {
+            return Path.GetFullPath(workerRoot ?? throw new ArgumentNullException(nameof(workerRoot)))
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException)
+        {
+            throw new ArgumentException("A narrow worker root is required.", nameof(workerRoot), exception);
+        }
+    }
+
+    private static void ValidateNarrowRoot(string path)
+    {
+        if (string.IsNullOrEmpty(path) ||
+            string.Equals(path, Path.GetPathRoot(path)?.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(path, Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                StringComparison.OrdinalIgnoreCase) || IsForbidden(path) || File.Exists(path))
+            throw new ArgumentException("A narrow worker root is required.", nameof(path));
+        for (var current = path; !string.IsNullOrEmpty(current); current = Directory.GetParent(current)?.FullName)
+        {
+            if (!Directory.Exists(current)) continue;
+            if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
+                throw new ArgumentException("A reparse-point ancestor cannot contain a worker root.", nameof(path));
+        }
+        if (!Directory.Exists(path)) return;
+        if (Directory.EnumerateFiles(path, "*.fwdata", SearchOption.TopDirectoryOnly).Any() ||
+            Directory.EnumerateFiles(path, "*.motif.db", SearchOption.TopDirectoryOnly).Any())
+            throw new ArgumentException("A project or database directory cannot be a worker root.", nameof(path));
     }
 
     private static bool IsForbidden(string path) =>

@@ -570,19 +570,28 @@ public sealed class MotifDatabaseMigrationTests : IDisposable
                     "'2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z', 0, 0);");
         }
 
-        using var upgraded = Open("recovery-v5.fwdata", supportedSchema: MotifSchema.CurrentSchema);
-        using var check = upgraded.OpenConnection();
-        Assert.Equal("cancellation", Scalar(check, "SELECT FailureCategory FROM Jobs WHERE JobId = 'cancelled-job';"));
-        Assert.Equal("cancellation", Scalar(check, "SELECT FailureCategory FROM Jobs WHERE JobId = 'cancelled-interrupted';"));
-        Assert.Equal("infrastructure", Scalar(check, "SELECT FailureCategory FROM Jobs WHERE JobId = 'interrupted-job';"));
-        Assert.Equal("unknown", Scalar(check, "SELECT FailureCategory FROM Jobs WHERE JobId = 'failed-job';"));
-        Assert.Equal("none", Scalar(check, "SELECT FailureCategory FROM Jobs WHERE JobId = 'queued-job';"));
-        Assert.All(new[] { "cancelled-job", "cancelled-interrupted", "interrupted-job", "failed-job" }, job =>
-            Assert.Equal("2026-08-01T00:00:00Z", Scalar(check, "SELECT ArchivedUtc FROM Jobs WHERE JobId = '" + job + "';")));
-        Assert.Same(DBNull.Value, Scalar(check, "SELECT ArchivedUtc FROM Jobs WHERE JobId = 'queued-job';"));
-        Assert.Equal(1L, Scalar(check, "SELECT COUNT(*) FROM AppliedIndex WHERE ProposalId = '" + proposalId + "';"));
-        Assert.Equal(0L, Scalar(check, "SELECT COUNT(*) FROM pragma_foreign_key_list('AppliedIndex');"));
-        Assert.Equal(6, PragmaInt(check, "user_version"));
+        using (var upgraded = Open("recovery-v5.fwdata", supportedSchema: MotifSchema.CurrentSchema))
+        using (var check = upgraded.OpenConnection())
+        {
+            MotifSchema.ValidateSchema(check, 6);
+            Assert.Equal("cancellation", Scalar(check, "SELECT FailureCategory FROM Jobs WHERE JobId = 'cancelled-job';"));
+            Assert.Equal("cancellation", Scalar(check, "SELECT FailureCategory FROM Jobs WHERE JobId = 'cancelled-interrupted';"));
+            Assert.Equal("infrastructure", Scalar(check, "SELECT FailureCategory FROM Jobs WHERE JobId = 'interrupted-job';"));
+            Assert.Equal("unknown", Scalar(check, "SELECT FailureCategory FROM Jobs WHERE JobId = 'failed-job';"));
+            Assert.Equal("none", Scalar(check, "SELECT FailureCategory FROM Jobs WHERE JobId = 'queued-job';"));
+            Assert.All(new[] { "cancelled-job", "cancelled-interrupted", "interrupted-job", "failed-job" }, job =>
+                Assert.Equal("2026-08-01T00:00:00Z", Scalar(check, "SELECT ArchivedUtc FROM Jobs WHERE JobId = '" + job + "';")));
+            Assert.Same(DBNull.Value, Scalar(check, "SELECT ArchivedUtc FROM Jobs WHERE JobId = 'queued-job';"));
+            Assert.NotSame(DBNull.Value, Scalar(check, "SELECT ArchivedUtc FROM Proposals WHERE ProposalId = '" + proposalId + "';"));
+            Assert.Equal(1L, Scalar(check, "SELECT COUNT(*) FROM AppliedIndex WHERE ProposalId = '" + proposalId + "';"));
+            Assert.Equal(0L, Scalar(check, "SELECT COUNT(*) FROM pragma_foreign_key_list('AppliedIndex');"));
+            Assert.Equal(6, PragmaInt(check, "user_version"));
+        }
+        using var reopened = Open("recovery-v5.fwdata", supportedSchema: MotifSchema.CurrentSchema);
+        using var reopenedCheck = reopened.OpenConnection();
+        Assert.Equal(5L, Scalar(reopenedCheck, "SELECT COUNT(*) FROM Jobs;"));
+        Assert.Equal(1L, Scalar(reopenedCheck, "SELECT COUNT(*) FROM AppliedIndex WHERE ProposalId = '" + proposalId + "';"));
+        Assert.Equal(6, PragmaInt(reopenedCheck, "user_version"));
     }
 
     [Fact]

@@ -106,13 +106,13 @@ public sealed class JobRepository
     {
         using var connection = _database.OpenConnection();
         using var command = connection.CreateCommand();
-        command.CommandText = SelectSql + " WHERE Status = 'queued' AND " +
-            "(NotBeforeUtc IS NULL OR NotBeforeUtc <= $now) ORDER BY Attempt;";
-        command.Parameters.AddWithValue("$now", now.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
+        command.CommandText = SelectSql + " WHERE Status = 'queued' ORDER BY Attempt;";
         using var reader = command.ExecuteReader();
         var records = new List<JobRecord>();
         while (reader.Read()) records.Add(Read(reader));
-        return records;
+        var instant = now.ToUniversalTime();
+        return records.Where(record => record.NotBeforeUtc is null ||
+            ValidateUtc(record.NotBeforeUtc, nameof(record.NotBeforeUtc)) <= instant).ToArray();
     }
 
     public JobRecord Transition(string jobId, JobStatus next, long expectedVersion, string? resultJson = null)
@@ -224,6 +224,8 @@ public sealed class JobRepository
         var delay = TimeSpan.FromMinutes(terminal.Attempt);
         var terminalUpdated = ValidateUtc(terminal.UpdatedUtc, nameof(terminal.UpdatedUtc));
         var baseNow = now.ToUniversalTime() < terminalUpdated ? terminalUpdated : now.ToUniversalTime();
+        var retryCreated = ValidateUtc(retry.CreatedUtc, nameof(retry.CreatedUtc));
+        if (baseNow < retryCreated) baseNow = retryCreated;
         retry = retry with
         {
             FailureCategory = JobFailureCategory.None,
@@ -280,6 +282,20 @@ public sealed class JobRepository
 
     public JobRecord ExhaustInterruptedInfrastructure(string jobId, long expectedVersion, DateTimeOffset now)
     {
+        try
+        {
+            return ExhaustInterruptedInfrastructureCore(jobId, expectedVersion, now);
+        }
+        catch (SqliteException exception) when (exception.SqliteErrorCode is 5 or 6)
+        {
+            var observed = Get(jobId);
+            if (observed is not null && IsExhaustedInfrastructure(observed)) return observed;
+            throw;
+        }
+    }
+
+    private JobRecord ExhaustInterruptedInfrastructureCore(string jobId, long expectedVersion, DateTimeOffset now)
+    {
         using var connection = _database.OpenConnection();
         using var transaction = connection.BeginTransaction();
         var current = ReadRequired(connection, transaction, jobId);
@@ -305,6 +321,10 @@ public sealed class JobRepository
         return changed;
     }
 
+    private static bool IsExhaustedInfrastructure(JobRecord job) =>
+        job.Status == JobStatus.Failed && job.FailureCategory == JobFailureCategory.Infrastructure &&
+        job.ResultJson == "{\"failure\":\"infrastructure-retry-exhausted\"}";
+
     public IReadOnlyList<JobRecord> ListArchived(DateTimeOffset? before = null)
     {
         using var connection = _database.OpenConnection();
@@ -321,7 +341,7 @@ public sealed class JobRepository
     public IReadOnlyList<JobRecord> ListEligibleArchived(DateTimeOffset now, ArchivePolicy policy)
     {
         if (policy.Forever) return Array.Empty<JobRecord>();
-        var all = ListArchived();
+        var all = ListAll();
         return all.Where(record => IsEligibleArchive(record, all, now, policy)).ToArray();
     }
 
@@ -346,7 +366,13 @@ public sealed class JobRepository
         return count;
     }
 
-    private static IReadOnlyList<JobRecord> ReadAll(SqliteConnection connection, SqliteTransaction transaction)
+    private IReadOnlyList<JobRecord> ListAll()
+    {
+        using var connection = _database.OpenConnection();
+        return ReadAll(connection, null);
+    }
+
+    private static IReadOnlyList<JobRecord> ReadAll(SqliteConnection connection, SqliteTransaction? transaction)
     {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -536,7 +562,9 @@ public sealed class JobRepository
         var createdUtc = ValidateUtc(created, nameof(created));
         var updatedUtc = ValidateUtc(updated, nameof(updated));
         if (createdUtc > updatedUtc) throw new InvalidDataException("CreatedUtc must not be later than UpdatedUtc.");
-        if (notBefore is not null) _ = ValidateUtc(notBefore, nameof(notBefore));
+        var notBeforeUtc = notBefore is null ? (DateTimeOffset?)null : ValidateUtc(notBefore, nameof(notBefore));
+        if (notBeforeUtc is not null && notBeforeUtc < createdUtc)
+            throw new InvalidDataException("Not-before cannot precede retry creation.");
         var archivedUtc = archived is null ? (DateTimeOffset?)null : ValidateUtc(archived, nameof(archived));
         if (JobStateMachine.IsTerminal(status) != (archived is not null))
             throw new InvalidDataException("Terminal job archive timestamp is inconsistent with status.");

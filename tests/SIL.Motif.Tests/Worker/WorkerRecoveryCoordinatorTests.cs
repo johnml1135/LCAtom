@@ -17,6 +17,7 @@ public sealed class WorkerRecoveryCoordinatorTests : IDisposable
     {
         var projectPath = Path.Combine(_root, "project.fwdata");
         var project = new ProjectLocator(projectPath, "project");
+        var ownership = WorkspaceOwnership.Bootstrap(_root);
         using var database = MotifDatabase.OpenOwned(Path.Combine(_root, "project.motif.db"), project,
             MotifSchema.CurrentSchema, new Version(1, 0));
         var clock = new TestClock("2026-08-23T12:00:00Z");
@@ -32,7 +33,7 @@ public sealed class WorkerRecoveryCoordinatorTests : IDisposable
         File.WriteAllText(Path.Combine(jobPath, "candidate.tsv"), "candidate");
 
         var coordinator = new WorkerRecoveryCoordinator(new WorkerRecovery(jobs, clock),
-            new WorkspaceCleaner(new WorkspaceOwnership(_root)));
+            new WorkspaceCleaner(ownership));
         var startup = coordinator.RecoverStartup("project", clock.UtcNow);
 
         Assert.True(startup.Cleanup.Succeeded);
@@ -56,6 +57,7 @@ public sealed class WorkerRecoveryCoordinatorTests : IDisposable
     public void CleanupFailureIsBoundedAndDoesNotSuppressRecovery()
     {
         var project = new ProjectLocator(Path.Combine(_root, "failure.fwdata"), "failure");
+        var ownership = WorkspaceOwnership.Bootstrap(_root);
         using var database = MotifDatabase.OpenOwned(Path.Combine(_root, "failure.motif.db"), project,
             MotifSchema.CurrentSchema, new Version(1, 0));
         var clock = new TestClock("2026-08-23T12:00:00Z");
@@ -67,7 +69,7 @@ public sealed class WorkerRecoveryCoordinatorTests : IDisposable
         var work = Path.Combine(_root, "failure", "work");
         Directory.CreateDirectory(Path.Combine(work, running.JobId));
         var result = new WorkerRecoveryCoordinator(new WorkerRecovery(jobs, clock),
-            new WorkspaceCleaner(new WorkspaceOwnership(_root), new FailingFileSystem()))
+            new WorkspaceCleaner(ownership, new FailingFileSystem()))
             .RecoverStartup("failure", clock.UtcNow);
 
         Assert.NotEmpty(result.Cleanup.Failures);

@@ -19,7 +19,7 @@ public sealed class BaselineRetentionCleanerTests : IDisposable
         File.WriteAllText(oldPath, "old");
         File.WriteAllText(pinnedPath, "pinned");
         var query = new BaselineQuery(oldPath, pinnedPath);
-        var cleaner = new BaselineRetentionCleaner(new WorkspaceOwnership(_root), query, query,
+        var cleaner = new BaselineRetentionCleaner(WorkspaceOwnership.Bootstrap(_root), query, query,
             ArchivePolicy.Default, new FixedClock("2026-08-23T00:00:00Z"));
 
         var result = cleaner.Clean("project");
@@ -34,7 +34,7 @@ public sealed class BaselineRetentionCleanerTests : IDisposable
         var outside = Path.Combine(_root, "outside.bundle");
         File.WriteAllText(outside, "keep");
         var query = new BaselineQuery(outside, outside);
-        var cleaner = new BaselineRetentionCleaner(new WorkspaceOwnership(_root), query, query,
+        var cleaner = new BaselineRetentionCleaner(WorkspaceOwnership.Bootstrap(_root), query, query,
             new ArchivePolicy(TimeSpan.Zero), new FixedClock("2026-08-23T00:00:00Z"));
 
         var result = cleaner.Clean("../other");
@@ -52,7 +52,7 @@ public sealed class BaselineRetentionCleanerTests : IDisposable
         var free = Path.Combine(baselineRoot, "free.fwdata");
         foreach (var path in paths.Values.Append(free)) File.WriteAllText(path, "baseline");
         var query = new MultiPinQuery(paths);
-        var cleaner = new BaselineRetentionCleaner(new WorkspaceOwnership(_root), query, query,
+        var cleaner = new BaselineRetentionCleaner(WorkspaceOwnership.Bootstrap(_root), query, query,
             new ArchivePolicy(TimeSpan.Zero), new FixedClock("2026-08-23T00:00:00Z"));
 
         var result = cleaner.Clean("project");

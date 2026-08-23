@@ -232,7 +232,8 @@ public sealed class ProposalRepository : IProposalRepository
             if (status is null || !IsTerminal(status)) throw new InvalidOperationException("Only terminal Proposals may be archived.");
         }
         foreach (var sql in new[] { "DELETE FROM Decisions WHERE ProposalId = $id;", "DELETE FROM Receipts WHERE ProposalId = $id;",
-            "DELETE FROM Reports WHERE ProposalId = $id;", "DELETE FROM ProposalRevisions WHERE ProposalId = $id;" })
+            "DELETE FROM Reports WHERE ProposalId = $id;", "DELETE FROM Drafts WHERE ProposalId = $id;",
+            "DELETE FROM ProposalRevisions WHERE ProposalId = $id;" })
         {
             using var command = connection.CreateCommand();
             command.Transaction = transaction;

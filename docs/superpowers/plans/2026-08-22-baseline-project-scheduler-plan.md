@@ -252,3 +252,10 @@ git commit -m "feat: reuse baselines for isolated dry runs"
 When the project registry and `ProjectWorkspaceKey` are available, the open-project lifecycle must invoke
 the per-project recovery coordinator before admitting work. This checkpoint owns startup cleanup ordering;
 it does not authorize global filesystem discovery.
+
+### Task 4 safety checkpoint for the project lane
+
+Workspace eviction and Baseline cleanup must run while holding the same project-lane lease/reference gate,
+or use a compare-and-delete generation, so a new pin or lease cannot appear between checking and deletion.
+The lane must retain the checked bottom-up, nonrecursive deletion and test rename/reparse substitution; a
+handle-based Windows implementation can replace it only if platform behavior requires that stronger seam.

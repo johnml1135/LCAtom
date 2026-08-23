@@ -1,4 +1,6 @@
 using SIL.Motif.Worker.Store;
+using SIL.Motif.Worker.Jobs;
+using SIL.Motif.Contract.Jobs;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Projects;
 using SIL.Motif.Host.Store;
@@ -52,12 +54,23 @@ public sealed class ArchivePolicyTests
                 command.Parameters.AddWithValue("$utc", "2026-08-23T12:00:00Z");
                 command.ExecuteNonQuery();
             }
+            using (var draft = database.OpenConnection())
+            using (var command = draft.CreateCommand())
+            {
+                command.CommandText = "INSERT INTO Drafts (DraftName, ProposalId, DraftJson) VALUES ('working', $id, '{}');";
+                command.Parameters.AddWithValue("$id", id.Value);
+                command.ExecuteNonQuery();
+            }
             repository.DeleteArchived(id);
             using var reopened = database.OpenConnection();
             using var count = reopened.CreateCommand();
             count.CommandText = "SELECT COUNT(*) FROM AppliedIndex WHERE ProposalId = $id;";
             count.Parameters.AddWithValue("$id", id.Value);
             Assert.Equal(1L, count.ExecuteScalar());
+            using var drafts = reopened.CreateCommand();
+            drafts.CommandText = "SELECT COUNT(*) FROM Drafts WHERE ProposalId = $id;";
+            drafts.Parameters.AddWithValue("$id", id.Value);
+            Assert.Equal(0L, drafts.ExecuteScalar());
         }
         finally
         {
@@ -98,6 +111,108 @@ public sealed class ArchivePolicyTests
             Assert.Throws<InvalidOperationException>(() => repository.DeleteArchived(stale));
             foreach (var id in archived) repository.DeleteArchived(id);
             Assert.Single(repository.List(new ProposalListFilter(IncludeArchived: true)));
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch (DirectoryNotFoundException) { }
+        }
+    }
+
+    [Fact]
+    public void JobArchiveRepositoryHonorsRetentionLineagePinsAndMixedUtcSpellings()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "motif-job-archive-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var locator = new ProjectLocator(Path.Combine(root, "project.fwdata"), "project");
+            using var database = MotifDatabase.OpenOwned(Path.Combine(root, "project.motif.db"), locator,
+                MotifSchema.CurrentSchema, new Version(1, 0));
+            var now = DateTimeOffset.Parse("2026-08-23T12:00:00Z");
+            var clock = new FixedClock("2026-08-23T12:00:00Z");
+            var jobs = new JobRepository(database, clock);
+            var ordinary = Complete(jobs, "ordinary");
+            var pinned = Fail(jobs, "pinned");
+            var retry = jobs.RetryInfrastructure(pinned.JobId, pinned.Version, now, "pinned-retry");
+            var active = jobs.Create(new JobRecord("active", "project", "dry-run", JobStatus.Queued, 1,
+                "{}", null, "2026-07-01T00:00:00Z", "2026-07-01T00:00:00Z"));
+            SetArchive(database, ordinary.JobId, "2026-07-24T12:00:00+00:00");
+            SetArchive(database, pinned.JobId, "2026-07-24T12:00:00Z");
+            _ = retry;
+            _ = active;
+
+            Assert.Contains(ordinary.JobId, jobs.ListEligibleArchived(now, ArchivePolicy.Default).Select(x => x.JobId));
+            Assert.DoesNotContain(pinned.JobId, jobs.ListEligibleArchived(now, ArchivePolicy.Default).Select(x => x.JobId));
+            Assert.Empty(jobs.ListEligibleArchived(now, new ArchivePolicy(TimeSpan.FromDays(31))));
+            Assert.Empty(jobs.ListEligibleArchived(now, new ArchivePolicy(TimeSpan.Zero, true)));
+            Assert.Equal(1, jobs.PurgeArchived(now, ArchivePolicy.Default));
+            Assert.Null(jobs.Get(ordinary.JobId));
+            Assert.NotNull(jobs.Get(pinned.JobId));
+            Assert.NotNull(jobs.Get(active.JobId));
+            jobs.DeleteArchived(pinned.JobId);
+            Assert.Null(jobs.Get(pinned.JobId));
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch (DirectoryNotFoundException) { }
+        }
+
+        static JobRecord Complete(JobRepository jobs, string id)
+        {
+            var queued = jobs.Create(new JobRecord(id, "project", "dry-run", JobStatus.Queued, 1,
+                "{}", null, "2026-08-23T11:00:00Z", "2026-08-23T11:00:00Z"));
+            var running = jobs.Transition(queued.JobId, JobStatus.Running, queued.Version);
+            return jobs.Transition(running.JobId, JobStatus.Completed, running.Version);
+        }
+
+        static JobRecord Fail(JobRepository jobs, string id)
+        {
+            var queued = jobs.Create(new JobRecord(id, "project", "dry-run", JobStatus.Queued, 1,
+                "{}", null, "2026-08-23T11:00:00Z", "2026-08-23T11:00:00Z"));
+            var running = jobs.Transition(queued.JobId, JobStatus.Running, queued.Version);
+            return jobs.Transition(running.JobId, JobStatus.Failed, running.Version,
+                JobFailureCategory.Infrastructure, "{\"error\":true}");
+        }
+
+        static void SetArchive(MotifDatabase database, string jobId, string timestamp)
+        {
+            using var connection = database.OpenConnection();
+            using var command = connection.CreateCommand();
+            command.CommandText = "UPDATE Jobs SET CreatedUtc = $utc, UpdatedUtc = $utc, ArchivedUtc = $utc WHERE JobId = $id;";
+            command.Parameters.AddWithValue("$id", jobId);
+            command.Parameters.AddWithValue("$utc", timestamp);
+            command.ExecuteNonQuery();
+        }
+    }
+
+    [Fact]
+    public void ReadyRetryComparisonUsesUtcInstantsAndNotBeforeFollowsCreatedUtc()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "motif-job-ready-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var locator = new ProjectLocator(Path.Combine(root, "project.fwdata"), "project");
+            using var database = MotifDatabase.OpenOwned(Path.Combine(root, "project.motif.db"), locator,
+                MotifSchema.CurrentSchema, new Version(1, 0));
+            var clock = new FixedClock("2026-08-23T12:00:00Z");
+            var jobs = new JobRepository(database, clock);
+            var queued = jobs.Create(new JobRecord("ready", "project", "dry-run", JobStatus.Queued, 1,
+                "{}", null, "2026-08-23T11:00:00Z", "2026-08-23T11:00:00Z"));
+            var running = jobs.Transition(queued.JobId, JobStatus.Running, queued.Version);
+            var failed = jobs.Transition(running.JobId, JobStatus.Failed, running.Version,
+                JobFailureCategory.Infrastructure, "{\"error\":true}");
+            var retry = jobs.RetryInfrastructure(failed.JobId, failed.Version,
+                DateTimeOffset.Parse("2026-08-23T10:00:00Z"), "ready-retry");
+            Assert.True(DateTimeOffset.Parse(retry.NotBeforeUtc!) >= DateTimeOffset.Parse(retry.CreatedUtc));
+            using (var connection = database.OpenConnection())
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "UPDATE Jobs SET NotBeforeUtc = '2026-08-23T12:00:00+00:00' WHERE JobId = 'ready-retry';";
+                command.ExecuteNonQuery();
+            }
+            Assert.Contains(retry.JobId, jobs.ListAttemptsReady(DateTimeOffset.Parse("2026-08-23T12:00:00Z"))
+                .Select(x => x.JobId));
         }
         finally
         {

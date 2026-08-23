@@ -158,6 +158,33 @@ public sealed class WorkerRecoveryTests : IDisposable
         _ = second;
     }
 
+    [Fact]
+    public async Task CompetingRecoveriesExhaustAttemptThreeOnceWithoutCreatingAttemptFour()
+    {
+        var project = new ProjectLocator(Path.Combine(_root, "competing.fwdata"), "competing");
+        using var database = MotifDatabase.OpenOwned(Path.Combine(_root, "competing.motif.db"), project,
+            MotifSchema.CurrentSchema, new Version(1, 0));
+        var clock = new FixedClock("2026-08-23T12:00:00Z");
+        var jobs = new JobRepository(database, clock);
+        var first = jobs.Transition(jobs.Create(NewJob() with { JobId = "competing" }), JobStatus.Running);
+        new WorkerRecovery(jobs, clock).Recover();
+        var second = jobs.Transition(jobs.ListAttempts(first.LogicalJobId).Single(x => x.Attempt == 2).JobId,
+            JobStatus.Running);
+        new WorkerRecovery(jobs, clock).Recover();
+        var third = jobs.Transition(jobs.ListAttempts(first.LogicalJobId).Single(x => x.Attempt == 3).JobId,
+            JobStatus.Running);
+        new WorkerRecovery(jobs, clock).Recover();
+
+        var left = new WorkerRecovery(new JobRepository(database, clock), clock);
+        var right = new WorkerRecovery(new JobRepository(database, clock), clock);
+        await Task.WhenAll(Task.Run(() => left.Recover()), Task.Run(() => right.Recover()));
+
+        var attempts = jobs.ListAttempts(first.LogicalJobId);
+        Assert.Equal(3, attempts.Count);
+        Assert.Equal(JobStatus.Failed, jobs.Get(third.JobId)!.Status);
+        _ = second;
+    }
+
     private static JobRecord NewJob() => new("job", "project", "dry-run", JobStatus.Queued, 1,
         "{\"proposal\":[]}", null, "2026-08-23T11:00:00Z", "2026-08-23T11:00:00Z");
 
