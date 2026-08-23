@@ -251,6 +251,60 @@ public sealed class JobStateMachineTests : IDisposable
     }
 
     [Fact]
+    public void HistoricalGenerationFourPublishedShapeUpgradesToCanonicalFive()
+    {
+        var project = new ProjectLocator(Path.Combine(_root, "historical.fwdata"), "historical");
+        var path = Path.Combine(_root, "historical.motif.db");
+        using (var legacy = MotifDatabase.OpenOwned(path, project, 4, new Version(1, 0)))
+        using (var connection = legacy.OpenConnection())
+        {
+            Execute(connection, "DROP INDEX IX_Jobs_Lineage_Attempt;");
+            Execute(connection, "DROP INDEX IX_Jobs_Status_Updated;");
+            Execute(connection, "ALTER TABLE Jobs RENAME TO Jobs_GenerationFour;");
+            Execute(connection, """
+                CREATE TABLE Jobs (
+                    JobId TEXT PRIMARY KEY,
+                    ProjectKey TEXT NOT NULL,
+                    Kind TEXT NOT NULL,
+                    Status TEXT NOT NULL,
+                    Attempt INTEGER NOT NULL DEFAULT 1 CHECK (Attempt > 0),
+                    LineageId TEXT NOT NULL,
+                    InputJson TEXT NOT NULL,
+                    ResultJson TEXT NULL,
+                    ProgressJson TEXT NULL,
+                    DryRunJson TEXT NULL,
+                    CancellationRequested INTEGER NOT NULL DEFAULT 0 CHECK (CancellationRequested IN (0, 1)),
+                    CreatedUtc TEXT NOT NULL,
+                    UpdatedUtc TEXT NOT NULL,
+                    Version INTEGER NOT NULL DEFAULT 0 CHECK (Version >= 0),
+                    DryRunPublished INTEGER NOT NULL DEFAULT 0 CHECK (DryRunPublished IN (0, 1))
+                );
+                """);
+            Execute(connection, """
+                INSERT INTO Jobs (JobId, ProjectKey, Kind, Status, Attempt, LineageId, InputJson, ResultJson,
+                    ProgressJson, DryRunJson, CancellationRequested, CreatedUtc, UpdatedUtc, Version, DryRunPublished)
+                VALUES ('historical-job', 'project', 'dry-run', 'running', 1, 'historical-job', '{"proposal":[]}', NULL,
+                    '{"progress":1}', '{"dryRun":true}', 0, '2026-08-22T11:00:00Z', '2026-08-22T11:00:00Z', 2, 1);
+                """);
+            Execute(connection, "DROP TABLE Jobs_GenerationFour;");
+            Execute(connection, "CREATE UNIQUE INDEX IX_Jobs_Lineage_Attempt ON Jobs(LineageId, Attempt);");
+            Execute(connection, "CREATE INDEX IX_Jobs_Status_Updated ON Jobs(Status, UpdatedUtc);");
+        }
+
+        using (var upgraded = MotifDatabase.OpenOwned(path, project, MotifSchema.CurrentSchema, new Version(1, 0)))
+        using (var connection = upgraded.OpenConnection())
+        {
+            var job = new JobRepository(upgraded).Get("historical-job");
+            Assert.Equal("{\"dryRun\":true}", job!.DryRunJson);
+            Assert.Equal("{\"progress\":1}", job.ProgressJson);
+            Assert.Equal(15, ReadJobColumnShapes(connection).Count);
+            Assert.Equal("DryRunJson", ReadJobColumnShapes(connection)[14].Split('|')[0]);
+        }
+        using var reopened = MotifDatabase.OpenOwned(path, project, MotifSchema.CurrentSchema, new Version(1, 0));
+        Assert.Equal("{\"dryRun\":true}", new JobRepository(reopened).Get("historical-job")!.DryRunJson);
+    }
+
+    [Fact]
     public void GenerationFiveSchemaValidationRejectsMissingTablesIndexesColumnsAndChecks()
     {
         var cases = new[] { "missing-table", "nonunique-index", "wrong-index-columns", "missing-check" };
@@ -397,6 +451,13 @@ public sealed class JobStateMachineTests : IDisposable
         while (reader.Read()) shapes.Add(string.Join("|", reader.GetString(0), reader.GetString(1), reader.GetInt32(2),
             reader.IsDBNull(3) ? "" : reader.GetString(3), reader.GetInt32(4)));
         return shapes;
+    }
+
+    private static void Execute(SqliteConnection connection, string sql)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.ExecuteNonQuery();
     }
 
     private static JobRecord NewJob() => new("job", "project", "dry-run", JobStatus.Queued, 1, "{\"proposal\":[]}", null,

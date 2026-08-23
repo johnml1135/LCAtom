@@ -69,7 +69,7 @@ public static class MotifSchema
                     CreateJobTables(connection, transaction);
                     break;
                 case 5:
-                    AddDryRunColumn(connection, transaction);
+                    RebuildJobsForGenerationFive(connection, transaction);
                     break;
                 default:
                     throw new NotSupportedException($"Motif schema {schema} is not known to this worker.");
@@ -152,7 +152,12 @@ public static class MotifSchema
         }
 
         foreach (var table in expectedTables)
-            ValidateTable(connection, transaction, table, ColumnsFor(table, schema), ForeignKeysFor(table));
+        {
+            if (table == "Jobs" && schema == 4)
+                ValidateGenerationFourJobs(connection, transaction);
+            else
+                ValidateTable(connection, transaction, table, ColumnsFor(table, schema), ForeignKeysFor(table));
+        }
         foreach (var index in expectedIndexes)
             ValidateIndex(connection, transaction, index, IndexColumnsFor(index));
     }
@@ -266,13 +271,43 @@ public static class MotifSchema
         command.ExecuteNonQuery();
     }
 
-    private static void AddDryRunColumn(SqliteConnection connection, SqliteTransaction? transaction)
+    private static void RebuildJobsForGenerationFive(SqliteConnection connection, SqliteTransaction? transaction)
     {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "ALTER TABLE Jobs ADD COLUMN DryRunJson TEXT NULL; " +
-            "UPDATE Jobs SET DryRunJson = ProgressJson WHERE DryRunPublished = 1;";
+        command.CommandText = "DROP INDEX IF EXISTS IX_Jobs_Lineage_Attempt; " +
+            "DROP INDEX IF EXISTS IX_Jobs_Status_Updated; " +
+            "ALTER TABLE Jobs RENAME TO Jobs_GenerationFour; " + CanonicalJobDdl;
         command.ExecuteNonQuery();
+
+        var hasDryRun = HasColumn(connection, transaction, "Jobs_GenerationFour", "DryRunJson");
+        using var copy = connection.CreateCommand();
+        copy.Transaction = transaction;
+        copy.CommandText = hasDryRun
+            ? "INSERT INTO Jobs (JobId, ProjectKey, Kind, Status, Attempt, LineageId, InputJson, ResultJson, " +
+              "ProgressJson, CancellationRequested, CreatedUtc, UpdatedUtc, Version, DryRunPublished, DryRunJson) " +
+              "SELECT JobId, ProjectKey, Kind, Status, Attempt, LineageId, InputJson, ResultJson, ProgressJson, " +
+              "CancellationRequested, CreatedUtc, UpdatedUtc, Version, DryRunPublished, DryRunJson FROM Jobs_GenerationFour;"
+            : "INSERT INTO Jobs (JobId, ProjectKey, Kind, Status, Attempt, LineageId, InputJson, ResultJson, " +
+              "ProgressJson, CancellationRequested, CreatedUtc, UpdatedUtc, Version, DryRunPublished, DryRunJson) " +
+              "SELECT JobId, ProjectKey, Kind, Status, Attempt, LineageId, InputJson, ResultJson, ProgressJson, " +
+              "CancellationRequested, CreatedUtc, UpdatedUtc, Version, DryRunPublished, " +
+              "CASE WHEN DryRunPublished = 1 THEN ProgressJson ELSE NULL END FROM Jobs_GenerationFour;";
+        copy.ExecuteNonQuery();
+        using var drop = connection.CreateCommand();
+        drop.Transaction = transaction;
+        drop.CommandText = "DROP TABLE Jobs_GenerationFour;";
+        drop.ExecuteNonQuery();
+    }
+
+    private static bool HasColumn(SqliteConnection connection, SqliteTransaction? transaction, string table, string column)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT COUNT(*) FROM pragma_table_info($table) WHERE name = $column;";
+        command.Parameters.AddWithValue("$table", table);
+        command.Parameters.AddWithValue("$column", column);
+        return Convert.ToInt32(command.ExecuteScalar(), CultureInfo.InvariantCulture) == 1;
     }
 
     private static void ValidateTable(
@@ -281,6 +316,29 @@ public static class MotifSchema
         string table,
         IReadOnlyList<ColumnShape> expectedColumns,
         IReadOnlyList<ForeignKeyShape> expectedForeignKeys)
+    {
+        var actual = ReadColumns(connection, transaction, table);
+        if (!MatchesColumns(actual, expectedColumns))
+            throw new InvalidDataException($"Motif table {table} does not match its registered schema.");
+
+        ValidateForeignKeys(connection, transaction, table, expectedForeignKeys);
+        ValidateTableInvariant(connection, transaction, table);
+    }
+
+    private static void ValidateGenerationFourJobs(SqliteConnection connection, SqliteTransaction? transaction)
+    {
+        var actual = ReadColumns(connection, transaction, "Jobs");
+        if (!MatchesColumns(actual, ColumnsFor("Jobs", 4)) && !MatchesColumns(actual, GenerationFourDryRunColumns()))
+            throw new InvalidDataException("Motif generation-four Jobs table has an unknown shape.");
+
+        ValidateForeignKeys(connection, transaction, "Jobs", []);
+        ValidateTableInvariant(connection, transaction, "Jobs");
+    }
+
+    private static List<ColumnShape> ReadColumns(
+        SqliteConnection connection,
+        SqliteTransaction? transaction,
+        string table)
     {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -298,14 +356,11 @@ public static class MotifSchema
                 reader.IsDBNull(3) ? null : reader.GetString(3),
                 reader.GetInt32(4)));
         }
-
-        if (actual.Count != expectedColumns.Count ||
-            actual.Where((column, index) => !column.Matches(expectedColumns[index])).Any())
-            throw new InvalidDataException($"Motif table {table} does not match its registered schema.");
-
-        ValidateForeignKeys(connection, transaction, table, expectedForeignKeys);
-        ValidateTableInvariant(connection, transaction, table);
+        return actual;
     }
+
+    private static bool MatchesColumns(IReadOnlyList<ColumnShape> actual, IReadOnlyList<ColumnShape> expected) =>
+        actual.Count == expected.Count && !actual.Where((column, index) => !column.Matches(expected[index])).Any();
 
     private static void ValidateTableInvariant(SqliteConnection connection, SqliteTransaction? transaction, string table)
     {
@@ -495,6 +550,15 @@ public static class MotifSchema
             C("DryRunJson", "TEXT")],
         _ => throw new InvalidDataException($"Motif table {table} is not registered.")
     };
+
+    private static IReadOnlyList<ColumnShape> GenerationFourDryRunColumns() =>
+    [C("JobId", "TEXT", false, 1), C("ProjectKey", "TEXT", true), C("Kind", "TEXT", true),
+        C("Status", "TEXT", true), C("Attempt", "INTEGER", true, defaultValue: "1"),
+        C("LineageId", "TEXT", true), C("InputJson", "TEXT", true), C("ResultJson", "TEXT"),
+        C("ProgressJson", "TEXT"), C("DryRunJson", "TEXT"),
+        C("CancellationRequested", "INTEGER", true, defaultValue: "0"),
+        C("CreatedUtc", "TEXT", true), C("UpdatedUtc", "TEXT", true),
+        C("Version", "INTEGER", true, defaultValue: "0"), C("DryRunPublished", "INTEGER", true, defaultValue: "0")];
 
     private static ColumnShape C(string name, string type, bool notNull = false, int primaryKey = 0,
         string? defaultValue = null) => new(name, type, notNull, defaultValue, primaryKey);
@@ -700,5 +764,27 @@ public static class MotifSchema
         );
         CREATE UNIQUE INDEX IF NOT EXISTS IX_Jobs_Lineage_Attempt ON Jobs(LineageId, Attempt);
         CREATE INDEX IF NOT EXISTS IX_Jobs_Status_Updated ON Jobs(Status, UpdatedUtc);
+        """;
+
+    private const string CanonicalJobDdl = """
+        CREATE TABLE Jobs (
+            JobId TEXT PRIMARY KEY,
+            ProjectKey TEXT NOT NULL,
+            Kind TEXT NOT NULL,
+            Status TEXT NOT NULL,
+            Attempt INTEGER NOT NULL DEFAULT 1 CHECK (Attempt > 0),
+            LineageId TEXT NOT NULL,
+            InputJson TEXT NOT NULL,
+            ResultJson TEXT NULL,
+            ProgressJson TEXT NULL,
+            CancellationRequested INTEGER NOT NULL DEFAULT 0 CHECK (CancellationRequested IN (0, 1)),
+            CreatedUtc TEXT NOT NULL,
+            UpdatedUtc TEXT NOT NULL,
+            Version INTEGER NOT NULL DEFAULT 0 CHECK (Version >= 0),
+            DryRunPublished INTEGER NOT NULL DEFAULT 0 CHECK (DryRunPublished IN (0, 1)),
+            DryRunJson TEXT NULL
+        );
+        CREATE UNIQUE INDEX IX_Jobs_Lineage_Attempt ON Jobs(LineageId, Attempt);
+        CREATE INDEX IX_Jobs_Status_Updated ON Jobs(Status, UpdatedUtc);
         """;
 }
