@@ -26,7 +26,12 @@ Short-lived CLI commands should all see the same durable workflow without openin
 - Modify: `src/SIL.Motif.Cli/Program.cs`
 - Modify: `src/SIL.Motif.Cli/Commands.cs`
 - Modify: `src/SIL.Motif.Cli/CorpusCommands.cs`
+- Modify: `src/SIL.Motif.Worker/Projects/ProjectRuntime.cs`
+- Modify: `src/SIL.Motif.Worker/Store/FileProposalStoreMigration.cs`
+- Modify: `src/SIL.Motif.Worker/Store/LegacyBulkStoreMigration.cs`
 - Test: `tests/SIL.Motif.Tests/Cli/WorkerCommandDispatchTests.cs`
+- Test: `tests/SIL.Motif.Tests/Store/FileProposalStoreMigrationTests.cs`
+- Test: `tests/SIL.Motif.Tests/Store/LegacyBulkStoreMigrationTests.cs`
 
 - [ ] **Step 1: Write argv process tests**
 
@@ -34,6 +39,9 @@ Run the real `motif` executable against a fake worker. Assert launcher startup, 
 JSON/text parity, authoring immediacy, and that no CLI command opens SQLite directly after migration. Separate
 pure authoring commands from composers that require LibLCM resolution: the latter must name an available
 Baseline and display its “as of” token or wait for a live-host request; they cannot read around the lock.
+Seed both legacy stores, keep a worker status read active, and assert it may finish against the old state while
+cutover waits for its lease. Assert every project operation submitted after the exclusive cutover request
+waits and sees only the committed post-import state.
 
 - [ ] **Step 2: Run red**
 
@@ -55,16 +63,31 @@ Keep command parsing and rendering in CLI; move state changes and queries behind
 Every project command sends `ProjectLocator`. Unknown/missing capabilities produce actionable refusal before
 sending the command. Replace the CLI's Host and Runner project references with Client, Contract, and Projection
 references once the final direct command is migrated; live closed-project operations run inside Worker through
-Host, never inside the CLI process. Worker command handlers are created in the owning plans for database jobs,
-Baseline/Dry Run, PanGloss, and Apply/reconciliation; this cutover must reject any command lacking a registered
-closed-schema handler.
+Host, never inside the CLI process. The composition bridge supplies the first real `job.status` handler and
+the project-runtime dispatch boundary. Baseline/Dry Run, PanGloss, and Apply/reconciliation handlers are
+created in their owning plans; this task adds the remaining Proposal/job handlers required by CLI cutover.
+The cutover must reject any command lacking a registered closed-schema handler.
+
+Before routing the first project command, send the exact user-selected `--store` location through a dedicated
+cutover request. The project runtime takes its writer-preferring exclusive operation lease: it blocks every new
+repository user and waits for commands, queued-job runners, schedulers, host callbacks, and other current
+operations to finish. Refactor both importers to accept one caller-owned destination transaction and defer
+source archival. Import both sources and write the cutover ledger row in that one transaction; rollback leaves
+both legacy sources and the destination's pre-cutover state intact. After commit, archive both sources. An
+archive failure is cleanup debt, not a failed database cutover: the ledger makes retry idempotent and the CLI
+routes to the worker without writing either old source again. Release exclusive admission only after commit
+and the first archival attempt, so no post-cutover operation can observe partial destination state.
 
 - [ ] **Step 4: Run green and commit**
 
 Run `./test.ps1`, then:
 
 ```powershell
-git add src/SIL.Motif.Cli tests/SIL.Motif.Tests/Cli
+git add src/SIL.Motif.Cli src/SIL.Motif.Worker/Projects/ProjectRuntime.cs `
+  src/SIL.Motif.Worker/Store/FileProposalStoreMigration.cs `
+  src/SIL.Motif.Worker/Store/LegacyBulkStoreMigration.cs tests/SIL.Motif.Tests/Cli `
+  tests/SIL.Motif.Tests/Store/FileProposalStoreMigrationTests.cs `
+  tests/SIL.Motif.Tests/Store/LegacyBulkStoreMigrationTests.cs
 git commit -m "feat: route cli through motif worker"
 ```
 
@@ -273,6 +296,9 @@ actually create.
 - Modify: `src/SIL.Motif.Generator/Program.cs`
 - Test: `tests/SIL.Motif.Tests/Coverage/MediaBoundaryCoverageTests.cs`
 - Create: `tests/SIL.Motif.Tests/EndToEnd/WorkerArchitectureTests.cs`
+- Create: `tests/SIL.Motif.Tests/Compatibility/FrozenProtocolV1ClientTests.cs`
+- Create: `tests/SIL.Motif.Net48Smoke/SIL.Motif.Net48Smoke.csproj`
+- Create: `tests/SIL.Motif.Net48Smoke/Program.cs`
 - Modify: `README.md`
 - Modify: `docs/plan-motif.md`
 
@@ -292,6 +318,10 @@ Cover two compatible clients on one worker, same-identity clones in different fo
 authoring plus live-operation refusal, refresh handoff after FieldWorks closes, twenty old-Baseline Dry Runs
 while live Apply succeeds, interrupted Apply reconciliation, loud Conflict ordering, terminal archive, and
 lexical-entry deletion that removes model-owned media references while leaving linked sentinel bytes untouched.
+Use a frozen protocol-generation-one request/response fixture or frozen client assembly for the older side of
+the mixed-version test; two clients compiled from current source do not prove compatibility. Build and run a
+minimal `net48` consumer that loads the FieldWorks integration package, constructs its LibLCM-free client
+surface, and completes a handshake against the current worker. It need not open FieldWorks or implement UI.
 
 - [ ] **Step 3: Run red against any missing integration**
 

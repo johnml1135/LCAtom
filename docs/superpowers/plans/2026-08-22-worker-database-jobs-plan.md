@@ -130,7 +130,13 @@ exists before finalization creates a durable Proposal row.
 
 This task builds the repositories and migration readers but does not reroute existing CLI commands. The CLI
 continues using its staged store until the client cutover in plan 6; code introduced here never writes a
-legacy source. Plan 6 invokes migration before its first worker-owned write and retires the old write paths.
+legacy source. The composition bridge makes sibling-database schema migration, identity validation, cleanup,
+and recovery a single admission gate before a project command can observe the database. Plan 6 supplies the
+CLI-selected legacy `--store` location and invokes both legacy importers behind the project runtime's exclusive
+cutover barrier before any migrated CLI read or write. Plan 6 refactors the importers to share a caller-owned
+destination transaction and defer source archival until both imports and the cutover ledger row commit. Only
+then does the CLI retire its old paths and route commands to the worker. A project locator alone cannot
+identify that legacy source safely.
 
 - [ ] **Step 4: Run green and commit**
 

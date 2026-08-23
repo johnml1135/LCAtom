@@ -7,9 +7,10 @@
 **Goal:** Capture one minimal file-backed saved state and safely reuse it for many ordered Dry Runs without
 holding or copying the live project each time.
 
-**Architecture:** A live host streams a deterministic Baseline bundle to worker storage. The worker publishes
-it atomically, schedules one LibLCM lane per project, and opens a single-use file-backed scratch per Dry Run.
-Project path plus FieldWorks identity isolates same-identity clones.
+**Architecture:** A live host streams a deterministic Baseline transport archive to worker storage. The
+worker verifies and extracts it once, atomically publishes an immutable directory, schedules one LibLCM lane
+per project, and opens the contained `.fwdata` as a single-use file-backed scratch per Dry Run. Project path
+plus FieldWorks identity isolates same-identity clones.
 
 **Tech Stack:** LibLCM, streaming ZIP or equivalent bounded bundle container, SHA-256, named pipes, xUnit.
 
@@ -58,8 +59,9 @@ public sealed record LiveProjectObservation(
 ```
 
 The paired-database plan already defines `ProjectLocator`, because database registration needs that identity
-before Baseline work begins. `ProjectWorkspaceKey.Compute` hashes its canonical tuple of normalized full path
-and identity. It must not use project name alone or migrate an old path implicitly.
+before Baseline work begins. The composition bridge canonicalizes that locator once and makes
+`ProjectWorkspaceKey.Compute` hash its canonical full path plus exact identity. It must not use project name
+alone or migrate an old path implicitly.
 
 - [ ] **Step 4: Run green and commit**
 
@@ -81,7 +83,6 @@ work.
 - Create: `src/SIL.Motif.LiveHost/Baselines/BaselineSemanticDigest.cs`
 - Create: `src/SIL.Motif.Worker/Baselines/BaselineBundleReceiver.cs`
 - Create: `src/SIL.Motif.Worker/Baselines/BaselineRepository.cs`
-- Create: `src/SIL.Motif.Worker/Baselines/BaselineCommandHandler.cs`
 - Modify: `Motif.sln`
 - Test: `tests/SIL.Motif.Tests/Host/BaselineBundleTests.cs`
 
@@ -110,24 +111,34 @@ public sealed class BaselineBundleWriter
 
 public sealed class BaselineBundleReceiver
 {
-    public Task<BaselineToken> PublishVerifiedAsync(
+    public Task<BaselinePublication> PublishVerifiedAsync(
         ProjectLocator project,
         string verifiedTemporaryBundle,
         BaselineToken declaredToken,
         CancellationToken cancellationToken);
 }
+
+public sealed record BaselinePublication(
+    string RootDirectory,
+    string FwDataPath,
+    BaselineToken Token);
 ```
 
 `SIL.Motif.LiveHost` targets `netstandard2.0`, references Contract, Model, Runner, and LibLCM, and contains
 LibLCM-aware code shared by the `net10.0` CLI host and `net48` FieldWorks adapter. It must not reference Host,
 Worker, Client, or SQLite. Require the host to call synchronous `FwDataProjectLoader.Save` before writing.
 The writer computes the token and digest during its single stream pass. The client closes the stream and sends
-the resulting binary completion plus declared token. `BaselineCommandHandler` issues the offer and passes the
-server-verified temporary file to the receiver. Publish by verified temp-file
-rename and keep the previous Baseline on any failure. Do not recursively copy the project folder and do not
-include linked media. `BaselineSemanticDigest` walks the existing model-coverage snapshot projection in
-canonical ID order and hashes canonical bytes; it is independent of container metadata, while `BundleDigest`
-hashes the exact transferred bundle.
+the resulting binary completion plus declared token. The receiver treats the verified temporary bundle as a
+transport archive, never as a project. It verifies the declared token, bounded safe entry paths, exactly one
+`.fwdata`, required writing-system content, and the exclusion of `.motif.db`, linked media, backups,
+repositories, and unrelated files. It extracts once into a worker-owned temporary publication directory,
+validates the extracted layout, then atomically renames that directory to its immutable published location.
+The repository records the published root and contained `.fwdata` path with the token, then deletes the
+temporary transport archive. Any failure deletes only unpublished temporary state and leaves the previous
+Baseline available. Do not recursively copy the project folder and do not include linked media.
+`BaselineSemanticDigest` walks the existing model-coverage snapshot projection in canonical ID order and
+hashes canonical bytes; it is independent of container metadata, while `BundleDigest` hashes the exact
+transferred archive.
 
 - [ ] **Step 4: Run green and commit**
 
@@ -138,15 +149,16 @@ git add Motif.sln src/SIL.Motif.LiveHost src/SIL.Motif.Worker tests/SIL.Motif.Te
 git commit -m "feat: stream minimal file-backed baselines"
 ```
 
-### Task 3: Add live-host leases and the per-project lane
+### Task 3: Integrate live-host leases with the per-project lane
 
 FieldWorks and background work can coexist only when ownership changes and refresh ordering are explicit.
 
 **Files:**
-- Create: `src/SIL.Motif.Worker/Projects/ProjectHostRegistry.cs`
+- Use: `src/SIL.Motif.Worker/Projects/ProjectHostRegistry.cs`
 - Create: `src/SIL.Motif.Worker/Projects/ProjectFreshnessTracker.cs`
 - Create: `src/SIL.Motif.Worker/Scheduling/ProjectLane.cs`
 - Create: `src/SIL.Motif.Worker/Scheduling/ProjectWorkItem.cs`
+- Create: `src/SIL.Motif.Worker/Baselines/BaselineCommandHandler.cs`
 - Test: `tests/SIL.Motif.Tests/Worker/ProjectLaneTests.cs`
 
 - [ ] **Step 1: Write deterministic concurrency tests**
@@ -188,7 +200,14 @@ one epoch; a new epoch compares semantic digest. A queued refresh records an acc
 durably. Only an accepted or deferred request remains executable by the CLI Host after FieldWorks releases
 authority and the lock is available; decline terminates that request. The Apply gate
 conflicts with refresh/capture but not a Dry Run that has already opened private Baseline state; per-project
-Dry Runs remain serial with each other.
+Dry Runs remain serial with each other. `BaselineCommandHandler` uses the admitted project runtime and keyed
+host route from the composition bridge, issues the binary offer, and passes the server-verified temporary
+archive to `BaselineBundleReceiver`. It never opens another database or registers a global host.
+
+Startup recovery already precedes admission through the project runtime. Workspace eviction and Baseline
+cleanup must additionally hold the same project-lane lease/reference gate, or use a compare-and-delete
+generation, so a new pin or lease cannot appear between checking and deletion. Preserve the checked
+bottom-up, nonrecursive deletion and rename/reparse substitution tests.
 
 - [ ] **Step 4: Run green and commit**
 
@@ -227,14 +246,15 @@ Run `./test.ps1`. Expected: the job handler and scratch factory are absent.
 ```csharp
 public sealed class BaselineScratchFactory
 {
-    public DryRunScratch OpenSingleUse(string publishedBaselineFwDataPath);
+    public DryRunScratch OpenSingleUse(string publishedFwDataPath);
 }
 ```
 
-Open the one published Baseline file directly through `LoadScratchCache`; do not copy or extract the project
-for each Dry Run. Run the existing validated `PrerequisiteExecutionPlan` and `ProposalDryRunner`, dispose
-without saving, verify the Baseline bytes remain unchanged, and publish the Dry Run record only after complete
-read-back.
+Open the `.fwdata` recorded inside the immutable published Baseline directory directly through
+`LoadScratchCache`; do not copy or extract the project for each Dry Run. The scratch may read the sibling
+writing-system/support content in that directory but may not mutate or save it. Run the existing validated
+`PrerequisiteExecutionPlan` and `ProposalDryRunner`, dispose without saving, verify the published directory
+remains unchanged, and publish the Dry Run record only after complete read-back.
 Return status containing `BaselineToken` and `CapturedUtc`; use `ProjectFreshnessTracker` to report current,
 known-old, or not-checked status, never to silently refresh or cancel.
 
@@ -246,16 +266,3 @@ Run `./test.ps1`, then:
 git add src/SIL.Motif.LiveHost src/SIL.Motif.Runner src/SIL.Motif.Worker tests/SIL.Motif.Tests/Worker
 git commit -m "feat: reuse baselines for isolated dry runs"
 ```
-
-### Task 4 recovery integration checkpoint
-
-When the project registry and `ProjectWorkspaceKey` are available, the open-project lifecycle must invoke
-the per-project recovery coordinator before admitting work. This checkpoint owns startup cleanup ordering;
-it does not authorize global filesystem discovery.
-
-### Task 4 safety checkpoint for the project lane
-
-Workspace eviction and Baseline cleanup must run while holding the same project-lane lease/reference gate,
-or use a compare-and-delete generation, so a new pin or lease cannot appear between checking and deletion.
-The lane must retain the checked bottom-up, nonrecursive deletion and test rename/reparse substitution; a
-handle-based Windows implementation can replace it only if platform behavior requires that stronger seam.

@@ -36,6 +36,16 @@ named-pipe endpoint, opens project databases lazily, and exits after global idle
 does not keep it alive; active commands and queued, running, or waiting work do. That includes a refresh
 waiting for FieldWorks to release the project, so the worker can acquire it immediately after FieldWorks exits.
 
+The worker creates one keyed runtime for each active project. That runtime is the sole owner of the project's
+open database, repositories, live-host route, and active-work lease. Database schema migration, locator
+validation, startup cleanup, and interrupted-work recovery complete before the runtime admits a command.
+Importing a legacy CLI store remains part of CLI cutover because its user-selected location is not derivable
+from the project locator. Cutover takes the runtime's writer-preferring exclusive operation barrier and waits
+for commands, job runners, schedulers, and host callbacks already using repositories. Both legacy sources and
+the cutover marker then enter one destination transaction before any migrated CLI read or write is admitted.
+A failed transaction leaves the CLI on its old paths; post-cutover work cannot observe partial destination
+state. Source archival follows commit and is idempotent cleanup rather than part of database atomicity.
+
 The worker owns:
 
 - all writes and migrations for every `Project.motif.db` it opens;
@@ -106,10 +116,14 @@ The protocol includes:
 Large Baseline bytes are not base64 fields in control JSON. The worker creates and owns a separate
 bounded-memory binary-pipe server, then sends a one-use transfer offer containing the transfer ID, direction,
 maximum byte count, expiry, and unpredictable pipe name. FieldWorks connects once and streams the saved
-minimal Baseline bundle directly into a worker temporary file while both ends hash it. After the stream closes,
-FieldWorks sends a correlated completion message containing its byte count and digest. The worker publishes
-only if those values equal its independently computed values. It rejects excess, expired, duplicate,
-incomplete, or digest-mismatched transfers and deletes the unpublished temporary file.
+minimal Baseline transport archive directly into a worker temporary file while both ends hash it. After the
+stream closes, FieldWorks sends a correlated completion message containing its byte count and digest. The
+worker accepts the temporary archive only if those values equal its independently computed values. It then
+verifies safe bounded entries and required contents, extracts once into a temporary publication directory,
+validates that layout, and atomically renames the directory into its immutable published location. The
+transport archive is never opened as a project and is deleted after successful publication. Excess, expired,
+duplicate, incomplete, unsafe, or digest-mismatched transfers publish nothing and delete only unpublished
+temporary state.
 
 The protocol is local-user only. It is not a network API, a review server, or a way to transfer a live
 `LcmCache`. Every control and binary pipe has an explicit Windows ACL granting the owning user SID and the
@@ -169,6 +183,10 @@ Derived working data stays out of the FieldWorks project directory:
 ```text
 %LOCALAPPDATA%/SIL/Motif/<project-key>/
   baseline/
+    <bundle-digest>/
+      Project.fwdata
+      WritingSystemStore/
+      ... equivalence-proven support files only
   work/
   unclaimed/
 ```
@@ -218,13 +236,19 @@ The minimal bundle contains:
 - the project's writing-system store;
 - only additional small project-local configuration that equivalence tests prove LibLCM needs.
 
-It excludes `.motif.db`, linked media, supporting files, backups, Send/Receive repositories, and unrelated
-project-directory content. Empty directories may be created when LibLCM requires their presence.
+It excludes `.motif.db`, linked media, unproven supporting files, backups, Send/Receive repositories, and
+unrelated project-directory content. Empty directories may be created when LibLCM requires their presence.
+
+The bundle is only the transfer form. After verification, the worker extracts it once into a temporary
+directory and atomically publishes an immutable directory containing exactly one `.fwdata`, its
+writing-system store, and only equivalence-proven support files. The Baseline repository records that root,
+the contained `.fwdata` path, and the Baseline Token. A Dry Run opens the recorded file directly; it never
+re-extracts the archive or duplicates the published project.
 
 The Baseline is file-backed because LibLCM's memory-only backend does not preserve project-specific writing
-systems, including collation and valid-character behavior. File-backed means that one private Baseline file
-exists; it does not mean FieldWorks closes, the live project remains locked, or every Dry Run writes another
-copy.
+systems, including collation and valid-character behavior. File-backed means that one private published
+project directory exists; it does not mean FieldWorks closes, the live project remains locked, or every Dry
+Run writes another copy.
 
 ## Baseline capture and refresh
 
@@ -235,13 +259,14 @@ adapter:
 
 1. enters FieldWorks' safe edit boundary;
 2. finishes the current unit of work and saves the LibLCM model and writing-system state;
-3. streams the minimal Baseline bundle to the worker without building a second in-memory representation;
-4. waits for digest verification and atomic publication;
+3. streams the minimal Baseline transport archive to the worker without building a second in-memory
+   representation;
+4. waits for archive verification, one-time extraction, layout validation, and atomic directory publication;
 5. releases the edit boundary.
 
 No linked media enters the stream. If the connection, save, transfer, or verification fails, the worker
-deletes the unpublished temporary bundle and leaves the previous Baseline available with its existing
-freshness status.
+deletes the unpublished temporary archive and directory and leaves the previous Baseline available with its
+existing freshness status.
 
 ### CLI-hosted capture
 
@@ -287,9 +312,11 @@ token; Motif never silently refreshes it.
 
 ## Dry Run and PanGloss pipeline
 
-Each Dry Run opens the unchanged Baseline, executes the validated prerequisite plan and requested Proposal on
-a single-use file-backed scratch, reads back effects, and disposes it without saving. The next Dry Run starts
-from the same unchanged Baseline. At most one Dry Run runs per project at a time.
+Each Dry Run opens the recorded `.fwdata` inside the unchanged published Baseline directory, executes the
+validated prerequisite plan and requested Proposal on a single-use file-backed scratch, reads back effects,
+and disposes it without saving. It may read the published writing-system and support files but may not mutate
+or save anything in that directory. The next Dry Run starts from the same unchanged Baseline; no per-run
+extraction or project copy occurs. At most one Dry Run runs per project at a time.
 
 Assessment is optional but on by default:
 

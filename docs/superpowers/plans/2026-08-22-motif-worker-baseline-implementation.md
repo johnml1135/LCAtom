@@ -7,9 +7,10 @@
 **Goal:** Build the accepted worker, Baseline, asynchronous Dry Run and Assessment, synchronous Apply, and
 FieldWorks integration boundaries without changing Runner ownership rules.
 
-**Architecture:** Six independently reviewable plans move process ownership outward from the current one-shot
-CLI while preserving the existing Runner. The worker owns SQLite and durable coordination; a live host owns
-`LcmCache`, save, lock, and Apply; PanGloss receives a fresh candidate export and never a persisted engine.
+**Architecture:** Six product plans move process ownership outward from the current one-shot CLI while
+preserving the existing Runner. A composition bridge between storage and Baseline work proves those owners
+connect in production. The worker owns SQLite and durable coordination; a live host owns `LcmCache`, save,
+lock, and Apply; PanGloss receives a fresh candidate export and never a persisted engine.
 
 **Tech Stack:** C# 14, `net10.0`, `netstandard2.0`, `net48` consumer compatibility, named pipes,
 `System.Text.Json`, `Microsoft.Data.Sqlite`, LibLCM, Windows Job Objects, xUnit.
@@ -34,14 +35,18 @@ Assessment evidence.
 
 ## Execution order
 
-The work lands in six stages so each new owner and boundary is proven before another component depends on it.
+The work lands in six product stages plus one composition bridge so each new owner and boundary is proven
+before another component depends on it.
 
-1. [Worker protocol, client, launcher, and version negotiation](2026-08-22-worker-protocol-launcher-plan.md)
-2. [Paired database, durable jobs, archive, and recovery](2026-08-22-worker-database-jobs-plan.md)
-3. [Minimal Baseline capture and per-project scheduler](2026-08-22-baseline-project-scheduler-plan.md)
-4. [PanGloss orchestration and machine resource envelope](2026-08-22-pangloss-worker-orchestration-plan.md)
-5. [Apply Authorization, final Preflight, reconciliation, and Conflict](2026-08-22-apply-reconciliation-plan.md)
-6. [CLI migration and FieldWorks integration package](2026-08-22-cli-fieldworks-worker-integration-plan.md)
+| Stage | Plan |
+| --- | --- |
+| 1 | [Worker protocol, client, launcher, and version negotiation](2026-08-22-worker-protocol-launcher-plan.md) |
+| 2 | [Paired database, durable jobs, archive, and recovery](2026-08-22-worker-database-jobs-plan.md) |
+| 2.5 | [Worker composition bridge](2026-08-23-worker-composition-bridge-plan.md) |
+| 3 | [Minimal Baseline capture and per-project scheduler](2026-08-22-baseline-project-scheduler-plan.md) |
+| 4 | [PanGloss orchestration and machine resource envelope](2026-08-22-pangloss-worker-orchestration-plan.md) |
+| 5 | [Apply Authorization, final Preflight, reconciliation, and Conflict](2026-08-22-apply-reconciliation-plan.md) |
+| 6 | [CLI migration and FieldWorks integration package](2026-08-22-cli-fieldworks-worker-integration-plan.md) |
 
 Plans are sequential because each consumes durable contracts from the previous one. Within a plan, preserve
 the red/green/commit order exactly and run `./test.ps1` at every commit boundary. Never use bare `dotnet build`
@@ -69,11 +74,16 @@ contract and its final integration land separately.
 | Reconciliation repairs or creates local Conflict | 5 |
 | Two machine PanGloss slots at 25 percent; per-user FIFO across projects | 4 |
 | Retry, startup cleanup, archive, workspace eviction | 2 and 4 |
-| Compatible mixed-version clients; one database owner | 1 and 2 |
+| Compatible mixed-version clients with a frozen older side; one database owner | 1, 2, and 6 |
+| Installed manifest and running handshake use the same compiled worker metadata | 2.5 |
+| One admitted runtime and one live-host route per project; schema migration and recovery precede commands | 2.5 |
+| A typed project-scoped job query crosses the real pipe into the owned database | 2.5 |
 | Transactional Proposal/Corpus/Assessment migration; newer schema refusal; no downgrade | 2 |
+| Temporary Baseline transfer becomes one immutable published directory before reuse | 2.5 and 3 |
 | Model-owned media references delete; linked bytes remain; every family classified | 3 and 6 |
 | Same-identity clones at different paths do not collide | 2 and 3 |
 | Managed move carries the pair; managed or unmanaged duplicate starts fresh | 6 |
+| A real `net48` consumer loads the FieldWorks integration package and negotiates with the worker | 6 |
 
 ## Integration gate
 
@@ -100,8 +110,8 @@ rg -n "<TargetFrameworks?>" src tests
 Expected: only `net10.0`, `netstandard2.0`, `net48`, and the existing Runner combination
 `netstandard2.0;net10.0`; no `net8.0`.
 
-- [ ] Commit the completed architecture as one reviewed integration commit after the six plan branches have
-  landed cleanly.
+- [ ] Commit the completed architecture as one reviewed integration commit after the six product plans and
+  composition bridge have landed cleanly.
 
 ```powershell
 git add src tests Motif.sln docs

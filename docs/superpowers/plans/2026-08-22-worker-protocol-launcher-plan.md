@@ -236,9 +236,11 @@ public sealed class WorkerLifetime
 ```
 
 The server validates handshake before dispatch, exposes an explicit handler for every closed command DTO,
-never opens a database during handshake, and treats inactive connections as idle. `WorkerEventSink` sends
-capture, Apply, reconciliation, and cancellation requests to a registered live host, awaits exactly one
-correlated event result, and resolves the initiating command or job from that result. `BinaryTransferServer`
+never opens a database during handshake, and treats inactive connections as idle. This task supplies the
+transport sink; the composition bridge replaces its provisional single-host registration with project-keyed
+routing before any project handler uses it. The resulting sink sends capture, Apply, reconciliation, and
+cancellation requests only to the live host registered for that project, awaits exactly one correlated event
+result, and resolves the initiating command or job from that result. `BinaryTransferServer`
 creates unpredictable one-use pipe offers, owns their temporary files, independently hashes the stream, and
 publishes nothing before a correlated completion matches its length and SHA-256. Use an injected monotonic
 clock in tests.
@@ -295,7 +297,9 @@ public static class WorkerSelector
 
 Sort SemVer descending only after protocol/capability filtering. The launcher connects to an existing worker
 first, starts the selected executable hidden if none responds, and fails with install/update guidance if no
-candidate overlaps.
+candidate overlaps. The composition bridge adds one compiled metadata source and requires the immutable
+installed manifest to agree with the running worker's product version, protocol interval, and capabilities;
+the manifest is never an independent claim about executable behavior.
 
 - [ ] **Step 4: Verify and commit**
 
