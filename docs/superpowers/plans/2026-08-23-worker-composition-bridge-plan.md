@@ -460,10 +460,9 @@ lease while any job for the project is queued, running, or waiting. `ProjectRunt
 schedulers must call that runtime boundary rather than mutate and forget the lease. Release it when no active
 state remains. An ordinary connected client with no work does not hold the process alive.
 `TryReleaseIfIdle` succeeds only when there is no active job, no live host registration, no command using the
-runtime, and no pending event. The public registry constructor requires both activity predicates; the
-WorkerServer composition boundary supplies the real project host registry and event-sink pending-state query.
-Public callers also supply one `ProjectRuntimeActivity` boundary and perform activity mutations through it;
-the idle decision and those mutations use that same synchronization root.
+runtime, and no pending event. `ProjectRuntimeActivity` owns counted per-workspace leases; the host registry
+holds a lease for each live route and the event sink holds one for each pending event. The registry checks
+that activity object directly, so supported callers cannot mutate an invisible predicate.
 
 Use this concrete construction boundary:
 
@@ -473,16 +472,12 @@ public sealed class ProjectRuntimeRegistry : IDisposable
     private readonly ProjectDatabaseCatalog _catalog;
     private readonly Func<JobRepository, string, WorkerRecoveryCoordinator> _recoveryFactory;
     private readonly WorkerWorkTracker _work;
-    private readonly Func<string, bool> _hasLiveHost;
-    private readonly Func<string, bool> _hasPendingEvents;
     private readonly ConcurrentDictionary<string, Lazy<ProjectRuntime>> _runtimes = new();
 
     public ProjectRuntimeRegistry(
         ProjectDatabaseCatalog catalog,
         Func<JobRepository, string, WorkerRecoveryCoordinator> recoveryFactory,
         WorkerWorkTracker work,
-        Func<string, bool> hasLiveHost,
-        Func<string, bool> hasPendingEvents,
         ProjectRuntimeActivity activity);
 
     public ProjectRuntime GetOrOpen(ProjectLocator project)

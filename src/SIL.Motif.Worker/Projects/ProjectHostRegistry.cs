@@ -8,7 +8,17 @@ internal sealed record ProjectHostRegistration(
     string HostSessionId,
     int ProtocolVersion,
     Stream Stream,
-    SemaphoreSlim WriteGate);
+    SemaphoreSlim WriteGate)
+{
+    public ProjectLocator Project { get; init; } = null!;
+
+    public ProjectHostRegistration(ProjectLocator project, string connectionId, string hostSessionId,
+        int protocolVersion, Stream stream, SemaphoreSlim writeGate)
+        : this(connectionId, hostSessionId, protocolVersion, stream, writeGate)
+    {
+        Project = project ?? throw new ArgumentNullException(nameof(project));
+    }
+}
 
 /// <summary>Routes live-host registrations by canonical project workspace key.</summary>
 internal interface IProjectHostRegistry : IDisposable
@@ -22,11 +32,21 @@ internal interface IProjectHostRegistry : IDisposable
 /// <summary>Ensures one live host owns a project route and stale connections cannot unregister a successor.</summary>
 internal sealed class ProjectHostRegistry : IProjectHostRegistry
 {
-    private readonly object _sync = new();
+    private readonly ProjectRuntimeActivity _activity;
+    private readonly object _sync;
     private readonly Dictionary<string, ProjectHostRegistration> _registrations = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, IDisposable> _activityLeases = new(StringComparer.Ordinal);
     private bool _disposed;
 
-    internal object ActivitySync => _sync;
+    internal ProjectRuntimeActivity Activity => _activity;
+
+    internal ProjectHostRegistry() : this(new ProjectRuntimeActivity()) { }
+
+    internal ProjectHostRegistry(ProjectRuntimeActivity activity)
+    {
+        _activity = activity ?? throw new ArgumentNullException(nameof(activity));
+        _sync = activity.SyncRoot;
+    }
 
     public void Register(ProjectLocator project, ProjectHostRegistration registration)
     {
@@ -41,12 +61,17 @@ internal sealed class ProjectHostRegistry : IProjectHostRegistry
         ArgumentNullException.ThrowIfNull(registration.Stream);
         ArgumentNullException.ThrowIfNull(registration.WriteGate);
         var key = ProjectWorkspaceKey.Compute(project);
+        if (registration.Project is not null &&
+            !StringComparer.Ordinal.Equals(ProjectWorkspaceKey.Compute(registration.Project), key))
+            throw new ArgumentException("The registration project does not match the route.", nameof(registration));
+        registration = registration with { Project = project };
         lock (_sync)
         {
             ThrowIfDisposed();
             if (_registrations.ContainsKey(key))
                 throw new ProjectHostBusyException(key);
             _registrations.Add(key, registration);
+            _activityLeases.Add(key, _activity.AcquireHost(key));
         }
     }
 
@@ -61,6 +86,7 @@ internal sealed class ProjectHostRegistry : IProjectHostRegistry
                 !StringComparer.Ordinal.Equals(current.ConnectionId, connectionId) ||
                 !StringComparer.Ordinal.Equals(current.HostSessionId, hostSessionId)) return false;
             _registrations.Remove(key);
+            if (_activityLeases.Remove(key, out var lease)) lease.Dispose();
             return true;
         }
     }
@@ -96,6 +122,8 @@ internal sealed class ProjectHostRegistry : IProjectHostRegistry
         {
             _disposed = true;
             _registrations.Clear();
+            foreach (var lease in _activityLeases.Values) lease.Dispose();
+            _activityLeases.Clear();
         }
     }
 

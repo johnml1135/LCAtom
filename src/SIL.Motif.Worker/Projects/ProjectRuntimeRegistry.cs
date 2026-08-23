@@ -9,20 +9,61 @@ namespace SIL.Motif.Worker.Projects;
 public sealed class ProjectRuntimeActivity
 {
     private readonly object _sync;
+    private readonly Dictionary<string, int> _counts = new(StringComparer.Ordinal);
 
     /// <summary>Creates a synchronization boundary callers can use around activity changes.</summary>
     public ProjectRuntimeActivity() : this(new object()) { }
 
     internal ProjectRuntimeActivity(object sync) => _sync = sync ?? throw new ArgumentNullException(nameof(sync));
 
-    /// <summary>Runs an activity mutation or observation under the runtime boundary.</summary>
-    public void Execute(Action action)
+    /// <summary>Acquires a keepalive lease for one canonical workspace.</summary>
+    public IDisposable Acquire(string workspaceKey)
     {
-        ArgumentNullException.ThrowIfNull(action);
-        lock (_sync) action();
+        if (string.IsNullOrWhiteSpace(workspaceKey))
+            throw new ArgumentException("A workspace key is required.", nameof(workspaceKey));
+        lock (_sync)
+        {
+            _counts[workspaceKey] = _counts.TryGetValue(workspaceKey, out var count) ? count + 1 : 1;
+            return new ActivityLease(this, workspaceKey);
+        }
     }
 
+    /// <summary>Acquires the keepalive lease held by a live host route.</summary>
+    public IDisposable AcquireHost(string workspaceKey) => Acquire(workspaceKey);
+
+    /// <summary>Acquires the keepalive lease held by a pending worker event.</summary>
+    public IDisposable AcquirePendingEvent(string workspaceKey) => Acquire(workspaceKey);
+
     internal object SyncRoot => _sync;
+
+    internal bool IsActive(string workspaceKey)
+    {
+        lock (_sync) return _counts.TryGetValue(workspaceKey, out var count) && count != 0;
+    }
+
+    private void Release(string workspaceKey)
+    {
+        lock (_sync)
+        {
+            if (!_counts.TryGetValue(workspaceKey, out var count)) return;
+            if (count == 1) _counts.Remove(workspaceKey);
+            else _counts[workspaceKey] = count - 1;
+        }
+    }
+
+    private sealed class ActivityLease : IDisposable
+    {
+        private ProjectRuntimeActivity? _owner;
+        private readonly string _workspaceKey;
+
+        public ActivityLease(ProjectRuntimeActivity owner, string workspaceKey)
+        {
+            _owner = owner;
+            _workspaceKey = workspaceKey;
+        }
+
+        public void Dispose() => Interlocked.Exchange(ref _owner, null)?.Release(_workspaceKey);
+    }
 }
 
 /// <summary>Owns at most one recovered runtime for each canonical project workspace key.</summary>
@@ -32,9 +73,8 @@ public sealed class ProjectRuntimeRegistry : IDisposable
     private readonly Func<JobRepository, string, WorkerRecoveryCoordinator> _recoveryFactory;
     private readonly WorkerWorkTracker _work;
     private readonly Func<DateTimeOffset>? _now;
-    private readonly Func<string, bool> _hasLiveHost;
-    private readonly Func<string, bool> _hasPendingEvents;
-    private readonly object _activity;
+    private readonly ProjectRuntimeActivity _activity;
+    private readonly object _admission = new();
     private readonly ConcurrentDictionary<string, Lazy<ProjectRuntime>> _runtimes = new();
     private readonly ConcurrentDictionary<string, object> _lifecycles = new(StringComparer.Ordinal);
     private int _disposed;
@@ -42,31 +82,27 @@ public sealed class ProjectRuntimeRegistry : IDisposable
     /// <summary>Creates a registry with injected store, recovery, and keepalive boundaries.</summary>
     public ProjectRuntimeRegistry(ProjectDatabaseCatalog catalog,
         Func<JobRepository, string, WorkerRecoveryCoordinator> recoveryFactory,
-        WorkerWorkTracker work, Func<string, bool> hasLiveHost,
-        Func<string, bool> hasPendingEvents, ProjectRuntimeActivity activity,
+        WorkerWorkTracker work, ProjectRuntimeActivity activity,
         Func<DateTimeOffset>? now = null)
-        : this(catalog, recoveryFactory, work, now, hasLiveHost, hasPendingEvents,
-            activity?.SyncRoot ?? throw new ArgumentNullException(nameof(activity))) { }
+        : this(catalog, recoveryFactory, work, now,
+            activity ?? throw new ArgumentNullException(nameof(activity))) { }
 
     internal ProjectRuntimeRegistry(ProjectDatabaseCatalog catalog,
         Func<JobRepository, string, WorkerRecoveryCoordinator> recoveryFactory,
-        WorkerWorkTracker work, Func<DateTimeOffset>? now, ProjectHostRegistry? hosts,
-        Func<string, bool> hasPendingEvents)
+        WorkerWorkTracker work, Func<DateTimeOffset>? now, ProjectHostRegistry? hosts)
         : this(catalog, recoveryFactory, work, now, hosts is null
             ? throw new ArgumentNullException(nameof(hosts))
-            : hosts.HasRegistration, hasPendingEvents, new ProjectRuntimeActivity(hosts.ActivitySync)) { }
+            : hosts.Activity) { }
 
     private ProjectRuntimeRegistry(ProjectDatabaseCatalog catalog,
         Func<JobRepository, string, WorkerRecoveryCoordinator> recoveryFactory,
         WorkerWorkTracker work, Func<DateTimeOffset>? now,
-        Func<string, bool> hasLiveHost, Func<string, bool> hasPendingEvents, object activity)
+        ProjectRuntimeActivity activity)
     {
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         _recoveryFactory = recoveryFactory ?? throw new ArgumentNullException(nameof(recoveryFactory));
         _work = work ?? throw new ArgumentNullException(nameof(work));
         _now = now;
-        _hasLiveHost = hasLiveHost ?? throw new ArgumentNullException(nameof(hasLiveHost));
-        _hasPendingEvents = hasPendingEvents ?? throw new ArgumentNullException(nameof(hasPendingEvents));
         _activity = activity ?? throw new ArgumentNullException(nameof(activity));
     }
 
@@ -79,11 +115,15 @@ public sealed class ProjectRuntimeRegistry : IDisposable
         var lifecycle = _lifecycles.GetOrAdd(key, static _ => new object());
         lock (lifecycle)
         {
-            ThrowIfDisposed();
-            var lazy = _runtimes.GetOrAdd(key, _ => new Lazy<ProjectRuntime>(
-                () => ProjectRuntime.Open(canonical, key, _catalog, _recoveryFactory, _work, _now,
-                    () => _hasLiveHost(key), () => _hasPendingEvents(key)),
-                LazyThreadSafetyMode.ExecutionAndPublication));
+            Lazy<ProjectRuntime> lazy;
+            lock (_admission)
+            {
+                ThrowIfDisposed();
+                lazy = _runtimes.GetOrAdd(key, _ => new Lazy<ProjectRuntime>(
+                    () => ProjectRuntime.Open(canonical, key, _catalog, _recoveryFactory, _work, _now,
+                        () => _activity.IsActive(key), () => _activity.IsActive(key)),
+                    LazyThreadSafetyMode.ExecutionAndPublication));
+            }
             try { return lazy.Value; }
             catch
             {
@@ -124,36 +164,46 @@ public sealed class ProjectRuntimeRegistry : IDisposable
     {
         if (string.IsNullOrWhiteSpace(workspaceKey)) return false;
         var lifecycle = _lifecycles.GetOrAdd(workspaceKey, static _ => new object());
-        lock (_activity)
+        lock (_activity.SyncRoot)
         lock (lifecycle)
         {
-            if (Volatile.Read(ref _disposed) != 0 ||
-                !_runtimes.TryGetValue(workspaceKey, out var lazy) || !lazy.IsValueCreated) return false;
-            ProjectRuntime runtime;
-            try { runtime = lazy.Value; }
-            catch { return false; }
-            if (!runtime.TryBeginReleaseIfIdle()) return false;
-            if (!_runtimes.TryRemove(new KeyValuePair<string, Lazy<ProjectRuntime>>(workspaceKey, lazy)))
+            lock (_admission)
             {
-                runtime.CancelRelease();
-                return false;
+                if (Volatile.Read(ref _disposed) != 0 ||
+                    !_runtimes.TryGetValue(workspaceKey, out var lazy) || !lazy.IsValueCreated) return false;
+                ProjectRuntime runtime;
+                try { runtime = lazy.Value; }
+                catch { return false; }
+                if (!runtime.TryBeginReleaseIfIdle()) return false;
+                if (!_runtimes.TryRemove(new KeyValuePair<string, Lazy<ProjectRuntime>>(workspaceKey, lazy)))
+                {
+                    runtime.CancelRelease();
+                    return false;
+                }
+                runtime.Dispose();
+                return true;
             }
-            runtime.Dispose();
-            return true;
         }
     }
 
     /// <summary>Disposes all opened project runtimes and reports every disposal failure.</summary>
     public void Dispose()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        KeyValuePair<string, Lazy<ProjectRuntime>>[] snapshot;
+        lock (_admission)
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+            snapshot = _runtimes.ToArray();
+            _runtimes.Clear();
+        }
         var failures = new List<Exception>();
-        foreach (var pair in _runtimes.ToArray())
+        foreach (var pair in snapshot)
         {
             var lifecycle = _lifecycles.GetOrAdd(pair.Key, static _ => new object());
             lock (lifecycle)
             {
-                if (!_runtimes.TryRemove(pair.Key, out var lazy) || !lazy.IsValueCreated) continue;
+                var lazy = pair.Value;
+                if (!lazy.IsValueCreated) continue;
                 try { lazy.Value.Dispose(); }
                 catch (Exception exception) { failures.Add(exception); }
             }

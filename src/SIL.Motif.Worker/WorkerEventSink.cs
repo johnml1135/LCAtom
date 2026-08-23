@@ -15,7 +15,7 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
 {
     internal const int PendingCorrelationCapacity = 128;
     private readonly object _gate = new();
-    private readonly object _activity;
+    private readonly ProjectRuntimeActivity _activity;
     private readonly IProjectHostRegistry _hosts;
     private readonly bool _ownsHosts;
     private readonly Dictionary<string, PendingEvent> _pending = new(StringComparer.Ordinal);
@@ -32,7 +32,9 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
     private WorkerEventSink(IProjectHostRegistry hosts, bool ownsHosts)
     {
         _hosts = hosts ?? throw new ArgumentNullException(nameof(hosts));
-        _activity = hosts is ProjectHostRegistry projectHosts ? projectHosts.ActivitySync : new object();
+        _activity = hosts is ProjectHostRegistry projectHosts
+            ? projectHosts.Activity
+            : new ProjectRuntimeActivity();
         _ownsHosts = ownsHosts;
     }
 
@@ -41,11 +43,11 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
     {
         if (stream is null) throw new ArgumentNullException(nameof(stream));
         if (writeGate is null) throw new ArgumentNullException(nameof(writeGate));
-        lock (_activity)
+        lock (_activity.SyncRoot)
         lock (_gate)
         {
             ThrowIfDisposed();
-            _hosts.Register(project, new ProjectHostRegistration(connectionId, hostSessionId,
+            _hosts.Register(project, new ProjectHostRegistration(project, connectionId, hostSessionId,
                 protocolVersion, stream, writeGate));
         }
     }
@@ -53,7 +55,7 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
     internal void UnregisterLiveHost(ProjectLocator project, string connectionId, string hostSessionId)
     {
         var key = ProjectWorkspaceKey.Compute(project);
-        lock (_activity)
+        lock (_activity.SyncRoot)
         lock (_gate)
         {
             if (_disposed) return;
@@ -64,7 +66,7 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
 
     internal bool HasPendingEvents(string workspaceKey)
     {
-        lock (_activity)
+        lock (_activity.SyncRoot)
         lock (_gate)
         {
             foreach (var pending in _pending.Values)
@@ -79,7 +81,7 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(project);
         var key = ProjectWorkspaceKey.Compute(project);
-        lock (_activity)
+        lock (_activity.SyncRoot)
         lock (_gate)
         {
             ThrowIfDisposed();
@@ -110,14 +112,15 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
     public void AcceptResult(WorkerEventResultEnvelope result)
     {
         ArgumentNullException.ThrowIfNull(result);
-        lock (_activity)
+        lock (_activity.SyncRoot)
         lock (_gate)
         {
             if (!_pending.TryGetValue(result.EventId, out var pending))
                 throw new InvalidOperationException("The event result identifier is unknown or duplicated.");
             if (result.ProtocolVersion != pending.ProtocolVersion)
                 throw new InvalidOperationException("The event result protocol is not negotiated.");
-            _pending.Remove(result.EventId);
+            _pending.Remove(result.EventId, out var removed);
+            removed.ActivityLease.Dispose();
             pending.Completion.TrySetResult(result);
         }
     }
@@ -129,7 +132,7 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
     public ValueTask DisposeAsync()
     {
         Task disposeTask;
-        lock (_activity)
+        lock (_activity.SyncRoot)
         lock (_gate)
         {
             if (_disposeTask is null)
@@ -153,7 +156,7 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
             throw new ArgumentException("Unknown worker event discriminator.", nameof(eventName));
         WorkerEventEnvelope envelope;
         TaskCompletionSource<WorkerEventResultEnvelope> completion;
-        lock (_activity)
+        lock (_activity.SyncRoot)
         lock (_gate)
         {
             ThrowIfDisposed();
@@ -163,7 +166,8 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
                 registration.ProtocolVersion);
             completion = new TaskCompletionSource<WorkerEventResultEnvelope>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
-            _pending.Add(envelope.EventId, new PendingEvent(workspaceKey, registration.ProtocolVersion, completion));
+            _pending.Add(envelope.EventId, new PendingEvent(workspaceKey, registration.ProtocolVersion,
+                completion, _activity.AcquirePendingEvent(workspaceKey)));
         }
         return SendCoreAsync(envelope, registration, completion, cancellationToken);
     }
@@ -183,12 +187,15 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
         }
         finally
         {
+            IDisposable? activityLease = null;
             lock (_gate)
             {
-                _pending.Remove(envelope.EventId);
+                if (_pending.Remove(envelope.EventId, out var pending))
+                    activityLease = pending.ActivityLease;
                 _activeWrites--;
                 if (_disposed && _activeWrites == 0) _writesQuiesced?.TrySetResult(true);
             }
+            activityLease?.Dispose();
         }
     }
 
@@ -198,6 +205,7 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
         {
             if (workspaceKey is not null && !StringComparer.Ordinal.Equals(pair.Value.WorkspaceKey, workspaceKey)) continue;
             _pending.Remove(pair.Key);
+            pair.Value.ActivityLease.Dispose();
             pair.Value.Completion.TrySetException(exception);
         }
     }
@@ -214,5 +222,5 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
     }
 
     private sealed record PendingEvent(string WorkspaceKey, int ProtocolVersion,
-        TaskCompletionSource<WorkerEventResultEnvelope> Completion);
+        TaskCompletionSource<WorkerEventResultEnvelope> Completion, IDisposable ActivityLease);
 }

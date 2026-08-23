@@ -102,8 +102,7 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
     {
         if (_workTracker is not WorkerWorkTracker work)
             throw new InvalidOperationException("Runtime composition requires the worker work tracker.");
-        return new ProjectRuntimeRegistry(catalog, recoveryFactory, work, now, _hostRegistry,
-            _eventSink.HasPendingEvents);
+        return new ProjectRuntimeRegistry(catalog, recoveryFactory, work, now, _hostRegistry);
     }
 
     /// <summary>Derives the stable control pipe name for the current Windows user.</summary>
@@ -234,8 +233,9 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
             finally
             {
                 if (connection is not null)
+                    await connection.DisposeAsync().ConfigureAwait(false);
+                if (connection is not null)
                     _connections.TryRemove(connection.Id, out _);
-                connection?.UnregisterLiveHost();
             }
         }
     }
