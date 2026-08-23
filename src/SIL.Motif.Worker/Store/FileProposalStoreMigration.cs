@@ -16,16 +16,29 @@ public static class FileProposalStoreMigration
         LegacyProposalStoreLayout source,
         MotifDatabase destination,
         Action<string>? afterBoundary = null,
-        bool renameSourceAfterCommit = true)
+        bool renameSourceAfterCommit = true,
+        Action? beforeCommit = null,
+        Action? beforeArchive = null)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(destination);
         var sourcePath = Path.GetFullPath(source.RootDirectory);
+        if (PathsEqual(sourcePath, destination.FullPath))
+            throw new InvalidOperationException("A file Proposal source cannot be the destination Motif database.");
         var sourceFiles = ReadSourceFiles(source);
         var digest = Digest(sourceFiles.Values);
         using var connection = destination.OpenConnection();
         if (LedgerExists(connection, "file-proposals", sourcePath, digest))
+        {
+            if (renameSourceAfterCommit && Directory.Exists(source.RootDirectory))
+            {
+                beforeArchive?.Invoke();
+                EnsureSourceDigest(source, digest);
+                ArchiveSource(source.RootDirectory);
+                return new ProposalMigrationResult(Array.Empty<string>(), sourceFiles.Count, digest, true);
+            }
             return ProposalMigrationResult.Empty(digest);
+        }
         if (sourceFiles.Count == 0)
             return ProposalMigrationResult.Empty(digest);
 
@@ -33,36 +46,32 @@ public static class FileProposalStoreMigration
         try
         {
             var objects = ReadObjectNames(sourceFiles);
-            var manifests = ReadManifests(sourceFiles);
+            var manifests = ReadManifests(sourceFiles).Select(ToManifestInfo).ToList();
+            ValidateObjectsAndManifests(objects, manifests);
             var imported = new List<string>();
             foreach (var manifest in manifests)
             {
-                var id = RequiredString(manifest.Text, "proposalId");
-                var intent = RequiredString(manifest.Text, "currentIntentDigest");
-                var objectName = intent.StartsWith("sha256:", StringComparison.Ordinal) ? intent["sha256:".Length..] : intent;
-                if (!objects.TryGetValue(objectName, out var objectFile))
-                    throw new InvalidDataException($"Manifest '{manifest.Name}' points to missing Proposal object '{intent}'.");
-                var proposalJson = objectFile.Text;
-                var status = OptionalString(manifest.Text, "status") ?? "proposed";
-                var label = OptionalString(manifest.Text, "label");
-                var comment = OptionalString(manifest.Text, "comment");
-                var superseded = OptionalString(manifest.Text, "supersededBy");
-                var envelope = ProposalJsonParser.Parse(proposalJson);
-                if (!string.Equals(envelope.ProposalId.Value, id, StringComparison.Ordinal) ||
-                    !string.Equals(IntentDigest.Compute(envelope), intent, StringComparison.Ordinal))
-                    throw new InvalidDataException($"Proposal object '{intent}' does not match manifest '{id}'.");
-                UpsertProposal(connection, transaction, id, intent, proposalJson, objectFile.Bytes, status, label, comment, superseded);
+                UpsertProposal(connection, transaction, manifest.Id, manifest.CurrentIntentDigest, manifest.Status,
+                    manifest.Label, manifest.Comment, manifest.SupersededBy, manifest.AnchorJson);
                 afterBoundary?.Invoke("Proposals");
-                UpsertRevision(connection, transaction, id, intent, proposalJson, objectFile.Bytes, status, label, comment);
+                imported.Add(manifest.Id);
+            }
+
+            foreach (var objectFile in objects.Values)
+            {
+                var envelope = ProposalJsonParser.Parse(objectFile.File.Text);
+                UpsertRevision(connection, transaction, envelope.ProposalId.Value, objectFile.Digest,
+                    objectFile.File.Bytes);
                 afterBoundary?.Invoke("ProposalRevisions");
-                if (TryDecision(manifest.Text, out var decision))
+            }
+
+            foreach (var manifest in manifests)
+            {
+                if (manifest.Decision is not null)
                 {
-                    if (!string.Equals(decision.BoundIntentDigest, intent, StringComparison.Ordinal))
-                        throw new InvalidDataException($"Decision for Proposal '{id}' is bound to a different intent digest.");
-                    UpsertDecision(connection, transaction, id, intent, decision);
+                    UpsertDecision(connection, transaction, manifest.Id, manifest.CurrentIntentDigest, manifest.Decision.Value);
                     afterBoundary?.Invoke("Decisions");
                 }
-                imported.Add(id);
             }
 
             foreach (var draft in ReadDrafts(sourceFiles))
@@ -82,12 +91,21 @@ public static class FileProposalStoreMigration
                 afterBoundary?.Invoke("Drafts");
             }
 
-            AddLedger(connection, transaction, "file-proposals", sourcePath, digest);
+            beforeCommit?.Invoke();
+            var finalFiles = ReadSourceFiles(source);
+            var finalDigest = Digest(finalFiles.Values);
+            if (!string.Equals(finalDigest, digest, StringComparison.Ordinal))
+                throw new InvalidDataException("The file Proposal source changed during migration.");
+            AddLedger(connection, transaction, "file-proposals", sourcePath, finalDigest);
             afterBoundary?.Invoke("MigrationLedger");
             VerifyForeignKeys(connection, transaction);
             transaction.Commit();
             if (renameSourceAfterCommit)
+            {
+                beforeArchive?.Invoke();
+                EnsureSourceDigest(source, digest);
                 ArchiveSource(source.RootDirectory);
+            }
             return new ProposalMigrationResult(imported, sourceFiles.Count, digest, renameSourceAfterCommit);
         }
         catch
@@ -101,17 +119,27 @@ public static class FileProposalStoreMigration
     private static Dictionary<string, SourceFile> ReadSourceFiles(LegacyProposalStoreLayout source)
     {
         var result = new Dictionary<string, SourceFile>(StringComparer.Ordinal);
-        foreach (var path in DirectoryFiles(source.ObjectsDirectory, "*.json"))
+        foreach (var path in JsonFiles(source.ObjectsDirectory))
             result["objects/" + RelativeName(path, source.ObjectsDirectory)] = Read(path, "objects/" + RelativeName(path, source.ObjectsDirectory));
-        foreach (var path in DirectoryFiles(source.ManifestsDirectory, "*.json"))
+        foreach (var path in JsonFiles(source.ManifestsDirectory))
             result["manifests/" + RelativeName(path, source.ManifestsDirectory)] = Read(path, "manifests/" + RelativeName(path, source.ManifestsDirectory));
-        foreach (var path in DirectoryFiles(source.DraftsDirectory, "*.json"))
+        foreach (var path in JsonFiles(source.DraftsDirectory))
             result["drafts/" + RelativeName(path, source.DraftsDirectory)] = Read(path, "drafts/" + RelativeName(path, source.DraftsDirectory));
         return result;
     }
 
     private static IEnumerable<string> DirectoryFiles(string directory, string pattern)
         => Directory.Exists(directory) ? Directory.GetFiles(directory, pattern, SearchOption.AllDirectories).OrderBy(path => path, StringComparer.Ordinal) : [];
+
+    private static IEnumerable<string> JsonFiles(string directory)
+    {
+        foreach (var path in DirectoryFiles(directory, "*"))
+        {
+            if (!path.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException($"Legacy Proposal store contains a non-JSON file '{path}'.");
+            yield return path;
+        }
+    }
 
     private static string RelativeName(string path, string directory) =>
         Path.GetRelativePath(directory, path).Replace(Path.DirectorySeparatorChar, '/');
@@ -129,23 +157,75 @@ public static class FileProposalStoreMigration
         }
     }
 
-    private static Dictionary<string, SourceFile> ReadObjectNames(Dictionary<string, SourceFile> files)
+    private static Dictionary<string, ObjectFile> ReadObjectNames(Dictionary<string, SourceFile> files)
     {
-        var objects = new Dictionary<string, SourceFile>(StringComparer.Ordinal);
+        var objects = new Dictionary<string, ObjectFile>(StringComparer.Ordinal);
         foreach (var file in files.Values.Where(f => f.Name.StartsWith("objects/", StringComparison.Ordinal)))
-            objects[Path.GetFileNameWithoutExtension(file.Name)] = file;
+        {
+            var name = TrimJsonSuffix(file.Name["objects/".Length..]);
+            var digest = name.StartsWith("sha256:", StringComparison.Ordinal) ? name : "sha256:" + name;
+            if (!objects.TryAdd(digest, new ObjectFile(digest, file)))
+                throw new InvalidDataException($"Duplicate Proposal object digest '{digest}'.");
+        }
         return objects;
     }
 
     private static List<ManifestFile> ReadManifests(Dictionary<string, SourceFile> files) =>
         files.Values.Where(f => f.Name.StartsWith("manifests/", StringComparison.Ordinal))
-            .Select(f => new ManifestFile(Path.GetFileNameWithoutExtension(f.Name), f.Text, f))
+            .Select(f => new ManifestFile(TrimJsonSuffix(f.Name["manifests/".Length..]), f.Text, f))
             .OrderBy(f => f.Name, StringComparer.Ordinal).ToList();
 
     private static List<DraftFile> ReadDrafts(Dictionary<string, SourceFile> files) =>
         files.Values.Where(f => f.Name.StartsWith("drafts/", StringComparison.Ordinal))
-            .Select(f => new DraftFile(Path.GetFileNameWithoutExtension(f.Name), f.Text))
+            .Select(f => new DraftFile(TrimJsonSuffix(f.Name["drafts/".Length..]), f.Text))
             .OrderBy(f => f.Name, StringComparer.Ordinal).ToList();
+
+    private static ManifestInfo ToManifestInfo(ManifestFile manifest)
+    {
+        var id = RequiredString(manifest.Text, "proposalId");
+        if (!string.Equals(manifest.Name, id, StringComparison.Ordinal))
+            throw new InvalidDataException($"Manifest filename '{manifest.Name}' does not match Proposal id '{id}'.");
+        var current = RequiredString(manifest.Text, "currentIntentDigest");
+        DecisionValues? decision = TryDecision(manifest.Text, out var parsedDecision) ? parsedDecision : null;
+        if (decision is not null && !string.Equals(decision.Value.BoundIntentDigest, current, StringComparison.Ordinal))
+            throw new InvalidDataException($"Decision for Proposal '{id}' is bound to a different intent digest.");
+        return new ManifestInfo(id, current, OptionalString(manifest.Text, "status") ?? "proposed",
+            OptionalString(manifest.Text, "label"), OptionalString(manifest.Text, "comment"),
+            OptionalString(manifest.Text, "supersededBy"), OptionalRaw(manifest.Text, "anchor"), decision);
+    }
+
+    private static void ValidateObjectsAndManifests(
+        IReadOnlyDictionary<string, ObjectFile> objects, IReadOnlyList<ManifestInfo> manifests)
+    {
+        var manifestIds = manifests.Select(manifest => manifest.Id).ToHashSet(StringComparer.Ordinal);
+        foreach (var objectFile in objects.Values)
+        {
+            var envelope = ProposalJsonParser.Parse(objectFile.File.Text);
+            var computed = IntentDigest.Compute(envelope);
+            if (!string.Equals(computed, objectFile.Digest, StringComparison.Ordinal))
+                throw new InvalidDataException($"Proposal object filename digest '{objectFile.Digest}' does not match its content.");
+            if (!manifestIds.Contains(envelope.ProposalId.Value))
+                throw new InvalidDataException($"Proposal object '{objectFile.Digest}' has no matching manifest.");
+        }
+        foreach (var manifest in manifests)
+        {
+            if (!objects.TryGetValue(manifest.CurrentIntentDigest, out var objectFile))
+                throw new InvalidDataException($"Manifest '{manifest.Id}' points at missing Proposal object '{manifest.CurrentIntentDigest}'.");
+            var envelope = ProposalJsonParser.Parse(objectFile.File.Text);
+            if (!string.Equals(envelope.ProposalId.Value, manifest.Id, StringComparison.Ordinal))
+                throw new InvalidDataException($"Proposal object '{manifest.CurrentIntentDigest}' does not match manifest '{manifest.Id}'.");
+        }
+    }
+
+    private static string? OptionalRaw(string json, string property)
+    {
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.TryGetProperty(property, out var value) && value.ValueKind != JsonValueKind.Null
+            ? value.GetRawText() : null;
+    }
+
+    private static string TrimJsonSuffix(string name) =>
+        name.EndsWith(".json", StringComparison.Ordinal) ? name[..^5] : name;
 
     private static string RequiredString(string json, string property)
         => OptionalString(json, property) ?? throw new InvalidDataException($"File Proposal JSON is missing '{property}'.");
@@ -176,7 +256,7 @@ public static class FileProposalStoreMigration
     }
 
     private static void UpsertRevision(SqliteConnection connection, SqliteTransaction transaction, string id, string digest,
-        string json, byte[] bytes, string status, string? label, string? comment)
+        byte[] bytes)
     {
         using (var check = connection.CreateCommand())
         {
@@ -185,9 +265,14 @@ public static class FileProposalStoreMigration
             check.Parameters.AddWithValue("$id", id);
             check.Parameters.AddWithValue("$digest", digest);
             var existing = check.ExecuteScalar();
-            if (existing is byte[] existingBytes && !existingBytes.SequenceEqual(bytes))
-                throw new InvalidDataException($"Proposal revision '{digest}' already exists with different bytes.");
-            if (existing is not null) return;
+            if (existing is not null && existing is not byte[])
+                throw new InvalidDataException("Proposal revision JSON is not stored as a BLOB.");
+            if (existing is byte[] existingBytes)
+            {
+                if (!existingBytes.SequenceEqual(bytes))
+                    throw new InvalidDataException($"Proposal revision '{digest}' already exists with different bytes.");
+                return;
+            }
         }
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -197,28 +282,34 @@ public static class FileProposalStoreMigration
             VALUES ($id, $digest, $bytes, $utc)
             ON CONFLICT(ProposalId, IntentDigest) DO NOTHING;
             """;
-        Add(command, id, digest, json, status, label, comment);
+        command.Parameters.AddWithValue("$id", id);
+        command.Parameters.AddWithValue("$digest", digest);
         command.Parameters.AddWithValue("$bytes", bytes);
         command.Parameters.AddWithValue("$utc", DateTimeOffset.UtcNow.ToString("O"));
         command.ExecuteNonQuery();
     }
 
     private static void UpsertProposal(SqliteConnection connection, SqliteTransaction transaction, string id, string digest,
-        string json, byte[] bytes, string status, string? label, string? comment, string? superseded)
+        string status, string? label, string? comment, string? superseded, string? anchorJson)
     {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
             INSERT INTO Proposals
-                (ProposalId, CurrentIntentDigest, Status, Label, Comment, SupersededBy)
-            VALUES ($id, $digest, $status, $label, $comment, $superseded)
+                (ProposalId, CurrentIntentDigest, Status, Label, Comment, SupersededBy, AnchorJson)
+            VALUES ($id, $digest, $status, $label, $comment, $superseded, $anchor)
             ON CONFLICT(ProposalId) DO UPDATE SET CurrentIntentDigest = excluded.CurrentIntentDigest,
                 Status = excluded.Status, Label = excluded.Label,
-                Comment = excluded.Comment, SupersededBy = excluded.SupersededBy;
+                Comment = excluded.Comment, SupersededBy = excluded.SupersededBy,
+                AnchorJson = excluded.AnchorJson;
             """;
-        Add(command, id, digest, json, status, label, comment);
-        command.Parameters.AddWithValue("$bytes", bytes);
+        command.Parameters.AddWithValue("$id", id);
+        command.Parameters.AddWithValue("$digest", digest);
+        command.Parameters.AddWithValue("$status", status);
+        command.Parameters.AddWithValue("$label", (object?)label ?? DBNull.Value);
+        command.Parameters.AddWithValue("$comment", (object?)comment ?? DBNull.Value);
         command.Parameters.AddWithValue("$superseded", (object?)superseded ?? DBNull.Value);
+        command.Parameters.AddWithValue("$anchor", (object?)anchorJson ?? DBNull.Value);
         command.ExecuteNonQuery();
     }
 
@@ -243,16 +334,6 @@ public static class FileProposalStoreMigration
         command.ExecuteNonQuery();
     }
 
-    private static void Add(SqliteCommand command, string id, string digest, string json, string status, string? label, string? comment)
-    {
-        command.Parameters.AddWithValue("$id", id);
-        command.Parameters.AddWithValue("$digest", digest);
-        command.Parameters.AddWithValue("$json", json);
-        command.Parameters.AddWithValue("$status", status);
-        command.Parameters.AddWithValue("$label", (object?)label ?? DBNull.Value);
-        command.Parameters.AddWithValue("$comment", (object?)comment ?? DBNull.Value);
-    }
-
     private static void VerifyForeignKeys(SqliteConnection connection, SqliteTransaction transaction)
     {
         using var command = connection.CreateCommand();
@@ -262,9 +343,11 @@ public static class FileProposalStoreMigration
         if (reader.Read()) throw new InvalidDataException("Proposal file migration produced a foreign-key violation.");
     }
 
-    internal static bool LedgerExists(SqliteConnection connection, string kind, string path, string digest)
+    internal static bool LedgerExists(SqliteConnection connection, string kind, string path, string digest,
+        SqliteTransaction? transaction = null)
     {
         using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = "SELECT 1 FROM MigrationLedger WHERE SourceKind = $kind AND SourcePath = $path AND SourceDigest = $digest;";
         command.Parameters.AddWithValue("$kind", kind);
         command.Parameters.AddWithValue("$path", path);
@@ -293,11 +376,32 @@ public static class FileProposalStoreMigration
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         foreach (var file in files.OrderBy(f => f.Name, StringComparer.Ordinal))
         {
-            hash.AppendData(Encoding.UTF8.GetBytes(file.Name));
-            hash.AppendData(new byte[] { 0 });
-            hash.AppendData(file.Bytes);
+            AppendFrame(hash, Encoding.UTF8.GetBytes(file.Name));
+            AppendFrame(hash, file.Bytes);
         }
         return "sha256:" + Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+    }
+
+    private static void AppendFrame(IncrementalHash hash, byte[] bytes)
+    {
+        Span<byte> length = stackalloc byte[8];
+        System.Buffers.Binary.BinaryPrimitives.WriteInt64LittleEndian(length, bytes.Length);
+        hash.AppendData(length);
+        hash.AppendData(bytes);
+    }
+
+    private static bool PathsEqual(string left, string right)
+    {
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        return string.Equals(Path.GetFullPath(left).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            Path.GetFullPath(right).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), comparison);
+    }
+
+    private static void EnsureSourceDigest(LegacyProposalStoreLayout source, string expectedDigest)
+    {
+        if (!Directory.Exists(source.RootDirectory) ||
+            !string.Equals(Digest(ReadSourceFiles(source).Values), expectedDigest, StringComparison.Ordinal))
+            throw new InvalidDataException("The file Proposal source changed before archival.");
     }
 
     private static void ArchiveSource(string path)
@@ -305,13 +409,16 @@ public static class FileProposalStoreMigration
         var baseArchive = path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + ".migrated";
         var archive = baseArchive;
         var suffix = 1;
-        while (Directory.Exists(archive))
+        while (Directory.Exists(archive) || File.Exists(archive))
             archive = baseArchive + "-" + suffix++;
         Directory.Move(path, archive);
     }
 
     internal sealed record SourceFile(string Name, byte[] Bytes, string Text);
+    private sealed record ObjectFile(string Digest, SourceFile File);
     private sealed record ManifestFile(string Name, string Text, SourceFile Source);
+    private sealed record ManifestInfo(string Id, string CurrentIntentDigest, string Status, string? Label,
+        string? Comment, string? SupersededBy, string? AnchorJson, DecisionValues? Decision);
     private sealed record DraftFile(string Name, string Text);
     private readonly record struct DecisionValues(string Outcome, string ActorType, string ActorId, string? Comment,
         string BoundIntentDigest, string TimestampUtc);

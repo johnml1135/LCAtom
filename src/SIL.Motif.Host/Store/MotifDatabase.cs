@@ -156,6 +156,9 @@ public sealed class MotifDatabase : IDisposable
         }
     }
 
+    /// <summary>Gets the fully resolved path of the owned Motif database.</summary>
+    public string FullPath => _path;
+
     internal int TrackedConnectionCount
     {
         get

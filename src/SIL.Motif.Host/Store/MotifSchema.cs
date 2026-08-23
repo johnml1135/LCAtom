@@ -408,7 +408,7 @@ public static class MotifSchema
         "Proposals" =>
         [C("ProposalId", "TEXT", false, 1), C("CurrentIntentDigest", "TEXT", true),
             C("Status", "TEXT", true), C("Label", "TEXT"),
-            C("Comment", "TEXT"), C("SupersededBy", "TEXT")],
+            C("Comment", "TEXT"), C("SupersededBy", "TEXT"), C("AnchorJson", "TEXT")],
         "ProposalRevisions" =>
         [C("ProposalId", "TEXT", true, 1), C("IntentDigest", "TEXT", true, 2),
             C("ProposalJson", "BLOB", true), C("CreatedUtc", "TEXT", true)],
@@ -557,7 +557,8 @@ public static class MotifSchema
             Status TEXT NOT NULL,
             Label TEXT NULL,
             Comment TEXT NULL,
-            SupersededBy TEXT NULL
+            SupersededBy TEXT NULL,
+            AnchorJson TEXT NULL
         );
 
         CREATE TABLE IF NOT EXISTS ProposalRevisions (

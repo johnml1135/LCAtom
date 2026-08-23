@@ -22,7 +22,8 @@ public interface IProposalRepository
 /// <summary>The current pointer and review state of a Proposal.</summary>
 public sealed record ProposalRecord(
     CanonicalId ProposalId, string IntentDigest, string ProposalJson, string Status, string? Label,
-    string? Comment, string? SupersededBy, DecisionRecord? Decision = null, byte[]? ProposalJsonBytes = null);
+    string? Comment, string? SupersededBy, DecisionRecord? Decision = null, byte[]? ProposalJsonBytes = null,
+    string? AnchorJson = null);
 
 /// <summary>An immutable Proposal revision, retaining the exact source JSON bytes.</summary>
 public sealed record ProposalRevisionRecord(
@@ -54,7 +55,7 @@ public sealed class ProposalRepository : IProposalRepository
         command.CommandText = """
             SELECT p.ProposalId, p.CurrentIntentDigest, r.ProposalJson,
                    p.Status, p.Label, p.Comment, p.SupersededBy,
-                   d.Outcome, d.ActorType, d.ActorId, d.Comment, d.TimestampUtc, d.IntentDigest
+                   d.Outcome, d.ActorType, d.ActorId, d.Comment, d.TimestampUtc, d.IntentDigest, p.AnchorJson
             FROM Proposals p JOIN ProposalRevisions r ON r.ProposalId = p.ProposalId
                 AND r.IntentDigest = p.CurrentIntentDigest
             LEFT JOIN Decisions d ON d.ProposalId = p.ProposalId AND d.IntentDigest = p.CurrentIntentDigest
@@ -78,7 +79,7 @@ public sealed class ProposalRepository : IProposalRepository
         command.CommandText = """
             SELECT p.ProposalId, p.CurrentIntentDigest, r.ProposalJson,
                    p.Status, p.Label, p.Comment, p.SupersededBy,
-                   d.Outcome, d.ActorType, d.ActorId, d.Comment, d.TimestampUtc, d.IntentDigest
+                   d.Outcome, d.ActorType, d.ActorId, d.Comment, d.TimestampUtc, d.IntentDigest, p.AnchorJson
             FROM Proposals p JOIN ProposalRevisions r ON r.ProposalId = p.ProposalId
                 AND r.IntentDigest = p.CurrentIntentDigest
             LEFT JOIN Decisions d ON d.ProposalId = p.ProposalId AND d.IntentDigest = p.CurrentIntentDigest
@@ -112,7 +113,7 @@ public sealed class ProposalRepository : IProposalRepository
                 VALUES ($id, $digest, $status, $label, $comment, $superseded)
                 ON CONFLICT(ProposalId) DO UPDATE SET CurrentIntentDigest = excluded.CurrentIntentDigest,
                     Status = excluded.Status, Label = excluded.Label, Comment = excluded.Comment,
-                    SupersededBy = excluded.SupersededBy;
+                    SupersededBy = excluded.SupersededBy, AnchorJson = NULL;
                 """;
             AddParameters(parent, revision, bytes);
             parent.Parameters.AddWithValue("$superseded", (object?)revision.SupersededBy ?? DBNull.Value);
@@ -131,7 +132,8 @@ public sealed class ProposalRepository : IProposalRepository
             using var reader = check.ExecuteReader();
             if (reader.Read())
             {
-                var existingBytes = (byte[])reader[0];
+                if (reader[0] is not byte[] existingBytes)
+                    throw new InvalidDataException("Proposal revision JSON is not stored as a BLOB.");
                 if (!existingBytes.SequenceEqual(bytes))
                     throw new InvalidDataException(
                         $"Proposal revision '{revision.IntentDigest}' already exists with different content.");
@@ -227,6 +229,7 @@ public sealed class ProposalRepository : IProposalRepository
         }
         return new ProposalRecord(proposalId, reader.GetString(1), json, reader.GetString(3),
             reader.IsDBNull(4) ? null : reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5),
-            reader.IsDBNull(6) ? null : reader.GetString(6), decision, bytes);
+            reader.IsDBNull(6) ? null : reader.GetString(6), decision, bytes,
+            reader.IsDBNull(13) ? null : reader.GetString(13));
     }
 }

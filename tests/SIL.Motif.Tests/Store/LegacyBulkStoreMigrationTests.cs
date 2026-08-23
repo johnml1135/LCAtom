@@ -13,6 +13,39 @@ public sealed class LegacyBulkStoreMigrationTests : IDisposable
     public LegacyBulkStoreMigrationTests() => Directory.CreateDirectory(_root);
 
     [Fact]
+    public void RejectsSelfImportBeforeAttachingOrMovingDestination()
+    {
+        var path = Path.Combine(_root, "self.motif.db");
+        var project = new ProjectLocator(Path.Combine(_root, "self.fwdata"), "self");
+        using var database = MotifDatabase.OpenOwned(path, project, MotifSchema.CurrentSchema, new Version(1, 0));
+
+        Assert.Throws<InvalidOperationException>(() => LegacyBulkStoreMigration.ImportInto(path, database));
+        Assert.True(File.Exists(path));
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM MotifMetadata;";
+        Assert.Equal(1L, Convert.ToInt64(command.ExecuteScalar()));
+    }
+
+    [Fact]
+    public void RetriesArchiveAfterCommitFailureUsingLedger()
+    {
+        var root = Path.Combine(_root, "archive-retry");
+        var path = CreateLegacySource(root);
+        var project = new ProjectLocator(Path.Combine(root, "project.fwdata"), "project");
+        using var database = MotifDatabase.OpenOwned(Path.Combine(root, "project.motif.db"), project,
+            MotifSchema.CurrentSchema, new Version(1, 0));
+
+        Assert.Throws<IOException>(() => LegacyBulkStoreMigration.ImportInto(path, database,
+            renameSourceAfterCommit: true, beforeArchive: () => throw new IOException("archive seam")));
+        Assert.True(File.Exists(path));
+        var retry = LegacyBulkStoreMigration.ImportInto(path, database);
+        Assert.True(retry.SourceRenamed);
+        Assert.False(File.Exists(path));
+        Assert.True(File.Exists(path + ".migrated"));
+    }
+
+    [Fact]
     public void CopiesLegacyTypedRowsAndRecordsSourceDigest()
     {
         var legacyPath = Path.Combine(_root, "legacy.db");

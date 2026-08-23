@@ -125,9 +125,49 @@ public sealed class FileProposalStoreMigrationTests : IDisposable
         Assert.True(Directory.Exists(replacement.Layout.RootDirectory + ".migrated-1"));
         Assert.True(File.Exists(source.Layout.RootDirectory + ".migrated" + Path.DirectorySeparatorChar + "objects" + Path.DirectorySeparatorChar + Path.GetFileName(source.ObjectPath)));
 
+        var oppositeKind = SeedSource(Path.Combine(_root, "collision-file"));
+        File.WriteAllText(oppositeKind.Layout.RootDirectory + ".migrated", "prior archive file");
+        FileProposalStoreMigration.ImportInto(oppositeKind.Layout, database);
+        Assert.Equal("prior archive file", File.ReadAllText(oppositeKind.Layout.RootDirectory + ".migrated"));
+        Assert.True(Directory.Exists(oppositeKind.Layout.RootDirectory + ".migrated-1"));
+
         var invalid = SeedSource(Path.Combine(_root, "invalid"));
         File.WriteAllBytes(invalid.ObjectPath, [0xC3, 0x28]);
         Assert.Throws<InvalidDataException>(() => FileProposalStoreMigration.ImportInto(invalid.Layout, database, renameSourceAfterCommit: false));
+    }
+
+    [Fact]
+    public void ImportsEveryHistoricalRevisionAndPreservesAnchorJson()
+    {
+        var root = Path.Combine(_root, "history");
+        var store = new ProposalStore(Path.Combine(root, "files"));
+        store.EnsureDirectoriesExist();
+        var id = SIL.Motif.Contract.Ids.CanonicalId.Mint("proposal/").Value;
+        var requiredId = SIL.Motif.Contract.Ids.CanonicalId.Mint("dependency/").Value;
+        var firstJson = "{\"contractVersions\":{},\"proposalId\":\"" + id + "\",\"requires\":[],\"operations\":[]}";
+        var currentJson = "{\"contractVersions\":{},\"proposalId\":\"" + id + "\",\"requires\":[\"" + requiredId + "\"],\"operations\":[]}";
+        var firstDigest = IntentDigest.Compute(ProposalJsonParser.Parse(firstJson));
+        var currentDigest = IntentDigest.Compute(ProposalJsonParser.Parse(currentJson));
+        File.WriteAllText(store.ObjectPath(firstDigest), firstJson);
+        File.WriteAllText(store.ObjectPath(currentDigest), currentJson);
+        Directory.CreateDirectory(Path.GetDirectoryName(store.ManifestPath(id))!);
+        var anchor = "{\"intentDigest\":\"" + currentDigest + "\",\"footprintDigest\":\"fp\",\"effectDigest\":\"ef\",\"runnerVersion\":\"r\",\"libLcmVersion\":\"l\",\"projectionVersion\":\"p\",\"dryRunAtUtc\":\"t\"}";
+        File.WriteAllText(store.ManifestPath(id), "{\"proposalId\":\"" + id + "\",\"status\":\"proposed\",\"currentIntentDigest\":\"" +
+            currentDigest + "\",\"anchor\":" + anchor + "}");
+        var project = new ProjectLocator(Path.Combine(root, "project.fwdata"), "project");
+        using var database = MotifDatabase.OpenOwned(Path.Combine(root, "project.motif.db"), project,
+            MotifSchema.CurrentSchema, new Version(1, 0));
+
+        FileProposalStoreMigration.ImportInto(new LegacyProposalStoreLayout(store.RootDirectory), database,
+            renameSourceAfterCommit: false);
+        var record = new ProposalRepository(database).Get(SIL.Motif.Contract.Ids.CanonicalId.Parse(id));
+        Assert.Equal(currentJson, record.ProposalJson);
+        Assert.Equal(anchor, record.AnchorJson);
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM ProposalRevisions WHERE ProposalId = $id;";
+        command.Parameters.AddWithValue("$id", id);
+        Assert.Equal(2L, Convert.ToInt64(command.ExecuteScalar()));
     }
 
     [Theory]
