@@ -202,7 +202,7 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
             {
                 return;
             }
-            var handler = HandleConnectionAsync(pipe, linked.Token);
+            var handler = HandleConnectionAsync(pipe, _shutdown.Token);
             _handlers.TryAdd(handler, 0);
             _ = handler.ContinueWith(completed => _handlers.TryRemove(completed, out _),
                 CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
