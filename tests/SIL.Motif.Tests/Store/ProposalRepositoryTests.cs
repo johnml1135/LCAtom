@@ -68,6 +68,20 @@ public sealed class ProposalRepositoryTests : IDisposable
         Assert.Equal("{\"intentDigest\":\"sha256:report\"}", result.EvidenceJson);
     }
 
+    [Fact]
+    public void RejectsInvalidUtf8WhenReadingExactProposalBytes()
+    {
+        var project = new ProjectLocator(Path.Combine(_root, "utf8.fwdata"), "utf8");
+        using var database = MotifDatabase.OpenOwned(Path.Combine(_root, "utf8.motif.db"), project,
+            MotifSchema.CurrentSchema, new Version(1, 0));
+        var id = CanonicalId.Mint("proposal/");
+        var repository = new ProposalRepository(database);
+        repository.SaveRevision(new ProposalRevisionRecord(
+            id, "sha256:invalid", "{\"proposalId\":\"" + id.Value + "\"}", "proposed", null, null, null,
+            ProposalJsonBytes: [0xC3, 0x28]));
+        Assert.Throws<InvalidDataException>(() => repository.Get(id));
+    }
+
     public void Dispose()
     {
         try { Directory.Delete(_root, true); }

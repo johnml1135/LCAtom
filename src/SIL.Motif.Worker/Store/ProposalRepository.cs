@@ -216,7 +216,16 @@ public sealed class ProposalRepository : IProposalRepository
             : new DecisionRecord(proposalId, reader.GetString(12), reader.GetString(7), reader.GetString(8),
                 reader.GetString(9), reader.IsDBNull(10) ? null : reader.GetString(10), reader.GetString(11));
         var bytes = (byte[])reader[2];
-        return new ProposalRecord(proposalId, reader.GetString(1), Encoding.UTF8.GetString(bytes).TrimStart('\uFEFF'), reader.GetString(3),
+        string json;
+        try
+        {
+            json = new UTF8Encoding(false, true).GetString(bytes).TrimStart('\uFEFF');
+        }
+        catch (DecoderFallbackException exception)
+        {
+            throw new InvalidDataException("The stored Proposal JSON is not valid UTF-8.", exception);
+        }
+        return new ProposalRecord(proposalId, reader.GetString(1), json, reader.GetString(3),
             reader.IsDBNull(4) ? null : reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5),
             reader.IsDBNull(6) ? null : reader.GetString(6), decision, bytes);
     }

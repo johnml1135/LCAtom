@@ -116,8 +116,18 @@ public static class FileProposalStoreMigration
     private static string RelativeName(string path, string directory) =>
         Path.GetRelativePath(directory, path).Replace(Path.DirectorySeparatorChar, '/');
 
-    private static SourceFile Read(string path, string name) =>
-        new(name, File.ReadAllBytes(path), File.ReadAllText(path, Encoding.UTF8));
+    private static SourceFile Read(string path, string name)
+    {
+        var bytes = File.ReadAllBytes(path);
+        try
+        {
+            return new(name, bytes, new UTF8Encoding(false, true).GetString(bytes).TrimStart('\uFEFF'));
+        }
+        catch (DecoderFallbackException exception)
+        {
+            throw new InvalidDataException($"Legacy Proposal file '{name}' is not valid UTF-8.", exception);
+        }
+    }
 
     private static Dictionary<string, SourceFile> ReadObjectNames(Dictionary<string, SourceFile> files)
     {

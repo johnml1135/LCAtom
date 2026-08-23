@@ -211,7 +211,8 @@ public sealed class MotifDatabase : IDisposable
     {
         var connectionString = new SqliteConnectionStringBuilder
         {
-            DataSource = path,
+            // Opening the main file through a URI enables read-only URI ATTACH for migrations.
+            DataSource = new Uri(path).AbsoluteUri,
             Pooling = false,
             Mode = SqliteOpenMode.ReadWriteCreate
         }.ToString();

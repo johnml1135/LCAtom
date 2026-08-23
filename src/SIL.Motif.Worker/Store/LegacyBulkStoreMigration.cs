@@ -84,21 +84,10 @@ public static class LegacyBulkStoreMigration
 
     private static void AttachReadOnly(SqliteConnection connection, string path)
     {
-        var uri = "file:///" + path.Replace('\\', '/') + "?mode=ro";
-        using (var command = connection.CreateCommand())
-        {
-            command.CommandText = $"ATTACH DATABASE '{uri.Replace("'", "''", StringComparison.Ordinal)}' AS legacy;";
-            try
-            {
-                command.ExecuteNonQuery();
-                return;
-            }
-            catch (SqliteException) { }
-        }
-        using var fallback = connection.CreateCommand();
-        fallback.CommandText = "ATTACH DATABASE $path AS legacy;";
-        fallback.Parameters.AddWithValue("$path", path);
-        fallback.ExecuteNonQuery();
+        var uri = new Uri(path).AbsoluteUri + "?mode=ro";
+        using var command = connection.CreateCommand();
+        command.CommandText = $"ATTACH DATABASE '{uri.Replace("'", "''", StringComparison.Ordinal)}' AS legacy;";
+        command.ExecuteNonQuery();
     }
 
     private static HashSet<string> ReadTables(SqliteConnection connection)
