@@ -31,14 +31,20 @@ internal sealed record BaselinePublication(
     string FwDataPath,
     BaselineToken Token);
 
+internal sealed record BaselinePublicationOutcome(
+    BaselinePublication Publication,
+    bool Created);
+
 internal sealed class BaselineBundleReceiver
 {
     private const int CopyBufferSize = 32 * 1024;
     private readonly int _maximumEntries;
     private readonly long _maximumExtractedBytes;
+    private readonly Action<string>? _beforePublicationMove;
 
     public BaselineBundleReceiver(int maximumEntries = 4096,
-        long maximumExtractedBytes = 512L * 1024 * 1024)
+        long maximumExtractedBytes = 512L * 1024 * 1024,
+        Action<string>? beforePublicationMove = null)
     {
         if (maximumEntries < 2)
             throw new ArgumentOutOfRangeException(nameof(maximumEntries));
@@ -46,9 +52,18 @@ internal sealed class BaselineBundleReceiver
             throw new ArgumentOutOfRangeException(nameof(maximumExtractedBytes));
         _maximumEntries = maximumEntries;
         _maximumExtractedBytes = maximumExtractedBytes;
+        _beforePublicationMove = beforePublicationMove;
     }
 
     public async Task<BaselinePublication> PublishVerifiedAsync(
+        VerifiedBinaryTransfer transfer,
+        BaselineToken declaredToken,
+        BaselinePublicationTarget target,
+        CancellationToken cancellationToken) =>
+        (await PublishVerifiedWithOutcomeAsync(
+            transfer, declaredToken, target, cancellationToken).ConfigureAwait(false)).Publication;
+
+    internal async Task<BaselinePublicationOutcome> PublishVerifiedWithOutcomeAsync(
         VerifiedBinaryTransfer transfer,
         BaselineToken declaredToken,
         BaselinePublicationTarget target,
@@ -66,7 +81,8 @@ internal sealed class BaselineBundleReceiver
             var root = PrepareManagedRoot(target.BaselineRoot);
             var destination = Path.Combine(root, declaredToken.BundleDigest.Substring("sha256:".Length));
             if (Directory.Exists(destination))
-                return ExistingPublication(destination, declaredToken);
+                return new BaselinePublicationOutcome(
+                    ExistingPublication(destination, declaredToken), false);
 
             temporaryDirectory = Path.Combine(root, ".incoming-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(temporaryDirectory);
@@ -75,16 +91,18 @@ internal sealed class BaselineBundleReceiver
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
+                _beforePublicationMove?.Invoke(destination);
                 Directory.Move(temporaryDirectory, destination);
                 temporaryDirectory = string.Empty;
-                return new BaselinePublication(destination,
-                    Path.Combine(destination, Path.GetFileName(fwDataPath)), declaredToken);
+                return new BaselinePublicationOutcome(new BaselinePublication(destination,
+                    Path.Combine(destination, Path.GetFileName(fwDataPath)), declaredToken), true);
             }
             catch (IOException) when (Directory.Exists(destination))
             {
                 DeleteIncoming(temporaryDirectory);
                 temporaryDirectory = string.Empty;
-                return ExistingPublication(destination, declaredToken);
+                return new BaselinePublicationOutcome(
+                    ExistingPublication(destination, declaredToken), false);
             }
         }
         finally
@@ -123,11 +141,6 @@ internal sealed class BaselineBundleReceiver
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
     }
-
-    internal static bool PublicationExists(
-        BaselinePublicationTarget target, BaselineToken token) =>
-        Directory.Exists(Path.Combine(target.BaselineRoot,
-            token.BundleDigest.Substring("sha256:".Length)));
 
     private static void VerifyTransfer(VerifiedBinaryTransfer transfer, BaselineToken token)
     {

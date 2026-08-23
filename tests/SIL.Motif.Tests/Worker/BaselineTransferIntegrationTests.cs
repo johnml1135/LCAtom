@@ -614,7 +614,7 @@ public sealed class BaselineTransferIntegrationTests : IDisposable
         await UploadAsync(offer, bytes);
         await server.BaselineTransfers.CompleteAsync(
             "connection", Completion(offer, bytes), CancellationToken.None);
-        var handler = Handler(server, runtimes, workerRoot, "connection",
+        var handler = Handler(server, runtimes, workerRoot, "connection", record:
             (_, _, _, _) => throw new IOException("injected durable failure"));
 
         var response = ReadPublishResponse(await handler.HandleAsync(Payload(
@@ -626,6 +626,42 @@ public sealed class BaselineTransferIntegrationTests : IDisposable
         Assert.True(Directory.Exists(oldRoot));
         Assert.False(Directory.Exists(Path.Combine(target.BaselineRoot,
             Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant())));
+        Assert.Empty(Directory.GetFiles(Path.Combine(workerRoot, "transfers"), "*.ready"));
+    }
+
+    [Fact]
+    public async Task DurableRecordFailurePreservesAPublicationThatWonTheMoveRace()
+    {
+        var workerRoot = Path.Combine(_root, "record-race");
+        await using var server = WorkerServer.CreateForTests(
+            "worker-baseline-record-race-" + Guid.NewGuid().ToString("N"), false, workerRoot);
+        using var runtimes = ComposeRuntime(server, workerRoot);
+        var project = Project("record-race");
+        var runtime = runtimes.GetOrOpen(project);
+        var destination = string.Empty;
+        var receiver = new BaselineBundleReceiver(beforePublicationMove: path =>
+        {
+            destination = path;
+            Directory.CreateDirectory(Path.Combine(path, "WritingSystemStore"));
+            File.WriteAllText(Path.Combine(path, "external.fwdata"), "external");
+            File.WriteAllText(Path.Combine(path, "WritingSystemStore", "en.ldml"), "external");
+        });
+        var bytes = BundleBytes();
+        var offer = server.BaselineTransfers.CreateOffer(
+            "connection", project, bytes.Length, TimeSpan.FromMinutes(1));
+        await UploadAsync(offer, bytes);
+        await server.BaselineTransfers.CompleteAsync(
+            "connection", Completion(offer, bytes), CancellationToken.None);
+        var handler = Handler(server, runtimes, workerRoot, "connection", receiver,
+            (_, _, _, _) => throw new IOException("injected durable failure"));
+
+        var response = ReadPublishResponse(await handler.HandleAsync(Payload(
+            new BaselinePublishRequest(project, offer.TransferId, Token(project, bytes))),
+            CancellationToken.None));
+
+        Assert.Equal(BaselineFailureCode.PublicationFailed, response.Failure!.Code);
+        Assert.Null(runtime.Baselines.GetCurrent(runtime.WorkspaceKey));
+        Assert.Equal("external", File.ReadAllText(Path.Combine(destination, "external.fwdata")));
         Assert.Empty(Directory.GetFiles(Path.Combine(workerRoot, "transfers"), "*.ready"));
     }
 
@@ -780,10 +816,11 @@ public sealed class BaselineTransferIntegrationTests : IDisposable
 
     private static BaselinePublishCommandHandler Handler(WorkerServer server,
         ProjectRuntimeRegistry runtimes, string workerRoot, string connectionId,
+        BaselineBundleReceiver? receiver = null,
         Func<ProjectRuntime, string, BaselinePublication, DateTimeOffset, BaselineRecord>? record = null) =>
         new(runtimes, server.BaselineTransfers,
             new BaselineWorkspaceCatalog(WorkspaceOwnership.Bootstrap(workerRoot)),
-            connectionId, record: record);
+            connectionId, receiver, record);
 
     private static ProjectRuntimeRegistry ComposeRuntime(WorkerServer server, string workerRoot)
     {

@@ -112,12 +112,10 @@ internal sealed class BaselinePublishCommandHandler : IWorkerCommandHandler
                     BaselineFailureCode.BundleInvalid, false,
                     "The Baseline token conflicts with the durable publication.")));
             }
-            var publicationExisted = BaselineBundleReceiver.PublicationExists(target, request.Token);
-
-            BaselinePublication publication;
+            BaselinePublicationOutcome outcome;
             try
             {
-                publication = await _receiver.PublishVerifiedAsync(
+                outcome = await _receiver.PublishVerifiedWithOutcomeAsync(
                     transfer, request.Token, target, cancellationToken).ConfigureAwait(false);
             }
             catch (InvalidDataException)
@@ -132,6 +130,7 @@ internal sealed class BaselinePublishCommandHandler : IWorkerCommandHandler
                     BaselineFailureCode.PublicationFailed, true,
                     "The Baseline could not be published.")));
             }
+            var publication = outcome.Publication;
 
             BaselineRecord durable;
             try
@@ -141,7 +140,7 @@ internal sealed class BaselinePublishCommandHandler : IWorkerCommandHandler
             catch (Exception exception) when (exception is DbException or IOException or InvalidDataException or
                 InvalidOperationException or UnauthorizedAccessException)
             {
-                if (!publicationExisted &&
+                if (outcome.Created &&
                     !StringComparer.Ordinal.Equals(previous?.Token.BundleDigest, publication.Token.BundleDigest))
                     BaselineBundleReceiver.DeletePublicationIfOwned(publication, target);
                 return Response(new BaselinePublishResponse(null, Failure(
