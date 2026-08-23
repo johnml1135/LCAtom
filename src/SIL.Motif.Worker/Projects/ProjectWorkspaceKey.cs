@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 using System.Text;
 using SIL.Motif.Contract.Canonicalization;
 using SIL.Motif.Contract.Projects;
@@ -27,7 +26,7 @@ public static class ProjectWorkspaceKey
         if (project is null)
             throw new ArgumentNullException(nameof(project));
 
-        var path = NormalizeWindowsPath(project.FullFwDataPath);
+        var path = project.FullFwDataPath.ToUpperInvariant();
         if (string.IsNullOrWhiteSpace(project.FieldWorksProjectIdentity))
             throw new ArgumentException("A nonblank FieldWorks project identity is required.",
                 nameof(project.FieldWorksProjectIdentity));
@@ -36,24 +35,6 @@ public static class ProjectWorkspaceKey
         WriteFrame(tuple, path);
         WriteFrame(tuple, project.FieldWorksProjectIdentity);
         return tuple.ToArray();
-    }
-
-    private static string NormalizeWindowsPath(string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path))
-            throw new ArgumentException("A nonblank project path is required.", nameof(path));
-
-        var fullPath = Path.GetFullPath(path!.Replace('/', '\\'))
-            .Replace('/', '\\');
-        var root = Path.GetPathRoot(fullPath);
-        var normalized = fullPath.TrimEnd('\\');
-
-        if (normalized.Length == 2 && normalized[1] == ':')
-            normalized += '\\';
-        else if (normalized.Length == 0 && !string.IsNullOrEmpty(root))
-            normalized = root;
-
-        return normalized.ToUpperInvariant();
     }
 
     private static void WriteFrame(Stream stream, string value)

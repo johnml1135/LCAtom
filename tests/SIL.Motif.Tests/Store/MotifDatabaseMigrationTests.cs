@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using SIL.Motif.Contract.Projects;
 using SIL.Motif.Host.Store;
+using SIL.Motif.Worker.Projects;
 using SIL.Motif.Worker.Store;
 using Xunit;
 
@@ -36,6 +37,38 @@ public sealed class MotifDatabaseMigrationTests : IDisposable
         var catalog = new ProjectDatabaseCatalog(MotifSchema.CurrentSchema, new Version(1, 0));
         using var database = catalog.Open(project);
         Assert.True(File.Exists(DatabasePath("catalog.fwdata")));
+    }
+
+    [Fact]
+    public void EquivalentLocatorsShareDatabaseAndPersistCanonicalPath()
+    {
+        var canonicalPath = Path.Combine(_root, "equivalent", "project.fwdata");
+        var slashAndDotPath = canonicalPath.Replace('\\', '/')
+            .Replace("/project.fwdata", "/./project.fwdata", StringComparison.Ordinal);
+        var first = new ProjectLocator(slashAndDotPath, "same-project");
+        var second = new ProjectLocator(canonicalPath, "same-project");
+
+        Assert.Equal(first.FullFwDataPath, second.FullFwDataPath);
+        Assert.Equal(
+            ProjectDatabaseCatalog.DatabasePathFor(first),
+            ProjectDatabaseCatalog.DatabasePathFor(second));
+
+        using (MotifDatabase.OpenOwned(
+            ProjectDatabaseCatalog.DatabasePathFor(first), first, MotifSchema.CurrentSchema, new Version(1, 0))) { }
+        using (var reopened = MotifDatabase.OpenOwned(
+                   ProjectDatabaseCatalog.DatabasePathFor(second), second, MotifSchema.CurrentSchema, new Version(1, 0)))
+        using (var connection = reopened.OpenConnection())
+        {
+            Assert.Equal(first.FullFwDataPath,
+                Scalar(connection, "SELECT FullFwDataPath FROM MotifMetadata WHERE Id = 1;"));
+        }
+
+        var differentDirectory = new ProjectLocator(
+            Path.Combine(_root, "different", "project.fwdata"), "same-project");
+        Assert.NotEqual(ProjectWorkspaceKey.Compute(first), ProjectWorkspaceKey.Compute(differentDirectory));
+        Assert.NotEqual(
+            ProjectDatabaseCatalog.DatabasePathFor(first),
+            ProjectDatabaseCatalog.DatabasePathFor(differentDirectory));
     }
 
     [Fact]

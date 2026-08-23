@@ -55,7 +55,6 @@ public sealed class MotifDatabase : IDisposable
             throw new ArgumentException("A full .fwdata path is required.", nameof(project));
         if (string.IsNullOrWhiteSpace(project.FieldWorksProjectIdentity))
             throw new ArgumentException("A FieldWorks project identity is required.", nameof(project));
-        project = project with { FullFwDataPath = Path.GetFullPath(project.FullFwDataPath) };
         ArgumentNullException.ThrowIfNull(workerVersion);
         if (supportedSchema < 1) throw new ArgumentOutOfRangeException(nameof(supportedSchema));
         if (supportedSchema > MotifSchema.CurrentSchema)

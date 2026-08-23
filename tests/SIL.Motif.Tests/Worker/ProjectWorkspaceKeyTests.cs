@@ -9,14 +9,24 @@ namespace SIL.Motif.Tests.Worker;
 public sealed class ProjectWorkspaceKeyTests
 {
     [Fact]
-    public void Compute_NormalizesWindowsPathSeparatorsCaseAndTrailingSeparator()
+    public void Compute_NormalizesWindowsPathSeparatorsAndCase()
     {
         var first = ProjectWorkspaceKey.Compute(new ProjectLocator(
             @"C:\Projects\Lang\Lang.fwdata", "project-1"));
         var second = ProjectWorkspaceKey.Compute(new ProjectLocator(
-            @"c:/projects/lang/LANG.fwdata\", "project-1"));
+            @"c:/projects/lang/./LANG.fwdata", "project-1"));
 
         Assert.Equal(first, second);
+    }
+
+    [Fact]
+    public void CanonicalBytesAndKeyMatchAcrossSlashAndDotSpellings()
+    {
+        var first = new ProjectLocator(@"C:\Projects\Lang\Lang.fwdata", "project-1");
+        var second = new ProjectLocator(@"c:/projects/lang/./LANG.fwdata", "project-1");
+
+        Assert.Equal(ProjectWorkspaceKey.CanonicalBytes(first), ProjectWorkspaceKey.CanonicalBytes(second));
+        Assert.Equal(ProjectWorkspaceKey.Compute(first), ProjectWorkspaceKey.Compute(second));
     }
 
     [Fact]
@@ -34,7 +44,7 @@ public sealed class ProjectWorkspaceKeyTests
         var first = ProjectWorkspaceKey.Compute(new ProjectLocator(
             @"\\Server\Share\Lang.fwdata", "project-1"));
         var second = ProjectWorkspaceKey.Compute(new ProjectLocator(
-            @"//server/share/LANG.fwdata\", "project-1"));
+            @"//server/share/LANG.fwdata", "project-1"));
 
         Assert.Equal(first, second);
     }

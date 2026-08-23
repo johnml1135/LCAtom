@@ -34,9 +34,8 @@ public sealed class ProjectDatabaseCatalog
     public static string DatabasePathFor(ProjectLocator project)
     {
         ArgumentNullException.ThrowIfNull(project);
-        var fullFwDataPath = Path.GetFullPath(project.FullFwDataPath);
-        var directory = Path.GetDirectoryName(fullFwDataPath)!;
-        var stem = Path.GetFileNameWithoutExtension(fullFwDataPath);
+        var directory = Path.GetDirectoryName(project.FullFwDataPath)!;
+        var stem = Path.GetFileNameWithoutExtension(project.FullFwDataPath);
         return Path.Combine(directory, stem + ".motif.db");
     }
 }
