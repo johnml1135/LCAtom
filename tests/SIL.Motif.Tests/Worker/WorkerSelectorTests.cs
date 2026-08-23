@@ -231,6 +231,19 @@ public sealed class WorkerSelectorTests
     }
 
     [Fact]
+    public async Task ExistingWorkerWithoutOfferIsRejectedWithoutStartingProcess()
+    {
+        var connector = new FakeConnector(FakeConnector.MissingOffer());
+        var starter = new FakeStarter();
+        var launcher = NewLauncher(connector, starter);
+
+        await Assert.ThrowsAsync<WorkerEndpointIncompatibleException>(() =>
+            launcher.EnsureConnectedAsync(Client(new ProtocolRange(1, 1)), CancellationToken.None));
+
+        Assert.Empty(starter.Started);
+    }
+
+    [Fact]
     public async Task AbsentEndpointStartsNewestCandidateHiddenAndConfirmsConnection()
     {
         using var root = TemporaryDirectory.Create();
@@ -252,6 +265,8 @@ public sealed class WorkerSelectorTests
         Assert.Equal(candidate, process.Worker);
         Assert.True(process.Hidden);
         Assert.Equal(2, connector.Attempts);
+        Assert.False(process.Terminated);
+        Assert.True(process.Disposed);
     }
 
     [Fact]
@@ -272,7 +287,9 @@ public sealed class WorkerSelectorTests
         await Assert.ThrowsAsync<WorkerLaunchException>(() =>
             launcher.EnsureConnectedAsync(Client(new ProtocolRange(1, 1)), CancellationToken.None));
 
-        Assert.Single(starter.Started);
+        var process = Assert.Single(starter.Started);
+        Assert.True(process.Terminated);
+        Assert.True(process.Disposed);
     }
 
     [Fact]
@@ -294,7 +311,9 @@ public sealed class WorkerSelectorTests
         await Assert.ThrowsAsync<WorkerLaunchException>(() =>
             launcher.EnsureConnectedAsync(Client(new ProtocolRange(1, 1)), CancellationToken.None));
 
-        Assert.Single(starter.Started);
+        var process = Assert.Single(starter.Started);
+        Assert.True(process.Terminated);
+        Assert.True(process.Disposed);
     }
 
     [Fact]
@@ -315,7 +334,78 @@ public sealed class WorkerSelectorTests
 
         await launcher.EnsureConnectedAsync(Client(new ProtocolRange(1, 1)), CancellationToken.None);
 
-        Assert.Single(starter.Started);
+        var process = Assert.Single(starter.Started);
+        Assert.False(process.Terminated);
+        Assert.True(process.Disposed);
+    }
+
+    [Fact]
+    public async Task CancelledCandidateStartupTerminatesAndDisposesProcess()
+    {
+        using var root = TemporaryDirectory.Create();
+        var executable = Path.Combine(root.Path, "catalog", "3.0", "worker.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
+        File.WriteAllText(executable, "worker");
+        var candidate = new InstalledWorker(new Version(3, 0), executable,
+            new ProtocolRange(1, 1), Array.Empty<string>());
+        var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"));
+        Register(catalog, candidate);
+        var connector = new FakeConnector(FakeConnector.Unavailable(), FakeConnector.WaitForCancellation());
+        var starter = new FakeStarter();
+        var launcher = NewLauncher(connector, starter, catalog);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            launcher.EnsureConnectedAsync(Client(new ProtocolRange(1, 1)), cancellation.Token));
+
+        var process = Assert.Single(starter.Started);
+        Assert.True(process.Terminated);
+        Assert.True(process.Disposed);
+    }
+
+    [Fact]
+    public async Task TimedOutCandidateStartupTerminatesAndDisposesProcess()
+    {
+        using var root = TemporaryDirectory.Create();
+        var executable = Path.Combine(root.Path, "catalog", "3.0", "worker.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
+        File.WriteAllText(executable, "worker");
+        var candidate = new InstalledWorker(new Version(3, 0), executable,
+            new ProtocolRange(1, 1), Array.Empty<string>());
+        var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"));
+        Register(catalog, candidate);
+        var starter = new FakeStarter();
+        var launcher = NewLauncher(new FakeConnector(FakeConnector.Unavailable()), starter, catalog);
+
+        await Assert.ThrowsAsync<WorkerLaunchException>(() =>
+            launcher.EnsureConnectedAsync(Client(new ProtocolRange(1, 1)), CancellationToken.None));
+
+        var process = Assert.Single(starter.Started);
+        Assert.True(process.Terminated);
+        Assert.True(process.Disposed);
+    }
+
+    [Fact]
+    public async Task CandidateConnectionFailureTerminatesAndDisposesProcess()
+    {
+        using var root = TemporaryDirectory.Create();
+        var executable = Path.Combine(root.Path, "catalog", "3.0", "worker.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
+        File.WriteAllText(executable, "worker");
+        var candidate = new InstalledWorker(new Version(3, 0), executable,
+            new ProtocolRange(1, 1), Array.Empty<string>());
+        var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"));
+        Register(catalog, candidate);
+        var connector = new FakeConnector(FakeConnector.Unavailable(), FakeConnector.ConnectedFailure());
+        var starter = new FakeStarter();
+        var launcher = NewLauncher(connector, starter, catalog);
+
+        await Assert.ThrowsAsync<WorkerEndpointIncompatibleException>(() =>
+            launcher.EnsureConnectedAsync(Client(new ProtocolRange(1, 1)), CancellationToken.None));
+
+        var process = Assert.Single(starter.Started);
+        Assert.True(process.Terminated);
+        Assert.True(process.Disposed);
     }
 
     [Fact]
@@ -408,11 +498,11 @@ public sealed class WorkerSelectorTests
 
     private sealed class FakeConnector : IWorkerConnector
     {
-        private readonly Queue<Func<Task<IWorkerConnection>>> _responses;
+        private readonly Queue<Func<CancellationToken, Task<IWorkerConnection>>> _responses;
 
-        public FakeConnector(params Func<Task<IWorkerConnection>>[] responses)
+        public FakeConnector(params Func<CancellationToken, Task<IWorkerConnection>>[] responses)
         {
-            _responses = new Queue<Func<Task<IWorkerConnection>>>(responses);
+            _responses = new Queue<Func<CancellationToken, Task<IWorkerConnection>>>(responses);
         }
 
         public int Attempts { get; private set; }
@@ -425,22 +515,28 @@ public sealed class WorkerSelectorTests
             Attempts++;
             LastEndpoint = endpointName;
             LastRequest = request;
-            return (_responses.Count == 0 ? Unavailable() : _responses.Dequeue())();
+            return (_responses.Count == 0 ? Unavailable() : _responses.Dequeue())(cancellationToken);
         }
 
-        public static Func<Task<IWorkerConnection>> Connected(WorkerHandshakeOffer offer) => () =>
+        public static Func<CancellationToken, Task<IWorkerConnection>> Connected(WorkerHandshakeOffer offer) => _ =>
             Task.FromResult<IWorkerConnection>(new FakeConnection(offer));
 
-        public static Func<Task<IWorkerConnection>> MissingOffer() => () =>
+        public static Func<CancellationToken, Task<IWorkerConnection>> MissingOffer() => _ =>
             Task.FromResult<IWorkerConnection>(new FakeConnection(null!));
 
-        public static Func<Task<IWorkerConnection>> Unavailable() => () =>
+        public static Func<CancellationToken, Task<IWorkerConnection>> WaitForCancellation() => async cancellationToken =>
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            throw new InvalidOperationException();
+        };
+
+        public static Func<CancellationToken, Task<IWorkerConnection>> Unavailable() => _ =>
             Task.FromException<IWorkerConnection>(new WorkerEndpointUnavailableException("endpoint absent"));
 
-        public static Func<Task<IWorkerConnection>> Incompatible() => () =>
+        public static Func<CancellationToken, Task<IWorkerConnection>> Incompatible() => _ =>
             Task.FromException<IWorkerConnection>(new WorkerEndpointIncompatibleException("endpoint incompatible"));
 
-        public static Func<Task<IWorkerConnection>> ConnectedFailure() => () =>
+        public static Func<CancellationToken, Task<IWorkerConnection>> ConnectedFailure() => _ =>
             Task.FromException<IWorkerConnection>(new WorkerConnectionFailureException(
                 WorkerConnectionFailureStage.AfterPeerConnection, "connected endpoint failed"));
     }
@@ -496,6 +592,10 @@ public sealed class WorkerSelectorTests
         public bool HasExited { get; }
         public int ExitCode { get; }
         public ProcessStartInfo StartInfo { get; } = new ProcessStartInfo();
+        public bool Terminated { get; private set; }
+        public bool Disposed { get; private set; }
+        public void Terminate() => Terminated = true;
+        public void Dispose() => Disposed = true;
     }
 
     private sealed class TemporaryDirectory : IDisposable

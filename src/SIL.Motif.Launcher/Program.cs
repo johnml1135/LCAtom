@@ -106,7 +106,7 @@ public interface IWorkerProcessStarter
 }
 
 /// <summary>Reports enough process state for bounded launcher startup polling.</summary>
-public interface IWorkerProcess
+public interface IWorkerProcess : IDisposable
 {
     /// <summary>Whether the process has already exited.</summary>
     bool HasExited { get; }
@@ -116,6 +116,9 @@ public interface IWorkerProcess
 
     /// <summary>The exact shell-free startup configuration used by the process seam.</summary>
     ProcessStartInfo StartInfo { get; }
+
+    /// <summary>Terminates a candidate that did not establish the endpoint it advertised.</summary>
+    void Terminate();
 }
 
 /// <summary>Connects to an existing worker or starts one registered compatible installation.</summary>
@@ -164,7 +167,12 @@ public sealed class WorkerLauncher
         var first = await TryConnectAsync(request, Remaining(deadline), cancellationToken).ConfigureAwait(false);
         if (first is not null)
         {
-            first.Dispose();
+            using (first)
+            {
+                if (first.Offer is null)
+                    throw new WorkerEndpointIncompatibleException(
+                        "The existing worker did not report complete build metadata.");
+            }
             return;
         }
 
@@ -219,52 +227,67 @@ public sealed class WorkerLauncher
                 "The installed worker could not start; reinstall or update Motif and try again.", exception);
         }
 
-        while (_clock.Timestamp <= deadline)
+        var accepted = false;
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var remaining = deadline - _clock.Timestamp;
-            if (remaining <= 0)
-                break;
-            var connectionTimeout = TimeSpan.FromSeconds(remaining / (double)_clock.Frequency);
-            var connection = await TryConnectAsync(request, connectionTimeout, cancellationToken)
-                .ConfigureAwait(false);
-            if (connection is not null)
+            while (_clock.Timestamp <= deadline)
             {
-                if (connection.Offer is null)
+                cancellationToken.ThrowIfCancellationRequested();
+                var remaining = deadline - _clock.Timestamp;
+                if (remaining <= 0)
+                    break;
+                var connectionTimeout = TimeSpan.FromSeconds(remaining / (double)_clock.Frequency);
+                var connection = await TryConnectAsync(request, connectionTimeout, cancellationToken)
+                    .ConfigureAwait(false);
+                if (connection is not null)
                 {
-                    connection.Dispose();
+                    using (connection)
+                    {
+                        if (connection.Offer is null)
+                            throw new WorkerLaunchException(
+                                "The selected worker did not report complete build metadata; reinstall or update " +
+                                "Motif and try again.");
+                        try
+                        {
+                            WorkerMetadataAgreement.RequireMatch(connection.Offer, candidate);
+                        }
+                        catch (InvalidDataException exception)
+                        {
+                            throw new WorkerLaunchException(
+                                "The selected worker reported metadata different from its installed manifest; " +
+                                "reinstall or update Motif and try again.", exception);
+                        }
+                    }
+                    accepted = true;
+                    return;
+                }
+                if (process.HasExited)
                     throw new WorkerLaunchException(
-                        "The selected worker did not report complete build metadata; reinstall or update Motif " +
-                        "and try again.");
-                }
-                try
-                {
-                    WorkerMetadataAgreement.RequireMatch(connection.Offer, candidate);
-                }
-                catch (InvalidDataException exception)
-                {
-                    connection.Dispose();
-                    throw new WorkerLaunchException(
-                        "The selected worker reported metadata different from its installed manifest; " +
-                        "reinstall or update Motif and try again.", exception);
-                }
-                connection.Dispose();
-                return;
+                        "Worker startup failed: the installed worker exited before its endpoint became ready; " +
+                        "reinstall or update Motif and try again.");
+                remaining = deadline - _clock.Timestamp;
+                if (remaining <= 0)
+                    break;
+                var delay = TimeSpan.FromMilliseconds(Math.Min(50,
+                    remaining * 1000.0 / _clock.Frequency));
+                await _delay.DelayAsync(delay, cancellationToken).ConfigureAwait(false);
             }
-            if (process.HasExited)
-                throw new WorkerLaunchException(
-                    "Worker startup failed: the installed worker exited before its endpoint became ready; " +
-                    "reinstall or update Motif and try again.");
-            remaining = deadline - _clock.Timestamp;
-            if (remaining <= 0)
-                break;
-            var delay = TimeSpan.FromMilliseconds(Math.Min(50,
-                remaining * 1000.0 / _clock.Frequency));
-            await _delay.DelayAsync(delay, cancellationToken).ConfigureAwait(false);
+            throw new WorkerLaunchException(
+                "Worker startup failed: the endpoint did not become ready before startup timed out; " +
+                "reinstall or update Motif and try again.");
         }
-        throw new WorkerLaunchException(
-            "Worker startup failed: the endpoint did not become ready before startup timed out; " +
-            "reinstall or update Motif and try again.");
+        finally
+        {
+            try
+            {
+                if (!accepted && !process.HasExited)
+                    process.Terminate();
+            }
+            finally
+            {
+                process.Dispose();
+            }
+        }
     }
 
     private async Task<IWorkerConnection?> TryConnectAsync(WorkerHandshakeRequest request,
@@ -417,6 +440,14 @@ public sealed class WorkerProcessStarter : IWorkerProcessStarter
         public int ExitCode => _process.ExitCode;
 
         public ProcessStartInfo StartInfo => _startInfo;
+
+        public void Terminate()
+        {
+            if (!_process.HasExited)
+                _process.Kill(entireProcessTree: true);
+        }
+
+        public void Dispose() => _process.Dispose();
     }
 }
 

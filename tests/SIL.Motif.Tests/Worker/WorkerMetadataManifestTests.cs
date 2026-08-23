@@ -38,6 +38,18 @@ public sealed class WorkerMetadataManifestTests
     }
 
     [Fact]
+    public void AdditiveMetadataPropertiesAreIgnored()
+    {
+        const string json =
+            "{\"productVersion\":\"3.4.2\",\"min\":1,\"max\":1,\"capabilities\":[],\"future\":true}";
+
+        var metadata = WorkerBuildMetadata.Parse(json);
+
+        Assert.Equal("3.4.2", metadata.ProductVersion);
+        Assert.Equal(new ProtocolRange(1, 1), metadata.Protocols);
+    }
+
+    [Fact]
     public void MatchingManifestMetadataIsAccepted()
     {
         var metadata = new WorkerBuildMetadata("3.4.2", new ProtocolRange(1, 1), new[] { "jobs.v1" });
@@ -121,6 +133,55 @@ public sealed class WorkerMetadataManifestTests
         File.Delete(sidecar);
 
         Assert.Throws<InvalidDataException>(() => catalog.ValidateInstalled(worker));
+    }
+
+    [Fact]
+    public void CatalogRejectsOversizedMetadataSidecar()
+    {
+        using var root = TemporaryDirectory.Create();
+        var executable = Path.Combine(root.Path, "catalog", "3.4.2", "worker.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
+        File.WriteAllText(executable, "worker");
+        var worker = new InstalledWorker(new Version(3, 4, 2), executable,
+            new ProtocolRange(1, 1), Array.Empty<string>());
+        File.WriteAllText(Path.Combine(Path.GetDirectoryName(executable)!, WorkerCommands.BuildMetadataFileName),
+            new string('x', 64 * 1024 + 1));
+        var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"));
+
+        Assert.Throws<InvalidDataException>(() => catalog.Register(worker));
+    }
+
+    [Fact]
+    public void CatalogRejectsMetadataSidecarReparsePoint()
+    {
+        using var root = TemporaryDirectory.Create();
+        var executable = Path.Combine(root.Path, "catalog", "3.4.2", "worker.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
+        File.WriteAllText(executable, "worker");
+        var sidecar = Path.Combine(Path.GetDirectoryName(executable)!, WorkerCommands.BuildMetadataFileName);
+        File.WriteAllText(sidecar, new WorkerBuildMetadata("3.4.2", new ProtocolRange(1, 1),
+            Array.Empty<string>()).ToCanonicalJson());
+        var worker = new InstalledWorker(new Version(3, 4, 2), executable,
+            new ProtocolRange(1, 1), Array.Empty<string>());
+        var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"), path =>
+            string.Equals(path, sidecar, StringComparison.OrdinalIgnoreCase)
+                ? FileAttributes.ReparsePoint
+                : File.GetAttributes(path));
+
+        Assert.Throws<InvalidDataException>(() => catalog.Register(worker));
+    }
+
+    [Fact]
+    public void RegisterWithCompiledMetadataRejectsNullArguments()
+    {
+        using var root = TemporaryDirectory.Create();
+        var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"));
+        var metadata = new WorkerBuildMetadata("3.4.2", new ProtocolRange(1, 1), Array.Empty<string>());
+        var worker = new InstalledWorker(new Version(3, 4, 2), Path.Combine(root.Path, "worker.exe"),
+            metadata.Protocols, metadata.Capabilities);
+
+        Assert.Throws<ArgumentNullException>(() => catalog.Register(null!, metadata));
+        Assert.Throws<ArgumentNullException>(() => catalog.Register(worker, null!));
     }
 
     [Fact]

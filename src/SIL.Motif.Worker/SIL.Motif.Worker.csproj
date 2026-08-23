@@ -18,15 +18,31 @@
     <PackageReference Include="System.IO.Pipes.AccessControl" Version="5.0.0" />
   </ItemGroup>
 
+  <UsingTask TaskName="EncodeUtf8Base64" TaskFactory="RoslynCodeTaskFactory"
+    AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Contents ParameterType="System.String" Required="true" />
+      <Base64 ParameterType="System.String" Output="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System" />
+      <Using Namespace="System.Text" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        Base64 = System.Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(Contents));
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
   <Target Name="GenerateWorkerBuildMetadata" BeforeTargets="CoreCompile">
+    <EncodeUtf8Base64 Contents="$(WorkerMetadataCanonicalJson)">
+      <Output TaskParameter="Base64" PropertyName="_WorkerMetadataCanonicalBase64" />
+    </EncodeUtf8Base64>
     <ItemGroup>
       <_WorkerMetadataLines Include="namespace SIL.Motif.Worker;" />
       <_WorkerMetadataLines Include="{" />
       <_WorkerMetadataLines Include="internal static class WorkerBuildMetadataGenerated" />
       <_WorkerMetadataLines Include="{" />
-      <_WorkerMetadataLines Include="  public const string ProductVersion = &quot;$(WorkerProductVersion)&quot;%3B" />
-      <_WorkerMetadataLines Include="  public const int ProtocolMinimum = $(WorkerProtocolMinimum)%3B" />
-      <_WorkerMetadataLines Include="  public const int ProtocolMaximum = $(WorkerProtocolMaximum)%3B" />
+      <_WorkerMetadataLines Include="  public const string CanonicalJsonBase64 = &quot;$(_WorkerMetadataCanonicalBase64)&quot;%3B" />
       <_WorkerMetadataLines Include="}" />
       <_WorkerMetadataLines Include="}" />
     </ItemGroup>
@@ -48,7 +64,6 @@
       <Using Namespace="System.Text" />
       <Code Type="Fragment" Language="cs"><![CDATA[
         System.IO.File.WriteAllText(File, Contents, new System.Text.UTF8Encoding(false));
-        return true;
       ]]></Code>
     </Task>
   </UsingTask>

@@ -36,7 +36,7 @@ public sealed class WorkerLauncherReviewTests
     }
 
     [Fact]
-    public async Task SeparateCatalogInstancesRefuseRacingMetadataChanges()
+    public async Task SeparateCatalogInstancesRejectMetadataMismatch()
     {
         using var root = TemporaryDirectory.Create();
         var executable = Path.Combine(root.Path, "catalog", "1.0", "worker.exe");
@@ -265,6 +265,8 @@ public sealed class WorkerLauncherReviewTests
         public bool HasExited => true;
         public int ExitCode => 17;
         public ProcessStartInfo StartInfo { get; } = new ProcessStartInfo();
+        public void Terminate() { }
+        public void Dispose() { }
     }
 
     private sealed class CountingStarter : IWorkerProcessStarter
@@ -315,6 +317,8 @@ public sealed class WorkerLauncherReviewTests
         public bool HasExited => false;
         public int ExitCode => 0;
         public ProcessStartInfo StartInfo { get; } = new ProcessStartInfo();
+        public void Terminate() { }
+        public void Dispose() { }
     }
 
     private sealed class ExactDeadlineClock : ILauncherClock

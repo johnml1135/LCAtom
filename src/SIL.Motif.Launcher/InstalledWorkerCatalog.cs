@@ -21,6 +21,7 @@ public sealed record InstalledWorker(
 public sealed class InstalledWorkerCatalog
 {
     private const int MaximumManifestBytes = 64 * 1024;
+    private const int MaximumMetadataBytes = 64 * 1024;
     private readonly Func<string, FileAttributes> _fileAttributes;
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, object> Gates =
         new System.Collections.Concurrent.ConcurrentDictionary<string, object>(StringComparer.OrdinalIgnoreCase);
@@ -56,18 +57,17 @@ public sealed class InstalledWorkerCatalog
     {
         if (worker is null)
             throw new ArgumentNullException(nameof(worker));
-        var sidecar = ReadMetadata(worker.ExecutablePath);
-        WorkerMetadataAgreement.RequireMatch(sidecar, worker);
-        return RegisterCore(worker);
+        return RegisterCore(worker, null);
     }
 
     /// <summary>Registers an executable after checking its compiled metadata record.</summary>
     public InstalledWorker Register(InstalledWorker worker, WorkerBuildMetadata compiled)
     {
-        var sidecar = ReadMetadata(worker?.ExecutablePath);
-        WorkerMetadataAgreement.RequireMatch(sidecar, worker);
-        WorkerMetadataAgreement.RequireMatch(compiled, worker);
-        return RegisterCore(worker);
+        if (worker is null)
+            throw new ArgumentNullException(nameof(worker));
+        if (compiled is null)
+            throw new ArgumentNullException(nameof(compiled));
+        return RegisterCore(worker, compiled);
     }
 
     /// <summary>Reads metadata beside an executable and registers that compiled worker.</summary>
@@ -82,7 +82,7 @@ public sealed class InstalledWorkerCatalog
         return Register(new InstalledWorker(version, path, metadata.Protocols, metadata.Capabilities), metadata);
     }
 
-    private InstalledWorker RegisterCore(InstalledWorker worker)
+    private InstalledWorker RegisterCore(InstalledWorker worker, WorkerBuildMetadata? compiled)
     {
         ValidateWorker(worker, requireExecutable: true);
         var canonical = CanonicalWorker(worker);
@@ -93,6 +93,10 @@ public sealed class InstalledWorkerCatalog
         {
             Directory.CreateDirectory(Root);
             Directory.CreateDirectory(versionDirectory);
+            var sidecar = ReadMetadata(canonical.ExecutablePath);
+            WorkerMetadataAgreement.RequireMatch(sidecar, canonical);
+            if (compiled is not null)
+                WorkerMetadataAgreement.RequireMatch(compiled, canonical);
             if (File.Exists(manifestPath))
             {
                 var existing = ReadManifest(manifestPath);
@@ -169,7 +173,7 @@ public sealed class InstalledWorkerCatalog
         }
     }
 
-    private static WorkerBuildMetadata ReadMetadata(string? executablePath)
+    private WorkerBuildMetadata ReadMetadata(string? executablePath)
     {
         if (string.IsNullOrWhiteSpace(executablePath))
             throw new InvalidDataException("The worker build metadata sidecar is missing.");
@@ -181,7 +185,25 @@ public sealed class InstalledWorkerCatalog
             throw new InvalidDataException("The worker build metadata sidecar is missing.");
         try
         {
-            return WorkerBuildMetadata.Parse(File.ReadAllText(sidecar));
+            var attributes = _fileAttributes(sidecar);
+            if ((attributes & (FileAttributes.ReparsePoint | FileAttributes.Directory)) != 0)
+                throw new InvalidDataException("The worker build metadata sidecar must be a regular file.");
+            using var stream = new FileStream(sidecar, FileMode.Open, FileAccess.Read, FileShare.Read);
+            if (stream.Length <= 0 || stream.Length > MaximumMetadataBytes)
+                throw new InvalidDataException("The worker build metadata sidecar exceeds its bound.");
+            using var reader = new StreamReader(stream, new UTF8Encoding(false, true), true, 1024, false);
+            var buffer = new char[MaximumMetadataBytes + 1];
+            var count = 0;
+            while (count < buffer.Length)
+            {
+                var read = reader.Read(buffer, count, buffer.Length - count);
+                if (read == 0)
+                    break;
+                count += read;
+            }
+            if (count > MaximumMetadataBytes || reader.Peek() >= 0)
+                throw new InvalidDataException("The worker build metadata sidecar exceeds its bound.");
+            return WorkerBuildMetadata.Parse(new string(buffer, 0, count));
         }
         catch (Exception exception) when (exception is ArgumentException || exception is IOException)
         {
