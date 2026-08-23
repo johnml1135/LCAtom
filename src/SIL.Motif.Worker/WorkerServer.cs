@@ -33,6 +33,7 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
     private ProjectRuntimeRegistry? _runtimeRegistry;
     private BinaryTransferServer? _binaryTransferServer;
     private BaselineTransferRegistry? _baselineTransfers;
+    private BaselineWorkspaceCatalog? _baselineWorkspaces;
     private string? _transferRoot;
     private readonly CancellationTokenSource _shutdown = new CancellationTokenSource();
     private readonly ConcurrentDictionary<string, WorkerControlConnection> _connections =
@@ -157,6 +158,7 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
             var transferRoot = Path.Combine(ownership.WorkerRoot, "transfers");
             _binaryTransferServer = new BinaryTransferServer(transferRoot, clock, _userSid);
             _baselineTransfers = new BaselineTransferRegistry(transferRoot, _binaryTransferServer, clock);
+            _baselineWorkspaces = new BaselineWorkspaceCatalog(ownership);
             _transferRoot = transferRoot;
         }
     }
@@ -328,12 +330,14 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
                 var frame = await WorkerWire.ReadAsync(pipe, cancellationToken).ConfigureAwait(false);
                 var handshake = WorkerWire.Deserialize<WorkerHandshakeRequest>(frame);
                 var negotiated = WorkerHandshake.Negotiate(handshake, _offer);
-                var handlers = _runtimeRegistry is null || _baselineTransfers is null
+                var handlers = _runtimeRegistry is null || _baselineTransfers is null || _baselineWorkspaces is null
                     ? Array.Empty<IWorkerCommandHandler>()
                     : new IWorkerCommandHandler[]
                     {
                         new JobStatusCommandHandler(_runtimeRegistry),
-                        new BaselineTransferOfferCommandHandler(_baselineTransfers, connectionId)
+                        new BaselineTransferOfferCommandHandler(_baselineTransfers, connectionId),
+                        new BaselineTransferPublishCommandHandler(
+                            _runtimeRegistry, _baselineTransfers, _baselineWorkspaces, connectionId)
                     };
                 connection = new WorkerControlConnection(pipe, negotiated.ProtocolVersion, negotiated.Capabilities,
                     _eventSink, new WorkerCommandDispatcher(handlers), _baselineTransfers!, connectionId);

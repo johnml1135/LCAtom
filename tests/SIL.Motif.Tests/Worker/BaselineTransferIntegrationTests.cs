@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.IO.Compression;
 using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
@@ -376,6 +377,161 @@ public sealed class BaselineTransferIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task ServerPublishesAndRecordsThroughTheReadyProjectRuntime()
+    {
+        var workerRoot = Path.Combine(_root, "publication");
+        await using var server = WorkerServer.CreateForTests(
+            "worker-baseline-publication-" + Guid.NewGuid().ToString("N"), false, workerRoot);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var runtimes = ComposeRuntime(server, workerRoot);
+        var project = Project("publication");
+        var runtime = runtimes.GetOrOpen(project);
+        var running = server.StartAsync(cancellation.Token);
+        await using var pipe = await ConnectRawAsync(server.EndpointName, new[] { "baseline.v1" },
+            cancellation.Token);
+        _ = await WorkerWire.ReadAsync(pipe, cancellation.Token);
+        await WorkerWire.WriteAsync(pipe, Envelope("offer", WorkerCommands.BaselineOffer,
+            new BaselineOfferRequest(project)), cancellation.Token);
+        var offerEnvelope = WorkerWire.Deserialize<WorkerEnvelope>(
+            await WorkerWire.ReadAsync(pipe, cancellation.Token));
+        var offer = JsonSerializer.Deserialize<BaselineOfferResponse>(
+            offerEnvelope.Payload.GetRawText(), WorkerJson.CreateOptions())!.Offer!;
+        var bytes = BundleBytes();
+        await UploadAsync(offer, bytes);
+        var completion = Completion(offer, bytes);
+        await WorkerWire.WriteAsync(pipe, completion, cancellation.Token);
+        var token = new BaselineToken(project.FieldWorksProjectIdentity,
+            "sha256:" + new string('1', 64), "projection-v1", "2026-08-23T00:00:00Z",
+            "sha256:" + completion.Sha256);
+        await WorkerWire.WriteAsync(pipe, Envelope("publish", WorkerCommands.BaselinePublish,
+            new BaselinePublishRequest(project, offer.TransferId, token)), cancellation.Token);
+
+        var publishEnvelope = WorkerWire.Deserialize<WorkerEnvelope>(
+            await WorkerWire.ReadAsync(pipe, cancellation.Token));
+        var response = JsonSerializer.Deserialize<BaselinePublishResponse>(
+            publishEnvelope.Payload.GetRawText(), WorkerJson.CreateOptions())!;
+
+        Assert.Null(response.Failure);
+        Assert.Equal(runtime.WorkspaceKey, response.Publication!.ProjectKey);
+        Assert.Equal(token, runtime.Baselines.GetCurrent(runtime.WorkspaceKey)!.Token);
+        Assert.Single(Directory.GetFiles(_root, "*.motif.db", SearchOption.TopDirectoryOnly));
+        Assert.Empty(Directory.GetFiles(Path.Combine(workerRoot, "transfers"), "*.ready"));
+
+        cancellation.Cancel();
+        await running.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task ServerRequiresAnAlreadyReadyRuntimeWithoutOpeningAnotherDatabase()
+    {
+        var workerRoot = Path.Combine(_root, "admission");
+        await using var server = WorkerServer.CreateForTests(
+            "worker-baseline-admission-" + Guid.NewGuid().ToString("N"), false, workerRoot);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var runtimes = ComposeRuntime(server, workerRoot);
+        var project = Project("admission");
+        var running = server.StartAsync(cancellation.Token);
+        await using var pipe = await ConnectRawAsync(server.EndpointName, new[] { "baseline.v1" },
+            cancellation.Token);
+        _ = await WorkerWire.ReadAsync(pipe, cancellation.Token);
+        await WorkerWire.WriteAsync(pipe, Envelope("offer", WorkerCommands.BaselineOffer,
+            new BaselineOfferRequest(project)), cancellation.Token);
+        var offerEnvelope = WorkerWire.Deserialize<WorkerEnvelope>(
+            await WorkerWire.ReadAsync(pipe, cancellation.Token));
+        var offer = JsonSerializer.Deserialize<BaselineOfferResponse>(
+            offerEnvelope.Payload.GetRawText(), WorkerJson.CreateOptions())!.Offer!;
+        var bytes = BundleBytes();
+        await UploadAsync(offer, bytes);
+        var completion = Completion(offer, bytes);
+        await WorkerWire.WriteAsync(pipe, completion, cancellation.Token);
+        await WorkerWire.WriteAsync(pipe, Envelope("publish", WorkerCommands.BaselinePublish,
+            new BaselinePublishRequest(project, offer.TransferId, Token(project, bytes))), cancellation.Token);
+
+        var envelope = WorkerWire.Deserialize<WorkerEnvelope>(
+            await WorkerWire.ReadAsync(pipe, cancellation.Token));
+        var response = JsonSerializer.Deserialize<BaselinePublishResponse>(
+            envelope.Payload.GetRawText(), WorkerJson.CreateOptions())!;
+
+        Assert.Equal(BaselineFailureCode.ProjectRuntimeUnavailable, response.Failure!.Code);
+        Assert.False(File.Exists(ProjectDatabaseCatalog.DatabasePathFor(project)));
+        cancellation.Cancel();
+        await running.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task PublishWaitsForTheExclusiveLeaseBeforeClaimingTheTransfer()
+    {
+        var workerRoot = Path.Combine(_root, "lease");
+        await using var server = WorkerServer.CreateForTests(
+            "worker-baseline-lease-" + Guid.NewGuid().ToString("N"), false, workerRoot);
+        using var runtimes = ComposeRuntime(server, workerRoot);
+        var project = Project("lease");
+        var runtime = runtimes.GetOrOpen(project);
+        var bytes = BundleBytes();
+        var offer = server.BaselineTransfers.CreateOffer(
+            "connection", project, bytes.Length, TimeSpan.FromMinutes(1));
+        await UploadAsync(offer, bytes);
+        await server.BaselineTransfers.CompleteAsync(
+            "connection", Completion(offer, bytes), CancellationToken.None);
+        var ready = Path.Combine(workerRoot, "transfers", offer.TransferId + ".ready");
+        var handler = Handler(server, runtimes, workerRoot, "connection");
+        var token = Token(project, bytes);
+        var shared = await runtime.AcquireOperationAsync(CancellationToken.None);
+
+        var pending = handler.HandleAsync(Payload(
+            new BaselinePublishRequest(project, offer.TransferId, token)), CancellationToken.None);
+        await Task.Delay(100);
+
+        Assert.False(pending.IsCompleted);
+        Assert.True(File.Exists(ready));
+        shared.Dispose();
+        var response = ReadPublishResponse(await pending);
+        Assert.Null(response.Failure);
+    }
+
+    [Fact]
+    public async Task DurableRecordFailureRemovesOnlyTheNewUnreferencedPublication()
+    {
+        var workerRoot = Path.Combine(_root, "record-failure");
+        await using var server = WorkerServer.CreateForTests(
+            "worker-baseline-record-failure-" + Guid.NewGuid().ToString("N"), false, workerRoot);
+        using var runtimes = ComposeRuntime(server, workerRoot);
+        var ownership = WorkspaceOwnership.Bootstrap(workerRoot);
+        var project = Project("record-failure");
+        var runtime = runtimes.GetOrOpen(project);
+        var target = new BaselineWorkspaceCatalog(ownership).For(runtime);
+        var oldToken = new BaselineToken(project.FieldWorksProjectIdentity,
+            "sha256:" + new string('1', 64), "projection-v1", "2026-08-23T00:00:00Z",
+            "sha256:" + new string('a', 64));
+        var oldRoot = Path.Combine(target.BaselineRoot, new string('a', 64));
+        Directory.CreateDirectory(Path.Combine(oldRoot, "WritingSystemStore"));
+        File.WriteAllText(Path.Combine(oldRoot, "project.fwdata"), "old");
+        File.WriteAllText(Path.Combine(oldRoot, "WritingSystemStore", "en.ldml"), "old");
+        runtime.Baselines.Record(runtime.WorkspaceKey,
+            new BaselinePublication(oldRoot, Path.Combine(oldRoot, "project.fwdata"), oldToken, true),
+            DateTimeOffset.Parse("2026-08-23T01:00:00Z"));
+        var bytes = BundleBytes();
+        var offer = server.BaselineTransfers.CreateOffer(
+            "connection", project, bytes.Length, TimeSpan.FromMinutes(1));
+        await UploadAsync(offer, bytes);
+        await server.BaselineTransfers.CompleteAsync(
+            "connection", Completion(offer, bytes), CancellationToken.None);
+        var handler = Handler(server, runtimes, workerRoot, "connection",
+            (_, _, _, _) => throw new IOException("injected durable failure"));
+
+        var response = ReadPublishResponse(await handler.HandleAsync(Payload(
+            new BaselinePublishRequest(project, offer.TransferId, Token(project, bytes))),
+            CancellationToken.None));
+
+        Assert.Equal(BaselineFailureCode.PublicationFailed, response.Failure!.Code);
+        Assert.Equal(oldToken, runtime.Baselines.GetCurrent(runtime.WorkspaceKey)!.Token);
+        Assert.True(Directory.Exists(oldRoot));
+        Assert.False(Directory.Exists(Path.Combine(target.BaselineRoot,
+            Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant())));
+        Assert.Empty(Directory.GetFiles(Path.Combine(workerRoot, "transfers"), "*.ready"));
+    }
+
+    [Fact]
     public async Task BaselineOfferRequiresNegotiatedCapability()
     {
         var workerRoot = Path.Combine(_root, "capability");
@@ -465,6 +621,28 @@ public sealed class BaselineTransferIntegrationTests : IDisposable
         return new WorkerEnvelope(id, command, document.RootElement.Clone(), 1);
     }
 
+    private static JsonElement Payload<T>(T value)
+    {
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(value, WorkerJson.CreateOptions()));
+        return document.RootElement.Clone();
+    }
+
+    private static BaselinePublishResponse ReadPublishResponse(JsonElement payload) =>
+        JsonSerializer.Deserialize<BaselinePublishResponse>(
+            payload.GetRawText(), WorkerJson.CreateOptions())!;
+
+    private static BaselineToken Token(ProjectLocator project, byte[] bytes) => new(
+        project.FieldWorksProjectIdentity, "sha256:" + new string('1', 64), "projection-v1",
+        "2026-08-23T00:00:00Z",
+        "sha256:" + Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant());
+
+    private static BaselineTransferPublishCommandHandler Handler(WorkerServer server,
+        ProjectRuntimeRegistry runtimes, string workerRoot, string connectionId,
+        Action<ProjectRuntime, string, BaselinePublication, DateTimeOffset>? record = null) =>
+        new(runtimes, server.BaselineTransfers,
+            new BaselineWorkspaceCatalog(WorkspaceOwnership.Bootstrap(workerRoot)),
+            connectionId, record: record);
+
     private static ProjectRuntimeRegistry ComposeRuntime(WorkerServer server, string workerRoot)
     {
         var ownership = WorkspaceOwnership.Bootstrap(workerRoot);
@@ -494,6 +672,20 @@ public sealed class BaselineTransferIntegrationTests : IDisposable
 
     private static BinaryTransferCompletion Completion(BinaryTransferOffer offer, byte[] bytes) =>
         new(offer.TransferId, bytes.Length, Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant());
+
+    private static byte[] BundleBytes()
+    {
+        using var bytes = new MemoryStream();
+        using (var archive = new ZipArchive(bytes, ZipArchiveMode.Create, true))
+        {
+            using (var writer = new StreamWriter(archive.CreateEntry("project.fwdata").Open()))
+                writer.Write("model");
+            using (var writer = new StreamWriter(
+                       archive.CreateEntry("WritingSystemStore/en.ldml").Open()))
+                writer.Write("<ldml/>");
+        }
+        return bytes.ToArray();
+    }
 
     private static async Task WriteJsonFrameAsync(Stream stream, string json, CancellationToken cancellationToken)
     {

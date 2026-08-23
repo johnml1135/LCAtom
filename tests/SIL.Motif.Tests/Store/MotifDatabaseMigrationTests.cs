@@ -606,7 +606,7 @@ public sealed class MotifDatabaseMigrationTests : IDisposable
         using (var upgraded = Open("recovery-v5.fwdata", supportedSchema: MotifSchema.CurrentSchema))
         using (var check = upgraded.OpenConnection())
         {
-            MotifSchema.ValidateSchema(check, 6);
+            MotifSchema.ValidateSchema(check, MotifSchema.CurrentSchema);
             Assert.Equal("cancellation", Scalar(check, "SELECT FailureCategory FROM Jobs WHERE JobId = 'cancelled-job';"));
             Assert.Equal("cancellation", Scalar(check, "SELECT FailureCategory FROM Jobs WHERE JobId = 'cancelled-interrupted';"));
             Assert.Equal("infrastructure", Scalar(check, "SELECT FailureCategory FROM Jobs WHERE JobId = 'interrupted-job';"));
@@ -618,13 +618,13 @@ public sealed class MotifDatabaseMigrationTests : IDisposable
             Assert.NotSame(DBNull.Value, Scalar(check, "SELECT ArchivedUtc FROM Proposals WHERE ProposalId = '" + proposalId + "';"));
             Assert.Equal(1L, Scalar(check, "SELECT COUNT(*) FROM AppliedIndex WHERE ProposalId = '" + proposalId + "';"));
             Assert.Equal(0L, Scalar(check, "SELECT COUNT(*) FROM pragma_foreign_key_list('AppliedIndex');"));
-            Assert.Equal(6, PragmaInt(check, "user_version"));
+            Assert.Equal(MotifSchema.CurrentSchema, PragmaInt(check, "user_version"));
         }
         using var reopened = Open("recovery-v5.fwdata", supportedSchema: MotifSchema.CurrentSchema);
         using var reopenedCheck = reopened.OpenConnection();
         Assert.Equal(5L, Scalar(reopenedCheck, "SELECT COUNT(*) FROM Jobs;"));
         Assert.Equal(1L, Scalar(reopenedCheck, "SELECT COUNT(*) FROM AppliedIndex WHERE ProposalId = '" + proposalId + "';"));
-        Assert.Equal(6, PragmaInt(reopenedCheck, "user_version"));
+        Assert.Equal(MotifSchema.CurrentSchema, PragmaInt(reopenedCheck, "user_version"));
     }
 
     [Fact]
@@ -642,7 +642,7 @@ public sealed class MotifDatabaseMigrationTests : IDisposable
             Assert.NotNull(Scalar(check, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'AppliedIndex';"));
         }
         using var retried = Open("recovery-rollback.fwdata", supportedSchema: MotifSchema.CurrentSchema);
-        Assert.Equal(6, PragmaInt(retried.OpenConnection(), "user_version"));
+        Assert.Equal(MotifSchema.CurrentSchema, PragmaInt(retried.OpenConnection(), "user_version"));
     }
 
     [Fact]

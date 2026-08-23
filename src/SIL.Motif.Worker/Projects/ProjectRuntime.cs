@@ -1,5 +1,6 @@
 using SIL.Motif.Contract.Projects;
 using SIL.Motif.Host.Store;
+using SIL.Motif.Worker.Baselines;
 using SIL.Motif.Worker.Jobs;
 using SIL.Motif.Worker.Store;
 
@@ -29,12 +30,14 @@ public sealed class ProjectRuntime : IDisposable
     private bool _disposed;
 
     private ProjectRuntime(ProjectLocator project, string workspaceKey, MotifDatabase database,
-        JobRepository jobs, WorkerWorkTracker work, Func<bool> hasLiveHost, Func<bool> hasPendingEvents)
+        JobRepository jobs, BaselineRepository baselines, WorkerWorkTracker work,
+        Func<bool> hasLiveHost, Func<bool> hasPendingEvents)
     {
         Project = project;
         WorkspaceKey = workspaceKey;
         Database = database;
         Jobs = jobs;
+        Baselines = baselines;
         _work = work;
         _hasLiveHost = hasLiveHost;
         _hasPendingEvents = hasPendingEvents;
@@ -52,6 +55,8 @@ public sealed class ProjectRuntime : IDisposable
 
     /// <summary>Gets repositories bound to the store; callers must hold an operation lease while accessing them.</summary>
     public JobRepository Jobs { get; }
+
+    internal BaselineRepository Baselines { get; }
 
     /// <summary>Gets the current admission state.</summary>
     public ProjectRuntimeAdmission Admission { get; private set; }
@@ -83,7 +88,8 @@ public sealed class ProjectRuntime : IDisposable
         ArgumentNullException.ThrowIfNull(work);
         var database = catalog.OpenOwned(project);
         var jobs = new JobRepository(database);
-        var runtime = new ProjectRuntime(project, workspaceKey, database, jobs, work,
+        var baselines = new BaselineRepository(database);
+        var runtime = new ProjectRuntime(project, workspaceKey, database, jobs, baselines, work,
             hasLiveHost ?? (() => false), hasPendingEvents ?? (() => false));
         try
         {

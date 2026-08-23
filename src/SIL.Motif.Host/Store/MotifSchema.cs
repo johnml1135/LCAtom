@@ -11,14 +11,14 @@ public static class MotifSchema
     public const int ApplicationId = 0x4D4F5446;
 
     /// <summary>The newest ordered schema generation implemented by this assembly.</summary>
-    public const int CurrentSchema = 6;
+    public const int CurrentSchema = 7;
 
     /// <summary>The connection busy timeout used for short-lived worker database sessions.</summary>
     public const int BusyTimeoutMilliseconds = 15000;
 
     internal static Version MinimumWorkerVersion(int schema) => schema switch
     {
-        1 or 2 or 3 or 4 or 5 or 6 => new Version(1, 0),
+        1 or 2 or 3 or 4 or 5 or 6 or 7 => new Version(1, 0),
         _ => throw new NotSupportedException($"Motif schema {schema} is not known to this worker.")
     };
 
@@ -74,6 +74,9 @@ public static class MotifSchema
                 case 6:
                     AddRecoveryAndArchiveFacts(connection, transaction);
                     break;
+                case 7:
+                    CreateBaselineTable(connection, transaction);
+                    break;
                 default:
                     throw new NotSupportedException($"Motif schema {schema} is not known to this worker.");
             }
@@ -122,6 +125,12 @@ public static class MotifSchema
                 "MotifMetadata", "Corpora", "CorpusDocuments", "Assessments", "AssessedWords",
                 "ParsedAnalyses", "AssessmentPins", "Proposals", "ProposalRevisions", "Drafts",
                 "Decisions", "Receipts", "Reports", "AppliedIndex", "MigrationLedger", "Jobs"
+            },
+            7 => new HashSet<string>(StringComparer.Ordinal)
+            {
+                "MotifMetadata", "Corpora", "CorpusDocuments", "Assessments", "AssessedWords",
+                "ParsedAnalyses", "AssessmentPins", "Proposals", "ProposalRevisions", "Drafts",
+                "Decisions", "Receipts", "Reports", "AppliedIndex", "MigrationLedger", "Jobs", "Baselines"
             },
             _ => throw new NotSupportedException($"Motif schema {schema} is not known to this worker.")
         };
@@ -327,6 +336,14 @@ public static class MotifSchema
         command.ExecuteNonQuery();
     }
 
+    private static void CreateBaselineTable(SqliteConnection connection, SqliteTransaction? transaction)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = BaselineDdl;
+        command.ExecuteNonQuery();
+    }
+
     private static bool HasColumn(SqliteConnection connection, SqliteTransaction? transaction, string table, string column)
     {
         using var command = connection.CreateCommand();
@@ -505,6 +522,7 @@ public static class MotifSchema
             new("Proposals", "ProposalId", "ProposalId", "NO ACTION", "NO ACTION", "NONE")],
         "AppliedIndex" when schema < 6 => [new("Proposals", "ProposalId", "ProposalId", "NO ACTION", "NO ACTION", "NONE")],
         "Jobs" => [],
+        "Baselines" => [],
         _ => []
     };
 
@@ -565,6 +583,12 @@ public static class MotifSchema
             C("CreatedUtc", "TEXT", true), C("UpdatedUtc", "TEXT", true),
             C("Version", "INTEGER", true, defaultValue: "0"), C("DryRunPublished", "INTEGER", true, defaultValue: "0")]
         : JobsColumns(schema),
+        "Baselines" =>
+        [C("ProjectKey", "TEXT", false, 1), C("ProjectIdentity", "TEXT", true),
+            C("SemanticSnapshotDigest", "TEXT", true), C("ProjectionVersion", "TEXT", true),
+            C("CapturedUtc", "TEXT", true), C("BundleDigest", "TEXT", true),
+            C("CapturedHostSessionId", "TEXT"), C("CapturedEditGeneration", "INTEGER"),
+            C("RootDirectory", "TEXT", true), C("FwDataPath", "TEXT", true), C("PublishedUtc", "TEXT", true)],
         _ => throw new InvalidDataException($"Motif table {table} is not registered.")
     };
 
@@ -822,5 +846,23 @@ public static class MotifSchema
         );
         CREATE UNIQUE INDEX IX_Jobs_Lineage_Attempt ON Jobs(LineageId, Attempt);
         CREATE INDEX IX_Jobs_Status_Updated ON Jobs(Status, UpdatedUtc);
+        """;
+
+    private const string BaselineDdl = """
+        CREATE TABLE Baselines (
+            ProjectKey TEXT PRIMARY KEY,
+            ProjectIdentity TEXT NOT NULL,
+            SemanticSnapshotDigest TEXT NOT NULL,
+            ProjectionVersion TEXT NOT NULL,
+            CapturedUtc TEXT NOT NULL,
+            BundleDigest TEXT NOT NULL,
+            CapturedHostSessionId TEXT NULL,
+            CapturedEditGeneration INTEGER NULL,
+            RootDirectory TEXT NOT NULL,
+            FwDataPath TEXT NOT NULL,
+            PublishedUtc TEXT NOT NULL,
+            CHECK ((CapturedHostSessionId IS NULL) = (CapturedEditGeneration IS NULL)),
+            CHECK (CapturedEditGeneration IS NULL OR CapturedEditGeneration >= 0)
+        );
         """;
 }
