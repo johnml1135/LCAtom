@@ -1,3 +1,5 @@
+using System;
+using System.Linq;
 using SIL.Motif.Contract.Projects;
 using SIL.Motif.Worker.Projects;
 using Xunit;
@@ -10,29 +12,38 @@ public sealed class ProjectWorkspaceKeyTests
     public void Compute_NormalizesWindowsPathSeparatorsCaseAndTrailingSeparator()
     {
         var first = ProjectWorkspaceKey.Compute(new ProjectLocator(
-            @"C:\\Projects\\Lang\\Lang.fwdata", "project-1"));
+            @"C:\Projects\Lang\Lang.fwdata", "project-1"));
         var second = ProjectWorkspaceKey.Compute(new ProjectLocator(
-            @"c:/projects/lang/LANG.fwdata\\", "project-1"));
+            @"c:/projects/lang/LANG.fwdata\", "project-1"));
 
         Assert.Equal(first, second);
     }
 
     [Fact]
-    public void Compute_ResolvesRelativePathBeforeHashing()
+    public void Compute_RejectsRelativeAndDriveRelativePaths()
     {
-        var relative = ProjectWorkspaceKey.Compute(new ProjectLocator(
-            @".\\relative\\Lang.fwdata", "project-1"));
-        var absolute = ProjectWorkspaceKey.Compute(new ProjectLocator(
-            System.IO.Path.GetFullPath(@".\\relative\\Lang.fwdata"), "project-1"));
+        Assert.Throws<ArgumentException>(() =>
+            new ProjectLocator(@".\relative\Lang.fwdata", "project-1"));
+        Assert.Throws<ArgumentException>(() =>
+            new ProjectLocator(@"C:relative\Lang.fwdata", "project-1"));
+    }
 
-        Assert.Equal(relative, absolute);
+    [Fact]
+    public void Compute_NormalizesFullyQualifiedUncPath()
+    {
+        var first = ProjectWorkspaceKey.Compute(new ProjectLocator(
+            @"\\Server\Share\Lang.fwdata", "project-1"));
+        var second = ProjectWorkspaceKey.Compute(new ProjectLocator(
+            @"//server/share/LANG.fwdata\", "project-1"));
+
+        Assert.Equal(first, second);
     }
 
     [Fact]
     public void Compute_DistinguishesSameIdentityAtDifferentPaths()
     {
-        var first = ProjectWorkspaceKey.Compute(new ProjectLocator(@"C:\\Projects\\One.fwdata", "project-1"));
-        var second = ProjectWorkspaceKey.Compute(new ProjectLocator(@"C:\\Projects\\Two.fwdata", "project-1"));
+        var first = ProjectWorkspaceKey.Compute(new ProjectLocator(@"C:\Projects\One.fwdata", "project-1"));
+        var second = ProjectWorkspaceKey.Compute(new ProjectLocator(@"C:\Projects\Two.fwdata", "project-1"));
 
         Assert.NotEqual(first, second);
     }
@@ -40,8 +51,8 @@ public sealed class ProjectWorkspaceKeyTests
     [Fact]
     public void Compute_DistinguishesDifferentIdentityAtTheSamePath()
     {
-        var first = ProjectWorkspaceKey.Compute(new ProjectLocator(@"C:\\Projects\\Lang.fwdata", "project-1"));
-        var second = ProjectWorkspaceKey.Compute(new ProjectLocator(@"C:\\Projects\\Lang.fwdata", "project-2"));
+        var first = ProjectWorkspaceKey.Compute(new ProjectLocator(@"C:\Projects\Lang.fwdata", "project-1"));
+        var second = ProjectWorkspaceKey.Compute(new ProjectLocator(@"C:\Projects\Lang.fwdata", "project-2"));
 
         Assert.NotEqual(first, second);
     }
@@ -49,9 +60,9 @@ public sealed class ProjectWorkspaceKeyTests
     [Fact]
     public void Compute_PreservesOpaqueUnicodeIdentityAndTupleOrder()
     {
-        var composed = ProjectWorkspaceKey.Compute(new ProjectLocator(@"C:\\Projects\\Lang.fwdata", "é"));
-        var decomposed = ProjectWorkspaceKey.Compute(new ProjectLocator(@"C:\\Projects\\Lang.fwdata", "e\u0301"));
-        var reversed = ProjectWorkspaceKey.Compute(new ProjectLocator(@"C:\\Projects\\é.fwdata", "e\u0301"));
+        var composed = ProjectWorkspaceKey.Compute(new ProjectLocator(@"C:\Projects\Lang.fwdata", "é"));
+        var decomposed = ProjectWorkspaceKey.Compute(new ProjectLocator(@"C:\Projects\Lang.fwdata", "e\u0301"));
+        var reversed = ProjectWorkspaceKey.Compute(new ProjectLocator(@"C:\Projects\é.fwdata", "e\u0301"));
 
         Assert.NotEqual(composed, decomposed);
         Assert.NotEqual(decomposed, reversed);
@@ -60,9 +71,12 @@ public sealed class ProjectWorkspaceKeyTests
     [Fact]
     public void Compute_ReturnsCanonicalSha256Value()
     {
-        var key = ProjectWorkspaceKey.Compute(new ProjectLocator(@"C:\\Projects\\Lang.fwdata", "project-1"));
+        var key = ProjectWorkspaceKey.Compute(new ProjectLocator(@"C:\Projects\Lang.fwdata", "project-1"));
 
         Assert.Matches("^sha256:[0-9a-f]{64}$", key);
+        Assert.Equal(
+            "sha256:ae976446c71d46154d9ddfd3d1a7efe0dfcd57650637f77d688c452fe6ea0003",
+            ProjectWorkspaceKey.Compute(new ProjectLocator(@"C:\Projects\Lang.fwdata", "project-1")));
     }
 
     [Theory]
@@ -72,7 +86,7 @@ public sealed class ProjectWorkspaceKeyTests
     public void Compute_RejectsMissingPath(string? path)
     {
         Assert.ThrowsAny<System.ArgumentException>(() =>
-            ProjectWorkspaceKey.Compute(new ProjectLocator(path!, "project-1")));
+            new ProjectLocator(path!, "project-1"));
     }
 
     [Theory]
@@ -82,6 +96,16 @@ public sealed class ProjectWorkspaceKeyTests
     public void Compute_RejectsMissingOpaqueIdentity(string? identity)
     {
         Assert.ThrowsAny<System.ArgumentException>(() =>
-            ProjectWorkspaceKey.Compute(new ProjectLocator(@"C:\\Projects\\Lang.fwdata", identity!)));
+            new ProjectLocator(@"C:\Projects\Lang.fwdata", identity!));
+    }
+
+    [Fact]
+    public void CanonicalBytes_UseOrderedLengthFramedUtf8Tuple()
+    {
+        var bytes = ProjectWorkspaceKey.CanonicalBytes(
+            new ProjectLocator(@"C:\Projects\Lang.fwdata", "project-1"));
+
+        Assert.Equal(new byte[] { 0, 0, 0, 23 }, bytes.Take(4));
+        Assert.Equal(new byte[] { 0, 0, 0, 9 }, bytes.Skip(27).Take(4));
     }
 }

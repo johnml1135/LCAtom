@@ -47,8 +47,8 @@ public sealed class BaselineTokenTests
         var second = new BaselineToken("project-1", Digest, "1", "2026-08-24T12:34:56Z", Digest, "host-2", 8);
 
         Assert.Equal(first.SemanticIdentity, second.SemanticIdentity);
-        Assert.Equal(first.SemanticIdentityDigest, second.SemanticIdentityDigest);
         Assert.True(first.HasSameSemanticIdentity(second));
+        Assert.False(first.HasSameSemanticIdentity(null));
         Assert.NotEqual(first, second);
     }
 
@@ -60,9 +60,9 @@ public sealed class BaselineTokenTests
         var snapshot = new BaselineToken("project-1", OtherDigest, "1", "2026-08-23T12:34:56Z", OtherDigest);
         var projection = new BaselineToken("project-1", Digest, "2", "2026-08-23T12:34:56Z", OtherDigest);
 
-        Assert.NotEqual(baseline.SemanticIdentityDigest, project.SemanticIdentityDigest);
-        Assert.NotEqual(baseline.SemanticIdentityDigest, snapshot.SemanticIdentityDigest);
-        Assert.NotEqual(baseline.SemanticIdentityDigest, projection.SemanticIdentityDigest);
+        Assert.False(baseline.HasSameSemanticIdentity(project));
+        Assert.False(baseline.HasSameSemanticIdentity(snapshot));
+        Assert.False(baseline.HasSameSemanticIdentity(projection));
     }
 
     [Theory]
@@ -86,6 +86,60 @@ public sealed class BaselineTokenTests
     {
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             new BaselineToken("project-1", Digest, "1", "2026-08-23T12:34:56Z", OtherDigest, null, generation));
+    }
+
+    [Fact]
+    public void BaselineToken_RejectsHostSessionWithoutEditGeneration()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            new BaselineToken("project-1", Digest, "1", "2026-08-23T12:34:56Z", OtherDigest,
+                "host-1", null));
+
+        var json = "{\"ProjectIdentity\":\"project-1\",\"SemanticSnapshotDigest\":\"" + Digest +
+            "\",\"ProjectionVersion\":\"1\",\"CapturedUtc\":\"2026-08-23T12:34:56Z\",\"BundleDigest\":\"" +
+            OtherDigest + "\",\"CapturedHostSessionId\":\"host-1\"}";
+
+        Assert.ThrowsAny<ArgumentException>(() => JsonSerializer.Deserialize<BaselineToken>(json));
+    }
+
+    [Fact]
+    public void BaselineToken_RejectsEditGenerationWithoutHostSession()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            new BaselineToken("project-1", Digest, "1", "2026-08-23T12:34:56Z", OtherDigest,
+                null, 7));
+
+        var json = "{\"ProjectIdentity\":\"project-1\",\"SemanticSnapshotDigest\":\"" + Digest +
+            "\",\"ProjectionVersion\":\"1\",\"CapturedUtc\":\"2026-08-23T12:34:56Z\",\"BundleDigest\":\"" +
+            OtherDigest + "\",\"CapturedEditGeneration\":7}";
+
+        Assert.ThrowsAny<ArgumentException>(() => JsonSerializer.Deserialize<BaselineToken>(json));
+    }
+
+    [Theory]
+    [InlineData("2026-01-01T00:00:00Z")]
+    [InlineData("2026-01-01T00:00:00.1Z")]
+    [InlineData("2026-12-31T23:59:59.1234567Z")]
+    public void BaselineToken_AcceptsCanonicalUtcBoundaries(string capturedUtc)
+    {
+        var token = new BaselineToken("project-1", Digest, "1", capturedUtc, OtherDigest);
+
+        Assert.Equal(capturedUtc, token.CapturedUtc);
+    }
+
+    [Theory]
+    [InlineData("2026-01-01T00:00:00")]
+    [InlineData("2026-01-01T00:00:00+00:00")]
+    [InlineData("2026-01-01T00:00:00+0000")]
+    [InlineData("2026/01/01T00:00:00Z")]
+    [InlineData("2026-02-30T00:00:00Z")]
+    [InlineData(" 2026-01-01T00:00:00Z")]
+    [InlineData("2026-01-01T00:00:00Z ")]
+    [InlineData("2026-01-01T00:00:00.12345678Z")]
+    public void BaselineToken_RejectsNonCanonicalUtc(string capturedUtc)
+    {
+        Assert.Throws<ArgumentException>(() =>
+            new BaselineToken("project-1", Digest, "1", capturedUtc, OtherDigest));
     }
 
     [Fact]

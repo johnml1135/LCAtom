@@ -9,8 +9,20 @@ namespace SIL.Motif.Worker.Projects;
 /// <summary>Computes the worker workspace identity for one exact project locator.</summary>
 public static class ProjectWorkspaceKey
 {
-    /// <summary>Hashes a canonical, path-and-identity tuple into a portable workspace key.</summary>
+    /// <summary>Hashes the canonical path-and-identity tuple into a portable workspace key.</summary>
     public static string Compute(ProjectLocator project)
+    {
+        if (project is null)
+            throw new ArgumentNullException(nameof(project));
+
+        return IntentDigest.Sha256Of(CanonicalBytes(project));
+    }
+
+    /// <summary>
+    /// Returns UTF-8 bytes for two ordered unsigned big-endian length-framed values: normalized
+    /// full Windows path, then the exact opaque FieldWorks identity.
+    /// </summary>
+    public static byte[] CanonicalBytes(ProjectLocator project)
     {
         if (project is null)
             throw new ArgumentNullException(nameof(project));
@@ -23,7 +35,7 @@ public static class ProjectWorkspaceKey
         using var tuple = new MemoryStream();
         WriteFrame(tuple, path);
         WriteFrame(tuple, project.FieldWorksProjectIdentity);
-        return IntentDigest.Sha256Of(tuple.ToArray());
+        return tuple.ToArray();
     }
 
     private static string NormalizeWindowsPath(string? path)
