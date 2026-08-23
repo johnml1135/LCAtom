@@ -23,6 +23,7 @@ public sealed class BinaryTransferServer : IAsyncDisposable
     /// <summary>Default aggregate bytes reserved by unpublished offers.</summary>
     public const long DefaultMaximumReservedBytes = 1024L * 1024 * 1024;
     private readonly string _tempDirectory;
+    private readonly string _tempDirectoryPrefix;
     private readonly IWorkerClock _clock;
     private readonly string? _userSid;
     private readonly int _maximumActiveOffers;
@@ -33,8 +34,8 @@ public sealed class BinaryTransferServer : IAsyncDisposable
     private Action? _onConnectionAccepted;
     private readonly ConcurrentDictionary<string, Transfer> _transfers =
         new ConcurrentDictionary<string, Transfer>(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, byte> _cleanupFailures =
-        new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, string> _cleanupFailures =
+        new ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     private bool _disposed;
     private long _reservedBytes;
 
@@ -55,6 +56,7 @@ public sealed class BinaryTransferServer : IAsyncDisposable
         if (maximumReservedBytes <= 0)
             throw new ArgumentOutOfRangeException(nameof(maximumReservedBytes));
         _tempDirectory = Path.GetFullPath(tempDirectory ?? throw new ArgumentNullException(nameof(tempDirectory)));
+        _tempDirectoryPrefix = _tempDirectory + Path.DirectorySeparatorChar;
         Directory.CreateDirectory(_tempDirectory);
         _clock = clock ?? new SystemClock();
         _userSid = userSid;
@@ -81,18 +83,10 @@ public sealed class BinaryTransferServer : IAsyncDisposable
     /// <summary>Retries deletion of temporary paths recorded after a cleanup failure.</summary>
     public void RetryCleanupFailures()
     {
-        foreach (var path in _cleanupFailures.Keys)
+        foreach (var failure in _cleanupFailures)
         {
-            try
-            {
-                if (File.Exists(path))
-                    File.Delete(path);
-                if (!File.Exists(path) && !Directory.Exists(path))
-                    _cleanupFailures.TryRemove(path, out _);
-            }
-            catch
-            {
-            }
+            if (TryDeleteTemporaryFile(failure.Key, failure.Value))
+                _cleanupFailures.TryRemove(failure.Key, out _);
         }
     }
 
@@ -297,19 +291,37 @@ public sealed class BinaryTransferServer : IAsyncDisposable
             _transfers.TryRemove(transfer.Offer.TransferId, out _);
         }
         ReleaseCapacity(transfer);
+        if (TryDeleteTemporaryFile(transfer.TempPath, transfer.Offer.TransferId))
+            _cleanupFailures.TryRemove(transfer.TempPath, out _);
+        else
+            _cleanupFailures.TryAdd(transfer.TempPath, transfer.Offer.TransferId);
+    }
+
+    private bool TryDeleteTemporaryFile(string path, string transferId)
+    {
+        var full = Path.GetFullPath(path);
+        var expected = Path.Combine(_tempDirectory, transferId + ".tmp");
+        if (!full.StartsWith(_tempDirectoryPrefix, StringComparison.OrdinalIgnoreCase) ||
+            !StringComparer.OrdinalIgnoreCase.Equals(full, expected) ||
+            !StringComparer.OrdinalIgnoreCase.Equals(Path.GetDirectoryName(full), _tempDirectory))
+            return false;
         try
         {
-            if (File.Exists(transfer.TempPath))
-                File.Delete(transfer.TempPath);
-            else if (Directory.Exists(transfer.TempPath))
-                throw new IOException("The transfer temporary path is a directory.");
-            _cleanupFailures.TryRemove(transfer.TempPath, out _);
+            if (!IsSafeTemporaryRoot()) return false;
+            if (Directory.Exists(full)) return false;
+            if (!File.Exists(full)) return true;
+            if ((File.GetAttributes(full) & FileAttributes.ReparsePoint) != 0 || !IsSafeTemporaryRoot())
+                return false;
+            File.Delete(full);
+            return !File.Exists(full) && !Directory.Exists(full);
         }
-        catch
-        {
-            _cleanupFailures.TryAdd(transfer.TempPath, 0);
-        }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
     }
+
+    private bool IsSafeTemporaryRoot() =>
+        Directory.Exists(_tempDirectory) &&
+        (File.GetAttributes(_tempDirectory) & FileAttributes.ReparsePoint) == 0;
 
     private void ReleaseCapacity(Transfer transfer)
     {

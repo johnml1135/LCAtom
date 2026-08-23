@@ -758,6 +758,63 @@ public sealed class WorkerServerTests
     }
 
     [Fact]
+    public async Task BinaryCleanupRefusesReplacedTransferRootAndRecordsRetry()
+    {
+        var parent = Path.Combine(Path.GetTempPath(), "motif-worker-" + Guid.NewGuid().ToString("N"));
+        var directory = Path.Combine(parent, "transfers");
+        var parked = Path.Combine(parent, "parked");
+        var outside = Path.Combine(parent, "outside");
+        Directory.CreateDirectory(parent);
+        try
+        {
+            await using var server = new BinaryTransferServer(directory);
+            var offer = server.CreateOffer(10, TimeSpan.FromSeconds(10));
+            Directory.Move(directory, parked);
+            Directory.CreateDirectory(outside);
+            var sentinel = Path.Combine(outside, offer.TransferId + ".tmp");
+            await File.WriteAllTextAsync(sentinel, "outside");
+            using (var junction = new Process())
+            {
+                junction.StartInfo.FileName = "cmd.exe";
+                junction.StartInfo.UseShellExecute = false;
+                junction.StartInfo.CreateNoWindow = true;
+                junction.StartInfo.ArgumentList.Add("/d");
+                junction.StartInfo.ArgumentList.Add("/c");
+                junction.StartInfo.ArgumentList.Add("mklink");
+                junction.StartInfo.ArgumentList.Add("/J");
+                junction.StartInfo.ArgumentList.Add(directory);
+                junction.StartInfo.ArgumentList.Add(outside);
+                Assert.True(junction.Start());
+                await junction.WaitForExitAsync();
+                Assert.Equal(0, junction.ExitCode);
+            }
+            try
+            {
+                await server.CancelAsync(offer.TransferId);
+
+                Assert.True(File.Exists(sentinel));
+                Assert.Contains(Path.Combine(directory, offer.TransferId + ".tmp"), server.CleanupFailures);
+                server.RetryCleanupFailures();
+                Assert.True(File.Exists(sentinel));
+                Assert.Contains(Path.Combine(directory, offer.TransferId + ".tmp"), server.CleanupFailures);
+            }
+            finally
+            {
+                if (Directory.Exists(directory) &&
+                    (File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0)
+                    Directory.Delete(directory);
+                if (!Directory.Exists(directory))
+                    Directory.Move(parked, directory);
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(parent))
+                Directory.Delete(parent, true);
+        }
+    }
+
+    [Fact]
     public async Task BinaryTransferUsesMonotonicDeadlineAcrossWallClockJump()
     {
         var directory = Path.Combine(Path.GetTempPath(), "motif-worker-" + Guid.NewGuid().ToString("N"));
