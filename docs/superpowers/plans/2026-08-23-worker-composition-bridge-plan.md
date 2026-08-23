@@ -446,7 +446,8 @@ The canonical workspace key remains the durable identity and routing key; only d
 Windows-safe storage segment so the key's digest prefix cannot become an invalid directory name.
 
 Every path that accesses a runtime repository must hold `ProjectRuntime.AcquireOperationAsync()` for the whole
-access: command handlers, queued-job runners, schedulers, host-event continuations, and recovery callbacks.
+access: command handlers, queued-job runners, schedulers, host-event continuations, and ordinary keepalive
+refreshes. Startup recovery uses a separate internal refresh boundary while admission is still `Recovering`.
 The writer-preferring `ProjectOperationGate` admits shared operations concurrently, but once an exclusive
 waiter arrives, later shared work cannot jump ahead. The lease makes idle release safe now and gives plan 6 an
 exclusive cutover barrier: legacy import can wait for all existing runtime activity and expose migrated state
@@ -459,7 +460,8 @@ lease while any job for the project is queued, running, or waiting. `ProjectRunt
 schedulers must call that runtime boundary rather than mutate and forget the lease. Release it when no active
 state remains. An ordinary connected client with no work does not hold the process alive.
 `TryReleaseIfIdle` succeeds only when there is no active job, no live host registration, no command using the
-runtime, and no pending event.
+runtime, and no pending event. The public registry constructor requires both activity predicates; the
+WorkerServer composition boundary supplies the real project host registry and event-sink pending-state query.
 
 Use this concrete construction boundary:
 
@@ -469,19 +471,24 @@ public sealed class ProjectRuntimeRegistry : IDisposable
     private readonly ProjectDatabaseCatalog _catalog;
     private readonly Func<JobRepository, string, WorkerRecoveryCoordinator> _recoveryFactory;
     private readonly WorkerWorkTracker _work;
+    private readonly Func<string, bool> _hasLiveHost;
+    private readonly Func<string, bool> _hasPendingEvents;
     private readonly ConcurrentDictionary<string, Lazy<ProjectRuntime>> _runtimes = new();
 
     public ProjectRuntimeRegistry(
         ProjectDatabaseCatalog catalog,
         Func<JobRepository, string, WorkerRecoveryCoordinator> recoveryFactory,
-        WorkerWorkTracker work);
+        WorkerWorkTracker work,
+        Func<string, bool> hasLiveHost,
+        Func<string, bool> hasPendingEvents);
 
     public ProjectRuntime GetOrOpen(ProjectLocator project)
     {
         var canonical = project;
         var key = ProjectWorkspaceKey.Compute(canonical);
         var lazy = _runtimes.GetOrAdd(key, _ => new Lazy<ProjectRuntime>(
-            () => ProjectRuntime.Open(canonical, key, _catalog, _recoveryFactory, _work),
+            () => ProjectRuntime.Open(canonical, key, _catalog, _recoveryFactory, _work,
+                () => _hasLiveHost(key), () => _hasPendingEvents(key)),
             LazyThreadSafetyMode.ExecutionAndPublication));
         try { return lazy.Value; }
         catch { _runtimes.TryRemove(new KeyValuePair<string, Lazy<ProjectRuntime>>(key, lazy)); throw; }
@@ -498,7 +505,9 @@ tests control them. Do not add a new migration implementation.
 `ProjectHostRegistry` maps the workspace key to one live host registration containing the canonical locator,
 server connection id, host session id, negotiated protocol, stream, and shared write gate. Registering a
 second host for the same key fails with a typed busy error; registering hosts for different keys succeeds.
-`Unregister` is idempotent and removes only the matching connection generation.
+`Unregister` is idempotent and removes only the matching connection and host-session generation. Event-sink
+host lookup, pending registration, and disconnect faulting use one lock order, so a disconnect cannot fall
+between host lookup and pending insertion.
 
 Change `WorkerEventSink` so every send method receives a `ProjectLocator` (or a resolved workspace key) and
 looks up that project's host. Keep the existing bounded correlation, one-result rule, write serialization,
@@ -519,7 +528,7 @@ internal sealed record ProjectHostRegistration(
 internal interface IProjectHostRegistry : IDisposable
 {
     void Register(ProjectLocator project, ProjectHostRegistration registration);
-    void Unregister(ProjectLocator project, string connectionId);
+    bool Unregister(ProjectLocator project, string connectionId, string hostSessionId);
     bool TryGet(ProjectLocator project, out ProjectHostRegistration registration);
 }
 

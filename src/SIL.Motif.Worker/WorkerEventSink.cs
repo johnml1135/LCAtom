@@ -14,37 +14,24 @@ namespace SIL.Motif.Worker;
 public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
 {
     internal const int PendingCorrelationCapacity = 128;
-    private const string LegacyWorkspaceKey = "legacy-live-host";
     private readonly object _gate = new();
-    private readonly SemaphoreSlim _writeGate = new(1, 1);
-    private readonly IProjectHostRegistry? _hosts;
+    private readonly IProjectHostRegistry _hosts;
+    private readonly bool _ownsHosts;
     private readonly Dictionary<string, PendingEvent> _pending = new(StringComparer.Ordinal);
-    private ProjectHostRegistration? _legacy;
     private bool _disposed;
     private int _activeWrites;
     private Task? _disposeTask;
     private TaskCompletionSource<bool>? _writesQuiesced;
 
-    /// <summary>Creates a sink with the compatibility registration used by older clients.</summary>
-    public WorkerEventSink() { }
+    /// <summary>Creates a sink with its own project-keyed host registry.</summary>
+    public WorkerEventSink() : this(new ProjectHostRegistry(), true) { }
 
-    internal WorkerEventSink(IProjectHostRegistry hosts) => _hosts = hosts ?? throw new ArgumentNullException(nameof(hosts));
+    internal WorkerEventSink(IProjectHostRegistry hosts) : this(hosts, false) { }
 
-    /// <summary>Registers a compatibility live-host stream without a project route.</summary>
-    public void RegisterLiveHost(Stream stream, int protocolVersion)
-        => RegisterLiveHost(stream, protocolVersion, null);
-
-    internal void RegisterLiveHost(Stream stream, int protocolVersion, SemaphoreSlim? sharedWriteGate)
+    private WorkerEventSink(IProjectHostRegistry hosts, bool ownsHosts)
     {
-        if (stream is null) throw new ArgumentNullException(nameof(stream));
-        if (protocolVersion <= 0) throw new ArgumentOutOfRangeException(nameof(protocolVersion));
-        lock (_gate)
-        {
-            ThrowIfDisposed();
-            if (_legacy is not null) throw new InvalidOperationException("A live host is already registered.");
-            _legacy = new ProjectHostRegistration(Guid.NewGuid().ToString("N"), string.Empty,
-                protocolVersion, stream, sharedWriteGate ?? _writeGate);
-        }
+        _hosts = hosts ?? throw new ArgumentNullException(nameof(hosts));
+        _ownsHosts = ownsHosts;
     }
 
     internal void RegisterLiveHost(ProjectLocator project, string connectionId, string hostSessionId,
@@ -52,27 +39,23 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
     {
         if (stream is null) throw new ArgumentNullException(nameof(stream));
         if (writeGate is null) throw new ArgumentNullException(nameof(writeGate));
-        _hosts?.Register(project, new ProjectHostRegistration(connectionId, hostSessionId,
-            protocolVersion, stream, writeGate));
-    }
-
-    /// <summary>Clears a compatibility registration and faults its pending events.</summary>
-    public void UnregisterLiveHost(Stream stream)
-    {
         lock (_gate)
         {
-            if (_disposed || _legacy is null || !ReferenceEquals(_legacy.Stream, stream)) return;
-            _legacy = null;
-            FaultPending(LegacyWorkspaceKey, new IOException("The live host disconnected."));
+            ThrowIfDisposed();
+            _hosts.Register(project, new ProjectHostRegistration(connectionId, hostSessionId,
+                protocolVersion, stream, writeGate));
         }
     }
 
-    internal void UnregisterLiveHost(ProjectLocator project, string connectionId)
+    internal void UnregisterLiveHost(ProjectLocator project, string connectionId, string hostSessionId)
     {
-        if (_hosts is null) return;
         var key = ProjectWorkspaceKey.Compute(project);
-        _hosts.Unregister(project, connectionId);
-        lock (_gate) FaultPending(key, new IOException("The live host disconnected."));
+        lock (_gate)
+        {
+            if (_disposed) return;
+            if (_hosts.Unregister(project, connectionId, hostSessionId))
+                FaultPending(key, new IOException("The live host disconnected."));
+        }
     }
 
     internal bool HasPendingEvents(string workspaceKey)
@@ -91,22 +74,13 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(project);
         var key = ProjectWorkspaceKey.Compute(project);
-        if (_hosts is null || !_hosts.TryGet(project, out var registration))
-            throw new InvalidOperationException("No live host is registered for this project.");
-        return SendAsyncCore(key, registration, eventName, payload, cancellationToken);
-    }
-
-    /// <summary>Sends an event using the compatibility live-host registration.</summary>
-    public Task<WorkerEventResultEnvelope> SendAsync(string eventName, JsonElement payload,
-        CancellationToken cancellationToken)
-    {
-        ProjectHostRegistration registration;
         lock (_gate)
         {
             ThrowIfDisposed();
-            registration = _legacy ?? throw new InvalidOperationException("No live host is registered.");
+            if (!_hosts.TryGet(project, out var registration))
+                throw new InvalidOperationException("No live host is registered for this project.");
+            return SendAsyncCore(key, registration, eventName, payload, cancellationToken);
         }
-        return SendAsyncCore(LegacyWorkspaceKey, registration, eventName, payload, cancellationToken);
     }
 
     /// <summary>Sends a baseline refresh event for a project.</summary>
@@ -126,28 +100,17 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
     public Task<WorkerEventResultEnvelope> RequestCancellationAsync(ProjectLocator project, JsonElement payload,
         CancellationToken cancellationToken) => SendAsync(project, WorkerCommands.CancellationRequested, payload, cancellationToken);
 
-    public Task<WorkerEventResultEnvelope> RequestBaselineRefreshAsync(JsonElement payload, CancellationToken cancellationToken) =>
-        SendAsync(WorkerCommands.BaselineRefreshRequested, payload, cancellationToken);
-
-    public Task<WorkerEventResultEnvelope> RequestApplyAsync(JsonElement payload, CancellationToken cancellationToken) =>
-        SendAsync(WorkerCommands.ApplyRequested, payload, cancellationToken);
-
-    public Task<WorkerEventResultEnvelope> RequestReconciliationAsync(JsonElement payload, CancellationToken cancellationToken) =>
-        SendAsync(WorkerCommands.ReconciliationRequested, payload, cancellationToken);
-
-    public Task<WorkerEventResultEnvelope> RequestCancellationAsync(JsonElement payload, CancellationToken cancellationToken) =>
-        SendAsync(WorkerCommands.CancellationRequested, payload, cancellationToken);
-
     /// <summary>Records one event result by its correlation identifier.</summary>
     public void AcceptResult(WorkerEventResultEnvelope result)
     {
         ArgumentNullException.ThrowIfNull(result);
         lock (_gate)
         {
-            if (!_pending.Remove(result.EventId, out var pending))
+            if (!_pending.TryGetValue(result.EventId, out var pending))
                 throw new InvalidOperationException("The event result identifier is unknown or duplicated.");
             if (result.ProtocolVersion != pending.ProtocolVersion)
                 throw new InvalidOperationException("The event result protocol is not negotiated.");
+            _pending.Remove(result.EventId);
             pending.Completion.TrySetResult(result);
         }
     }
@@ -155,7 +118,7 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
     /// <summary>Faults pending events and releases the serialized writer.</summary>
     public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
 
-    /// <summary>Waits for active event writes before releasing the sink-owned semaphore.</summary>
+    /// <summary>Waits for active event writes before releasing an owned host registry.</summary>
     public ValueTask DisposeAsync()
     {
         Task disposeTask;
@@ -164,7 +127,6 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
             if (_disposeTask is null)
             {
                 _disposed = true;
-                _legacy = null;
                 FaultPending(null, new ObjectDisposedException(nameof(WorkerEventSink)));
                 _writesQuiesced = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                 if (_activeWrites == 0) _writesQuiesced.TrySetResult(true);
@@ -234,7 +196,7 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
     private async Task DisposeAfterWritesAsync(Task writesQuiesced)
     {
         await writesQuiesced.ConfigureAwait(false);
-        _writeGate.Dispose();
+        if (_ownsHosts) _hosts.Dispose();
     }
 
     private void ThrowIfDisposed()

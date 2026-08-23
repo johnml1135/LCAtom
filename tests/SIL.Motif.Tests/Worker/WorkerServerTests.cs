@@ -10,8 +10,13 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using SIL.Motif.Contract.Projects;
 using SIL.Motif.Contract.Worker;
+using SIL.Motif.Host.Store;
 using SIL.Motif.Worker;
+using SIL.Motif.Worker.Jobs;
+using SIL.Motif.Worker.Projects;
+using SIL.Motif.Worker.Store;
 using Xunit;
 
 namespace SIL.Motif.Tests.Worker;
@@ -144,15 +149,16 @@ public sealed class WorkerServerTests
         using var ordinary = await new SIL.Motif.Client.Worker.WorkerClient().ConnectAsync(
             server.EndpointName, Handshake(), TimeSpan.FromSeconds(5), cancellation.Token);
         Assert.NotEqual(live.ServerConnectionId, ordinary.ServerConnectionId);
-        server.RegisterLiveHost(live.ServerConnectionId!);
-        Assert.Throws<InvalidOperationException>(() =>
-            server.RegisterLiveHost(ordinary.ServerConnectionId!));
+        var project = EventProject("coexist");
+        server.RegisterLiveHost(project, live.ServerConnectionId!);
+        Assert.Throws<ProjectHostBusyException>(() =>
+            server.RegisterLiveHost(project, ordinary.ServerConnectionId!));
 
         using var document = JsonDocument.Parse("{\"coexist\":true}");
         var received = new TaskCompletionSource<WorkerEventEnvelope>(
             TaskCreationOptions.RunContinuationsAsynchronously);
         live.EventReceived += (_, value) => received.TrySetResult(value);
-        var pending = server.EventSink.RequestApplyAsync(document.RootElement.Clone(), cancellation.Token);
+        var pending = server.EventSink.RequestApplyAsync(project, document.RootElement.Clone(), cancellation.Token);
         var eventEnvelope = await received.Task.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.False(pending.IsCompleted);
         var ordinaryResponseTask = ordinary.SendAsync(new WorkerEnvelope(
@@ -165,8 +171,8 @@ public sealed class WorkerServerTests
         await live.CompleteEventAsync(new WorkerEventResultEnvelope(eventEnvelope.EventId,
             WorkerEventOutcome.Completed, document.RootElement.Clone(), 1), cancellation.Token);
         await pending.WaitAsync(TimeSpan.FromSeconds(5));
-        server.UnregisterLiveHost(live.ServerConnectionId!);
-        server.RegisterLiveHost(ordinary.ServerConnectionId!);
+        server.UnregisterLiveHost(project, live.ServerConnectionId!);
+        server.RegisterLiveHost(project, ordinary.ServerConnectionId!);
         cancellation.Cancel();
         live.Dispose();
         ordinary.Dispose();
@@ -181,9 +187,10 @@ public sealed class WorkerServerTests
         using var stream = new ChunkingStream();
         using var sink = new WorkerEventSink();
         using var writerGate = new SemaphoreSlim(1, 1);
-        sink.RegisterLiveHost(stream, 1, writerGate);
+        var project = EventProject("writer");
+        sink.RegisterLiveHost(project, "connection", "session", stream, 1, writerGate);
         using var document = JsonDocument.Parse("{}");
-        var pending = sink.RequestApplyAsync(document.RootElement.Clone(), CancellationToken.None);
+        var pending = sink.RequestApplyAsync(project, document.RootElement.Clone(), CancellationToken.None);
         var responseWrite = WriteSerializedAsync(writerGate, stream, new WorkerEnvelope(
             "response", WorkerCommands.Handshake, document.RootElement.Clone(), 1),
             CancellationToken.None);
@@ -286,18 +293,20 @@ public sealed class WorkerServerTests
     {
         using var host = new MemoryStream();
         using var sink = new WorkerEventSink();
-        sink.RegisterLiveHost(host, 1);
-        Assert.Throws<InvalidOperationException>(() => sink.RegisterLiveHost(new MemoryStream(), 1));
+        var project = EventProject("settled");
+        sink.RegisterLiveHost(project, "connection", "session", host, 1, new SemaphoreSlim(1, 1));
+        Assert.Throws<ProjectHostBusyException>(() => sink.RegisterLiveHost(project, "other", "session", new MemoryStream(), 1,
+            new SemaphoreSlim(1, 1)));
         using var document = JsonDocument.Parse("{}");
-        await CompleteEventAsync(sink, host, document.RootElement.Clone(),
+        await CompleteEventAsync(sink, project, host, document.RootElement.Clone(),
             sink.RequestBaselineRefreshAsync, WorkerCommands.BaselineRefreshRequested);
-        await CompleteEventAsync(sink, host, document.RootElement.Clone(),
+        await CompleteEventAsync(sink, project, host, document.RootElement.Clone(),
             sink.RequestApplyAsync, WorkerCommands.ApplyRequested);
-        await CompleteEventAsync(sink, host, document.RootElement.Clone(),
+        await CompleteEventAsync(sink, project, host, document.RootElement.Clone(),
             sink.RequestReconciliationAsync, WorkerCommands.ReconciliationRequested);
         using var cancellation = new CancellationTokenSource();
         var beforeCancellation = host.Length;
-        var cancelled = sink.RequestCancellationAsync(document.RootElement.Clone(), cancellation.Token);
+        var cancelled = sink.RequestCancellationAsync(project, document.RootElement.Clone(), cancellation.Token);
         Assert.True(SpinWait.SpinUntil(() => host.Length > beforeCancellation, TimeSpan.FromSeconds(1)));
         var cancellationBytes = host.ToArray();
         var cancellationOffset = (int)beforeCancellation;
@@ -323,12 +332,60 @@ public sealed class WorkerServerTests
     {
         using var host = new MemoryStream();
         using var sink = new WorkerEventSink();
-        sink.RegisterLiveHost(host, 1);
+        var project = EventProject("disconnect");
+        sink.RegisterLiveHost(project, "connection", "session", host, 1, new SemaphoreSlim(1, 1));
         using var document = JsonDocument.Parse("{}");
-        var pending = sink.RequestApplyAsync(document.RootElement.Clone(), CancellationToken.None);
+        var pending = sink.RequestApplyAsync(project, document.RootElement.Clone(), CancellationToken.None);
         Assert.True(SpinWait.SpinUntil(() => host.Length >= 4, TimeSpan.FromSeconds(1)));
-        sink.UnregisterLiveHost(host);
+        sink.UnregisterLiveHost(project, "connection", "session");
         await Assert.ThrowsAsync<IOException>(() => pending);
+    }
+
+    [Fact]
+    public async Task ProjectScopedHostsRouteIsolationBusyAndDisconnectCorrectly()
+    {
+        using var sink = new WorkerEventSink();
+        using var hostA = new MemoryStream();
+        using var hostB = new MemoryStream();
+        var projectA = EventProject("project-a");
+        var projectB = EventProject("project-b");
+        sink.RegisterLiveHost(projectA, "connection-a", "session-a", hostA, 1, new SemaphoreSlim(1, 1));
+        sink.RegisterLiveHost(projectB, "connection-b", "session-b", hostB, 1, new SemaphoreSlim(1, 1));
+        Assert.Throws<ProjectHostBusyException>(() => sink.RegisterLiveHost(projectA, "other", "other",
+            new MemoryStream(), 1, new SemaphoreSlim(1, 1)));
+
+        using var document = JsonDocument.Parse("{}");
+        var pendingA = sink.RequestApplyAsync(projectA, document.RootElement.Clone(), CancellationToken.None);
+        var pendingB = sink.RequestApplyAsync(projectB, document.RootElement.Clone(), CancellationToken.None);
+        sink.UnregisterLiveHost(projectA, "connection-a", "session-a");
+        await Assert.ThrowsAsync<IOException>(() => pendingA);
+        Assert.False(pendingB.IsCompleted);
+        var resultB = new WorkerEventResultEnvelope(ReadEventId(hostB), WorkerEventOutcome.Completed,
+            document.RootElement.Clone(), 1);
+        sink.AcceptResult(resultB);
+        await pendingB.WaitAsync(TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public async Task EventSendAndDisconnectAreAtomicAtHostLookupBoundary()
+    {
+        var hosts = new BlockingHostRegistry();
+        await using var sink = new WorkerEventSink(hosts);
+        using var host = new MemoryStream();
+        var project = EventProject("lookup-race");
+        hosts.Register(project, new ProjectHostRegistration("connection", "session", 1, host,
+            new SemaphoreSlim(1, 1)));
+        using var document = JsonDocument.Parse("{}");
+
+        var pending = Task.Run(() => sink.RequestApplyAsync(project, document.RootElement.Clone(), CancellationToken.None));
+        await hosts.LookupStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        var disconnect = Task.Run(() => sink.UnregisterLiveHost(project, "connection", "session"));
+        await Task.Delay(50);
+        Assert.False(disconnect.IsCompleted);
+
+        hosts.ReleaseLookup.TrySetResult(true);
+        await Assert.ThrowsAsync<IOException>(() => pending.WaitAsync(TimeSpan.FromSeconds(1)));
+        await disconnect;
     }
 
     [Fact]
@@ -340,11 +397,12 @@ public sealed class WorkerServerTests
         var running = server.StartAsync(cancellation.Token);
         using var client = await new SIL.Motif.Client.Worker.WorkerClient().ConnectAsync(
             server.EndpointName, Handshake(), TimeSpan.FromSeconds(5), cancellation.Token);
-        server.RegisterLiveHost(client.ServerConnectionId!);
+        var project = EventProject("round-trip");
+        server.RegisterLiveHost(project, client.ServerConnectionId!);
         using var document = JsonDocument.Parse("{\"roundTrip\":true}");
         TaskCompletionSource<WorkerEventEnvelope>? received = null;
         client.EventReceived += (_, value) => received?.TrySetResult(value);
-        var requests = new (string Name, Func<JsonElement, CancellationToken, Task<WorkerEventResultEnvelope>> Request)[]
+        var requests = new (string Name, Func<ProjectLocator, JsonElement, CancellationToken, Task<WorkerEventResultEnvelope>> Request)[]
         {
             (WorkerCommands.BaselineRefreshRequested, server.EventSink.RequestBaselineRefreshAsync),
             (WorkerCommands.ApplyRequested, server.EventSink.RequestApplyAsync),
@@ -355,7 +413,7 @@ public sealed class WorkerServerTests
         {
             received = new TaskCompletionSource<WorkerEventEnvelope>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
-            var pending = request.Request(document.RootElement.Clone(), cancellation.Token);
+            var pending = request.Request(project, document.RootElement.Clone(), cancellation.Token);
             var eventEnvelope = await received.Task.WaitAsync(TimeSpan.FromSeconds(5));
             Assert.Equal(request.Name, eventEnvelope.Event);
             var result = new WorkerEventResultEnvelope(eventEnvelope.EventId,
@@ -382,13 +440,43 @@ public sealed class WorkerServerTests
     }
 
     [Fact]
+    public async Task WorkerServerRuntimeCompositionUsesHostAndPendingActivity()
+    {
+        await using var server = WorkerServer.CreateForTests("worker-runtime-" + Guid.NewGuid().ToString("N"));
+        var root = Path.Combine(Path.GetTempPath(), "motif-server-runtime-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var ownership = WorkspaceOwnership.Bootstrap(root);
+            var catalog = new ProjectDatabaseCatalog(MotifSchema.CurrentSchema, new Version(1, 0));
+            using var runtimes = server.CreateRuntimeRegistry(catalog,
+                (jobs, key) => new WorkerRecoveryCoordinator(new WorkerRecovery(jobs),
+                    new WorkspaceCleaner(ownership)));
+            var project = new ProjectLocator(Path.Combine(root, "runtime.fwdata"), "runtime");
+            var runtime = runtimes.GetOrOpen(project);
+            using var host = new MemoryStream();
+            using var writeGate = new SemaphoreSlim(1, 1);
+            server.EventSink.RegisterLiveHost(project, "connection", "session", host, 1, writeGate);
+
+            Assert.False(runtimes.TryReleaseIfIdle(runtime.WorkspaceKey));
+            server.EventSink.UnregisterLiveHost(project, "connection", "session");
+            Assert.True(runtimes.TryReleaseIfIdle(runtime.WorkspaceKey));
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public async Task EventSinkCompletesOnlyForTheMatchingResult()
     {
         using var host = new MemoryStream();
         var sink = new WorkerEventSink();
-        sink.RegisterLiveHost(host, 1);
+        var project = EventProject("matching");
+        sink.RegisterLiveHost(project, "connection", "session", host, 1, new SemaphoreSlim(1, 1));
         using var document = JsonDocument.Parse("{\"request\":true}");
-        var pending = sink.RequestApplyAsync(document.RootElement.Clone(), CancellationToken.None);
+        var pending = sink.RequestApplyAsync(project, document.RootElement.Clone(), CancellationToken.None);
         Assert.True(SpinWait.SpinUntil(() => host.Length >= 4, TimeSpan.FromSeconds(1)));
         var result = new WorkerEventResultEnvelope(
             ReadEventId(host), WorkerEventOutcome.Completed, document.RootElement.Clone(), 1);
@@ -406,15 +494,16 @@ public sealed class WorkerServerTests
     {
         using var host = new MemoryStream();
         await using var sink = new WorkerEventSink();
-        sink.RegisterLiveHost(host, 1);
+        var project = EventProject("bounded");
+        sink.RegisterLiveHost(project, "connection", "session", host, 1, new SemaphoreSlim(1, 1));
         using var document = JsonDocument.Parse("{}");
         var pending = new System.Collections.Generic.List<Task<WorkerEventResultEnvelope>>();
         for (var index = 0; index < WorkerEventSink.PendingCorrelationCapacity; index++)
-            pending.Add(sink.RequestApplyAsync(document.RootElement.Clone(), CancellationToken.None));
+            pending.Add(sink.RequestApplyAsync(project, document.RootElement.Clone(), CancellationToken.None));
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => sink.RequestApplyAsync(
+        await Assert.ThrowsAsync<InvalidOperationException>(() => sink.RequestApplyAsync(project,
             document.RootElement.Clone(), CancellationToken.None));
-        sink.UnregisterLiveHost(host);
+        sink.UnregisterLiveHost(project, "connection", "session");
         await Task.WhenAll(pending.Select(task => task.ContinueWith(_ => { })));
     }
 
@@ -423,9 +512,10 @@ public sealed class WorkerServerTests
     {
         await using var sink = new WorkerEventSink();
         var host = new BlockingStream();
-        sink.RegisterLiveHost(host, 1);
+        var project = EventProject("dispose");
+        sink.RegisterLiveHost(project, "connection", "session", host, 1, new SemaphoreSlim(1, 1));
         using var document = JsonDocument.Parse("{}");
-        var pending = sink.RequestApplyAsync(document.RootElement.Clone(), CancellationToken.None);
+        var pending = sink.RequestApplyAsync(project, document.RootElement.Clone(), CancellationToken.None);
         await host.WriteStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
 
         var disposing = sink.DisposeAsync().AsTask();
@@ -828,12 +918,12 @@ public sealed class WorkerServerTests
     }
 
     private static async Task CompleteEventAsync(
-        WorkerEventSink sink, MemoryStream host, JsonElement payload,
-        Func<JsonElement, CancellationToken, Task<WorkerEventResultEnvelope>> request,
+        WorkerEventSink sink, ProjectLocator project, MemoryStream host, JsonElement payload,
+        Func<ProjectLocator, JsonElement, CancellationToken, Task<WorkerEventResultEnvelope>> request,
         string expectedName)
     {
         var before = host.Length;
-        var pending = request(payload, CancellationToken.None);
+        var pending = request(project, payload, CancellationToken.None);
         Assert.True(SpinWait.SpinUntil(() => host.Length > before, TimeSpan.FromSeconds(1)));
         var bytes = host.ToArray();
         var length = bytes[(int)before] | bytes[(int)before + 1] << 8 |
@@ -855,6 +945,9 @@ public sealed class WorkerServerTests
         using var eventDocument = JsonDocument.Parse(payload);
         return eventDocument.RootElement.GetProperty("EventId").GetString()!;
     }
+
+    private static ProjectLocator EventProject(string name) =>
+        new($"C:\\MotifTests\\{name}.fwdata", name);
 
     private static string ReadLastEventId(MemoryStream host)
     {
@@ -973,6 +1066,44 @@ public sealed class WorkerServerTests
             await ReleaseWrite.Task.WaitAsync(cancellationToken);
             await base.WriteAsync(buffer, offset, count, cancellationToken);
         }
+    }
+
+    private sealed class BlockingHostRegistry : IProjectHostRegistry
+    {
+        private ProjectHostRegistration? _registration;
+        private bool _lookupBlocked = true;
+
+        public TaskCompletionSource<bool> LookupStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<bool> ReleaseLookup { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void Register(ProjectLocator project, ProjectHostRegistration registration) =>
+            _registration = registration;
+
+        public bool Unregister(ProjectLocator project, string connectionId, string hostSessionId)
+        {
+            if (_registration is null || !StringComparer.Ordinal.Equals(_registration.ConnectionId, connectionId) ||
+                !StringComparer.Ordinal.Equals(_registration.HostSessionId, hostSessionId)) return false;
+            _registration = null;
+            return true;
+        }
+
+        public bool TryGet(ProjectLocator project, out ProjectHostRegistration registration)
+        {
+            if (_lookupBlocked)
+            {
+                _lookupBlocked = false;
+                LookupStarted.TrySetResult(true);
+                ReleaseLookup.Task.GetAwaiter().GetResult();
+            }
+            registration = _registration!;
+            return registration is not null;
+        }
+
+        public bool HasRegistration(string workspaceKey) => _registration is not null;
+
+        public void Dispose() => _registration = null;
     }
 
     private sealed class ManualClock : IWorkerClock

@@ -14,7 +14,7 @@ internal sealed record ProjectHostRegistration(
 internal interface IProjectHostRegistry : IDisposable
 {
     void Register(ProjectLocator project, ProjectHostRegistration registration);
-    void Unregister(ProjectLocator project, string connectionId);
+    bool Unregister(ProjectLocator project, string connectionId, string hostSessionId);
     bool TryGet(ProjectLocator project, out ProjectHostRegistration registration);
     bool HasRegistration(string workspaceKey);
 }
@@ -42,16 +42,18 @@ internal sealed class ProjectHostRegistry : IProjectHostRegistry
         }
     }
 
-    public void Unregister(ProjectLocator project, string connectionId)
+    public bool Unregister(ProjectLocator project, string connectionId, string hostSessionId)
     {
         ArgumentNullException.ThrowIfNull(project);
-        if (string.IsNullOrWhiteSpace(connectionId)) return;
+        if (string.IsNullOrWhiteSpace(connectionId) || string.IsNullOrWhiteSpace(hostSessionId)) return false;
         var key = ProjectWorkspaceKey.Compute(project);
         lock (_sync)
         {
             if (_disposed || !_registrations.TryGetValue(key, out var current) ||
-                !StringComparer.Ordinal.Equals(current.ConnectionId, connectionId)) return;
+                !StringComparer.Ordinal.Equals(current.ConnectionId, connectionId) ||
+                !StringComparer.Ordinal.Equals(current.HostSessionId, hostSessionId)) return false;
             _registrations.Remove(key);
+            return true;
         }
     }
 

@@ -61,7 +61,7 @@ public sealed class ProjectRuntime : IDisposable
     {
         get
         {
-            RefreshWorkLease();
+            if (!RefreshWorkLease()) return false;
             lock (_state) return _workLease is not null;
         }
     }
@@ -90,7 +90,7 @@ public sealed class ProjectRuntime : IDisposable
             runtime.Admission = ProjectRuntimeAdmission.Recovering;
             recoveryFactory(jobs, workspaceKey).RecoverStartup(workspaceKey,
                 (now ?? (() => DateTimeOffset.UtcNow))());
-            runtime.RefreshWorkLease();
+            runtime.RefreshWorkLeaseDuringRecovery();
             runtime.Admission = ProjectRuntimeAdmission.Ready;
             return runtime;
         }
@@ -135,12 +135,30 @@ public sealed class ProjectRuntime : IDisposable
     }
 
     /// <summary>Refreshes the keepalive lease from the durable active-job rows.</summary>
-    public void RefreshWorkLease()
+    public bool RefreshWorkLease()
     {
         lock (_state)
         {
-            if (_disposed || Admission is ProjectRuntimeAdmission.Rejected or ProjectRuntimeAdmission.Disposed) return;
+            if (_disposed || Admission is ProjectRuntimeAdmission.Rejected or ProjectRuntimeAdmission.Disposed)
+                return false;
         }
+        using var operation = AcquireOperationAsync(CancellationToken.None).GetAwaiter().GetResult();
+        RefreshWorkLeaseCore();
+        return true;
+    }
+
+    internal void RefreshWorkLeaseDuringRecovery()
+    {
+        lock (_state)
+        {
+            if (_disposed || Admission != ProjectRuntimeAdmission.Recovering)
+                throw new InvalidOperationException("Recovery work refresh requires a recovering runtime.");
+        }
+        RefreshWorkLeaseCore();
+    }
+
+    private void RefreshWorkLeaseCore()
+    {
         var active = Jobs.ListActive(WorkspaceKey).Count != 0;
         lock (_state)
         {
@@ -168,7 +186,7 @@ public sealed class ProjectRuntime : IDisposable
 
     internal bool TryBeginReleaseIfIdle()
     {
-        RefreshWorkLease();
+        if (!RefreshWorkLease()) return false;
         lock (_state)
         {
             if (_disposed || _draining || _activeOperations != 0 || _workLease is not null ||

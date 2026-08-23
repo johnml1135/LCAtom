@@ -12,8 +12,8 @@ public sealed class ProjectRuntimeRegistry : IDisposable
     private readonly Func<JobRepository, string, WorkerRecoveryCoordinator> _recoveryFactory;
     private readonly WorkerWorkTracker _work;
     private readonly Func<DateTimeOffset>? _now;
-    private readonly Func<string, bool>? _hasPendingEvents;
-    private readonly ProjectHostRegistry? _hosts;
+    private readonly Func<string, bool> _hasLiveHost;
+    private readonly Func<string, bool> _hasPendingEvents;
     private readonly ConcurrentDictionary<string, Lazy<ProjectRuntime>> _runtimes = new();
     private readonly object _lifecycle = new();
     private int _disposed;
@@ -21,23 +21,33 @@ public sealed class ProjectRuntimeRegistry : IDisposable
     /// <summary>Creates a registry with injected store, recovery, and keepalive boundaries.</summary>
     public ProjectRuntimeRegistry(ProjectDatabaseCatalog catalog,
         Func<JobRepository, string, WorkerRecoveryCoordinator> recoveryFactory,
-        WorkerWorkTracker work, Func<DateTimeOffset>? now = null,
-        Func<string, bool>? hasPendingEvents = null)
-        : this(catalog, recoveryFactory, work, now, null, hasPendingEvents)
+        WorkerWorkTracker work, Func<string, bool> hasLiveHost,
+        Func<string, bool> hasPendingEvents, Func<DateTimeOffset>? now = null)
+        : this(catalog, recoveryFactory, work, now, hasLiveHost, hasPendingEvents)
     {
     }
 
     internal ProjectRuntimeRegistry(ProjectDatabaseCatalog catalog,
         Func<JobRepository, string, WorkerRecoveryCoordinator> recoveryFactory,
         WorkerWorkTracker work, Func<DateTimeOffset>? now, ProjectHostRegistry? hosts,
-        Func<string, bool>? hasPendingEvents = null)
+        Func<string, bool> hasPendingEvents)
+        : this(catalog, recoveryFactory, work, now, hosts is null
+            ? throw new ArgumentNullException(nameof(hosts))
+            : hosts.HasRegistration, hasPendingEvents)
+    {
+    }
+
+    private ProjectRuntimeRegistry(ProjectDatabaseCatalog catalog,
+        Func<JobRepository, string, WorkerRecoveryCoordinator> recoveryFactory,
+        WorkerWorkTracker work, Func<DateTimeOffset>? now,
+        Func<string, bool> hasLiveHost, Func<string, bool> hasPendingEvents)
     {
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         _recoveryFactory = recoveryFactory ?? throw new ArgumentNullException(nameof(recoveryFactory));
         _work = work ?? throw new ArgumentNullException(nameof(work));
         _now = now;
-        _hosts = hosts;
-        _hasPendingEvents = hasPendingEvents;
+        _hasLiveHost = hasLiveHost ?? throw new ArgumentNullException(nameof(hasLiveHost));
+        _hasPendingEvents = hasPendingEvents ?? throw new ArgumentNullException(nameof(hasPendingEvents));
     }
 
     /// <summary>Gets or opens the one recovered runtime for a canonical workspace key.</summary>
@@ -52,8 +62,8 @@ public sealed class ProjectRuntimeRegistry : IDisposable
             var key = ProjectWorkspaceKey.Compute(canonical);
             var lazy = _runtimes.GetOrAdd(key, _ => new Lazy<ProjectRuntime>(
                 () => ProjectRuntime.Open(canonical, key, _catalog, _recoveryFactory, _work, _now,
-                    _hosts is null ? null : () => _hosts.HasRegistration(key),
-                    _hasPendingEvents is null ? null : () => _hasPendingEvents(key)),
+                    () => _hasLiveHost(key),
+                    () => _hasPendingEvents(key)),
                 LazyThreadSafetyMode.ExecutionAndPublication));
             try
             {

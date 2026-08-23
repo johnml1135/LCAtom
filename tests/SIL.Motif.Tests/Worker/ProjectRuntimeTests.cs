@@ -81,12 +81,21 @@ public sealed class ProjectRuntimeTests : IDisposable
                     throw new InvalidOperationException("recovery failed");
                 return new WorkerRecoveryCoordinator(new WorkerRecovery(jobs, _clock),
                     new WorkspaceCleaner(ownership));
-            }, work, () => _clock.UtcNow);
+            }, work, _ => false, _ => false, () => _clock.UtcNow);
 
         Assert.Throws<InvalidOperationException>(() => registry.GetOrOpen(project));
+        Assert.False(registry.TryGet(ProjectWorkspaceKey.Compute(project), out _));
+        using var otherWork = new WorkerWorkTracker();
+        using var otherRegistry = new ProjectRuntimeRegistry(catalog,
+            (jobs, key) => new WorkerRecoveryCoordinator(new WorkerRecovery(jobs, _clock),
+                new WorkspaceCleaner(ownership)), otherWork, _ => false, _ => false,
+            () => _clock.UtcNow);
+        var other = otherRegistry.GetOrOpen(project);
+        other.Dispose();
         var runtime = registry.GetOrOpen(project);
 
         Assert.Equal(ProjectRuntimeAdmission.Ready, runtime.Admission);
+        Assert.NotSame(other, runtime);
     }
 
     [Fact]
@@ -125,6 +134,24 @@ public sealed class ProjectRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task RefreshAndIdleReleaseDoNotRaceRepositoryDisposal()
+    {
+        var project = Project("C:/workspace/refresh-race.fwdata", "project");
+        using var work = new WorkerWorkTracker();
+        using var registry = Registry(work);
+        var runtime = registry.GetOrOpen(project);
+        using var operation = await runtime.AcquireOperationAsync(CancellationToken.None);
+
+        var refresh = Task.Run(() => runtime.RefreshWorkLease());
+        var release = Task.Run(() => registry.TryReleaseIfIdle(runtime.WorkspaceKey));
+        await Task.WhenAll(refresh, release);
+
+        Assert.False(release.Result);
+        operation.Dispose();
+        Assert.True(registry.TryReleaseIfIdle(runtime.WorkspaceKey));
+    }
+
+    [Fact]
     public void PendingEventPreventsIdleReleaseUntilTheEventCompletes()
     {
         var project = Project("C:/workspace/events.fwdata", "project");
@@ -153,9 +180,14 @@ public sealed class ProjectRuntimeTests : IDisposable
 
         Assert.Throws<ProjectHostBusyException>(() => hosts.Register(left,
             new ProjectHostRegistration("left-2", "session-2", 1, new MemoryStream(), leftGate)));
-        hosts.Unregister(left, "left-stale");
+        hosts.Unregister(left, "left-stale", "session-stale");
         Assert.True(hosts.TryGet(left, out _));
-        hosts.Unregister(left, "left-1");
+        hosts.Unregister(left, "left-1", "session-1");
+        Assert.False(hosts.TryGet(left, out _));
+        hosts.Register(left, new ProjectHostRegistration("left-1", "session-2", 1, leftStream, leftGate));
+        Assert.False(hosts.Unregister(left, "left-1", "session-1"));
+        Assert.True(hosts.TryGet(left, out _));
+        Assert.True(hosts.Unregister(left, "left-1", "session-2"));
         Assert.False(hosts.TryGet(left, out _));
         Assert.True(hosts.TryGet(right, out _));
     }
@@ -167,6 +199,7 @@ public sealed class ProjectRuntimeTests : IDisposable
         using var work = new WorkerWorkTracker();
         using var catalog = Registry(work);
         var runtime = catalog.GetOrOpen(project);
+        using var operation = runtime.AcquireOperationAsync(CancellationToken.None).GetAwaiter().GetResult();
         runtime.Jobs.Create("job", runtime.WorkspaceKey, "dry-run", "{}", _clock.UtcNow.ToString("O"));
         runtime.RefreshWorkLease();
         Assert.True(runtime.HasActiveWork);
@@ -182,7 +215,8 @@ public sealed class ProjectRuntimeTests : IDisposable
         var catalog = new ProjectDatabaseCatalog(MotifSchema.CurrentSchema, new Version(1, 0));
         return new ProjectRuntimeRegistry(catalog,
             (jobs, key) => new WorkerRecoveryCoordinator(new WorkerRecovery(jobs, _clock),
-                new WorkspaceCleaner(ownership)), work, () => _clock.UtcNow, hasPendingEvents);
+                new WorkspaceCleaner(ownership)), work, _ => false,
+            hasPendingEvents ?? (_ => false), () => _clock.UtcNow);
     }
 
     private ProjectLocator Project(string path, string identity) =>
