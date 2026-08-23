@@ -37,6 +37,18 @@ public static class ProjectWorkspaceKey
         return tuple.ToArray();
     }
 
+    /// <summary>Returns a Windows-safe segment for derived worker workspace paths.</summary>
+    public static string StorageSegment(string workspaceKey)
+    {
+        if (string.IsNullOrWhiteSpace(workspaceKey))
+            throw new ArgumentException("A workspace key is required.", nameof(workspaceKey));
+        if (workspaceKey.StartsWith("sha256:", StringComparison.Ordinal))
+            return "sha256-" + workspaceKey.Substring("sha256:".Length);
+        if (workspaceKey.IndexOfAny([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar, ':']) >= 0)
+            throw new ArgumentException("A workspace key is not a safe storage segment.", nameof(workspaceKey));
+        return workspaceKey;
+    }
+
     private static void WriteFrame(Stream stream, string value)
     {
         var bytes = Encoding.UTF8.GetBytes(value);

@@ -354,6 +354,8 @@ before any command can observe or mutate project state.
 - Create: `src/SIL.Motif.Worker/Projects/ProjectRuntimeRegistry.cs`
 - Modify: `src/SIL.Motif.Worker/WorkerEventSink.cs`
 - Modify: `src/SIL.Motif.Worker/WorkerServer.cs`
+- Modify: `src/SIL.Motif.Worker/Projects/ProjectWorkspaceKey.cs`
+- Modify: `src/SIL.Motif.Worker/Jobs/WorkerRecoveryCoordinator.cs`
 - Modify: `src/SIL.Motif.Worker/WorkerWorkTracker.cs`
 - Modify: `src/SIL.Motif.Worker/Store/ProjectDatabaseCatalog.cs`
 - Create: `tests/SIL.Motif.Tests/Worker/ProjectRuntimeTests.cs`
@@ -439,6 +441,9 @@ job handling. If schema migration, identity validation, cleanup, or recovery thr
 every created resource, remove the dictionary entry, and rethrow the original exception. A rejected runtime
 never serves a command. Importing the CLI-selected legacy Proposal and bulk-store sources remains in plan 6,
 because their exact `--store` location is not derivable from `ProjectLocator`.
+
+The canonical workspace key remains the durable identity and routing key; only derived filesystem paths use a
+Windows-safe storage segment so the key's digest prefix cannot become an invalid directory name.
 
 Every path that accesses a runtime repository must hold `ProjectRuntime.AcquireOperationAsync()` for the whole
 access: command handlers, queued-job runners, schedulers, host-event continuations, and recovery callbacks.

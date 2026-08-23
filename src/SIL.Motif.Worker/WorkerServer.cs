@@ -8,7 +8,9 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using SIL.Motif.Contract.Projects;
 using SIL.Motif.Contract.Worker;
+using SIL.Motif.Worker.Projects;
 
 namespace SIL.Motif.Worker;
 
@@ -20,6 +22,7 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
     private readonly WorkerMutexOwner _ownerMutex;
     private readonly WorkerHandshakeOffer _offer;
     private readonly IWorkerWorkTracker? _workTracker;
+    private readonly ProjectHostRegistry _hostRegistry;
     private readonly WorkerEventSink _eventSink;
     private readonly CancellationTokenSource _shutdown = new CancellationTokenSource();
     private readonly ConcurrentDictionary<string, WorkerControlConnection> _connections =
@@ -44,7 +47,8 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
         _ownerMutex = new WorkerMutexOwner(OwnerName);
         _offer = WorkerBuildMetadataProvider.Current.ToHandshakeOffer();
         _workTracker = workTracker ?? new WorkerWorkTracker();
-        _eventSink = new WorkerEventSink();
+        _hostRegistry = new ProjectHostRegistry();
+        _eventSink = new WorkerEventSink(_hostRegistry);
     }
 
     /// <summary>Creates an isolated server identity for protocol tests only.</summary>
@@ -76,6 +80,20 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
         connection.RegisterLiveHost();
     }
 
+    /// <summary>Registers a connection as the live host for one project workspace.</summary>
+    public void RegisterLiveHost(ProjectLocator project, string connectionId)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        if (string.IsNullOrWhiteSpace(connectionId))
+            throw new ArgumentException("A server connection identity is required.", nameof(connectionId));
+        if (!_connections.TryGetValue(connectionId, out var connection))
+            throw new InvalidOperationException("The server connection identity is unknown.");
+        connection.RegisterLiveHost(project);
+    }
+
+    /// <summary>Registers a connection as the live host for one project workspace.</summary>
+    public void RegisterLiveHost(string connectionId, ProjectLocator project) => RegisterLiveHost(project, connectionId);
+
     /// <summary>Removes a connected client from live-host registration.</summary>
     public void UnregisterLiveHost(string connectionId)
     {
@@ -83,6 +101,15 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
             throw new ArgumentException("A server connection identity is required.", nameof(connectionId));
         if (_connections.TryGetValue(connectionId, out var connection))
             connection.UnregisterLiveHost();
+    }
+
+    /// <summary>Removes a project host registration only when it belongs to this connection.</summary>
+    public void UnregisterLiveHost(ProjectLocator project, string connectionId)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        if (string.IsNullOrWhiteSpace(connectionId)) return;
+        if (_connections.TryGetValue(connectionId, out var connection))
+            connection.UnregisterLiveHost(project);
     }
 
     /// <summary>Derives the stable control pipe name for the current Windows user.</summary>
@@ -146,6 +173,7 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
         foreach (var connection in _connections.Values)
             await connection.DisposeAsync().ConfigureAwait(false);
         await _eventSink.DisposeAsync().ConfigureAwait(false);
+        _hostRegistry.Dispose();
         Exception? ownershipFailure = null;
         if (IsOwner)
         {
@@ -229,6 +257,7 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
         private readonly WorkerEventSink _eventSink;
         private readonly SemaphoreSlim _writeGate = new SemaphoreSlim(1, 1);
         private bool _liveHost;
+        private ProjectLocator? _hostProject;
 
         public WorkerControlConnection(Stream stream, int protocolVersion, WorkerEventSink eventSink,
             string connectionId)
@@ -247,11 +276,32 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
             _liveHost = true;
         }
 
+        public void RegisterLiveHost(ProjectLocator project)
+        {
+            _eventSink.RegisterLiveHost(project, Id, Guid.NewGuid().ToString("N"), _stream,
+                _protocolVersion, _writeGate);
+            _hostProject = project;
+            _liveHost = true;
+        }
+
         public void UnregisterLiveHost()
         {
             if (!_liveHost)
                 return;
-            _eventSink.UnregisterLiveHost(_stream);
+            if (_hostProject is null) _eventSink.UnregisterLiveHost(_stream);
+            else _eventSink.UnregisterLiveHost(_hostProject, Id);
+            _hostProject = null;
+            _liveHost = false;
+        }
+
+        public void UnregisterLiveHost(ProjectLocator project)
+        {
+            if (!_liveHost || _hostProject is null) return;
+            if (!ReferenceEquals(project, _hostProject) &&
+                !StringComparer.Ordinal.Equals(ProjectWorkspaceKey.Compute(project),
+                    ProjectWorkspaceKey.Compute(_hostProject))) return;
+            _eventSink.UnregisterLiveHost(project, Id);
+            _hostProject = null;
             _liveHost = false;
         }
 
