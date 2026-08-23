@@ -1,0 +1,72 @@
+using SIL.Motif.Worker.Store;
+using SIL.Motif.Contract.Ids;
+using SIL.Motif.Contract.Projects;
+using SIL.Motif.Host.Store;
+using Xunit;
+
+namespace SIL.Motif.Tests.Store;
+
+public sealed class ArchivePolicyTests
+{
+    [Fact]
+    public void DefaultPolicyPurgesOnlyAfterThirtyDaysFromArchiveTimestamp()
+    {
+        var policy = ArchivePolicy.Default;
+        var archived = DateTimeOffset.Parse("2026-07-23T12:00:00Z");
+        Assert.False(policy.ShouldPurge(archived, DateTimeOffset.Parse("2026-08-22T11:59:59Z")));
+        Assert.True(policy.ShouldPurge(archived, DateTimeOffset.Parse("2026-08-22T12:00:00Z")));
+    }
+
+    [Fact]
+    public void ForeverAndNonterminalStateNeverPurges()
+    {
+        Assert.False(new ArchivePolicy(TimeSpan.Zero, true).ShouldPurge(DateTimeOffset.MinValue, DateTimeOffset.MaxValue));
+        Assert.False(ArchivePolicy.Default.ShouldPurge(null, DateTimeOffset.MaxValue));
+    }
+
+    [Fact]
+    public void TerminalProposalArchivesImmediatelyAndAppliedIndexSurvivesManualPurge()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "motif-archive-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var locator = new ProjectLocator(Path.Combine(root, "project.fwdata"), "project");
+            using var database = MotifDatabase.OpenOwned(Path.Combine(root, "project.motif.db"), locator,
+                MotifSchema.CurrentSchema, new Version(1, 0));
+            var id = CanonicalId.Mint("proposal/");
+            var repository = new ProposalRepository(database,
+                new FixedClock("2026-08-23T12:00:00Z"));
+            repository.SaveRevision(new ProposalRevisionRecord(id, "sha256:archive",
+                "{\"proposalId\":\"" + id.Value + "\"}", "proposed", null, null, null));
+            repository.SaveDecision(new DecisionRecord(id, "sha256:archive", "applied", "human", "a", null,
+                "2026-08-23T12:00:00Z"));
+            Assert.Equal("2026-08-23T12:00:00.0000000+00:00", repository.Get(id).ArchivedUtc);
+            using (var connection = database.OpenConnection())
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "INSERT INTO AppliedIndex (ProposalId, IntentDigest, AppliedUtc) " +
+                    "VALUES ($id, $digest, $utc);";
+                command.Parameters.AddWithValue("$id", id.Value);
+                command.Parameters.AddWithValue("$digest", "sha256:archive");
+                command.Parameters.AddWithValue("$utc", "2026-08-23T12:00:00Z");
+                command.ExecuteNonQuery();
+            }
+            repository.DeleteArchived(id);
+            using var reopened = database.OpenConnection();
+            using var count = reopened.CreateCommand();
+            count.CommandText = "SELECT COUNT(*) FROM AppliedIndex WHERE ProposalId = $id;";
+            count.Parameters.AddWithValue("$id", id.Value);
+            Assert.Equal(1L, count.ExecuteScalar());
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch (DirectoryNotFoundException) { }
+        }
+    }
+
+    private sealed class FixedClock(string value) : SIL.Motif.Contract.Jobs.IJobClock
+    {
+        public DateTimeOffset UtcNow => DateTimeOffset.Parse(value);
+    }
+}

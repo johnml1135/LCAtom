@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Microsoft.Data.Sqlite;
+using SIL.Motif.Contract.Jobs;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Host.Store;
 
@@ -23,7 +24,7 @@ public interface IProposalRepository
 public sealed record ProposalRecord(
     CanonicalId ProposalId, string IntentDigest, string ProposalJson, string Status, string? Label,
     string? Comment, string? SupersededBy, DecisionRecord? Decision = null, byte[]? ProposalJsonBytes = null,
-    string? AnchorJson = null);
+    string? AnchorJson = null, string? ArchivedUtc = null);
 
 /// <summary>An immutable Proposal revision, retaining the exact source JSON bytes.</summary>
 public sealed record ProposalRevisionRecord(
@@ -42,10 +43,14 @@ public sealed record ProposalListFilter(string? Status = null, bool IncludeArchi
 public sealed class ProposalRepository : IProposalRepository
 {
     private readonly MotifDatabase _database;
+    private readonly IJobClock _clock;
 
     /// <summary>Creates a repository over an already worker-owned database.</summary>
-    public ProposalRepository(MotifDatabase database) =>
+    public ProposalRepository(MotifDatabase database, IJobClock? clock = null)
+    {
         _database = database ?? throw new ArgumentNullException(nameof(database));
+        _clock = clock ?? new SystemJobClock();
+    }
 
     /// <inheritdoc />
     public ProposalRecord Get(CanonicalId proposalId)
@@ -55,7 +60,7 @@ public sealed class ProposalRepository : IProposalRepository
         command.CommandText = """
             SELECT p.ProposalId, p.CurrentIntentDigest, r.ProposalJson,
                    p.Status, p.Label, p.Comment, p.SupersededBy,
-                   d.Outcome, d.ActorType, d.ActorId, d.Comment, d.TimestampUtc, d.IntentDigest, p.AnchorJson
+                   d.Outcome, d.ActorType, d.ActorId, d.Comment, d.TimestampUtc, d.IntentDigest, p.AnchorJson, p.ArchivedUtc
             FROM Proposals p JOIN ProposalRevisions r ON r.ProposalId = p.ProposalId
                 AND r.IntentDigest = p.CurrentIntentDigest
             LEFT JOIN Decisions d ON d.ProposalId = p.ProposalId AND d.IntentDigest = p.CurrentIntentDigest
@@ -79,7 +84,7 @@ public sealed class ProposalRepository : IProposalRepository
         command.CommandText = """
             SELECT p.ProposalId, p.CurrentIntentDigest, r.ProposalJson,
                    p.Status, p.Label, p.Comment, p.SupersededBy,
-                   d.Outcome, d.ActorType, d.ActorId, d.Comment, d.TimestampUtc, d.IntentDigest, p.AnchorJson
+                   d.Outcome, d.ActorType, d.ActorId, d.Comment, d.TimestampUtc, d.IntentDigest, p.AnchorJson, p.ArchivedUtc
             FROM Proposals p JOIN ProposalRevisions r ON r.ProposalId = p.ProposalId
                 AND r.IntentDigest = p.CurrentIntentDigest
             LEFT JOIN Decisions d ON d.ProposalId = p.ProposalId AND d.IntentDigest = p.CurrentIntentDigest
@@ -104,19 +109,23 @@ public sealed class ProposalRepository : IProposalRepository
         using var transaction = connection.BeginTransaction();
         var created = revision.CreatedUtc ?? DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
         var bytes = revision.ProposalJsonBytes ?? Encoding.UTF8.GetBytes(revision.ProposalJson);
+        var archived = IsTerminal(revision.Status) ? _clock.UtcNow.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture) : null;
         using (var parent = connection.CreateCommand())
         {
             parent.Transaction = transaction;
             parent.CommandText = """
                 INSERT INTO Proposals
-                    (ProposalId, CurrentIntentDigest, Status, Label, Comment, SupersededBy)
-                VALUES ($id, $digest, $status, $label, $comment, $superseded)
+                    (ProposalId, CurrentIntentDigest, Status, Label, Comment, SupersededBy, ArchivedUtc)
+                VALUES ($id, $digest, $status, $label, $comment, $superseded, $archived)
                 ON CONFLICT(ProposalId) DO UPDATE SET CurrentIntentDigest = excluded.CurrentIntentDigest,
                     Status = excluded.Status, Label = excluded.Label, Comment = excluded.Comment,
-                    SupersededBy = excluded.SupersededBy, AnchorJson = NULL;
+                    SupersededBy = excluded.SupersededBy, AnchorJson = NULL,
+                    ArchivedUtc = CASE WHEN excluded.Status IN ('applied','rejected','superseded','withdrawn')
+                        THEN COALESCE(Proposals.ArchivedUtc, excluded.ArchivedUtc) ELSE NULL END;
                 """;
             AddParameters(parent, revision, bytes);
             parent.Parameters.AddWithValue("$superseded", (object?)revision.SupersededBy ?? DBNull.Value);
+            parent.Parameters.AddWithValue("$archived", (object?)archived ?? DBNull.Value);
             parent.ExecuteNonQuery();
         }
 
@@ -191,11 +200,51 @@ public sealed class ProposalRepository : IProposalRepository
         command.ExecuteNonQuery();
         using var status = connection.CreateCommand();
         status.Transaction = transaction;
-        status.CommandText = "UPDATE Proposals SET Status = $status WHERE ProposalId = $id AND CurrentIntentDigest = $digest;";
+        status.CommandText = "UPDATE Proposals SET Status = $status, ArchivedUtc = CASE WHEN $status IN " +
+            "('applied','rejected','superseded','withdrawn') THEN COALESCE(ArchivedUtc, $archived) ELSE NULL END " +
+            "WHERE ProposalId = $id AND CurrentIntentDigest = $digest;";
         status.Parameters.AddWithValue("$status", decision.Outcome);
         status.Parameters.AddWithValue("$id", decision.ProposalId.Value);
         status.Parameters.AddWithValue("$digest", decision.IntentDigest);
+        status.Parameters.AddWithValue("$archived", _clock.UtcNow.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
         status.ExecuteNonQuery();
+        transaction.Commit();
+    }
+
+    public IReadOnlyList<ProposalRecord> ListArchived(DateTimeOffset now, ArchivePolicy? policy = null)
+    {
+        policy ??= ArchivePolicy.Default;
+        return List(new ProposalListFilter(IncludeArchived: true))
+            .Where(proposal => IsTerminal(proposal.Status) &&
+                policy.ShouldPurge(ParseNullableUtc(proposal.ArchivedUtc), now)).ToArray();
+    }
+
+    public void DeleteArchived(CanonicalId proposalId)
+    {
+        using var connection = _database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+        using (var check = connection.CreateCommand())
+        {
+            check.Transaction = transaction;
+            check.CommandText = "SELECT Status FROM Proposals WHERE ProposalId = $id;";
+            check.Parameters.AddWithValue("$id", proposalId.Value);
+            var status = check.ExecuteScalar() as string;
+            if (status is null || !IsTerminal(status)) throw new InvalidOperationException("Only terminal Proposals may be archived.");
+        }
+        foreach (var sql in new[] { "DELETE FROM Decisions WHERE ProposalId = $id;", "DELETE FROM Receipts WHERE ProposalId = $id;",
+            "DELETE FROM Reports WHERE ProposalId = $id;", "DELETE FROM ProposalRevisions WHERE ProposalId = $id;" })
+        {
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = sql;
+            command.Parameters.AddWithValue("$id", proposalId.Value);
+            command.ExecuteNonQuery();
+        }
+        using var proposal = connection.CreateCommand();
+        proposal.Transaction = transaction;
+        proposal.CommandText = "DELETE FROM Proposals WHERE ProposalId = $id;";
+        proposal.Parameters.AddWithValue("$id", proposalId.Value);
+        proposal.ExecuteNonQuery();
         transaction.Commit();
     }
 
@@ -231,6 +280,10 @@ public sealed class ProposalRepository : IProposalRepository
         return new ProposalRecord(proposalId, reader.GetString(1), json, reader.GetString(3),
             reader.IsDBNull(4) ? null : reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5),
             reader.IsDBNull(6) ? null : reader.GetString(6), decision, bytes,
-            reader.IsDBNull(13) ? null : reader.GetString(13));
+            reader.IsDBNull(13) ? null : reader.GetString(13), reader.IsDBNull(14) ? null : reader.GetString(14));
     }
+
+    private static bool IsTerminal(string status) => status is "applied" or "rejected" or "superseded" or "withdrawn";
+
+    private static DateTimeOffset? ParseNullableUtc(string? value) => value is null ? null : DateTimeOffset.Parse(value, CultureInfo.InvariantCulture);
 }

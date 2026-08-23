@@ -11,11 +11,13 @@ public sealed class JobRepository
 {
     private readonly MotifDatabase _database;
     private readonly JobStateMachine _stateMachine;
+    private readonly IJobClock _clock;
 
     public JobRepository(MotifDatabase database, IJobClock? clock = null)
     {
         _database = database ?? throw new ArgumentNullException(nameof(database));
-        _stateMachine = new JobStateMachine(clock);
+        _clock = clock ?? new SystemJobClock();
+        _stateMachine = new JobStateMachine(_clock);
     }
 
     public JobRecord Create(JobRecord requested)
@@ -64,17 +66,74 @@ public sealed class JobRepository
         return records;
     }
 
+    public bool HasLaterAttempt(string lineageId, int attempt)
+    {
+        using var connection = _database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT 1 FROM Jobs WHERE LineageId = $lineage AND Attempt > $attempt LIMIT 1;";
+        command.Parameters.AddWithValue("$lineage", lineageId);
+        command.Parameters.AddWithValue("$attempt", attempt);
+        return command.ExecuteScalar() is not null;
+    }
+
+    public IReadOnlyList<JobRecord> ListActive(string? projectKey = null)
+    {
+        using var connection = _database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = SelectSql + " WHERE Status NOT IN ('completed','completed-dry-run-only'," +
+            "'completed-with-assessment-failure','failed','cancelled','interrupted')" +
+            (projectKey is null ? "" : " AND ProjectKey = $project") + " ORDER BY UpdatedUtc;";
+        if (projectKey is not null) command.Parameters.AddWithValue("$project", projectKey);
+        using var reader = command.ExecuteReader();
+        var records = new List<JobRecord>();
+        while (reader.Read()) records.Add(Read(reader));
+        return records;
+    }
+
+    public IReadOnlyList<JobRecord> ListAttemptsReady(DateTimeOffset now)
+    {
+        using var connection = _database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = SelectSql + " WHERE Status = 'queued' AND " +
+            "(NotBeforeUtc IS NULL OR NotBeforeUtc <= $now) ORDER BY Attempt;";
+        command.Parameters.AddWithValue("$now", now.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
+        using var reader = command.ExecuteReader();
+        var records = new List<JobRecord>();
+        while (reader.Read()) records.Add(Read(reader));
+        return records;
+    }
+
     public JobRecord Transition(string jobId, JobStatus next, long expectedVersion, string? resultJson = null)
     {
         using var connection = _database.OpenConnection();
         using var transaction = connection.BeginTransaction();
         var current = ReadRequired(connection, transaction, jobId);
         EnsureVersion(current, expectedVersion);
-        var changed = _stateMachine.Transition(current, next, resultJson);
+        var changed = PrepareTransition(current, _stateMachine.Transition(current, next, resultJson));
         UpdateTransition(connection, transaction, changed);
         transaction.Commit();
         return changed;
     }
+
+    public JobRecord Transition(string jobId, JobStatus next, long expectedVersion,
+        JobFailureCategory failureCategory, string? resultJson = null)
+    {
+        using var connection = _database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+        var current = ReadRequired(connection, transaction, jobId);
+        EnsureVersion(current, expectedVersion);
+        var changed = PrepareTransition(current, _stateMachine.Transition(current, next, resultJson)) with
+        {
+            FailureCategory = failureCategory
+        };
+        ValidateFailureCategory(changed);
+        UpdateTransition(connection, transaction, changed);
+        transaction.Commit();
+        return changed;
+    }
+
+    public JobRecord Transition(JobRecord current, JobStatus next, string? resultJson = null) =>
+        Transition(current.JobId, next, current.Version, resultJson);
 
     public JobRecord Transition(string jobId, JobStatus next, string? resultJson = null)
     {
@@ -137,6 +196,82 @@ public sealed class JobRepository
         return retry;
     }
 
+    public JobRecord RetryInfrastructure(string terminalJobId, long expectedVersion, DateTimeOffset now,
+        string? newJobId = null)
+    {
+        using var connection = _database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+        var terminal = ReadRequired(connection, transaction, terminalJobId);
+        EnsureVersion(terminal, expectedVersion);
+        if (terminal.FailureCategory != JobFailureCategory.Infrastructure)
+            throw new InvalidOperationException("Only infrastructure interruptions may be retried automatically.");
+        if (terminal.CancellationRequested || terminal.Attempt >= 3)
+            throw new InvalidOperationException("This job lineage is not eligible for automatic retry.");
+        var retry = _stateMachine.Retry(terminal, newJobId ?? Guid.NewGuid().ToString("N"));
+        var delay = TimeSpan.FromMinutes(terminal.Attempt);
+        retry = retry with
+        {
+            FailureCategory = JobFailureCategory.None,
+            NotBeforeUtc = now.ToUniversalTime().Add(delay).ToString("O", CultureInfo.InvariantCulture)
+        };
+        Insert(connection, transaction, Normalize(retry));
+        transaction.Commit();
+        return retry;
+    }
+
+    public IReadOnlyList<JobRecord> MarkRunningInterrupted(DateTimeOffset now)
+    {
+        using var connection = _database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = SelectSql + " WHERE Status = 'running' ORDER BY JobId;";
+        using var reader = command.ExecuteReader();
+        var current = new List<JobRecord>();
+        while (reader.Read()) current.Add(Read(reader));
+        reader.Close();
+        var changed = new List<JobRecord>(current.Count);
+        foreach (var job in current)
+        {
+            var interrupted = PrepareTransition(job, _stateMachine.Transition(job, JobStatus.Interrupted));
+            interrupted = interrupted with
+            {
+                UpdatedUtc = now.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture),
+                ArchivedUtc = now.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture),
+                FailureCategory = job.CancellationRequested ? JobFailureCategory.Cancellation : JobFailureCategory.Infrastructure
+            };
+            UpdateTransition(connection, transaction, interrupted);
+            changed.Add(interrupted);
+        }
+        transaction.Commit();
+        return changed;
+    }
+
+    public IReadOnlyList<JobRecord> ListRetryableInterrupted()
+    {
+        using var connection = _database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = SelectSql + " WHERE Status = 'interrupted' AND FailureCategory = 'infrastructure' " +
+            "AND Attempt < 3 ORDER BY Attempt, JobId;";
+        using var reader = command.ExecuteReader();
+        var records = new List<JobRecord>();
+        while (reader.Read()) records.Add(Read(reader));
+        return records;
+    }
+
+    public IReadOnlyList<JobRecord> ListArchived(DateTimeOffset? before = null)
+    {
+        using var connection = _database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = SelectSql + " WHERE ArchivedUtc IS NOT NULL" +
+            (before is null ? "" : " AND ArchivedUtc <= $before") + " ORDER BY ArchivedUtc;";
+        if (before is not null) command.Parameters.AddWithValue("$before", before.Value.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
+        using var reader = command.ExecuteReader();
+        var records = new List<JobRecord>();
+        while (reader.Read()) records.Add(Read(reader));
+        return records;
+    }
+
     public JobRecord Retry(string terminalJobId, string? newJobId = null)
     {
         var current = GetRequired(terminalJobId);
@@ -157,6 +292,8 @@ public sealed class JobRepository
         if (requested.ResultJson is not null || requested.ProgressJson is not null || requested.CancellationRequested ||
             requested.DryRunPublished || requested.DryRunJson is not null)
             throw new ArgumentException("A new queued job cannot contain execution state.");
+        if (requested.FailureCategory != JobFailureCategory.None || requested.ArchivedUtc is not null)
+            throw new ArgumentException("A new queued job cannot contain terminal state.");
         JobJson.ValidateStructured(requested.InputJson, nameof(requested.InputJson));
         var created = ValidateUtc(requested.CreatedUtc, nameof(requested.CreatedUtc));
         var updated = ValidateUtc(requested.UpdatedUtc, nameof(requested.UpdatedUtc));
@@ -172,9 +309,10 @@ public sealed class JobRepository
         command.CommandText = """
             INSERT INTO Jobs
                 (JobId, ProjectKey, Kind, Status, Attempt, LineageId, InputJson, ResultJson, ProgressJson, DryRunJson,
-                 CancellationRequested, CreatedUtc, UpdatedUtc, Version, DryRunPublished)
+                 CancellationRequested, CreatedUtc, UpdatedUtc, Version, DryRunPublished, FailureCategory,
+                 NotBeforeUtc, ArchivedUtc)
             VALUES ($id, $project, $kind, $status, $attempt, $lineage, $input, $result, $progress,
-                    $dryrun, $cancel, $created, $updated, $version, $published);
+                    $dryrun, $cancel, $created, $updated, $version, $published, $failure, $notBefore, $archived);
             """;
         AddParameters(command, record);
         command.ExecuteNonQuery();
@@ -183,7 +321,8 @@ public sealed class JobRepository
     private static void UpdateTransition(SqliteConnection connection, SqliteTransaction transaction, JobRecord record)
     {
         ExecuteConcurrencyUpdate(connection, transaction, record,
-            "Status = $status, ResultJson = $result, UpdatedUtc = $updated, Version = $version");
+            "Status = $status, ResultJson = $result, FailureCategory = $failure, ArchivedUtc = $archived, " +
+            "UpdatedUtc = $updated, Version = $version");
     }
 
     private static void UpdateCancellation(SqliteConnection connection, SqliteTransaction transaction, JobRecord record) =>
@@ -211,7 +350,7 @@ public sealed class JobRepository
     }
 
     private static readonly string SelectSql = "SELECT JobId, ProjectKey, Kind, Status, Attempt, LineageId, InputJson, ResultJson, ProgressJson, DryRunJson, " +
-        "CancellationRequested, CreatedUtc, UpdatedUtc, Version, DryRunPublished FROM Jobs";
+        "CancellationRequested, CreatedUtc, UpdatedUtc, Version, DryRunPublished, FailureCategory, NotBeforeUtc, ArchivedUtc FROM Jobs";
 
     private static JobRecord ReadRequired(SqliteConnection connection, SqliteTransaction transaction, string jobId)
     {
@@ -245,10 +384,13 @@ public sealed class JobRepository
             var updated = reader.GetString(12);
             var version = reader.GetInt64(13);
             var published = ReadBoolean(reader, 14, "DryRunPublished");
+            var failure = JobFailureCategoryJson.Parse(reader.GetString(15));
+            var notBefore = reader.IsDBNull(16) ? null : reader.GetString(16);
+            var archived = reader.IsDBNull(17) ? null : reader.GetString(17);
             ValidatePersisted(jobId, projectKey, kind, status, attempt, lineage, input, result, progress, dryRun,
-                cancellation, created, updated, version, published);
+                cancellation, created, updated, version, published, failure, notBefore, archived);
             return new JobRecord(jobId, projectKey, kind, status, attempt, input, result, created, updated,
-                progress, lineage, cancellation, version, published, dryRun);
+                progress, lineage, cancellation, version, published, dryRun, failure, notBefore, archived);
         }
         catch (InvalidDataException) { throw; }
         catch (Exception exception) when (exception is FormatException or ArgumentException or InvalidOperationException or
@@ -267,7 +409,8 @@ public sealed class JobRepository
 
     private static void ValidatePersisted(string jobId, string projectKey, string kind, JobStatus status, int attempt,
         string lineage, string input, string? result, string? progress, string? dryRun, bool cancellation,
-        string created, string updated, long version, bool published)
+        string created, string updated, long version, bool published, JobFailureCategory failure,
+        string? notBefore, string? archived)
     {
         if (string.IsNullOrWhiteSpace(jobId) || string.IsNullOrWhiteSpace(projectKey) || string.IsNullOrWhiteSpace(lineage) ||
             string.IsNullOrWhiteSpace(kind) || !string.Equals(kind, kind.Trim(), StringComparison.Ordinal) ||
@@ -280,6 +423,10 @@ public sealed class JobRepository
         var createdUtc = ValidateUtc(created, nameof(created));
         var updatedUtc = ValidateUtc(updated, nameof(updated));
         if (createdUtc > updatedUtc) throw new InvalidDataException("CreatedUtc must not be later than UpdatedUtc.");
+        if (notBefore is not null) _ = ValidateUtc(notBefore, nameof(notBefore));
+        if (archived is not null) _ = ValidateUtc(archived, nameof(archived));
+        if (JobStateMachine.IsTerminal(status) != (archived is not null))
+            throw new InvalidDataException("Terminal job archive timestamp is inconsistent with status.");
         if (published != (dryRun is not null)) throw new InvalidDataException("Dry Run publication fields disagree.");
         if ((status is JobStatus.CompletedDryRunOnly or JobStatus.CompletedWithAssessmentFailure) && !published)
             throw new InvalidDataException("Assessment outcome lacks a published Dry Run.");
@@ -311,6 +458,9 @@ public sealed class JobRepository
         command.Parameters.AddWithValue("$updated", record.UpdatedUtc);
         command.Parameters.AddWithValue("$version", record.Version);
         command.Parameters.AddWithValue("$published", record.DryRunPublished ? 1 : 0);
+        command.Parameters.AddWithValue("$failure", JobFailureCategoryJson.ToWire(record.FailureCategory));
+        command.Parameters.AddWithValue("$notBefore", (object?)record.NotBeforeUtc ?? DBNull.Value);
+        command.Parameters.AddWithValue("$archived", (object?)record.ArchivedUtc ?? DBNull.Value);
     }
 
     private static void EnsureVersion(JobRecord current, long expectedVersion)
@@ -325,5 +475,28 @@ public sealed class JobRepository
             parsed.Offset != TimeSpan.Zero || !(value.EndsWith("Z", StringComparison.Ordinal) || value.EndsWith("+00:00", StringComparison.Ordinal)))
             throw new ArgumentException("Job timestamps must be valid UTC timestamps.", name);
         return parsed;
+    }
+
+    private static JobRecord PrepareTransition(JobRecord current, JobRecord changed)
+    {
+        if (!JobStateMachine.IsTerminal(changed.Status)) return changed;
+        var category = changed.Status == JobStatus.Cancelled ? JobFailureCategory.Cancellation :
+            changed.Status == JobStatus.Failed && changed.FailureCategory == JobFailureCategory.None
+                ? JobFailureCategory.Unknown : changed.FailureCategory;
+        return changed with { FailureCategory = category, ArchivedUtc = changed.ArchivedUtc ?? changed.UpdatedUtc };
+    }
+
+    private static void ValidateFailureCategory(JobRecord record)
+    {
+        if (!JobStateMachine.IsTerminal(record.Status) && record.FailureCategory != JobFailureCategory.None)
+            throw new ArgumentException("Only terminal jobs may record a failure category.");
+        if (record.Status is JobStatus.Completed or JobStatus.CompletedDryRunOnly or JobStatus.CompletedWithAssessmentFailure &&
+            record.FailureCategory != JobFailureCategory.None)
+            throw new ArgumentException("Successful terminal jobs cannot record a failure category.");
+        if (record.Status == JobStatus.Cancelled && record.FailureCategory != JobFailureCategory.Cancellation)
+            throw new ArgumentException("Cancelled jobs must record cancellation.");
+        if (record.Status == JobStatus.Interrupted && record.FailureCategory is not
+            (JobFailureCategory.Infrastructure or JobFailureCategory.Cancellation))
+            throw new ArgumentException("Interrupted jobs must record infrastructure or cancellation.");
     }
 }

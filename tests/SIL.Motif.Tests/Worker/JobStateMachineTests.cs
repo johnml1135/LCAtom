@@ -297,7 +297,7 @@ public sealed class JobStateMachineTests : IDisposable
             var job = new JobRepository(upgraded).Get("historical-job");
             Assert.Equal("{\"dryRun\":true}", job!.DryRunJson);
             Assert.Equal("{\"progress\":1}", job.ProgressJson);
-            Assert.Equal(15, ReadJobColumnShapes(connection).Count);
+            Assert.Equal(18, ReadJobColumnShapes(connection).Count);
             Assert.Equal("DryRunJson", ReadJobColumnShapes(connection)[14].Split('|')[0]);
         }
         using var reopened = MotifDatabase.OpenOwned(path, project, MotifSchema.CurrentSchema, new Version(1, 0));
@@ -374,7 +374,8 @@ public sealed class JobStateMachineTests : IDisposable
             "Attempt|INTEGER|1|1|0", "LineageId|TEXT|1||0", "InputJson|TEXT|1||0", "ResultJson|TEXT|0||0",
             "ProgressJson|TEXT|0||0", "CancellationRequested|INTEGER|1|0|0", "CreatedUtc|TEXT|1||0",
             "UpdatedUtc|TEXT|1||0", "Version|INTEGER|1|0|0", "DryRunPublished|INTEGER|1|0|0",
-            "DryRunJson|TEXT|0||0" }, shapes);
+            "DryRunJson|TEXT|0||0", "FailureCategory|TEXT|1|'none'|0", "NotBeforeUtc|TEXT|0||0",
+            "ArchivedUtc|TEXT|0||0" }, shapes);
         using var indexes = connection.CreateCommand();
         indexes.CommandText = "SELECT name, \"unique\" FROM pragma_index_list('Jobs') WHERE origin = 'c' ORDER BY name;";
         using var indexReader = indexes.ExecuteReader();

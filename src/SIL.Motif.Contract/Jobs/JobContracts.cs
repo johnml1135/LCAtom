@@ -20,6 +20,59 @@ public enum JobStatus
     Interrupted
 }
 
+/// <summary>Closed persisted categories used to decide whether recovery may retry a job.</summary>
+[JsonConverter(typeof(JobFailureCategoryJsonConverter))]
+public enum JobFailureCategory
+{
+    None,
+    Infrastructure,
+    ParserRefusal,
+    Cancellation,
+    Semantic,
+    Unknown
+}
+
+/// <summary>Canonical JSON/database spellings for the closed failure category set.</summary>
+public static class JobFailureCategoryJson
+{
+    public static string ToWire(JobFailureCategory category) => category switch
+    {
+        JobFailureCategory.None => "none",
+        JobFailureCategory.Infrastructure => "infrastructure",
+        JobFailureCategory.ParserRefusal => "parser-refusal",
+        JobFailureCategory.Cancellation => "cancellation",
+        JobFailureCategory.Semantic => "semantic",
+        JobFailureCategory.Unknown => "unknown",
+        _ => throw new ArgumentOutOfRangeException(nameof(category))
+    };
+
+    public static JobFailureCategory Parse(string value) => value switch
+    {
+        "none" => JobFailureCategory.None,
+        "infrastructure" => JobFailureCategory.Infrastructure,
+        "parser-refusal" => JobFailureCategory.ParserRefusal,
+        "cancellation" => JobFailureCategory.Cancellation,
+        "semantic" => JobFailureCategory.Semantic,
+        "unknown" => JobFailureCategory.Unknown,
+        _ => throw new JsonException($"Unknown job failure category '{value}'.")
+    };
+}
+
+/// <summary>Serializes failure categories as closed JSON strings.</summary>
+public sealed class JobFailureCategoryJsonConverter : JsonConverter<JobFailureCategory>
+{
+    public override JobFailureCategory Read(ref Utf8JsonReader reader, Type typeToConvert,
+        JsonSerializerOptions options)
+    {
+        if (reader.TokenType != JsonTokenType.String)
+            throw new JsonException("Job failure category must be a JSON string.");
+        return JobFailureCategoryJson.Parse(reader.GetString() ?? string.Empty);
+    }
+
+    public override void Write(Utf8JsonWriter writer, JobFailureCategory value, JsonSerializerOptions options) =>
+        writer.WriteStringValue(JobFailureCategoryJson.ToWire(value));
+}
+
 /// <summary>Canonical JSON spellings for the closed job status set.</summary>
 public static class JobStatusJson
 {
@@ -108,7 +161,10 @@ public sealed record JobRecord(
     bool CancellationRequested = false,
     long Version = 0,
     bool DryRunPublished = false,
-    string? DryRunJson = null)
+    string? DryRunJson = null,
+    JobFailureCategory FailureCategory = JobFailureCategory.None,
+    string? NotBeforeUtc = null,
+    string? ArchivedUtc = null)
 {
     public string LogicalJobId => LineageId ?? JobId;
 }

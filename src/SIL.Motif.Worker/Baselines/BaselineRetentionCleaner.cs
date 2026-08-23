@@ -1,0 +1,115 @@
+using SIL.Motif.Contract.Jobs;
+using SIL.Motif.Worker.Store;
+
+namespace SIL.Motif.Worker.Baselines;
+
+/// <summary>One published Baseline file and its retention eligibility facts.</summary>
+public sealed record PublishedBaseline(
+    string Path,
+    DateTimeOffset PublishedUtc,
+    bool Superseded,
+    bool RetentionEligible);
+
+/// <summary>Answers durable active-work pins before a Baseline file is removed.</summary>
+public interface IBaselineReferenceQuery
+{
+    bool HasActiveReference(string baselinePath);
+}
+
+/// <summary>Supplies exact published Baseline files eligible for retention evaluation.</summary>
+public interface IPublishedBaselineQuery
+{
+    IReadOnlyList<PublishedBaseline> ListPublished(string projectKey);
+}
+
+/// <summary>Reports exact Baseline deletions and surfaced failures.</summary>
+public sealed record BaselineRetentionResult(
+    IReadOnlyList<string> DeletedPaths,
+    IReadOnlyList<WorkspaceCleanupFailure> Failures);
+
+/// <summary>Deletes only superseded, unpinned, retention-eligible Baseline files.</summary>
+public sealed class BaselineRetentionCleaner
+{
+    private readonly IWorkspaceOwnership _ownership;
+    private readonly IPublishedBaselineQuery _published;
+    private readonly IBaselineReferenceQuery _references;
+    private readonly IJobClock _clock;
+    private readonly ArchivePolicy _policy;
+    private readonly IWorkspaceFileSystem _fileSystem;
+
+    public BaselineRetentionCleaner(
+        IWorkspaceOwnership ownership,
+        IPublishedBaselineQuery published,
+        IBaselineReferenceQuery references,
+        ArchivePolicy? policy = null,
+        IJobClock? clock = null,
+        IWorkspaceFileSystem? fileSystem = null)
+    {
+        _ownership = ownership ?? throw new ArgumentNullException(nameof(ownership));
+        _published = published ?? throw new ArgumentNullException(nameof(published));
+        _references = references ?? throw new ArgumentNullException(nameof(references));
+        _policy = policy ?? ArchivePolicy.Default;
+        _clock = clock ?? new SystemJobClock();
+        _fileSystem = fileSystem ?? new LocalFileSystem();
+    }
+
+    public BaselineRetentionResult Clean(string projectKey)
+    {
+        var deleted = new List<string>();
+        var failures = new List<WorkspaceCleanupFailure>();
+        if (!IsSafeSegment(projectKey))
+            return new([], [new WorkspaceCleanupFailure(_ownership.WorkerRoot, "Project key is not a safe segment.")]);
+        foreach (var baseline in _published.ListPublished(projectKey))
+        {
+            if (!baseline.Superseded || !baseline.RetentionEligible ||
+                !_policy.ShouldPurge(baseline.PublishedUtc, _clock.UtcNow) ||
+                _references.HasActiveReference(baseline.Path))
+                continue;
+            if (!IsExactPublishedPath(projectKey, baseline.Path))
+            {
+                failures.Add(new WorkspaceCleanupFailure(baseline.Path, "Baseline path is outside the exact published directory."));
+                continue;
+            }
+            try
+            {
+                if (_fileSystem.Exists(baseline.Path))
+                {
+                    if ((_fileSystem.GetAttributes(baseline.Path) & FileAttributes.ReparsePoint) != 0)
+                    {
+                        failures.Add(new WorkspaceCleanupFailure(baseline.Path, "Reparse-point Baseline is refused."));
+                        continue;
+                    }
+                    _fileSystem.DeleteFile(baseline.Path);
+                    deleted.Add(baseline.Path);
+                }
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                failures.Add(new WorkspaceCleanupFailure(baseline.Path, "Baseline deletion failed.", exception));
+            }
+        }
+        return new BaselineRetentionResult(deleted, failures);
+    }
+
+    private bool IsExactPublishedPath(string projectKey, string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !_ownership.IsOwned(path)) return false;
+        var expected = Path.Combine(_ownership.WorkerRoot, projectKey, "baseline");
+        var full = Path.GetFullPath(path);
+        var relative = Path.GetRelativePath(expected, full);
+        return relative != "." && relative != ".." && !relative.StartsWith(".." + Path.DirectorySeparatorChar) &&
+            !Path.IsPathRooted(relative) && relative.IndexOfAny([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar]) < 0;
+    }
+
+    private static bool IsSafeSegment(string value) => !string.IsNullOrWhiteSpace(value) && value is not ("." or "..") &&
+        value.IndexOfAny([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar, ':']) < 0;
+
+    private sealed class LocalFileSystem : IWorkspaceFileSystem
+    {
+        public bool Exists(string path) => Directory.Exists(path) || File.Exists(path);
+        public FileAttributes GetAttributes(string path) => File.GetAttributes(path);
+        public IReadOnlyList<string> EnumerateFileSystemEntries(string path) => Directory.GetFileSystemEntries(path);
+        public void DeleteFile(string path) => File.Delete(path);
+        public void DeleteDirectory(string path) => Directory.Delete(path, true);
+    }
+}

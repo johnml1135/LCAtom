@@ -11,14 +11,14 @@ public static class MotifSchema
     public const int ApplicationId = 0x4D4F5446;
 
     /// <summary>The newest ordered schema generation implemented by this assembly.</summary>
-    public const int CurrentSchema = 5;
+    public const int CurrentSchema = 6;
 
     /// <summary>The connection busy timeout used for short-lived worker database sessions.</summary>
     public const int BusyTimeoutMilliseconds = 15000;
 
     internal static Version MinimumWorkerVersion(int schema) => schema switch
     {
-        1 or 2 or 3 or 4 or 5 => new Version(1, 0),
+        1 or 2 or 3 or 4 or 5 or 6 => new Version(1, 0),
         _ => throw new NotSupportedException($"Motif schema {schema} is not known to this worker.")
     };
 
@@ -71,6 +71,9 @@ public static class MotifSchema
                 case 5:
                     RebuildJobsForGenerationFive(connection, transaction);
                     break;
+                case 6:
+                    AddRecoveryAndArchiveFacts(connection, transaction);
+                    break;
                 default:
                     throw new NotSupportedException($"Motif schema {schema} is not known to this worker.");
             }
@@ -114,7 +117,7 @@ public static class MotifSchema
                 "ParsedAnalyses", "AssessmentPins", "Proposals", "ProposalRevisions", "Drafts",
                 "Decisions", "Receipts", "Reports", "AppliedIndex", "MigrationLedger"
             },
-            4 or 5 => new HashSet<string>(StringComparer.Ordinal)
+            4 or 5 or 6 => new HashSet<string>(StringComparer.Ordinal)
             {
                 "MotifMetadata", "Corpora", "CorpusDocuments", "Assessments", "AssessedWords",
                 "ParsedAnalyses", "AssessmentPins", "Proposals", "ProposalRevisions", "Drafts",
@@ -156,7 +159,7 @@ public static class MotifSchema
             if (table == "Jobs" && schema == 4)
                 ValidateGenerationFourJobs(connection, transaction);
             else
-                ValidateTable(connection, transaction, table, ColumnsFor(table, schema), ForeignKeysFor(table));
+                ValidateTable(connection, transaction, table, ColumnsFor(table, schema), ForeignKeysFor(table, schema));
         }
         foreach (var index in expectedIndexes)
             ValidateIndex(connection, transaction, index, IndexColumnsFor(index));
@@ -298,6 +301,26 @@ public static class MotifSchema
         drop.Transaction = transaction;
         drop.CommandText = "DROP TABLE Jobs_GenerationFour;";
         drop.ExecuteNonQuery();
+    }
+
+    private static void AddRecoveryAndArchiveFacts(SqliteConnection connection, SqliteTransaction? transaction)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "ALTER TABLE Jobs ADD COLUMN FailureCategory TEXT NOT NULL DEFAULT 'none'; " +
+            "ALTER TABLE Jobs ADD COLUMN NotBeforeUtc TEXT NULL; " +
+            "ALTER TABLE Jobs ADD COLUMN ArchivedUtc TEXT NULL; " +
+            "ALTER TABLE Proposals ADD COLUMN ArchivedUtc TEXT NULL; " +
+            "UPDATE Jobs SET ArchivedUtc = UpdatedUtc WHERE Status IN " +
+            "('completed','completed-dry-run-only','completed-with-assessment-failure','failed','cancelled','interrupted'); " +
+            "UPDATE Proposals SET ArchivedUtc = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE Status IN " +
+            "('applied','rejected','superseded','withdrawn') AND ArchivedUtc IS NULL; " +
+            "ALTER TABLE AppliedIndex RENAME TO AppliedIndex_GenerationFive; " +
+            "CREATE TABLE AppliedIndex (ProposalId TEXT PRIMARY KEY, IntentDigest TEXT NOT NULL, " +
+            "AppliedUtc TEXT NOT NULL, RecordJson TEXT NULL); " +
+            "INSERT INTO AppliedIndex SELECT ProposalId, IntentDigest, AppliedUtc, RecordJson FROM AppliedIndex_GenerationFive; " +
+            "DROP TABLE AppliedIndex_GenerationFive;";
+        command.ExecuteNonQuery();
     }
 
     private static bool HasColumn(SqliteConnection connection, SqliteTransaction? transaction, string table, string column)
@@ -465,7 +488,7 @@ public static class MotifSchema
         _ => throw new InvalidDataException($"Motif index {index} is not registered.")
     };
 
-    private static IReadOnlyList<ForeignKeyShape> ForeignKeysFor(string table) => table switch
+    private static IReadOnlyList<ForeignKeyShape> ForeignKeysFor(string table, int schema) => table switch
     {
         "CorpusDocuments" => [new("Corpora", "CorpusId", "CorpusId", "NO ACTION", "NO ACTION", "NONE")],
         "AssessedWords" => [new("Assessments", "AssessmentId", "AssessmentId", "NO ACTION", "NO ACTION", "NONE")],
@@ -476,7 +499,7 @@ public static class MotifSchema
         "Receipts" => [new("Proposals", "ProposalId", "ProposalId", "NO ACTION", "NO ACTION", "NONE")],
         "Reports" => [new("Assessments", "AssessmentId", "AssessmentId", "NO ACTION", "NO ACTION", "NONE"),
             new("Proposals", "ProposalId", "ProposalId", "NO ACTION", "NO ACTION", "NONE")],
-        "AppliedIndex" => [new("Proposals", "ProposalId", "ProposalId", "NO ACTION", "NO ACTION", "NONE")],
+        "AppliedIndex" when schema < 6 => [new("Proposals", "ProposalId", "ProposalId", "NO ACTION", "NO ACTION", "NONE")],
         "Jobs" => [],
         _ => []
     };
@@ -507,10 +530,7 @@ public static class MotifSchema
             C("MorphemeGuidsJson", "TEXT", true), C("RootIndex", "INTEGER", true), C("IdentityDigest", "TEXT", true)],
         "AssessmentPins" =>
         [C("AssessmentId", "TEXT", true, 1), C("PinnedBy", "TEXT", true, 2), C("PinnedUtc", "TEXT", true)],
-        "Proposals" =>
-        [C("ProposalId", "TEXT", false, 1), C("CurrentIntentDigest", "TEXT", true),
-            C("Status", "TEXT", true), C("Label", "TEXT"),
-            C("Comment", "TEXT"), C("SupersededBy", "TEXT"), C("AnchorJson", "TEXT")],
+        "Proposals" => ProposalColumns(schema),
         "ProposalRevisions" =>
         [C("ProposalId", "TEXT", true, 1), C("IntentDigest", "TEXT", true, 2),
             C("ProposalJson", "BLOB", true), C("CreatedUtc", "TEXT", true)],
@@ -540,16 +560,28 @@ public static class MotifSchema
             C("ProgressJson", "TEXT"), C("CancellationRequested", "INTEGER", true, defaultValue: "0"),
             C("CreatedUtc", "TEXT", true), C("UpdatedUtc", "TEXT", true),
             C("Version", "INTEGER", true, defaultValue: "0"), C("DryRunPublished", "INTEGER", true, defaultValue: "0")]
-        : [C("JobId", "TEXT", false, 1), C("ProjectKey", "TEXT", true), C("Kind", "TEXT", true),
-            C("Status", "TEXT", true), C("Attempt", "INTEGER", true, defaultValue: "1"),
-            C("LineageId", "TEXT", true), C("InputJson", "TEXT", true), C("ResultJson", "TEXT"),
-            C("ProgressJson", "TEXT"),
-            C("CancellationRequested", "INTEGER", true, defaultValue: "0"),
-            C("CreatedUtc", "TEXT", true), C("UpdatedUtc", "TEXT", true),
-            C("Version", "INTEGER", true, defaultValue: "0"), C("DryRunPublished", "INTEGER", true, defaultValue: "0"),
-            C("DryRunJson", "TEXT")],
+        : JobsColumns(schema),
         _ => throw new InvalidDataException($"Motif table {table} is not registered.")
     };
+
+    private static IReadOnlyList<ColumnShape> ProposalColumns(int schema) => schema >= 6
+        ? [C("ProposalId", "TEXT", false, 1), C("CurrentIntentDigest", "TEXT", true), C("Status", "TEXT", true),
+            C("Label", "TEXT"), C("Comment", "TEXT"), C("SupersededBy", "TEXT"), C("AnchorJson", "TEXT"), C("ArchivedUtc", "TEXT")]
+        : [C("ProposalId", "TEXT", false, 1), C("CurrentIntentDigest", "TEXT", true), C("Status", "TEXT", true),
+            C("Label", "TEXT"), C("Comment", "TEXT"), C("SupersededBy", "TEXT"), C("AnchorJson", "TEXT")];
+
+    private static IReadOnlyList<ColumnShape> JobsColumns(int schema) => schema >= 6
+        ? [C("JobId", "TEXT", false, 1), C("ProjectKey", "TEXT", true), C("Kind", "TEXT", true), C("Status", "TEXT", true),
+            C("Attempt", "INTEGER", true, defaultValue: "1"), C("LineageId", "TEXT", true), C("InputJson", "TEXT", true),
+            C("ResultJson", "TEXT"), C("ProgressJson", "TEXT"), C("CancellationRequested", "INTEGER", true, defaultValue: "0"),
+            C("CreatedUtc", "TEXT", true), C("UpdatedUtc", "TEXT", true), C("Version", "INTEGER", true, defaultValue: "0"),
+            C("DryRunPublished", "INTEGER", true, defaultValue: "0"), C("DryRunJson", "TEXT"),
+            C("FailureCategory", "TEXT", true, defaultValue: "'none'"), C("NotBeforeUtc", "TEXT"), C("ArchivedUtc", "TEXT")]
+        : [C("JobId", "TEXT", false, 1), C("ProjectKey", "TEXT", true), C("Kind", "TEXT", true), C("Status", "TEXT", true),
+            C("Attempt", "INTEGER", true, defaultValue: "1"), C("LineageId", "TEXT", true), C("InputJson", "TEXT", true),
+            C("ResultJson", "TEXT"), C("ProgressJson", "TEXT"), C("CancellationRequested", "INTEGER", true, defaultValue: "0"),
+            C("CreatedUtc", "TEXT", true), C("UpdatedUtc", "TEXT", true), C("Version", "INTEGER", true, defaultValue: "0"),
+            C("DryRunPublished", "INTEGER", true, defaultValue: "0"), C("DryRunJson", "TEXT")];
 
     private static IReadOnlyList<ColumnShape> GenerationFourDryRunColumns() =>
     [C("JobId", "TEXT", false, 1), C("ProjectKey", "TEXT", true), C("Kind", "TEXT", true),
