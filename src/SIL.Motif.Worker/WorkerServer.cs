@@ -191,7 +191,7 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _shutdown.Token);
         while (!linked.IsCancellationRequested)
         {
-            NamedPipeServerStream pipe;
+            NamedPipeServerStream? pipe = null;
             try
             {
                 pipe = CreateControlPipe();
@@ -199,9 +199,10 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
             }
             catch (OperationCanceledException) when (linked.IsCancellationRequested)
             {
+                pipe?.Dispose();
                 return;
             }
-            var handler = HandleConnectionAsync(pipe, _shutdown.Token);
+            var handler = HandleConnectionAsync(pipe!, _shutdown.Token);
             _handlers.TryAdd(handler, 0);
             _ = handler.ContinueWith(completed => _handlers.TryRemove(completed, out _),
                 CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);

@@ -201,8 +201,9 @@ public sealed class ProjectRuntimeTests : IDisposable
         var disposing = Task.Run(registry.Dispose);
         Assert.Throws<ObjectDisposedException>(() => registry.GetOrOpen(project));
         release.Set();
-        await opening.WaitAsync(TimeSpan.FromSeconds(2));
+        var opened = await opening.WaitAsync(TimeSpan.FromSeconds(2));
         await disposing.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(ProjectRuntimeAdmission.Disposed, opened.Admission);
         Assert.False(registry.TryGet(ProjectWorkspaceKey.Compute(project), out _));
     }
 
