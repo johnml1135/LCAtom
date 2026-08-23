@@ -147,6 +147,9 @@ public sealed class MotifDatabaseMigrationTests : IDisposable
         using var upgradedConnection = upgraded.OpenConnection();
         Assert.Equal(MotifSchema.CurrentSchema, PragmaInt(upgradedConnection, "user_version"));
         Assert.NotNull(Scalar(upgradedConnection, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'Assessments';"));
+        Assert.NotNull(Scalar(upgradedConnection, "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'IX_AssessedWords_Assessment';"));
+        Assert.NotNull(Scalar(upgradedConnection, "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'IX_AssessedWords_Word';"));
+        Assert.NotNull(Scalar(upgradedConnection, "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'IX_ParsedAnalyses_Word';"));
     }
 
     [Theory]

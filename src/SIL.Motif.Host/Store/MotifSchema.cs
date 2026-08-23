@@ -11,14 +11,14 @@ public static class MotifSchema
     public const int ApplicationId = 0x4D4F5446;
 
     /// <summary>The newest ordered schema generation implemented by this assembly.</summary>
-    public const int CurrentSchema = 2;
+    public const int CurrentSchema = 3;
 
     /// <summary>The connection busy timeout used for short-lived worker database sessions.</summary>
     public const int BusyTimeoutMilliseconds = 15000;
 
     internal static Version MinimumWorkerVersion(int schema) => schema switch
     {
-        1 or 2 => new Version(1, 0),
+        1 or 2 or 3 => new Version(1, 0),
         _ => throw new NotSupportedException($"Motif schema {schema} is not known to this worker.")
     };
 
@@ -62,6 +62,9 @@ public static class MotifSchema
                 case 2:
                     CreateCorpusAndAssessmentTables(connection, transaction);
                     break;
+                case 3:
+                    CreateProposalWorkflowTables(connection, transaction);
+                    break;
                 default:
                     throw new NotSupportedException($"Motif schema {schema} is not known to this worker.");
             }
@@ -99,9 +102,15 @@ public static class MotifSchema
                 "MotifMetadata", "Corpora", "CorpusDocuments", "Assessments", "AssessedWords",
                 "ParsedAnalyses", "AssessmentPins"
             },
+            3 => new HashSet<string>(StringComparer.Ordinal)
+            {
+                "MotifMetadata", "Corpora", "CorpusDocuments", "Assessments", "AssessedWords",
+                "ParsedAnalyses", "AssessmentPins", "Proposals", "ProposalRevisions", "Drafts",
+                "Decisions", "Receipts", "Reports", "AppliedIndex", "MigrationLedger"
+            },
             _ => throw new NotSupportedException($"Motif schema {schema} is not known to this worker.")
         };
-        var expectedIndexes = schema == 2
+        var expectedIndexes = schema >= 2
             ? new HashSet<string>(StringComparer.Ordinal)
             {
                 "IX_AssessedWords_Assessment", "IX_AssessedWords_Word", "IX_ParsedAnalyses_Word"
@@ -221,6 +230,14 @@ public static class MotifSchema
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = CorpusAndAssessmentDdl;
+        command.ExecuteNonQuery();
+    }
+
+    private static void CreateProposalWorkflowTables(SqliteConnection connection, SqliteTransaction? transaction)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = ProposalWorkflowDdl;
         command.ExecuteNonQuery();
     }
 
@@ -353,6 +370,12 @@ public static class MotifSchema
         "AssessedWords" => [new("Assessments", "AssessmentId", "AssessmentId", "NO ACTION", "NO ACTION", "NONE")],
         "ParsedAnalyses" => [new("AssessedWords", "AssessedWordId", "AssessedWordId", "NO ACTION", "NO ACTION", "NONE")],
         "AssessmentPins" => [new("Assessments", "AssessmentId", "AssessmentId", "NO ACTION", "NO ACTION", "NONE")],
+        "ProposalRevisions" => [new("Proposals", "ProposalId", "ProposalId", "NO ACTION", "NO ACTION", "NONE")],
+        "Decisions" => [new("Proposals", "ProposalId", "ProposalId", "NO ACTION", "NO ACTION", "NONE")],
+        "Receipts" => [new("Proposals", "ProposalId", "ProposalId", "NO ACTION", "NO ACTION", "NONE")],
+        "Reports" => [new("Assessments", "AssessmentId", "AssessmentId", "NO ACTION", "NO ACTION", "NONE"),
+            new("Proposals", "ProposalId", "ProposalId", "NO ACTION", "NO ACTION", "NONE")],
+        "AppliedIndex" => [new("Proposals", "ProposalId", "ProposalId", "NO ACTION", "NO ACTION", "NONE")],
         _ => []
     };
 
@@ -382,6 +405,32 @@ public static class MotifSchema
             C("MorphemeGuidsJson", "TEXT", true), C("RootIndex", "INTEGER", true), C("IdentityDigest", "TEXT", true)],
         "AssessmentPins" =>
         [C("AssessmentId", "TEXT", true, 1), C("PinnedBy", "TEXT", true, 2), C("PinnedUtc", "TEXT", true)],
+        "Proposals" =>
+        [C("ProposalId", "TEXT", false, 1), C("CurrentIntentDigest", "TEXT", true),
+            C("Status", "TEXT", true), C("Label", "TEXT"),
+            C("Comment", "TEXT"), C("SupersededBy", "TEXT")],
+        "ProposalRevisions" =>
+        [C("ProposalId", "TEXT", true, 1), C("IntentDigest", "TEXT", true, 2),
+            C("ProposalJson", "BLOB", true), C("CreatedUtc", "TEXT", true)],
+        "Drafts" =>
+        [C("DraftName", "TEXT", false, 1), C("ProposalId", "TEXT", true),
+            C("DraftJson", "TEXT", true)],
+        "Decisions" =>
+        [C("ProposalId", "TEXT", true, 1), C("IntentDigest", "TEXT", true, 2),
+            C("Outcome", "TEXT", true), C("ActorType", "TEXT", true), C("ActorId", "TEXT", true),
+            C("Comment", "TEXT"), C("TimestampUtc", "TEXT", true)],
+        "Receipts" =>
+        [C("ReceiptId", "TEXT", false, 1), C("ProposalId", "TEXT", true),
+            C("IntentDigest", "TEXT", true), C("ReceiptJson", "TEXT", true), C("RecordedUtc", "TEXT", true)],
+        "Reports" =>
+        [C("ReportId", "TEXT", false, 1), C("ProposalId", "TEXT"), C("AssessmentId", "TEXT"),
+            C("ReportJson", "TEXT", true), C("EvidenceJson", "TEXT"), C("CreatedUtc", "TEXT", true)],
+        "AppliedIndex" =>
+        [C("ProposalId", "TEXT", false, 1), C("IntentDigest", "TEXT", true),
+            C("AppliedUtc", "TEXT", true), C("RecordJson", "TEXT")],
+        "MigrationLedger" =>
+        [C("SourceKind", "TEXT", true, 1), C("SourcePath", "TEXT", true, 2),
+            C("SourceDigest", "TEXT", true, 3), C("ImportedUtc", "TEXT", true)],
         _ => throw new InvalidDataException($"Motif table {table} is not registered.")
     };
 
@@ -498,6 +547,74 @@ public static class MotifSchema
             PinnedBy TEXT NOT NULL,
             PinnedUtc TEXT NOT NULL,
             PRIMARY KEY (AssessmentId, PinnedBy)
+        );
+        """;
+
+    private const string ProposalWorkflowDdl = """
+        CREATE TABLE IF NOT EXISTS Proposals (
+            ProposalId TEXT PRIMARY KEY,
+            CurrentIntentDigest TEXT NOT NULL,
+            Status TEXT NOT NULL,
+            Label TEXT NULL,
+            Comment TEXT NULL,
+            SupersededBy TEXT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS ProposalRevisions (
+            ProposalId TEXT NOT NULL REFERENCES Proposals(ProposalId),
+            IntentDigest TEXT NOT NULL,
+            ProposalJson BLOB NOT NULL,
+            CreatedUtc TEXT NOT NULL,
+            PRIMARY KEY (ProposalId, IntentDigest)
+        );
+
+        CREATE TABLE IF NOT EXISTS Drafts (
+            DraftName TEXT PRIMARY KEY,
+            ProposalId TEXT NOT NULL,
+            DraftJson TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS Decisions (
+            ProposalId TEXT NOT NULL REFERENCES Proposals(ProposalId),
+            IntentDigest TEXT NOT NULL,
+            Outcome TEXT NOT NULL,
+            ActorType TEXT NOT NULL,
+            ActorId TEXT NOT NULL,
+            Comment TEXT NULL,
+            TimestampUtc TEXT NOT NULL,
+            PRIMARY KEY (ProposalId, IntentDigest)
+        );
+
+        CREATE TABLE IF NOT EXISTS Receipts (
+            ReceiptId TEXT PRIMARY KEY,
+            ProposalId TEXT NOT NULL REFERENCES Proposals(ProposalId),
+            IntentDigest TEXT NOT NULL,
+            ReceiptJson TEXT NOT NULL,
+            RecordedUtc TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS Reports (
+            ReportId TEXT PRIMARY KEY,
+            ProposalId TEXT NULL REFERENCES Proposals(ProposalId),
+            AssessmentId TEXT NULL REFERENCES Assessments(AssessmentId),
+            ReportJson TEXT NOT NULL,
+            EvidenceJson TEXT NULL,
+            CreatedUtc TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS AppliedIndex (
+            ProposalId TEXT PRIMARY KEY REFERENCES Proposals(ProposalId),
+            IntentDigest TEXT NOT NULL,
+            AppliedUtc TEXT NOT NULL,
+            RecordJson TEXT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS MigrationLedger (
+            SourceKind TEXT NOT NULL,
+            SourcePath TEXT NOT NULL,
+            SourceDigest TEXT NOT NULL,
+            ImportedUtc TEXT NOT NULL,
+            PRIMARY KEY (SourceKind, SourcePath, SourceDigest)
         );
         """;
 }
