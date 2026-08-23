@@ -11,14 +11,14 @@ public static class MotifSchema
     public const int ApplicationId = 0x4D4F5446;
 
     /// <summary>The newest ordered schema generation implemented by this assembly.</summary>
-    public const int CurrentSchema = 4;
+    public const int CurrentSchema = 5;
 
     /// <summary>The connection busy timeout used for short-lived worker database sessions.</summary>
     public const int BusyTimeoutMilliseconds = 15000;
 
     internal static Version MinimumWorkerVersion(int schema) => schema switch
     {
-        1 or 2 or 3 or 4 => new Version(1, 0),
+        1 or 2 or 3 or 4 or 5 => new Version(1, 0),
         _ => throw new NotSupportedException($"Motif schema {schema} is not known to this worker.")
     };
 
@@ -68,6 +68,9 @@ public static class MotifSchema
                 case 4:
                     CreateJobTables(connection, transaction);
                     break;
+                case 5:
+                    AddDryRunColumn(connection, transaction);
+                    break;
                 default:
                     throw new NotSupportedException($"Motif schema {schema} is not known to this worker.");
             }
@@ -111,7 +114,7 @@ public static class MotifSchema
                 "ParsedAnalyses", "AssessmentPins", "Proposals", "ProposalRevisions", "Drafts",
                 "Decisions", "Receipts", "Reports", "AppliedIndex", "MigrationLedger"
             },
-            4 => new HashSet<string>(StringComparer.Ordinal)
+            4 or 5 => new HashSet<string>(StringComparer.Ordinal)
             {
                 "MotifMetadata", "Corpora", "CorpusDocuments", "Assessments", "AssessedWords",
                 "ParsedAnalyses", "AssessmentPins", "Proposals", "ProposalRevisions", "Drafts",
@@ -149,7 +152,7 @@ public static class MotifSchema
         }
 
         foreach (var table in expectedTables)
-            ValidateTable(connection, transaction, table, ColumnsFor(table), ForeignKeysFor(table));
+            ValidateTable(connection, transaction, table, ColumnsFor(table, schema), ForeignKeysFor(table));
         foreach (var index in expectedIndexes)
             ValidateIndex(connection, transaction, index, IndexColumnsFor(index));
     }
@@ -260,6 +263,15 @@ public static class MotifSchema
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = JobDdl;
+        command.ExecuteNonQuery();
+    }
+
+    private static void AddDryRunColumn(SqliteConnection connection, SqliteTransaction? transaction)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "ALTER TABLE Jobs ADD COLUMN DryRunJson TEXT NULL; " +
+            "UPDATE Jobs SET DryRunJson = ProgressJson WHERE DryRunPublished = 1;";
         command.ExecuteNonQuery();
     }
 
@@ -414,7 +426,7 @@ public static class MotifSchema
         _ => []
     };
 
-    private static IReadOnlyList<ColumnShape> ColumnsFor(string table) => table switch
+    private static IReadOnlyList<ColumnShape> ColumnsFor(string table, int schema) => table switch
     {
         "MotifMetadata" =>
         [C("Id", "INTEGER", false, 1), C("FullFwDataPath", "TEXT", true),
@@ -466,14 +478,21 @@ public static class MotifSchema
         "MigrationLedger" =>
         [C("SourceKind", "TEXT", true, 1), C("SourcePath", "TEXT", true, 2),
             C("SourceDigest", "TEXT", true, 3), C("ImportedUtc", "TEXT", true)],
-        "Jobs" =>
-        [C("JobId", "TEXT", false, 1), C("ProjectKey", "TEXT", true), C("Kind", "TEXT", true),
+        "Jobs" => schema == 4
+        ? [C("JobId", "TEXT", false, 1), C("ProjectKey", "TEXT", true), C("Kind", "TEXT", true),
             C("Status", "TEXT", true), C("Attempt", "INTEGER", true, defaultValue: "1"),
             C("LineageId", "TEXT", true), C("InputJson", "TEXT", true), C("ResultJson", "TEXT"),
-            C("ProgressJson", "TEXT"), C("DryRunJson", "TEXT"),
+            C("ProgressJson", "TEXT"), C("CancellationRequested", "INTEGER", true, defaultValue: "0"),
+            C("CreatedUtc", "TEXT", true), C("UpdatedUtc", "TEXT", true),
+            C("Version", "INTEGER", true, defaultValue: "0"), C("DryRunPublished", "INTEGER", true, defaultValue: "0")]
+        : [C("JobId", "TEXT", false, 1), C("ProjectKey", "TEXT", true), C("Kind", "TEXT", true),
+            C("Status", "TEXT", true), C("Attempt", "INTEGER", true, defaultValue: "1"),
+            C("LineageId", "TEXT", true), C("InputJson", "TEXT", true), C("ResultJson", "TEXT"),
+            C("ProgressJson", "TEXT"),
             C("CancellationRequested", "INTEGER", true, defaultValue: "0"),
             C("CreatedUtc", "TEXT", true), C("UpdatedUtc", "TEXT", true),
-            C("Version", "INTEGER", true, defaultValue: "0"), C("DryRunPublished", "INTEGER", true, defaultValue: "0")],
+            C("Version", "INTEGER", true, defaultValue: "0"), C("DryRunPublished", "INTEGER", true, defaultValue: "0"),
+            C("DryRunJson", "TEXT")],
         _ => throw new InvalidDataException($"Motif table {table} is not registered.")
     };
 
@@ -673,7 +692,6 @@ public static class MotifSchema
             InputJson TEXT NOT NULL,
             ResultJson TEXT NULL,
             ProgressJson TEXT NULL,
-            DryRunJson TEXT NULL,
             CancellationRequested INTEGER NOT NULL DEFAULT 0 CHECK (CancellationRequested IN (0, 1)),
             CreatedUtc TEXT NOT NULL,
             UpdatedUtc TEXT NOT NULL,

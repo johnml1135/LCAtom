@@ -29,6 +29,7 @@ public sealed class JobStateMachineTests : IDisposable
     {
         var machine = new JobStateMachine(new FixedClock("2026-08-22T12:00:00Z"));
         var job = NewJob();
+        Assert.Throws<InvalidOperationException>(() => machine.Transition(job, JobStatus.WaitingForBaseline, "{\"tooSoon\":true}"));
         job = machine.Transition(job, JobStatus.WaitingForBaseline);
         Assert.Throws<InvalidOperationException>(() => machine.Transition(job, JobStatus.Running));
         job = machine.Transition(job, JobStatus.Queued);
@@ -201,32 +202,85 @@ public sealed class JobStateMachineTests : IDisposable
         using (var connection = database.OpenConnection())
         using (var command = connection.CreateCommand())
         {
-            command.CommandText = "UPDATE Jobs SET InputJson = '{\"proposal\":[]}', CancellationRequested = 1, Status = 'completed';";
+            command.CommandText = "UPDATE Jobs SET InputJson = '{\"proposal\":[]}', CancellationRequested = 0, Status = 'running', ResultJson = '{\"late\":true}';";
             command.ExecuteNonQuery();
         }
         Assert.Throws<InvalidDataException>(() => repository.Get("job"));
     }
 
     [Fact]
-    public void GenerationFourValidationRejectsMissingUniqueJobIndexAndRollsBackFailedMigration()
+    public void GenerationFourUpgradesToFiveWithDryRunBackfillAndRollback()
     {
         var project = new ProjectLocator(Path.Combine(_root, "migration-check.fwdata"), "migration-check");
         var path = Path.Combine(_root, "migration-check.motif.db");
-        using (MotifDatabase.OpenOwned(path, project, 3, new Version(1, 0))) { }
+        using (var legacy = MotifDatabase.OpenOwned(path, project, 4, new Version(1, 0)))
+        using (var connection = legacy.OpenConnection())
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "INSERT INTO Jobs " +
+                "(JobId, ProjectKey, Kind, Status, Attempt, LineageId, InputJson, ResultJson, ProgressJson, " +
+                "CancellationRequested, CreatedUtc, UpdatedUtc, Version, DryRunPublished) VALUES " +
+                "('legacy-job', 'project', 'dry-run', 'running', 1, 'legacy-job', '{\"proposal\":[]}', NULL, " +
+                "'{\"dryRun\":true}', 0, '2026-08-22T11:00:00Z', '2026-08-22T11:00:00Z', 1, 1);";
+            command.ExecuteNonQuery();
+        }
         Assert.Throws<InvalidOperationException>(() => MotifDatabase.OpenOwnedForTesting(path, project,
             MotifSchema.CurrentSchema, new Version(1, 0), generation =>
             {
-                if (generation == 4) throw new InvalidOperationException("injected migration failure");
+                if (generation == 5) throw new InvalidOperationException("injected migration failure");
             }));
-        using (MotifDatabase.OpenOwned(path, project, MotifSchema.CurrentSchema, new Version(1, 0))) { }
-        using (var database = MotifDatabase.OpenOwned(path, project, MotifSchema.CurrentSchema, new Version(1, 0)))
-        using (var connection = database.OpenConnection())
+        using (var rolledBack = MotifDatabase.OpenOwned(path, project, 4, new Version(1, 0)))
+        using (var connection = rolledBack.OpenConnection())
         using (var command = connection.CreateCommand())
         {
-            command.CommandText = "DROP INDEX IX_Jobs_Lineage_Attempt;";
-            command.ExecuteNonQuery();
+            command.CommandText = "PRAGMA user_version;";
+            Assert.Equal(4L, command.ExecuteScalar());
+            command.CommandText = "SELECT COUNT(*) FROM pragma_table_info('Jobs') WHERE name = 'DryRunJson';";
+            Assert.Equal(0L, command.ExecuteScalar());
+            command.CommandText = "SELECT ProgressJson FROM Jobs WHERE JobId = 'legacy-job';";
+            Assert.Equal("{\"dryRun\":true}", command.ExecuteScalar());
         }
-        Assert.Throws<InvalidDataException>(() => MotifDatabase.OpenOwned(path, project, MotifSchema.CurrentSchema, new Version(1, 0)));
+        using (var upgraded = MotifDatabase.OpenOwned(path, project, MotifSchema.CurrentSchema, new Version(1, 0)))
+        {
+            var job = new JobRepository(upgraded).Get("legacy-job");
+            Assert.Equal("{\"dryRun\":true}", job!.DryRunJson);
+            Assert.Equal("{\"dryRun\":true}", job.ProgressJson);
+        }
+        using var reopened = MotifDatabase.OpenOwned(path, project, MotifSchema.CurrentSchema, new Version(1, 0));
+        Assert.Equal("{\"dryRun\":true}", new JobRepository(reopened).Get("legacy-job")!.DryRunJson);
+    }
+
+    [Fact]
+    public void GenerationFiveSchemaValidationRejectsMissingTablesIndexesColumnsAndChecks()
+    {
+        var cases = new[] { "missing-table", "nonunique-index", "wrong-index-columns", "missing-check" };
+        foreach (var corruption in cases)
+        {
+            var project = new ProjectLocator(Path.Combine(_root, corruption + ".fwdata"), corruption);
+            var path = Path.Combine(_root, corruption + ".motif.db");
+            using (var database = MotifDatabase.OpenOwned(path, project, MotifSchema.CurrentSchema, new Version(1, 0)))
+            using (var connection = database.OpenConnection())
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = corruption switch
+                {
+                    "missing-table" => "DROP TABLE Jobs;",
+                    "nonunique-index" => "DROP INDEX IX_Jobs_Lineage_Attempt; CREATE INDEX IX_Jobs_Lineage_Attempt ON Jobs(LineageId, Attempt);",
+                    "wrong-index-columns" => "DROP INDEX IX_Jobs_Lineage_Attempt; CREATE UNIQUE INDEX IX_Jobs_Lineage_Attempt ON Jobs(Attempt, LineageId);",
+                    _ => "PRAGMA writable_schema = ON;"
+                };
+                command.ExecuteNonQuery();
+                if (corruption == "missing-check")
+                {
+                    command.CommandText = "UPDATE sqlite_master SET sql = replace(sql, 'CHECK (Attempt > 0)', '') " +
+                        "WHERE type = 'table' AND name = 'Jobs';";
+                    command.ExecuteNonQuery();
+                    command.CommandText = "PRAGMA writable_schema = OFF;";
+                    command.ExecuteNonQuery();
+                }
+            }
+            Assert.Throws<InvalidDataException>(() => MotifDatabase.OpenOwned(path, project, MotifSchema.CurrentSchema, new Version(1, 0)));
+        }
     }
 
     [Fact]
@@ -261,16 +315,12 @@ public sealed class JobStateMachineTests : IDisposable
         using var database = MotifDatabase.OpenOwned(Path.Combine(_root, "schema.motif.db"), project,
             MotifSchema.CurrentSchema, new Version(1, 0));
         using var connection = database.OpenConnection();
-        using var columns = connection.CreateCommand();
-        columns.CommandText = "SELECT name, type, \"notnull\", dflt_value, pk FROM pragma_table_info('Jobs') ORDER BY cid;";
-        using var reader = columns.ExecuteReader();
-        var shapes = new List<string>();
-        while (reader.Read()) shapes.Add(string.Join("|", reader.GetString(0), reader.GetString(1), reader.GetInt32(2),
-            reader.IsDBNull(3) ? "" : reader.GetString(3), reader.GetInt32(4)));
+        var shapes = ReadJobColumnShapes(connection);
         Assert.Equal(new[] { "JobId|TEXT|0||1", "ProjectKey|TEXT|1||0", "Kind|TEXT|1||0", "Status|TEXT|1||0",
             "Attempt|INTEGER|1|1|0", "LineageId|TEXT|1||0", "InputJson|TEXT|1||0", "ResultJson|TEXT|0||0",
-            "ProgressJson|TEXT|0||0", "DryRunJson|TEXT|0||0", "CancellationRequested|INTEGER|1|0|0", "CreatedUtc|TEXT|1||0",
-            "UpdatedUtc|TEXT|1||0", "Version|INTEGER|1|0|0", "DryRunPublished|INTEGER|1|0|0" }, shapes);
+            "ProgressJson|TEXT|0||0", "CancellationRequested|INTEGER|1|0|0", "CreatedUtc|TEXT|1||0",
+            "UpdatedUtc|TEXT|1||0", "Version|INTEGER|1|0|0", "DryRunPublished|INTEGER|1|0|0",
+            "DryRunJson|TEXT|0||0" }, shapes);
         using var indexes = connection.CreateCommand();
         indexes.CommandText = "SELECT name, \"unique\" FROM pragma_index_list('Jobs') WHERE origin = 'c' ORDER BY name;";
         using var indexReader = indexes.ExecuteReader();
@@ -289,7 +339,19 @@ public sealed class JobStateMachineTests : IDisposable
     }
 
     [Fact]
-    public void SchemaThreeUpgradesToFourAndRetainsJobsAfterReopen()
+    public void GenerationFourJobsSchemaHasTheCommittedFourteenColumnShape()
+    {
+        var project = new ProjectLocator(Path.Combine(_root, "schema-four.fwdata"), "schema-four");
+        using var database = MotifDatabase.OpenOwned(Path.Combine(_root, "schema-four.motif.db"), project, 4, new Version(1, 0));
+        using var connection = database.OpenConnection();
+        Assert.Equal(new[] { "JobId|TEXT|0||1", "ProjectKey|TEXT|1||0", "Kind|TEXT|1||0", "Status|TEXT|1||0",
+            "Attempt|INTEGER|1|1|0", "LineageId|TEXT|1||0", "InputJson|TEXT|1||0", "ResultJson|TEXT|0||0",
+            "ProgressJson|TEXT|0||0", "CancellationRequested|INTEGER|1|0|0", "CreatedUtc|TEXT|1||0",
+            "UpdatedUtc|TEXT|1||0", "Version|INTEGER|1|0|0", "DryRunPublished|INTEGER|1|0|0" }, ReadJobColumnShapes(connection));
+    }
+
+    [Fact]
+    public void SchemaThreeUpgradesToFiveAndRetainsJobsAfterReopen()
     {
         var project = new ProjectLocator(Path.Combine(_root, "upgrade.fwdata"), "upgrade");
         var path = Path.Combine(_root, "upgrade.motif.db");
@@ -324,6 +386,17 @@ public sealed class JobStateMachineTests : IDisposable
         using var reopened = MotifDatabase.OpenOwned(path, project, MotifSchema.CurrentSchema, new Version(1, 0));
         var attempts = new JobRepository(reopened).ListAttempts(lineage);
         Assert.Equal(new[] { "attempt-1", "attempt-2" }, attempts.Select(attempt => attempt.JobId));
+    }
+
+    private static IReadOnlyList<string> ReadJobColumnShapes(SqliteConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT name, type, \"notnull\", dflt_value, pk FROM pragma_table_info('Jobs') ORDER BY cid;";
+        using var reader = command.ExecuteReader();
+        var shapes = new List<string>();
+        while (reader.Read()) shapes.Add(string.Join("|", reader.GetString(0), reader.GetString(1), reader.GetInt32(2),
+            reader.IsDBNull(3) ? "" : reader.GetString(3), reader.GetInt32(4)));
+        return shapes;
     }
 
     private static JobRecord NewJob() => new("job", "project", "dry-run", JobStatus.Queued, 1, "{\"proposal\":[]}", null,

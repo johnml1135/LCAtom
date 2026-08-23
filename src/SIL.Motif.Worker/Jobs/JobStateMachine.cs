@@ -42,6 +42,8 @@ public sealed class JobStateMachine
             throw new ArgumentOutOfRangeException(nameof(current), "The current status is not a known job status.");
         if (current.Status == next || !legal.Contains(next))
             throw new InvalidOperationException($"Job transition {JobStatusJson.ToWire(current.Status)} -> {JobStatusJson.ToWire(next)} is not legal.");
+        if (!IsTerminal(next) && resultJson is not null)
+            throw new InvalidOperationException("A nonterminal job cannot record a result.");
         if (current.CancellationRequested && next is not (JobStatus.Cancelled or JobStatus.Interrupted))
             throw new InvalidOperationException("A cancellation-requested job cannot advance without cancellation.");
         if ((next is JobStatus.CompletedDryRunOnly or JobStatus.CompletedWithAssessmentFailure) && !current.DryRunPublished)

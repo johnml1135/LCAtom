@@ -283,6 +283,8 @@ public sealed class JobRepository
         if (published != (dryRun is not null)) throw new InvalidDataException("Dry Run publication fields disagree.");
         if ((status is JobStatus.CompletedDryRunOnly or JobStatus.CompletedWithAssessmentFailure) && !published)
             throw new InvalidDataException("Assessment outcome lacks a published Dry Run.");
+        if (!JobStateMachine.IsTerminal(status) && result is not null)
+            throw new InvalidDataException("A nonterminal job cannot contain a result.");
         if (cancellation && status is JobStatus.Completed or JobStatus.CompletedDryRunOnly or
             JobStatus.CompletedWithAssessmentFailure or JobStatus.Failed)
             throw new InvalidDataException("A cancellation-requested job cannot have a successful or failed terminal status.");
