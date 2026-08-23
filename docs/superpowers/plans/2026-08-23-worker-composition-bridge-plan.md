@@ -103,7 +103,7 @@ they can reach any storage code.
 - Modify: `tests/SIL.Motif.Tests/Worker/ProjectWorkspaceKeyTests.cs`
 - Modify: `tests/SIL.Motif.Tests/Store/MotifDatabaseMigrationTests.cs`
 
-- [ ] **Step 1: Write the failing contract tests**
+- [x] **Step 1: Write the failing contract tests**
 
 Add tests with these exact assertions:
 
@@ -143,7 +143,7 @@ reopen it with the second, and assert the persisted `MotifMetadata.FullFwDataPat
 canonical property. Add a test for a different directory with the same FieldWorks identity and assert it gets
 a different workspace key and sibling database path.
 
-- [ ] **Step 2: Run the complete gate and verify it is red**
+- [x] **Step 2: Run the complete gate and verify it is red**
 
 Run from `C:\Users\johnm\Documents\repos\motif\.claude\worktrees\worker-baseline-implementation`:
 
@@ -154,7 +154,7 @@ Run from `C:\Users\johnm\Documents\repos\motif\.claude\worktrees\worker-baseline
 Expected: the new canonicalization assertions fail because the contract currently returns the raw input and
 the worker, catalog, and Host independently normalize it.
 
-- [ ] **Step 3: Implement one canonicalization algorithm**
+- [x] **Step 3: Implement one canonicalization algorithm**
 
 Make the `ProjectLocator` constructor assign a canonical absolute Windows file path. The algorithm must:
 
@@ -191,7 +191,7 @@ public sealed record ProjectLocator
 If a private helper is needed, keep it in `ProjectLocator.cs`; do not add a second path utility to Worker or
 Host. Preserve JSON property order and constructor deserialization.
 
-- [ ] **Step 4: Run the complete gate and verify it is green**
+- [x] **Step 4: Run the complete gate and verify it is green**
 
 ```powershell
 ./test.ps1
@@ -200,7 +200,7 @@ Host. Preserve JSON property order and constructor deserialization.
 Expected: comment hygiene passes, the solution compiles, all tests pass, and only the existing PanGloss-gated
 tests may skip.
 
-- [ ] **Step 5: Commit the locator boundary**
+- [x] **Step 5: Commit the locator boundary**
 
 ```powershell
 git add src/SIL.Motif.Contract/Projects/ProjectLocator.cs `
@@ -235,7 +235,7 @@ capability values. A worker must advertise the same closed metadata that its imm
 - Modify: `tests/SIL.Motif.Tests/Worker/WorkerLauncherReviewTests.cs`
 - Modify: `tests/SIL.Motif.Tests/Worker/WorkerSelectorTests.cs`
 
-- [ ] **Step 1: Write failing metadata agreement tests**
+- [x] **Step 1: Write failing metadata agreement tests**
 
 Add tests that:
 
@@ -260,7 +260,7 @@ Assert.Equal(metadata.MetadataDigest, WorkerBuildMetadata.Parse(
     metadata.ToCanonicalJson()).MetadataDigest);
 ```
 
-- [ ] **Step 2: Run the complete gate and verify it is red**
+- [x] **Step 2: Run the complete gate and verify it is red**
 
 ```powershell
 ./test.ps1
@@ -268,7 +268,7 @@ Assert.Equal(metadata.MetadataDigest, WorkerBuildMetadata.Parse(
 
 Expected: compilation fails because the metadata record and agreement check do not exist.
 
-- [ ] **Step 3: Add the closed compiled record and generated build values**
+- [x] **Step 3: Add the closed compiled record and generated build values**
 
 Implement the LibLCM-free record in Contract:
 
@@ -311,7 +311,7 @@ construction. Keep the compiled capability list empty in this task because no no
 handler exists yet. Task 4 adds `jobs.v1` atomically with the typed handler; a capability may never advertise
 an unavailable command.
 
-- [ ] **Step 4: Run the complete gate and verify it is green**
+- [x] **Step 4: Run the complete gate and verify it is green**
 
 ```powershell
 ./test.ps1
@@ -320,7 +320,7 @@ an unavailable command.
 Expected: the handshake, launcher, and metadata tests pass; no target framework changes appear in the build
 output.
 
-- [ ] **Step 5: Commit the metadata agreement**
+- [x] **Step 5: Commit the metadata agreement**
 
 ```powershell
 git add src/SIL.Motif.Contract/Worker/WorkerBuildMetadata.cs `
@@ -361,7 +361,7 @@ before any command can observe or mutate project state.
 - Create: `tests/SIL.Motif.Tests/Worker/ProjectRuntimeTests.cs`
 - Modify: `tests/SIL.Motif.Tests/Worker/WorkerServerTests.cs`
 
-- [ ] **Step 1: Write failing runtime lifecycle tests**
+- [x] **Step 1: Write failing runtime lifecycle tests**
 
 Add tests that:
 
@@ -418,7 +418,7 @@ public sealed class ProjectRuntimeRegistry : IDisposable
 }
 ```
 
-- [ ] **Step 2: Run the complete gate and verify it is red**
+- [x] **Step 2: Run the complete gate and verify it is red**
 
 ```powershell
 ./test.ps1
@@ -426,7 +426,7 @@ public sealed class ProjectRuntimeRegistry : IDisposable
 
 Expected: compilation fails because the keyed runtime and project host registry do not exist.
 
-- [ ] **Step 3: Implement one runtime per workspace key**
+- [x] **Step 3: Implement one runtime per workspace key**
 
 `ProjectRuntimeRegistry` stores a `ConcurrentDictionary<string, Lazy<ProjectRuntime>>` keyed by
 `ProjectWorkspaceKey.Compute(project)`. `GetOrOpen` must use the canonical locator from Task 1 and construct
@@ -498,7 +498,7 @@ The exact recovery factory may be an existing concrete constructor rather than t
 the production rule is that registry construction injects the clock, cleaner, and recovery coordinator so
 tests control them. Do not add a new migration implementation.
 
-- [ ] **Step 4: Replace the global host route with a project-keyed route**
+- [x] **Step 4: Replace the global host route with a project-keyed route**
 
 `ProjectHostRegistry` maps the workspace key to one live host registration containing the canonical locator,
 server connection id, host session id, negotiated protocol, stream, and shared write gate. Registering a
@@ -543,7 +543,7 @@ public sealed class WorkerEventSink
 Preserve the settled event discriminators. Do not add Baseline, Apply, or reconciliation handlers; this task
 only ensures that those already-defined event envelopes cannot cross project boundaries.
 
-- [ ] **Step 5: Run the complete gate and verify it is green**
+- [x] **Step 5: Run the complete gate and verify it is green**
 
 ```powershell
 ./test.ps1
@@ -551,7 +551,7 @@ only ensures that those already-defined event envelopes cannot cross project bou
 
 Expected: runtime lifecycle, recovery ordering, keyed host routing, and existing worker transport tests pass.
 
-- [ ] **Step 6: Commit the project runtime**
+- [x] **Step 6: Commit the project runtime**
 
 ```powershell
 git add src/SIL.Motif.Worker/Projects `
@@ -584,7 +584,7 @@ connected.
 - Modify: `tests/SIL.Motif.Tests/Contract/WorkerProtocolTests.cs`
 - Modify: `tests/SIL.Motif.Tests/Worker/WorkerMetadataManifestTests.cs`
 
-- [ ] **Step 1: Write the failing closed-contract and pipe tests**
+- [x] **Step 1: Write the failing closed-contract and pipe tests**
 
 Add contract tests that serialize and parse these DTOs with stable JSON names and tolerate an additive unknown
 property:
@@ -625,7 +625,7 @@ protocol version or capability mismatch. Each must return a correlated refusal o
 the handler reads the database. A syntactically valid unknown job id is different: the handler queries the
 repository and returns `Found = false` without treating absence as a protocol refusal.
 
-- [ ] **Step 2: Run the complete gate and verify it is red**
+- [x] **Step 2: Run the complete gate and verify it is red**
 
 ```powershell
 ./test.ps1
@@ -634,7 +634,7 @@ repository and returns `Found = false` without treating absence as a protocol re
 Expected: compilation fails because the command discriminator, DTOs, dispatcher, handler, and typed client do
 not exist.
 
-- [ ] **Step 3: Add the closed command and typed client**
+- [x] **Step 3: Add the closed command and typed client**
 
 Add `JobStatus = "job.status"` to `WorkerCommands`, include it in `All`, and associate it with `jobs.v1`.
 Expose the association through a closed command descriptor or `RequiredCapability` lookup. Preserve the
@@ -677,7 +677,7 @@ behavior, and return a fresh options object so callers cannot mutate a process-w
 `ProjectLocator` and `JobId` before sending. A response must preserve the request id and negotiated protocol
 version.
 
-- [ ] **Step 4: Implement the dispatcher and real database handler**
+- [x] **Step 4: Implement the dispatcher and real database handler**
 
 Make `WorkerCommandDispatcher` map only registered discriminators to typed handlers:
 
@@ -708,7 +708,7 @@ reject an unregistered command, reject a protocol mismatch, and close on malform
 dispatcher with the runtime registry and the `JobStatusCommandHandler`; later owning plans add their own
 typed handlers explicitly.
 
-- [ ] **Step 5: Run the complete gate and verify it is green**
+- [x] **Step 5: Run the complete gate and verify it is green**
 
 ```powershell
 ./test.ps1
@@ -717,7 +717,7 @@ typed handlers explicitly.
 Expected: the full suite passes, including a real named-pipe `job.status` round trip and the three existing
 PanGloss skips when the executable is unavailable.
 
-- [ ] **Step 6: Commit the vertical command**
+- [x] **Step 6: Commit the vertical command**
 
 ```powershell
 git add src/SIL.Motif.Contract/Jobs/JobStatusCommandContracts.cs `
@@ -746,10 +746,10 @@ workspace, the worker metadata identifies one compatible executable, a project r
 and a real pipe command reads durable state from that runtime. The Baseline documents then describe the
 storage handoff that the next stage will consume.
 
-- [ ] Run `./test.ps1` from the repository root.
-- [ ] Run `git diff --check`.
-- [ ] Run `rg -n "net8\.0|TargetFramework" src tests` and confirm no target framework changed.
-- [ ] Run `rg -n "0\.0\.0|new ProtocolRange\(1, 1\), Array\.Empty" src/SIL.Motif.Worker` and confirm no
+- [x] Run `./test.ps1` from the repository root.
+- [x] Run `git diff --check`.
+- [x] Run `rg -n "net8\.0|TargetFramework" src tests` and confirm no target framework changed.
+- [x] Run `rg -n "0\.0\.0|new ProtocolRange\(1, 1\), Array\.Empty" src/SIL.Motif.Worker` and confirm no
   production hard-coded handshake metadata remains. Run `rg -n "publishedBaselineFwDataPath" docs/superpowers`
   and confirm the ambiguous Baseline path name is absent.
-- [ ] Confirm `git status --short` contains only the intended task changes before each task commit.
+- [x] Confirm `git status --short` contains only the intended task changes before each task commit.
