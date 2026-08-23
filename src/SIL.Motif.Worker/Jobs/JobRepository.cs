@@ -281,10 +281,15 @@ public sealed class JobRepository
     }
 
     public JobRecord ExhaustInterruptedInfrastructure(string jobId, long expectedVersion, DateTimeOffset now)
+        => ExhaustInterruptedInfrastructure(jobId, expectedVersion, now, out _);
+
+    public JobRecord ExhaustInterruptedInfrastructure(string jobId, long expectedVersion, DateTimeOffset now,
+        out bool finalized)
     {
+        finalized = false;
         try
         {
-            return ExhaustInterruptedInfrastructureCore(jobId, expectedVersion, now);
+            return ExhaustInterruptedInfrastructureCore(jobId, expectedVersion, now, out finalized);
         }
         catch (SqliteException exception) when (exception.SqliteErrorCode is 5 or 6)
         {
@@ -306,11 +311,14 @@ public sealed class JobRepository
         }
     }
 
-    private JobRecord ExhaustInterruptedInfrastructureCore(string jobId, long expectedVersion, DateTimeOffset now)
+    private JobRecord ExhaustInterruptedInfrastructureCore(string jobId, long expectedVersion, DateTimeOffset now,
+        out bool finalized)
     {
+        finalized = false;
         using var connection = _database.OpenConnection();
         using var transaction = connection.BeginTransaction();
         var current = ReadRequired(connection, transaction, jobId);
+        if (IsExhaustedInfrastructure(current)) return current;
         EnsureVersion(current, expectedVersion);
         if (current.Status != JobStatus.Interrupted || current.FailureCategory != JobFailureCategory.Infrastructure ||
             current.Attempt < 3)
@@ -330,6 +338,7 @@ public sealed class JobRepository
         ValidateFailureCategory(changed);
         UpdateTransition(connection, transaction, changed);
         transaction.Commit();
+        finalized = true;
         return changed;
     }
 

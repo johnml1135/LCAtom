@@ -173,15 +173,17 @@ public sealed class WorkerRecoveryTests : IDisposable
         new WorkerRecovery(jobs, clock).Recover();
         var third = jobs.Transition(jobs.ListAttempts(first.LogicalJobId).Single(x => x.Attempt == 3).JobId,
             JobStatus.Running);
-        new WorkerRecovery(jobs, clock).Recover();
+        jobs.MarkRunningInterrupted(clock.UtcNow);
 
         var left = new WorkerRecovery(new JobRepository(database, clock), clock);
         var right = new WorkerRecovery(new JobRepository(database, clock), clock);
-        await Task.WhenAll(Task.Run(() => left.Recover()), Task.Run(() => right.Recover()));
+        var results = await Task.WhenAll(Task.Run(() => left.Recover()), Task.Run(() => right.Recover()));
 
         var attempts = jobs.ListAttempts(first.LogicalJobId);
         Assert.Equal(3, attempts.Count);
         Assert.Equal(JobStatus.Failed, jobs.Get(third.JobId)!.Status);
+        Assert.Equal(1, results.Sum(result => result.ExhaustedJobIds!.Count));
+        Assert.Equal(JobStatus.Failed, jobs.ExhaustInterruptedInfrastructure(third.JobId, third.Version, clock.UtcNow).Status);
         _ = second;
     }
 

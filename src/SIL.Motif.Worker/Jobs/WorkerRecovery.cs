@@ -31,8 +31,8 @@ public sealed class WorkerRecovery
             {
                 try
                 {
-                    _jobs.ExhaustInterruptedInfrastructure(job.JobId, job.Version, now);
-                    exhausted.Add(job.JobId);
+                    _ = _jobs.ExhaustInterruptedInfrastructure(job.JobId, job.Version, now, out var finalized);
+                    if (finalized) exhausted.Add(job.JobId);
                 }
                 catch (InvalidOperationException) when
                     (_jobs.IsAlreadyExhaustedInfrastructure(job.JobId, job.Attempt) ||
