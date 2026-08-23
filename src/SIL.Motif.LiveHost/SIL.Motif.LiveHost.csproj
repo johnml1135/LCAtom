@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SIL.Motif.Contract\SIL.Motif.Contract.csproj" />
+    <ProjectReference Include="..\SIL.Motif.Model\SIL.Motif.Model.csproj" />
+    <ProjectReference Include="..\SIL.Motif.Runner\SIL.Motif.Runner.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SIL.LCModel" Version="11.0.0-beta0150" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(MotifLocalPalasoActive)' == 'true'">
+    <PackageReference Include="SIL.WritingSystems" Version="$(SilLibPalasoVersion)" />
+    <PackageReference Include="SIL.Core" Version="$(SilLibPalasoVersion)" />
+  </ItemGroup>
+
+</Project>
