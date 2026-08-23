@@ -336,7 +336,7 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
                     {
                         new JobStatusCommandHandler(_runtimeRegistry),
                         new BaselineTransferOfferCommandHandler(_baselineTransfers, connectionId),
-                        new BaselineTransferPublishCommandHandler(
+                        new BaselinePublishCommandHandler(
                             _runtimeRegistry, _baselineTransfers, _baselineWorkspaces, connectionId)
                     };
                 connection = new WorkerControlConnection(pipe, negotiated.ProtocolVersion, negotiated.Capabilities,

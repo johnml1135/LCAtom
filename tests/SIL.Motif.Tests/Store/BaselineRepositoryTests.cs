@@ -71,6 +71,6 @@ public sealed class BaselineRepositoryTests : IDisposable
         var root = Path.Combine(_root, folder);
         return new BaselinePublication(root, Path.Combine(root, "project.fwdata"),
             new BaselineToken("project-id", "sha256:" + new string('1', 64), "projection-v1",
-                "2026-08-23T00:00:00Z", digest), true);
+                "2026-08-23T00:00:00Z", digest));
     }
 }

@@ -7,19 +7,19 @@ using SIL.Motif.Worker.Projects;
 
 namespace SIL.Motif.Worker.Baselines;
 
-internal sealed class BaselineTransferPublishCommandHandler : IWorkerCommandHandler
+internal sealed class BaselinePublishCommandHandler : IWorkerCommandHandler
 {
     private readonly ProjectRuntimeRegistry _runtimes;
     private readonly BaselineTransferRegistry _transfers;
     private readonly BaselineWorkspaceCatalog _workspaces;
     private readonly BaselineBundleReceiver _receiver;
-    private readonly Action<ProjectRuntime, string, BaselinePublication, DateTimeOffset> _record;
+    private readonly Func<ProjectRuntime, string, BaselinePublication, DateTimeOffset, BaselineRecord> _record;
     private readonly string _connectionId;
 
-    public BaselineTransferPublishCommandHandler(ProjectRuntimeRegistry runtimes,
+    public BaselinePublishCommandHandler(ProjectRuntimeRegistry runtimes,
         BaselineTransferRegistry transfers, BaselineWorkspaceCatalog workspaces, string connectionId,
         BaselineBundleReceiver? receiver = null,
-        Action<ProjectRuntime, string, BaselinePublication, DateTimeOffset>? record = null)
+        Func<ProjectRuntime, string, BaselinePublication, DateTimeOffset, BaselineRecord>? record = null)
     {
         _runtimes = runtimes ?? throw new ArgumentNullException(nameof(runtimes));
         _transfers = transfers ?? throw new ArgumentNullException(nameof(transfers));
@@ -103,6 +103,16 @@ internal sealed class BaselineTransferPublishCommandHandler : IWorkerCommandHand
                     BaselineFailureCode.PublicationFailed, true,
                     "The Baseline publication could not be recorded.")));
             }
+            if (previous is not null &&
+                StringComparer.Ordinal.Equals(previous.Token.BundleDigest, request.Token.BundleDigest) &&
+                previous.Token != request.Token)
+            {
+                BaselineBundleReceiver.DeleteTransport(transfer.TemporaryPath);
+                return Response(new BaselinePublishResponse(null, Failure(
+                    BaselineFailureCode.BundleInvalid, false,
+                    "The Baseline token conflicts with the durable publication.")));
+            }
+            var publicationExisted = BaselineBundleReceiver.PublicationExists(target, request.Token);
 
             BaselinePublication publication;
             try
@@ -123,14 +133,15 @@ internal sealed class BaselineTransferPublishCommandHandler : IWorkerCommandHand
                     "The Baseline could not be published.")));
             }
 
+            BaselineRecord durable;
             try
             {
-                _record(runtime, workspaceKey, publication, DateTimeOffset.UtcNow);
+                durable = _record(runtime, workspaceKey, publication, DateTimeOffset.UtcNow);
             }
             catch (Exception exception) when (exception is DbException or IOException or InvalidDataException or
                 InvalidOperationException or UnauthorizedAccessException)
             {
-                if (publication.Created &&
+                if (!publicationExisted &&
                     !StringComparer.Ordinal.Equals(previous?.Token.BundleDigest, publication.Token.BundleDigest))
                     BaselineBundleReceiver.DeletePublicationIfOwned(publication, target);
                 return Response(new BaselinePublishResponse(null, Failure(
@@ -139,7 +150,7 @@ internal sealed class BaselineTransferPublishCommandHandler : IWorkerCommandHand
             }
 
             return Response(new BaselinePublishResponse(
-                new BaselinePublicationResult(workspaceKey, publication.Token), null));
+                new BaselinePublicationResult(workspaceKey, durable.Token), null));
         }
     }
 

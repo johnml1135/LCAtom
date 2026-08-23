@@ -25,7 +25,7 @@ public sealed class BaselineBundleReceiverTests : IDisposable
             transfer, token, target, CancellationToken.None);
 
         Assert.False(File.Exists(transfer.TemporaryPath));
-        Assert.True(publication.Created);
+        Assert.True(Directory.Exists(publication.RootDirectory));
         Assert.Equal(Path.Combine(publication.RootDirectory, "project.fwdata"), publication.FwDataPath);
         Assert.Equal("model", File.ReadAllText(publication.FwDataPath));
         Assert.Equal("<ldml/>", File.ReadAllText(Path.Combine(
@@ -46,8 +46,7 @@ public sealed class BaselineBundleReceiverTests : IDisposable
 
         var retried = await receiver.PublishVerifiedAsync(second, token, target, CancellationToken.None);
 
-        Assert.Equal(published.RootDirectory, retried.RootDirectory);
-        Assert.False(retried.Created);
+        Assert.Equal(published, retried);
         Assert.False(File.Exists(second.TemporaryPath));
     }
 

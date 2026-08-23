@@ -29,8 +29,7 @@ internal sealed record BaselinePublicationTarget
 internal sealed record BaselinePublication(
     string RootDirectory,
     string FwDataPath,
-    BaselineToken Token,
-    bool Created);
+    BaselineToken Token);
 
 internal sealed class BaselineBundleReceiver
 {
@@ -79,7 +78,7 @@ internal sealed class BaselineBundleReceiver
                 Directory.Move(temporaryDirectory, destination);
                 temporaryDirectory = string.Empty;
                 return new BaselinePublication(destination,
-                    Path.Combine(destination, Path.GetFileName(fwDataPath)), declaredToken, true);
+                    Path.Combine(destination, Path.GetFileName(fwDataPath)), declaredToken);
             }
             catch (IOException) when (Directory.Exists(destination))
             {
@@ -124,6 +123,11 @@ internal sealed class BaselineBundleReceiver
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
     }
+
+    internal static bool PublicationExists(
+        BaselinePublicationTarget target, BaselineToken token) =>
+        Directory.Exists(Path.Combine(target.BaselineRoot,
+            token.BundleDigest.Substring("sha256:".Length)));
 
     private static void VerifyTransfer(VerifiedBinaryTransfer transfer, BaselineToken token)
     {
@@ -270,7 +274,7 @@ internal sealed class BaselineBundleReceiver
             entries.Any(path => !StringComparer.OrdinalIgnoreCase.Equals(path, fwData[0]) &&
                 !StringComparer.OrdinalIgnoreCase.Equals(path, writingSystemRoot)))
             throw new InvalidDataException("The existing Baseline publication has an invalid layout.");
-        return new BaselinePublication(root, fwData[0], token, false);
+        return new BaselinePublication(root, fwData[0], token);
     }
 
     private static void DeleteIncoming(string path)
