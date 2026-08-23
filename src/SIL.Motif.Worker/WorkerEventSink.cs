@@ -119,8 +119,8 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
                 throw new InvalidOperationException("The event result identifier is unknown or duplicated.");
             if (result.ProtocolVersion != pending.ProtocolVersion)
                 throw new InvalidOperationException("The event result protocol is not negotiated.");
-            _pending.Remove(result.EventId, out var removed);
-            removed.ActivityLease.Dispose();
+            _pending.Remove(result.EventId);
+            pending.ActivityLease.Dispose();
             pending.Completion.TrySetResult(result);
         }
     }
