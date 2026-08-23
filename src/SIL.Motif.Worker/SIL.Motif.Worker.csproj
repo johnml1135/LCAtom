@@ -9,6 +9,7 @@
   <ItemGroup>
     <ProjectReference Include="..\SIL.Motif.Contract\SIL.Motif.Contract.csproj" />
     <ProjectReference Include="..\SIL.Motif.Client\SIL.Motif.Client.csproj" />
+    <ProjectReference Include="..\SIL.Motif.Host\SIL.Motif.Host.csproj" />
     <PackageReference Include="System.IO.Pipes.AccessControl" Version="5.0.0" />
   </ItemGroup>
 </Project>
