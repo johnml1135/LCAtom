@@ -574,15 +574,30 @@ public sealed class WorkerServerTests
     public async Task BinaryTransferReportsCleanupFailureForAnOwnedPathItCannotDelete()
     {
         var directory = Path.Combine(Path.GetTempPath(), "motif-worker-" + Guid.NewGuid().ToString("N"));
-        await using var server = new BinaryTransferServer(directory);
+        using var connected = new ManualResetEventSlim(false);
+        using var allowFileOpen = new ManualResetEventSlim(false);
+        await using var server = BinaryTransferServer.CreateWithLifecycleProbes(directory,
+            onConnectionAccepted: () =>
+            {
+                connected.Set();
+                allowFileOpen.Wait();
+            });
         var offer = server.CreateOffer(3, TimeSpan.FromSeconds(10));
         var temporaryPath = Path.Combine(directory, offer.TransferId + ".tmp");
         Directory.CreateDirectory(temporaryPath);
         using (var client = new NamedPipeClientStream(".", offer.PipeName, PipeDirection.Out,
                    PipeOptions.Asynchronous))
         {
-            await client.ConnectAsync(5000);
-            await client.WriteAsync(new byte[] { 1, 2, 3 });
+            try
+            {
+                await client.ConnectAsync(5000);
+                Assert.True(connected.Wait(TimeSpan.FromSeconds(1)));
+                await client.WriteAsync(new byte[] { 1, 2, 3 });
+            }
+            finally
+            {
+                allowFileOpen.Set();
+            }
         }
         await Assert.ThrowsAnyAsync<Exception>(() => server.CompleteAsync(
             new BinaryTransferCompletion(offer.TransferId, 3, new string('0', 64))));

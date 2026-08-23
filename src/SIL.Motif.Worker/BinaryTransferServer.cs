@@ -30,6 +30,7 @@ public sealed class BinaryTransferServer : IAsyncDisposable
     private readonly object _lifecycleGate = new object();
     private Action? _onOfferRegistered;
     private Action? _onDisposed;
+    private Action? _onConnectionAccepted;
     private readonly ConcurrentDictionary<string, Transfer> _transfers =
         new ConcurrentDictionary<string, Transfer>(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _cleanupFailures =
@@ -41,13 +42,13 @@ public sealed class BinaryTransferServer : IAsyncDisposable
     public BinaryTransferServer(string tempDirectory, IWorkerClock? clock = null, string? userSid = null,
         int maximumActiveOffers = DefaultMaximumActiveOffers,
         long maximumReservedBytes = DefaultMaximumReservedBytes)
-        : this(tempDirectory, clock, userSid, maximumActiveOffers, maximumReservedBytes, null, null)
+        : this(tempDirectory, clock, userSid, maximumActiveOffers, maximumReservedBytes, null, null, null)
     {
     }
 
     private BinaryTransferServer(string tempDirectory, IWorkerClock? clock, string? userSid,
         int maximumActiveOffers, long maximumReservedBytes,
-        Action? onOfferRegistered, Action? onDisposed)
+        Action? onOfferRegistered, Action? onDisposed, Action? onConnectionAccepted)
     {
         if (maximumActiveOffers <= 0)
             throw new ArgumentOutOfRangeException(nameof(maximumActiveOffers));
@@ -61,12 +62,14 @@ public sealed class BinaryTransferServer : IAsyncDisposable
         _maximumReservedBytes = maximumReservedBytes;
         _onOfferRegistered = onOfferRegistered;
         _onDisposed = onDisposed;
+        _onConnectionAccepted = onConnectionAccepted;
     }
 
     internal static BinaryTransferServer CreateWithLifecycleProbes(string tempDirectory,
-        Action? onOfferRegistered = null, Action? onDisposed = null) =>
+        Action? onOfferRegistered = null, Action? onDisposed = null,
+        Action? onConnectionAccepted = null) =>
         new BinaryTransferServer(tempDirectory, null, null, DefaultMaximumActiveOffers,
-            DefaultMaximumReservedBytes, onOfferRegistered, onDisposed);
+            DefaultMaximumReservedBytes, onOfferRegistered, onDisposed, onConnectionAccepted);
 
     /// <summary>Exposes the same restricted ACL used by every binary pipe.</summary>
     public static PipeSecurity CreatePipeSecurity(string? userSid = null) =>
@@ -206,6 +209,7 @@ public sealed class BinaryTransferServer : IAsyncDisposable
             if (await Task.WhenAny(waitForConnection, deadline).ConfigureAwait(false) != waitForConnection)
                 throw new InvalidOperationException("The binary transfer offer has expired.");
             await waitForConnection.ConfigureAwait(false);
+            _onConnectionAccepted?.Invoke();
             using var output = new FileStream(transfer.TempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
             using var digest = SHA256.Create();
             var buffer = new byte[BufferSize];
