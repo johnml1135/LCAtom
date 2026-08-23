@@ -219,6 +219,17 @@ public sealed class WorkerProtocolTests
     }
 
     [Fact]
+    public void BaselineCommands_AreClosedAndCapabilityBound()
+    {
+        Assert.Equal("baseline.offer", WorkerCommands.BaselineOffer);
+        Assert.Equal("baseline.publish", WorkerCommands.BaselinePublish);
+        Assert.True(WorkerCommands.IsKnown(WorkerCommands.BaselineOffer));
+        Assert.True(WorkerCommands.IsKnown(WorkerCommands.BaselinePublish));
+        Assert.Equal("baseline.v1", WorkerCommands.RequiredCapability(WorkerCommands.BaselineOffer));
+        Assert.Equal("baseline.v1", WorkerCommands.RequiredCapability(WorkerCommands.BaselinePublish));
+    }
+
+    [Fact]
     public void JobStatusPayload_IsNotAnotherRegisteredCommandPayload()
     {
         var request = new JobStatusRequest(
@@ -330,7 +341,13 @@ public sealed class WorkerProtocolTests
         var commands = WorkerCommands.All.ToArray();
         var events = WorkerCommands.Events.ToArray();
 
-        Assert.Equal(new[] { WorkerCommands.Handshake, WorkerCommands.JobStatus }, commands);
+        Assert.Equal(new[]
+        {
+            WorkerCommands.Handshake,
+            WorkerCommands.JobStatus,
+            WorkerCommands.BaselineOffer,
+            WorkerCommands.BaselinePublish,
+        }, commands);
         Assert.Equal(new[]
         {
             WorkerCommands.BaselineRefreshRequested,

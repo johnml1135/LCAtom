@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using SIL.Motif.Contract.Baselines;
 using SIL.Motif.Contract.Jobs;
 
 namespace SIL.Motif.Contract.Worker;
@@ -11,6 +12,7 @@ public static class WorkerJson
     public static JsonSerializerOptions CreateOptions()
     {
         var options = new JsonSerializerOptions();
+        options.Converters.Add(new BaselineFailureCodeJsonConverter());
         options.Converters.Add(new JobStatusJsonConverter());
         options.Converters.Add(new JobFailureCategoryJsonConverter());
         options.Converters.Add(new JsonStringEnumConverter());
