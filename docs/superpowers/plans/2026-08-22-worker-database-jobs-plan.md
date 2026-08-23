@@ -80,26 +80,27 @@ git commit -m "feat: centralize motif database ownership"
 
 ### Task 2: Migrate all existing local records into the sibling SQLite database
 
-Existing Proposals, Corpora, and Assessments must survive the storage move byte-for-byte and remain usable
-without manual conversion.
+Existing Proposals, every immutable Proposal revision, legacy Dry Run anchors, Corpora, and Assessments must
+survive the storage move byte-for-byte and remain usable without manual conversion.
 
 **Files:**
 - Create: `src/SIL.Motif.Worker/Store/ProposalRepository.cs`
 - Create: `src/SIL.Motif.Worker/Store/ReportRepository.cs`
 - Create: `src/SIL.Motif.Worker/Store/FileProposalStoreMigration.cs`
 - Create: `src/SIL.Motif.Worker/Store/LegacyBulkStoreMigration.cs`
-- Modify: `src/SIL.Motif.Cli/Store/ProposalStore.cs`
+- Inspect: `src/SIL.Motif.Cli/Store/ProposalStore.cs`
 - Test: `tests/SIL.Motif.Tests/Store/ProposalRepositoryTests.cs`
 - Test: `tests/SIL.Motif.Tests/Store/FileProposalStoreMigrationTests.cs`
 - Test: `tests/SIL.Motif.Tests/Store/LegacyBulkStoreMigrationTests.cs`
 
 - [ ] **Step 1: Write failing parity and migration tests**
 
-Seed current draft, object, manifest, Decision, and status files plus a current `.motif/motif.db` containing
-Corpora, Assessment runs, analyses, and pins. Assert one transaction imports each source into the sibling
-database, preserves exact Proposal JSON and intent digest plus all bulk-data relationships, is idempotent, and
-renames legacy sources only after commit. Inject failure after every table and prove rollback leaves both
-sources readable and the destination unopened by clients.
+Seed current drafts, every historical object revision, manifests, Decisions, statuses, and legacy Dry Run
+anchors plus a current `.motif/motif.db` containing Corpora, Assessment runs, analyses, and pins. Assert one
+transaction imports each source into the sibling database, preserves exact Proposal bytes and intent digests
+plus all bulk-data relationships, is idempotent, and renames complete legacy sources only after commit. Inject
+failure after every table and prove rollback leaves both sources readable and partial destination state
+unobservable to clients. A committed import whose source rename fails must retry cleanup safely.
 
 - [ ] **Step 2: Run red**
 
@@ -122,10 +123,14 @@ public interface IProposalRepository
 }
 ```
 
-`LegacyBulkStoreMigration` attaches the old database read-only, copies its known schema with explicit column
-maps, verifies row counts and foreign-key relationships, and records the source digest in the migration
-ledger. The CLI file store and old database opener remain only as migration readers until CLI cutover in plan
-6; no new writes target them.
+`LegacyBulkStoreMigration` attaches the old database read-only, copies its exact known schema with explicit
+column maps in bounded memory, verifies row counts and foreign-key relationships, and records a canonical
+logical source digest in the migration ledger. A Draft deliberately has no foreign key to `Proposals`: it
+exists before finalization creates a durable Proposal row.
+
+This task builds the repositories and migration readers but does not reroute existing CLI commands. The CLI
+continues using its staged store until the client cutover in plan 6; code introduced here never writes a
+legacy source. Plan 6 invokes migration before its first worker-owned write and retires the old write paths.
 
 - [ ] **Step 4: Run green and commit**
 
