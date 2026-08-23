@@ -8,12 +8,29 @@ public sealed record PublishedBaseline(
     string Path,
     DateTimeOffset PublishedUtc,
     bool Superseded,
-    bool RetentionEligible);
+    bool RetentionEligible,
+    BaselinePinSources PinSources = BaselinePinSources.None);
+
+[Flags]
+public enum BaselinePinSources
+{
+    None = 0,
+    ActiveJob = 1,
+    DryRun = 2,
+    Decision = 4,
+    Receipt = 8
+}
 
 /// <summary>Answers durable active-work pins before a Baseline file is removed.</summary>
 public interface IBaselineReferenceQuery
 {
     bool HasActiveReference(string baselinePath);
+}
+
+/// <summary>Provides the durable source categories that pin a Baseline.</summary>
+public interface IBaselinePinQuery
+{
+    BaselinePinSources GetPinSources(string baselinePath);
 }
 
 /// <summary>Supplies exact published Baseline files eligible for retention evaluation.</summary>
@@ -63,7 +80,10 @@ public sealed class BaselineRetentionCleaner
         {
             if (!baseline.Superseded || !baseline.RetentionEligible ||
                 !_policy.ShouldPurge(baseline.PublishedUtc, _clock.UtcNow) ||
-                _references.HasActiveReference(baseline.Path))
+                baseline.PinSources != BaselinePinSources.None ||
+                (_references is IBaselinePinQuery pinQuery
+                    ? pinQuery.GetPinSources(baseline.Path) != BaselinePinSources.None
+                    : _references.HasActiveReference(baseline.Path)))
                 continue;
             if (!IsExactPublishedPath(projectKey, baseline.Path))
             {
@@ -83,7 +103,12 @@ public sealed class BaselineRetentionCleaner
                     deleted.Add(baseline.Path);
                 }
             }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
+                ArgumentException or NotSupportedException)
+            {
+                failures.Add(new WorkspaceCleanupFailure(baseline.Path, "Baseline deletion failed.", exception));
+            }
+            catch (Exception exception)
             {
                 failures.Add(new WorkspaceCleanupFailure(baseline.Path, "Baseline deletion failed.", exception));
             }
@@ -95,7 +120,9 @@ public sealed class BaselineRetentionCleaner
     {
         if (string.IsNullOrWhiteSpace(path) || !_ownership.IsOwned(path)) return false;
         var expected = Path.Combine(_ownership.WorkerRoot, projectKey, "baseline");
-        var full = Path.GetFullPath(path);
+        string full;
+        try { full = Path.GetFullPath(path); }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException) { return false; }
         var relative = Path.GetRelativePath(expected, full);
         return relative != "." && relative != ".." && !relative.StartsWith(".." + Path.DirectorySeparatorChar) &&
             !Path.IsPathRooted(relative) && relative.IndexOfAny([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar]) < 0;

@@ -24,9 +24,21 @@ public sealed class WorkspaceOwnership : IWorkspaceOwnership
 {
     public WorkspaceOwnership(string workerRoot)
     {
-        WorkerRoot = Path.GetFullPath(workerRoot ?? throw new ArgumentNullException(nameof(workerRoot)))
-            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        if (string.IsNullOrEmpty(WorkerRoot)) throw new ArgumentException("A narrow worker root is required.", nameof(workerRoot));
+        try
+        {
+            WorkerRoot = Path.GetFullPath(workerRoot ?? throw new ArgumentNullException(nameof(workerRoot)))
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException)
+        {
+            throw new ArgumentException("A narrow worker root is required.", nameof(workerRoot), exception);
+        }
+        if (string.IsNullOrEmpty(WorkerRoot) ||
+            string.Equals(WorkerRoot, Path.GetPathRoot(WorkerRoot)?.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                StringComparison.OrdinalIgnoreCase) || IsForbidden(WorkerRoot))
+            throw new ArgumentException("A narrow worker root is required.", nameof(workerRoot));
+        if (Directory.Exists(WorkerRoot) && Directory.EnumerateFiles(WorkerRoot, "*.fwdata", SearchOption.TopDirectoryOnly).Any())
+            throw new ArgumentException("A FieldWorks project directory cannot be a worker root.", nameof(workerRoot));
     }
 
     public string WorkerRoot { get; }
@@ -34,8 +46,9 @@ public sealed class WorkspaceOwnership : IWorkspaceOwnership
     public bool IsOwned(string path)
     {
         if (string.IsNullOrWhiteSpace(path)) return false;
-        var full = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        if (IsForbidden(full)) return false;
+        string full;
+        try { full = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar); }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException) { return false; }
         var relative = Path.GetRelativePath(WorkerRoot, full);
         if (relative == "." || relative == ".." || relative.StartsWith(".." + Path.DirectorySeparatorChar) ||
             Path.IsPathRooted(relative)) return false;
@@ -44,8 +57,13 @@ public sealed class WorkspaceOwnership : IWorkspaceOwnership
                      StringSplitOptions.RemoveEmptyEntries))
         {
             current = Path.Combine(current, segment);
-            if (Directory.Exists(current) && (File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
-                return false;
+            try
+            {
+                if (Directory.Exists(current) && (File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
+                    return false;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
+                System.Security.SecurityException) { return false; }
         }
         return true;
     }
@@ -127,8 +145,12 @@ public sealed class WorkspaceCleaner
                 failures.Add(new WorkspaceCleanupFailure(target, "Reparse-point cleanup target is refused."));
                 return new WorkspaceCleanupResult(deleted, failures);
             }
-            if ((_fileSystem.GetAttributes(target) & FileAttributes.Directory) != 0)
+            var attributes = _fileSystem.GetAttributes(target);
+            if ((attributes & FileAttributes.Directory) != 0)
+            {
+                VerifyDescendants(target);
                 _fileSystem.DeleteDirectory(target);
+            }
             else
                 _fileSystem.DeleteFile(target);
             deleted.Add(target);
@@ -141,7 +163,26 @@ public sealed class WorkspaceCleaner
         {
             failures.Add(new WorkspaceCleanupFailure(target, "Cleanup target could not be deleted.", exception));
         }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or InvalidOperationException)
+        {
+            failures.Add(new WorkspaceCleanupFailure(target, "Cleanup target could not be inspected.", exception));
+        }
+        catch (Exception exception)
+        {
+            failures.Add(new WorkspaceCleanupFailure(target, "Cleanup target could not be deleted.", exception));
+        }
         return new WorkspaceCleanupResult(deleted, failures);
+    }
+
+    private void VerifyDescendants(string directory)
+    {
+        foreach (var entry in _fileSystem.EnumerateFileSystemEntries(directory))
+        {
+            var attributes = _fileSystem.GetAttributes(entry);
+            if ((attributes & FileAttributes.ReparsePoint) != 0)
+                throw new InvalidOperationException("A reparse descendant prevents cleanup.");
+            if ((attributes & FileAttributes.Directory) != 0) VerifyDescendants(entry);
+        }
     }
 
     private bool ValidateWorkTarget(string work, string target, out string? error, bool allowRoot = false)

@@ -68,10 +68,40 @@ public sealed class WorkerRecoveryTests : IDisposable
         new WorkerRecovery(jobs, clock).RecoverInterruptedJobs(clock.UtcNow);
         var third = jobs.ListAttempts(first.LogicalJobId).Single(x => x.Attempt == 3);
 
-        Assert.True(DateTimeOffset.Parse(third.NotBeforeUtc!) > DateTimeOffset.Parse(second.NotBeforeUtc!));
+        Assert.Equal(clock.UtcNow.AddMinutes(1), DateTimeOffset.Parse(second.NotBeforeUtc!));
+        Assert.Equal(clock.UtcNow.AddMinutes(2), DateTimeOffset.Parse(third.NotBeforeUtc!));
         Assert.Equal(JobStatus.Interrupted, jobs.Get(first.JobId)!.Status);
         Assert.Equal(JobStatus.Interrupted, jobs.Get(secondRunning.JobId)!.Status);
         Assert.Equal(3, jobs.ListAttempts(first.LogicalJobId).Count);
+    }
+
+    [Fact]
+    public void ThirdInterruptedAttemptIsExhaustedWithoutLosingPublishedDryRun()
+    {
+        var project = new ProjectLocator(Path.Combine(_root, "exhaust.fwdata"), "exhaust");
+        using var database = MotifDatabase.OpenOwned(Path.Combine(_root, "exhaust.motif.db"), project,
+            MotifSchema.CurrentSchema, new Version(1, 0));
+        var clock = new FixedClock("2026-08-23T12:00:00Z");
+        var jobs = new JobRepository(database, clock);
+        var first = jobs.Transition(jobs.Create(NewJob() with { JobId = "exhaust" }), JobStatus.Running);
+        new WorkerRecovery(jobs, clock).RecoverInterruptedJobs(clock.UtcNow);
+        var second = jobs.Transition(jobs.ListAttempts(first.LogicalJobId).Single(x => x.Attempt == 2).JobId,
+            JobStatus.Running);
+        new WorkerRecovery(jobs, clock).RecoverInterruptedJobs(clock.UtcNow);
+        var third = jobs.Transition(jobs.ListAttempts(first.LogicalJobId).Single(x => x.Attempt == 3).JobId,
+            JobStatus.Running);
+        third = jobs.PublishDryRun(third.JobId, "{\"dryRun\":true}", third.Version);
+
+        var result = new WorkerRecovery(jobs, clock).RecoverInterruptedJobs(clock.UtcNow);
+        var exhausted = jobs.Get(third.JobId)!;
+
+        Assert.Contains(third.JobId, result.ExhaustedJobIds!);
+        Assert.Equal(JobStatus.Failed, exhausted.Status);
+        Assert.Equal(JobFailureCategory.Infrastructure, exhausted.FailureCategory);
+        Assert.Equal("{\"dryRun\":true}", exhausted.DryRunJson);
+        Assert.Equal(3, jobs.ListAttempts(first.LogicalJobId).Count);
+        Assert.Empty(new WorkerRecovery(jobs, clock).RecoverInterruptedJobs(clock.UtcNow).RetryJobs);
+        _ = second;
     }
 
     private static JobRecord NewJob() => new("job", "project", "dry-run", JobStatus.Queued, 1,

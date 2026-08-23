@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using SIL.Motif.Contract.Jobs;
 using SIL.Motif.Host.Store;
+using SIL.Motif.Worker.Store;
 
 namespace SIL.Motif.Worker.Jobs;
 
@@ -110,6 +111,7 @@ public sealed class JobRepository
         var current = ReadRequired(connection, transaction, jobId);
         EnsureVersion(current, expectedVersion);
         var changed = PrepareTransition(current, _stateMachine.Transition(current, next, resultJson));
+        ValidateFailureCategory(changed);
         UpdateTransition(connection, transaction, changed);
         transaction.Commit();
         return changed;
@@ -209,10 +211,12 @@ public sealed class JobRepository
             throw new InvalidOperationException("This job lineage is not eligible for automatic retry.");
         var retry = _stateMachine.Retry(terminal, newJobId ?? Guid.NewGuid().ToString("N"));
         var delay = TimeSpan.FromMinutes(terminal.Attempt);
+        var terminalUpdated = ValidateUtc(terminal.UpdatedUtc, nameof(terminal.UpdatedUtc));
+        var baseNow = now.ToUniversalTime() < terminalUpdated ? terminalUpdated : now.ToUniversalTime();
         retry = retry with
         {
             FailureCategory = JobFailureCategory.None,
-            NotBeforeUtc = now.ToUniversalTime().Add(delay).ToString("O", CultureInfo.InvariantCulture)
+            NotBeforeUtc = baseNow.Add(delay).ToString("O", CultureInfo.InvariantCulture)
         };
         Insert(connection, transaction, Normalize(retry));
         transaction.Commit();
@@ -233,13 +237,17 @@ public sealed class JobRepository
         var changed = new List<JobRecord>(current.Count);
         foreach (var job in current)
         {
+            var effectiveNow = now.ToUniversalTime();
+            var durableUpdated = ValidateUtc(job.UpdatedUtc, nameof(job.UpdatedUtc));
+            if (effectiveNow < durableUpdated) effectiveNow = durableUpdated;
             var interrupted = PrepareTransition(job, _stateMachine.Transition(job, JobStatus.Interrupted));
             interrupted = interrupted with
             {
-                UpdatedUtc = now.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture),
-                ArchivedUtc = now.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture),
+                UpdatedUtc = effectiveNow.ToString("O", CultureInfo.InvariantCulture),
+                ArchivedUtc = effectiveNow.ToString("O", CultureInfo.InvariantCulture),
                 FailureCategory = job.CancellationRequested ? JobFailureCategory.Cancellation : JobFailureCategory.Infrastructure
             };
+            ValidateFailureCategory(interrupted);
             UpdateTransition(connection, transaction, interrupted);
             changed.Add(interrupted);
         }
@@ -259,6 +267,45 @@ public sealed class JobRepository
         return records;
     }
 
+    public IReadOnlyList<JobRecord> ListInterruptedInfrastructure()
+    {
+        using var connection = _database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = SelectSql + " WHERE Status = 'interrupted' AND FailureCategory = 'infrastructure' " +
+            "ORDER BY Attempt, JobId;";
+        using var reader = command.ExecuteReader();
+        var records = new List<JobRecord>();
+        while (reader.Read()) records.Add(Read(reader));
+        return records;
+    }
+
+    public JobRecord ExhaustInterruptedInfrastructure(string jobId, long expectedVersion, DateTimeOffset now)
+    {
+        using var connection = _database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+        var current = ReadRequired(connection, transaction, jobId);
+        EnsureVersion(current, expectedVersion);
+        if (current.Status != JobStatus.Interrupted || current.FailureCategory != JobFailureCategory.Infrastructure ||
+            current.Attempt < 3)
+            throw new InvalidOperationException("Only an exhausted infrastructure interruption may be finalized.");
+        var effectiveNow = now.ToUniversalTime();
+        var durableUpdated = ValidateUtc(current.UpdatedUtc, nameof(current.UpdatedUtc));
+        if (effectiveNow < durableUpdated) effectiveNow = durableUpdated;
+        var changed = current with
+        {
+            Status = JobStatus.Failed,
+            ResultJson = current.ResultJson ?? "{\"failure\":\"infrastructure-retry-exhausted\"}",
+            FailureCategory = JobFailureCategory.Infrastructure,
+            UpdatedUtc = effectiveNow.ToString("O", CultureInfo.InvariantCulture),
+            ArchivedUtc = effectiveNow.ToString("O", CultureInfo.InvariantCulture),
+            Version = current.Version + 1
+        };
+        ValidateFailureCategory(changed);
+        UpdateTransition(connection, transaction, changed);
+        transaction.Commit();
+        return changed;
+    }
+
     public IReadOnlyList<JobRecord> ListArchived(DateTimeOffset? before = null)
     {
         using var connection = _database.OpenConnection();
@@ -270,6 +317,42 @@ public sealed class JobRepository
         var records = new List<JobRecord>();
         while (reader.Read()) records.Add(Read(reader));
         return records;
+    }
+
+    public IReadOnlyList<JobRecord> ListEligibleArchived(DateTimeOffset now, ArchivePolicy policy) =>
+        policy.Forever ? Array.Empty<JobRecord>() :
+        ListArchived(now.ToUniversalTime().Subtract(policy.Retention));
+
+    public int PurgeArchived(DateTimeOffset now, ArchivePolicy policy)
+    {
+        using var connection = _database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "DELETE FROM Jobs WHERE Status IN " +
+            "('completed','completed-dry-run-only','completed-with-assessment-failure','failed','cancelled','interrupted') " +
+            "AND ArchivedUtc IS NOT NULL" + (policy.Forever ? " AND 1 = 0" : " AND ArchivedUtc <= $before") + ";";
+        if (!policy.Forever)
+            command.Parameters.AddWithValue("$before", now.ToUniversalTime().Subtract(policy.Retention).ToString("O", CultureInfo.InvariantCulture));
+        var count = command.ExecuteNonQuery();
+        transaction.Commit();
+        return count;
+    }
+
+    public void DeleteArchived(string jobId)
+    {
+        using var connection = _database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+        var current = ReadRequired(connection, transaction, jobId);
+        if (!JobStateMachine.IsTerminal(current.Status))
+            throw new InvalidOperationException("Only terminal jobs may be deleted from the archive.");
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "DELETE FROM Jobs WHERE JobId = $id AND Version = $version;";
+        command.Parameters.AddWithValue("$id", jobId);
+        command.Parameters.AddWithValue("$version", current.Version);
+        if (command.ExecuteNonQuery() != 1) throw new InvalidOperationException("The job changed concurrently; reload it before deleting.");
+        transaction.Commit();
     }
 
     public JobRecord Retry(string terminalJobId, string? newJobId = null)
@@ -294,6 +377,8 @@ public sealed class JobRepository
             throw new ArgumentException("A new queued job cannot contain execution state.");
         if (requested.FailureCategory != JobFailureCategory.None || requested.ArchivedUtc is not null)
             throw new ArgumentException("A new queued job cannot contain terminal state.");
+        if (requested.NotBeforeUtc is not null && requested.Attempt == 1)
+            throw new ArgumentException("An ordinary queued job cannot contain a retry not-before timestamp.");
         JobJson.ValidateStructured(requested.InputJson, nameof(requested.InputJson));
         var created = ValidateUtc(requested.CreatedUtc, nameof(requested.CreatedUtc));
         var updated = ValidateUtc(requested.UpdatedUtc, nameof(requested.UpdatedUtc));
@@ -322,7 +407,7 @@ public sealed class JobRepository
     {
         ExecuteConcurrencyUpdate(connection, transaction, record,
             "Status = $status, ResultJson = $result, FailureCategory = $failure, ArchivedUtc = $archived, " +
-            "UpdatedUtc = $updated, Version = $version");
+            "NotBeforeUtc = $notBefore, UpdatedUtc = $updated, Version = $version");
     }
 
     private static void UpdateCancellation(SqliteConnection connection, SqliteTransaction transaction, JobRecord record) =>
@@ -424,7 +509,7 @@ public sealed class JobRepository
         var updatedUtc = ValidateUtc(updated, nameof(updated));
         if (createdUtc > updatedUtc) throw new InvalidDataException("CreatedUtc must not be later than UpdatedUtc.");
         if (notBefore is not null) _ = ValidateUtc(notBefore, nameof(notBefore));
-        if (archived is not null) _ = ValidateUtc(archived, nameof(archived));
+        var archivedUtc = archived is null ? (DateTimeOffset?)null : ValidateUtc(archived, nameof(archived));
         if (JobStateMachine.IsTerminal(status) != (archived is not null))
             throw new InvalidDataException("Terminal job archive timestamp is inconsistent with status.");
         if (published != (dryRun is not null)) throw new InvalidDataException("Dry Run publication fields disagree.");
@@ -439,6 +524,21 @@ public sealed class JobRepository
             throw new InvalidDataException("Cancelled published Dry Run lacks its canonical Assessment disposition.");
         if (status == JobStatus.Queued && (result is not null || progress is not null || published))
             throw new InvalidDataException("Queued job contains execution state.");
+        if (!JobStateMachine.IsTerminal(status) && failure != JobFailureCategory.None)
+            throw new InvalidDataException("A nonterminal job cannot contain a failure category.");
+        if (status is JobStatus.Completed or JobStatus.CompletedDryRunOnly or JobStatus.CompletedWithAssessmentFailure &&
+            failure != JobFailureCategory.None)
+            throw new InvalidDataException("Successful terminal jobs cannot contain a failure category.");
+        if (status == JobStatus.Cancelled && failure != JobFailureCategory.Cancellation)
+            throw new InvalidDataException("Cancelled jobs must contain a cancellation category.");
+        if (status == JobStatus.Failed && failure == JobFailureCategory.None)
+            throw new InvalidDataException("Failed jobs must contain a failure category.");
+        if (status == JobStatus.Interrupted && failure is not (JobFailureCategory.Infrastructure or JobFailureCategory.Cancellation))
+            throw new InvalidDataException("Interrupted jobs must contain an interruption category.");
+        if (notBefore is not null && (status != JobStatus.Queued || attempt <= 1 || failure != JobFailureCategory.None))
+            throw new InvalidDataException("Not-before is reserved for queued retry attempts.");
+        if (archivedUtc is not null && archivedUtc < updatedUtc)
+            throw new InvalidDataException("Archive time must not precede the durable update time.");
     }
 
     private static void AddParameters(SqliteCommand command, JobRecord record)
@@ -479,11 +579,12 @@ public sealed class JobRepository
 
     private static JobRecord PrepareTransition(JobRecord current, JobRecord changed)
     {
-        if (!JobStateMachine.IsTerminal(changed.Status)) return changed;
+        if (!JobStateMachine.IsTerminal(changed.Status))
+            return changed with { NotBeforeUtc = changed.Status == JobStatus.Queued ? changed.NotBeforeUtc : null };
         var category = changed.Status == JobStatus.Cancelled ? JobFailureCategory.Cancellation :
             changed.Status == JobStatus.Failed && changed.FailureCategory == JobFailureCategory.None
                 ? JobFailureCategory.Unknown : changed.FailureCategory;
-        return changed with { FailureCategory = category, ArchivedUtc = changed.ArchivedUtc ?? changed.UpdatedUtc };
+        return changed with { FailureCategory = category, NotBeforeUtc = null, ArchivedUtc = changed.ArchivedUtc ?? changed.UpdatedUtc };
     }
 
     private static void ValidateFailureCategory(JobRecord record)
@@ -498,5 +599,10 @@ public sealed class JobRepository
         if (record.Status == JobStatus.Interrupted && record.FailureCategory is not
             (JobFailureCategory.Infrastructure or JobFailureCategory.Cancellation))
             throw new ArgumentException("Interrupted jobs must record infrastructure or cancellation.");
+        if (record.Status == JobStatus.Failed && record.FailureCategory == JobFailureCategory.None)
+            throw new ArgumentException("Failed jobs must record a failure category.");
+        if (record.NotBeforeUtc is not null &&
+            (record.Status != JobStatus.Queued || record.Attempt <= 1 || record.FailureCategory != JobFailureCategory.None))
+            throw new ArgumentException("Not-before is reserved for queued retry attempts.");
     }
 }

@@ -313,6 +313,10 @@ public static class MotifSchema
             "ALTER TABLE Proposals ADD COLUMN ArchivedUtc TEXT NULL; " +
             "UPDATE Jobs SET ArchivedUtc = UpdatedUtc WHERE Status IN " +
             "('completed','completed-dry-run-only','completed-with-assessment-failure','failed','cancelled','interrupted'); " +
+            "UPDATE Jobs SET FailureCategory = CASE " +
+            "WHEN Status = 'interrupted' AND CancellationRequested = 1 THEN 'cancellation' " +
+            "WHEN Status = 'interrupted' THEN 'infrastructure' " +
+            "WHEN Status = 'failed' THEN 'unknown' ELSE 'none' END; " +
             "UPDATE Proposals SET ArchivedUtc = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE Status IN " +
             "('applied','rejected','superseded','withdrawn') AND ArchivedUtc IS NULL; " +
             "ALTER TABLE AppliedIndex RENAME TO AppliedIndex_GenerationFive; " +

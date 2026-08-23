@@ -71,14 +71,31 @@ public sealed class ProjectWorkspaceEvictor
             if (!_fileSystem.Exists(workspace)) return new(evicted, failures);
             if ((_fileSystem.GetAttributes(workspace) & FileAttributes.ReparsePoint) != 0)
                 return new([], [new(workspace, "Reparse-point workspace is refused.")]);
+            VerifyDescendants(workspace);
             _fileSystem.DeleteDirectory(workspace);
             evicted.Add(workspace);
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
+            ArgumentException or NotSupportedException or InvalidOperationException)
+        {
+            failures.Add(new WorkspaceCleanupFailure(workspace, "Workspace eviction failed.", exception));
+        }
+        catch (Exception exception)
         {
             failures.Add(new WorkspaceCleanupFailure(workspace, "Workspace eviction failed.", exception));
         }
         return new(evicted, failures);
+    }
+
+    private void VerifyDescendants(string directory)
+    {
+        foreach (var entry in _fileSystem.EnumerateFileSystemEntries(directory))
+        {
+            var attributes = _fileSystem.GetAttributes(entry);
+            if ((attributes & FileAttributes.ReparsePoint) != 0)
+                throw new InvalidOperationException("A protected or reparse descendant prevents eviction.");
+            if ((attributes & FileAttributes.Directory) != 0) VerifyDescendants(entry);
+        }
     }
 
     private static bool IsSafeSegment(string value) => !string.IsNullOrWhiteSpace(value) && value is not ("." or "..") &&
