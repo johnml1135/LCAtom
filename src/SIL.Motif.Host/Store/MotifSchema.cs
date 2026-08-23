@@ -133,7 +133,7 @@ public static class MotifSchema
 
     internal static bool IsCorruption(SqliteException exception) => IsCorruptionCode(exception.SqliteErrorCode);
 
-    internal static bool IsCorruptionCode(int errorCode) => errorCode is 1 or 11 or 17 or 20 or 24 or 26;
+    internal static bool IsCorruptionCode(int errorCode) => errorCode is 11 or 26;
 
     internal static void EnsureLegacyTables(SqliteConnection connection)
     {

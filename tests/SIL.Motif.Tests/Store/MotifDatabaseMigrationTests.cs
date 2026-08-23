@@ -300,6 +300,9 @@ public sealed class MotifDatabaseMigrationTests : IDisposable
     {
         Assert.True(MotifSchema.IsCorruptionCode(26));
         Assert.True(MotifSchema.IsCorruptionCode(11));
+        Assert.False(MotifSchema.IsCorruptionCode(1));
+        Assert.False(MotifSchema.IsCorruptionCode(17));
+        Assert.False(MotifSchema.IsCorruptionCode(24));
         Assert.False(MotifSchema.IsCorruptionCode(5));
         Assert.False(MotifSchema.IsCorruptionCode(6));
         Assert.False(MotifSchema.IsCorruptionCode(8));
