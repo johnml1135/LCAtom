@@ -21,6 +21,9 @@ public sealed class JobRepository
         _stateMachine = new JobStateMachine(_clock);
     }
 
+    /// <summary>Gets the owned database identity used to serialize recovery for its lifetime.</summary>
+    internal MotifDatabase Database => _database;
+
     public JobRecord Create(JobRecord requested)
     {
         var record = Normalize(requested);
@@ -301,14 +304,29 @@ public sealed class JobRepository
 
     private JobRecord? ReadAfterBusy(string jobId)
     {
-        for (var attempt = 0; ; attempt++)
+        const int maxObservations = 40;
+        for (var attempt = 0; attempt < maxObservations; attempt++)
         {
-            try { return Get(jobId); }
-            catch (SqliteException exception) when (exception.SqliteErrorCode is 5 or 6 && attempt < 2)
+            JobRecord? observed;
+            try
             {
-                Thread.Sleep(25);
+                observed = Get(jobId);
             }
+            catch (SqliteException exception) when (exception.SqliteErrorCode is 5 or 6)
+            {
+                if (attempt == maxObservations - 1) throw;
+                Thread.Sleep(25);
+                continue;
+            }
+
+            if (observed is null || IsExhaustedInfrastructure(observed) ||
+                observed.Status != JobStatus.Interrupted)
+                return observed;
+
+            Thread.Sleep(25);
         }
+
+        return Get(jobId);
     }
 
     private JobRecord ExhaustInterruptedInfrastructureCore(string jobId, long expectedVersion, DateTimeOffset now,

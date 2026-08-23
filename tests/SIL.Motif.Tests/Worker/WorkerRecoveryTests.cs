@@ -187,6 +187,28 @@ public sealed class WorkerRecoveryTests : IDisposable
         _ = second;
     }
 
+    [Fact]
+    public async Task CompetingRecoveriesStartingFromRunningCreateOneRetryWithoutThrow()
+    {
+        var project = new ProjectLocator(Path.Combine(_root, "running-competing.fwdata"), "running-competing");
+        using var database = MotifDatabase.OpenOwned(Path.Combine(_root, "running-competing.motif.db"), project,
+            MotifSchema.CurrentSchema, new Version(1, 0));
+        var clock = new FixedClock("2026-08-23T12:00:00Z");
+        var jobs = new JobRepository(database, clock);
+        var running = jobs.Transition(jobs.Create(NewJob() with { JobId = "running-competing" }), JobStatus.Running);
+
+        var left = new WorkerRecovery(new JobRepository(database, clock), clock);
+        var right = new WorkerRecovery(new JobRepository(database, clock), clock);
+        var results = await Task.WhenAll(Task.Run(() => left.Recover()), Task.Run(() => right.Recover()));
+
+        var attempts = jobs.ListAttempts(running.LogicalJobId);
+        Assert.Equal(2, attempts.Count);
+        Assert.Equal(JobStatus.Interrupted, jobs.Get(running.JobId)!.Status);
+        Assert.Equal(JobStatus.Queued, Assert.Single(attempts.Where(job => job.Attempt == 2)).Status);
+        Assert.Equal(1, results.Sum(result => result.RetryJobs.Count));
+        Assert.DoesNotContain(attempts, job => job.Attempt > 2);
+    }
+
     private static JobRecord NewJob() => new("job", "project", "dry-run", JobStatus.Queued, 1,
         "{\"proposal\":[]}", null, "2026-08-23T11:00:00Z", "2026-08-23T11:00:00Z");
 

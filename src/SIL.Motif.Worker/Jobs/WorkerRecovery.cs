@@ -1,10 +1,13 @@
 using SIL.Motif.Contract.Jobs;
+using SIL.Motif.Host.Store;
 
 namespace SIL.Motif.Worker.Jobs;
 
 /// <summary>Performs transactional crash recovery and schedules safe infrastructure retries.</summary>
 public sealed class WorkerRecovery
 {
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<MotifDatabase, SemaphoreSlim>
+        RecoveryGates = new();
     private readonly JobRepository _jobs;
     private readonly IJobClock _clock;
 
@@ -15,6 +18,20 @@ public sealed class WorkerRecovery
     }
 
     public RecoveryResult RecoverInterruptedJobs(DateTimeOffset now)
+    {
+        var gate = RecoveryGates.GetValue(_jobs.Database, _ => new SemaphoreSlim(1, 1));
+        gate.Wait();
+        try
+        {
+            return RecoverInterruptedJobsCore(now);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private RecoveryResult RecoverInterruptedJobsCore(DateTimeOffset now)
     {
         var interrupted = _jobs.MarkRunningInterrupted(now).ToList();
         foreach (var prior in _jobs.ListInterruptedInfrastructure())
