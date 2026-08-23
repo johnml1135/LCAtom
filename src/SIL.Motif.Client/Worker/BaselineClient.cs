@@ -43,6 +43,8 @@ public sealed class BaselineClient
         RequireCapability();
         if (bundle is null)
             throw new ArgumentNullException(nameof(bundle));
+        if (token is null)
+            throw new ArgumentNullException(nameof(token));
         var offer = await RequestOfferAsync(project, cancellationToken).ConfigureAwait(false);
         await _connection.UploadAsync(offer, bundle, cancellationToken).ConfigureAwait(false);
         return await PublishTransferAsync(project, offer.TransferId, token, cancellationToken)

@@ -108,6 +108,40 @@ public sealed class BaselineClientTests
     }
 
     [Fact]
+    public async Task NullToken_IsRefusedBeforeWritingAnOfferRequest()
+    {
+        var pipeName = "motif-baseline-token-" + Guid.NewGuid().ToString("N");
+        await using var server = NewServer(pipeName);
+        var requestWritten = Task.Run(async () =>
+        {
+            await server.WaitForConnectionAsync();
+            await ReadJsonAsync(server);
+            await WriteJsonAsync(server, new WorkerHandshakeOffer(
+                "1.0.0", new ProtocolRange(1, 1), new[] { "baseline.v1" }));
+            var prefix = new byte[1];
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMilliseconds(250));
+            try
+            {
+                return await server.ReadAsync(prefix, 0, prefix.Length, timeout.Token) != 0;
+            }
+            catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+            {
+                return false;
+            }
+        });
+
+        using var connection = await ConnectAsync(pipeName, "baseline.v1");
+        using var bundle = new MemoryStream();
+
+        var exception = await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            new BaselineClient(connection).PublishAsync(Project(), bundle, null!, CancellationToken.None)
+                .WaitAsync(TimeSpan.FromSeconds(1)));
+
+        Assert.Equal("token", exception.ParamName);
+        Assert.False(await requestWritten.WaitAsync(TimeSpan.FromSeconds(5)));
+    }
+
+    [Fact]
     public async Task FailureResponse_IsMappedToBaselineCommandException()
     {
         var pipeName = "motif-baseline-failure-" + Guid.NewGuid().ToString("N");
