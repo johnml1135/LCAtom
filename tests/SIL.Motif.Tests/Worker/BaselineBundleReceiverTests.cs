@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using SIL.Motif.Contract.Baselines;
+using SIL.Motif.Tests.TestFixtures;
 using SIL.Motif.Worker.Baselines;
 using Xunit;
 
@@ -196,7 +197,7 @@ public sealed class BaselineBundleReceiverTests : IDisposable
             retry, token, Target(), CancellationToken.None));
     }
 
-    [Fact]
+    [RequiresSymbolicLinkFact]
     public async Task PublishVerifiedAsync_RejectsAReparsePointInAnExistingPublication()
     {
         var first = CreateTransfer(("project.fwdata", "model"),
@@ -209,12 +210,7 @@ public sealed class BaselineBundleReceiverTests : IDisposable
         var outside = Path.Combine(_root, "outside-writing-systems");
         Directory.CreateDirectory(outside);
         File.WriteAllText(Path.Combine(outside, "en.ldml"), "outside");
-        try { Directory.CreateSymbolicLink(writingSystems, outside); }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
-            PlatformNotSupportedException)
-        {
-            return;
-        }
+        Directory.CreateSymbolicLink(writingSystems, outside);
         var retry = CreateTransfer(("project.fwdata", "model"),
             ("WritingSystemStore/en.ldml", "<ldml/>"));
 
@@ -223,7 +219,7 @@ public sealed class BaselineBundleReceiverTests : IDisposable
         Assert.True(File.Exists(Path.Combine(outside, "en.ldml")));
     }
 
-    [Fact]
+    [RequiresSymbolicLinkFact]
     public async Task PublishVerifiedAsync_RejectsAReparsePointFwDataInAnExistingPublication()
     {
         var first = CreateTransfer(("project.fwdata", "model"),
@@ -234,12 +230,7 @@ public sealed class BaselineBundleReceiverTests : IDisposable
         File.Delete(publication.FwDataPath);
         var outside = Path.Combine(_root, "outside.fwdata");
         File.WriteAllText(outside, "outside");
-        try { File.CreateSymbolicLink(publication.FwDataPath, outside); }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
-            PlatformNotSupportedException)
-        {
-            return;
-        }
+        File.CreateSymbolicLink(publication.FwDataPath, outside);
         var retry = CreateTransfer(("project.fwdata", "model"),
             ("WritingSystemStore/en.ldml", "<ldml/>"));
 
@@ -248,7 +239,7 @@ public sealed class BaselineBundleReceiverTests : IDisposable
         Assert.Equal("outside", File.ReadAllText(outside));
     }
 
-    [Fact]
+    [RequiresSymbolicLinkFact]
     public async Task PublishVerifiedAsync_RejectsAReparsePointInSharedSettingsOfAnExistingPublication()
     {
         var first = CreateTransfer(("project.fwdata", "model"),
@@ -259,12 +250,7 @@ public sealed class BaselineBundleReceiverTests : IDisposable
         var sharedSettings = Path.Combine(publication.RootDirectory, "SharedSettings");
         var outside = Path.Combine(_root, "outside-shared-settings.txt");
         File.WriteAllText(outside, "outside");
-        try { File.CreateSymbolicLink(Path.Combine(sharedSettings, "link.txt"), outside); }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
-            PlatformNotSupportedException)
-        {
-            return;
-        }
+        File.CreateSymbolicLink(Path.Combine(sharedSettings, "link.txt"), outside);
         var retry = CreateTransfer(("project.fwdata", "model"),
             ("WritingSystemStore/en.ldml", "<ldml/>"));
 
@@ -370,7 +356,7 @@ public sealed class BaselineBundleReceiverTests : IDisposable
         Assert.Equal("keep", File.ReadAllText(Path.Combine(unrelated, "keep.txt")));
     }
 
-    [Fact]
+    [RequiresSymbolicLinkFact]
     public async Task PublishVerifiedAsync_RefusesAReparseIncomingDirectoryWithoutLeavingItsRoot()
     {
         var target = Target();
@@ -380,12 +366,7 @@ public sealed class BaselineBundleReceiverTests : IDisposable
         var sentinel = Path.Combine(outside, "sentinel.fwdata");
         File.WriteAllText(sentinel, "keep");
         var link = Path.Combine(target.BaselineRoot, ".incoming-" + new string('b', 32));
-        try { Directory.CreateSymbolicLink(link, outside); }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
-            PlatformNotSupportedException)
-        {
-            return;
-        }
+        Directory.CreateSymbolicLink(link, outside);
         var transfer = CreateTransfer(("project.fwdata", "model"),
             ("WritingSystemStore/en.ldml", "<ldml/>"));
 

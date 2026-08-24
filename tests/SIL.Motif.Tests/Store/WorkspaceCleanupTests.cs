@@ -1,4 +1,5 @@
 using SIL.Motif.Contract.Jobs;
+using SIL.Motif.Tests.TestFixtures;
 using SIL.Motif.Worker.Store;
 using Xunit;
 
@@ -60,17 +61,13 @@ public sealed class WorkspaceCleanupTests : IDisposable
         Assert.Throws<ArgumentException>(() => WorkspaceOwnership.Bootstrap(_root));
     }
 
-    [Fact]
+    [RequiresSymbolicLinkFact]
     public void BootstrapRejectsAProposedRootBelowAnAncestorReparsePoint()
     {
         var real = Path.Combine(_root, "real");
         var link = Path.Combine(_root, "link");
         Directory.CreateDirectory(real);
-        try { Directory.CreateSymbolicLink(link, real); }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
-        {
-            return;
-        }
+        Directory.CreateSymbolicLink(link, real);
 
         Assert.Throws<ArgumentException>(() => WorkspaceOwnership.Bootstrap(Path.Combine(link, "worker")));
     }

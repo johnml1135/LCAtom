@@ -8,6 +8,7 @@ using SIL.Motif.Contract.Jobs;
 using SIL.Motif.Contract.Projects;
 using SIL.Motif.Contract.Worker;
 using SIL.Motif.Host.Store;
+using SIL.Motif.Tests.TestFixtures;
 using SIL.Motif.Worker;
 using SIL.Motif.Worker.Baselines;
 using SIL.Motif.Worker.Jobs;
@@ -282,7 +283,7 @@ public sealed class BaselineTransferIntegrationTests : IDisposable
         Assert.False(File.Exists(claimed.TemporaryPath));
     }
 
-    [Fact]
+    [RequiresSymbolicLinkFact]
     public async Task CleanupRefusesDeletionAfterTransferRootBecomesAReparsePoint()
     {
         var transferRoot = Path.Combine(_root, "replace-root");
@@ -299,13 +300,7 @@ public sealed class BaselineTransferIntegrationTests : IDisposable
         Directory.CreateDirectory(outside);
         var outsideSentinel = Path.Combine(outside, offer.TransferId + ".ready");
         await File.WriteAllTextAsync(outsideSentinel, "outside");
-        try { Directory.CreateSymbolicLink(transferRoot, outside); }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
-            PlatformNotSupportedException)
-        {
-            Directory.Move(parkedRoot, transferRoot);
-            return;
-        }
+        Directory.CreateSymbolicLink(transferRoot, outside);
 
         try
         {
@@ -876,7 +871,7 @@ public sealed class BaselineTransferIntegrationTests : IDisposable
         await running.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
-    [Fact]
+    [RequiresSymbolicLinkFact]
     public void StartupCleanupRefusesAReparseTransferRootWithoutTouchingTarget()
     {
         var outside = Path.Combine(_root, "outside-target");
@@ -884,12 +879,7 @@ public sealed class BaselineTransferIntegrationTests : IDisposable
         Directory.CreateDirectory(outside);
         var sentinel = Path.Combine(outside, "sentinel.ready");
         File.WriteAllText(sentinel, "keep");
-        try { Directory.CreateSymbolicLink(transferRoot, outside); }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
-            PlatformNotSupportedException)
-        {
-            return;
-        }
+        Directory.CreateSymbolicLink(transferRoot, outside);
 
         Assert.Throws<InvalidOperationException>(() => BaselineTransferRegistry.CleanupStartup(transferRoot));
         Assert.True(File.Exists(sentinel));
