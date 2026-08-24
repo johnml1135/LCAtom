@@ -30,7 +30,7 @@ Older and newer clients need one small, explicit way to decide whether they can 
 - Create: `src/SIL.Motif.Contract/Worker/WorkerHandshake.cs`
 - Test: `tests/SIL.Motif.Tests/Contract/WorkerProtocolTests.cs`
 
-- [ ] **Step 1: Write failing round-trip and negotiation tests**
+- [x] **Step 1: Write failing round-trip and negotiation tests**
 
 Pin protocol intersection, missing required capabilities, unknown JSON properties, bounded ids, event versus
 response framing, one-use binary offers, every currently settled transport discriminator, and product-version
@@ -46,11 +46,11 @@ Assert.Equal(2, result.ProtocolVersion);
 Assert.Equal(new[] { "jobs.v1" }, result.Capabilities);
 ```
 
-- [ ] **Step 2: Run the suite and verify red**
+- [x] **Step 2: Run the suite and verify red**
 
 Run `./test.ps1`. Expected: compilation fails because the worker contract types do not exist.
 
-- [ ] **Step 3: Implement the closed transport types**
+- [x] **Step 3: Implement the closed transport types**
 
 Implement immutable `ProtocolRange`, `WorkerHandshakeRequest`, `WorkerHandshakeOffer`,
 `WorkerHandshakeResult`, and `WorkerCommands` as the closed transport discriminator registry for
@@ -110,7 +110,7 @@ Reject no-overlap ranges and absent required capabilities. Compare capability na
 semantics, reject duplicates, and bound every identifier and list before allocation. JSON readers must ignore
 unknown object properties but reject unknown required commands and enum values.
 
-- [ ] **Step 4: Run green and commit**
+- [x] **Step 4: Run green and commit**
 
 Run `./test.ps1`; expect all runnable tests to pass. Then:
 
@@ -131,7 +131,7 @@ Both the CLI and FieldWorks need the same lightweight client without taking a de
 - Modify: `Motif.sln`
 - Test: `tests/SIL.Motif.Tests/Worker/WorkerClientTests.cs`
 
-- [ ] **Step 1: Write a loopback server test**
+- [x] **Step 1: Write a loopback server test**
 
 The test starts a `NamedPipeServerStream`, completes the handshake, receives one envelope, and returns one
 envelope while interleaving a worker event. Assert the dedicated event loop receives it without blocking the
@@ -139,11 +139,11 @@ request and returns exactly one correlated event result; duplicate, unknown, and
 Assert cancellation closes the connection and a mismatched response id is rejected. Add binary upload tests
 for exact length/digest, expiry, excess bytes, and second-use refusal.
 
-- [ ] **Step 2: Run red**
+- [x] **Step 2: Run red**
 
 Run `./test.ps1`. Expected: the new client project and types are absent.
 
-- [ ] **Step 3: Implement a `netstandard2.0` client with bounded frames**
+- [x] **Step 3: Implement a `netstandard2.0` client with bounded frames**
 
 The project references only `SIL.Motif.Contract` and `System.Text.Json 8.0.5`. Implement:
 
@@ -179,7 +179,7 @@ and exact request/response correlation. Dispatch unsolicited events separately f
 uploads in bounded buffers, compute byte count and SHA-256 during the single pass, and send completion only
 after the stream closes. Do not reference Host, Runner, LibLCM, or SQLite.
 
-- [ ] **Step 4: Run green and commit**
+- [x] **Step 4: Run green and commit**
 
 Run `./test.ps1`, then commit:
 
@@ -202,7 +202,7 @@ Starting Motif twice should connect to one owner, not create two competing owner
 - Modify: `Motif.sln`
 - Test: `tests/SIL.Motif.Tests/Worker/WorkerServerTests.cs`
 
-- [ ] **Step 1: Write process-level tests**
+- [x] **Step 1: Write process-level tests**
 
 Start two worker processes for the same test user namespace. Assert the second reports the existing endpoint
 instead of becoming an owner. Assert an idle worker exits, while a registered queued/waiting work lease keeps
@@ -211,11 +211,11 @@ length, expiry, and reconnection while deleting every unpublished temporary file
 pipe ACLs and prove only the owning user SID and required system account connect; a different local identity
 and a remote-pipe attempt refuse before handshake.
 
-- [ ] **Step 2: Run red**
+- [x] **Step 2: Run red**
 
 Run `./test.ps1`. Expected: worker executable and lifetime types do not exist.
 
-- [ ] **Step 3: Implement the shell**
+- [x] **Step 3: Implement the shell**
 
 Use one user-scoped mutex and pipe name derived from the Windows user SID. Construct every pipe with explicit
 `PipeSecurity`; a predictable SID-derived name is not an access check. Implement:
@@ -245,7 +245,7 @@ creates unpredictable one-use pipe offers, owns their temporary files, independe
 publishes nothing before a correlated completion matches its length and SHA-256. Use an injected monotonic
 clock in tests.
 
-- [ ] **Step 4: Run green and commit**
+- [x] **Step 4: Run green and commit**
 
 Run `./test.ps1`, then commit:
 
@@ -267,16 +267,16 @@ when no safe combination exists.
 - Modify: `Motif.sln`
 - Test: `tests/SIL.Motif.Tests/Worker/WorkerSelectorTests.cs`
 
-- [ ] **Step 1: Write selection tests**
+- [x] **Step 1: Write selection tests**
 
 Pin newest-compatible selection, capabilities, missing overlap, immutable version directories, and the rule
 that product version alone never rejects an otherwise compatible worker.
 
-- [ ] **Step 2: Run red**
+- [x] **Step 2: Run red**
 
 Run `./test.ps1`. Expected: launcher types do not exist.
 
-- [ ] **Step 3: Implement selection and actionable refusal**
+- [x] **Step 3: Implement selection and actionable refusal**
 
 Implement:
 
@@ -301,7 +301,7 @@ candidate overlaps. The composition bridge adds one compiled metadata source and
 installed manifest to agree with the running worker's product version, protocol interval, and capabilities;
 the manifest is never an independent claim about executable behavior.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run `./test.ps1`, confirm `rg -n "net8.0" src tests` returns no target, then commit:
 

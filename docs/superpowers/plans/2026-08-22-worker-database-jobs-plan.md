@@ -27,17 +27,17 @@ One process must recognize, upgrade, and protect each project's Motif database b
 - Create: `src/SIL.Motif.Worker/Store/ProjectDatabaseCatalog.cs`
 - Test: `tests/SIL.Motif.Tests/Store/MotifDatabaseMigrationTests.cs`
 
-- [ ] **Step 1: Write failing migration tests**
+- [x] **Step 1: Write failing migration tests**
 
 Test new database metadata including the registered `ProjectLocator`, atomic upgrade, wrong application id,
 newer schema refusal, minimum-worker refusal, locator mismatch detection before writes, failed migration
 rollback, and exclusive migrator ownership.
 
-- [ ] **Step 2: Run red**
+- [x] **Step 2: Run red**
 
 Run `./test.ps1`. Expected: metadata and migration APIs are missing.
 
-- [ ] **Step 3: Implement the owner-only opener**
+- [x] **Step 3: Implement the owner-only opener**
 
 Use SQLite `PRAGMA application_id`, `PRAGMA user_version`, WAL, foreign keys, and a busy timeout. Expose:
 
@@ -69,7 +69,7 @@ assembly may reference `Microsoft.Data.Sqlite` after this move. `ProjectDatabase
 production component that constructs `MotifDatabase`; the Host assembly contains the `net10.0` implementation
 because its existing Corpus and Assessment repositories already live there.
 
-- [ ] **Step 4: Run green and commit**
+- [x] **Step 4: Run green and commit**
 
 Run `./test.ps1`, then:
 
@@ -93,7 +93,7 @@ survive the storage move byte-for-byte and remain usable without manual conversi
 - Test: `tests/SIL.Motif.Tests/Store/FileProposalStoreMigrationTests.cs`
 - Test: `tests/SIL.Motif.Tests/Store/LegacyBulkStoreMigrationTests.cs`
 
-- [ ] **Step 1: Write failing parity and migration tests**
+- [x] **Step 1: Write failing parity and migration tests**
 
 Seed current drafts, every historical object revision, manifests, Decisions, statuses, and legacy Dry Run
 anchors plus a current `.motif/motif.db` containing Corpora, Assessment runs, analyses, and pins. Assert one
@@ -102,11 +102,11 @@ plus all bulk-data relationships, is idempotent, and renames complete legacy sou
 failure after every table and prove rollback leaves both sources readable and partial destination state
 unobservable to clients. A committed import whose source rename fails must retry cleanup safely.
 
-- [ ] **Step 2: Run red**
+- [x] **Step 2: Run red**
 
 Run `./test.ps1`. Expected: repository and migration types are absent.
 
-- [ ] **Step 3: Implement normalized workflow tables**
+- [x] **Step 3: Implement normalized workflow tables**
 
 Create `Proposals`, `ProposalRevisions`, `Drafts`, `Decisions`, `Receipts`, `Reports`, and `AppliedIndex`.
 `Reports` stores the durable aggregate/report document and exact evidence bindings; Corpora, Assessments, and
@@ -138,7 +138,7 @@ destination transaction and defer source archival until both imports and the cut
 then does the CLI retire its old paths and route commands to the worker. A project locator alone cannot
 identify that legacy source safely.
 
-- [ ] **Step 4: Run green and commit**
+- [x] **Step 4: Run green and commit**
 
 Run `./test.ps1`, then:
 
@@ -158,18 +158,18 @@ Long-running work needs an honest status that survives a command exit or worker 
 - Modify: `src/SIL.Motif.Host/Store/MotifSchema.cs`
 - Test: `tests/SIL.Motif.Tests/Worker/JobStateMachineTests.cs`
 
-- [ ] **Step 1: Write every legal and illegal transition**
+- [x] **Step 1: Write every legal and illegal transition**
 
 Pin `queued`, `waiting-for-baseline`, `waiting-for-project-host`, `running`, `completed`,
 `completed-dry-run-only`, `completed-with-assessment-failure`, `failed`, `cancelled`, and `interrupted`.
 Assert terminal states cannot reopen except through an explicit retry that creates a new attempt, and that
 cancellation after published Dry Run retains that record while setting Assessment disposition to cancelled.
 
-- [ ] **Step 2: Run red**
+- [x] **Step 2: Run red**
 
 Run `./test.ps1`. Expected: job contracts are missing.
 
-- [ ] **Step 3: Implement transactional transitions**
+- [x] **Step 3: Implement transactional transitions**
 
 Use:
 
@@ -197,7 +197,7 @@ public sealed class JobStateMachine
 Persist progress as bounded structured JSON. Large payload paths are worker-owned and never placed in the
 database. Cancellation is a durable request flag checked by execution boundaries.
 
-- [ ] **Step 4: Run green and commit**
+- [x] **Step 4: Run green and commit**
 
 Run `./test.ps1`, then:
 
@@ -219,7 +219,7 @@ Interrupted and old work should recover predictably without allowing temporary d
 - Test: `tests/SIL.Motif.Tests/Worker/WorkerRecoveryTests.cs`
 - Test: `tests/SIL.Motif.Tests/Store/ArchivePolicyTests.cs`
 
-- [ ] **Step 1: Write clock-controlled failure tests**
+- [x] **Step 1: Write clock-controlled failure tests**
 
 Assert startup marks running work interrupted, clears exact owned `work` paths, retries infrastructure
 interruptions at most three times with increasing delays, never retries Apply or deterministic parser failure,
@@ -228,11 +228,11 @@ Pin whole-workspace eviction after 30 days of disuse, preservation under any liv
 and reference-aware deletion of superseded Baselines only after no active job, Dry Run, Decision, or Receipt
 pins them.
 
-- [ ] **Step 2: Run red**
+- [x] **Step 2: Run red**
 
 Run `./test.ps1`. Expected: recovery and cleanup types do not exist.
 
-- [ ] **Step 3: Implement safe exact-path cleanup**
+- [x] **Step 3: Implement safe exact-path cleanup**
 
 Inject `IClock` and `IWorkspaceOwnership`. Resolve and verify every deletion target beneath
 `%LOCALAPPDATA%/SIL/Motif/<project-key>/work`; never accept a FieldWorks project directory or sibling database
@@ -251,7 +251,7 @@ public sealed class WorkerRecovery
 }
 ```
 
-- [ ] **Step 4: Run green and commit**
+- [x] **Step 4: Run green and commit**
 
 Run `./test.ps1`, then:
 
