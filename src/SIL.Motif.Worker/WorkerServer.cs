@@ -410,9 +410,8 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
     private static IWorkerCommandHandler LiveHostHandler<TRequest>(string command,
         ProjectRuntimeRegistry runtimes, Func<WorkerControlConnection> connection,
         Func<TRequest, ProjectLocator> project, Func<WorkerControlConnection, TRequest, bool> apply)
-        where TRequest : class => new LiveHostObservationCommandHandler(command, runtimes,
-            payload => project(LiveHostObservationCommandHandler.Deserialize<TRequest>(payload)),
-            payload => apply(connection(), LiveHostObservationCommandHandler.Deserialize<TRequest>(payload)));
+        where TRequest : class => new LiveHostObservationCommandHandler<TRequest>(command, runtimes,
+            project, request => apply(connection(), request));
 
     private void ThrowIfDisposed()
     {

@@ -4,14 +4,14 @@ using SIL.Motif.Contract.Worker;
 
 namespace SIL.Motif.Worker.Projects;
 
-internal sealed class LiveHostObservationCommandHandler : IWorkerCommandHandler
+internal sealed class LiveHostObservationCommandHandler<TRequest> : IWorkerCommandHandler where TRequest : class
 {
     private readonly ProjectRuntimeRegistry _runtimes;
-    private readonly Func<JsonElement, ProjectLocator> _project;
-    private readonly Func<JsonElement, bool> _apply;
+    private readonly Func<TRequest, ProjectLocator> _project;
+    private readonly Func<TRequest, bool> _apply;
 
     internal LiveHostObservationCommandHandler(string command, ProjectRuntimeRegistry runtimes,
-        Func<JsonElement, ProjectLocator> project, Func<JsonElement, bool> apply)
+        Func<TRequest, ProjectLocator> project, Func<TRequest, bool> apply)
     {
         Command = command;
         _runtimes = runtimes ?? throw new ArgumentNullException(nameof(runtimes));
@@ -23,12 +23,13 @@ internal sealed class LiveHostObservationCommandHandler : IWorkerCommandHandler
 
     public async Task<JsonElement> HandleAsync(JsonElement payload, CancellationToken cancellationToken)
     {
-        var project = _project(payload);
+        var request = Deserialize<TRequest>(payload);
+        var project = _project(request);
         var key = ProjectWorkspaceKey.Compute(project);
         if (!_runtimes.TryGet(key, out var runtime))
             throw new InvalidOperationException("The project runtime is not ready.");
         using var operation = await runtime.AcquireExclusiveAsync(cancellationToken).ConfigureAwait(false);
-        var response = new LiveHostObservationResponse(key, _apply(payload));
+        var response = new LiveHostObservationResponse(key, _apply(request));
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(response, WorkerJson.CreateOptions()));
         return document.RootElement.Clone();
     }

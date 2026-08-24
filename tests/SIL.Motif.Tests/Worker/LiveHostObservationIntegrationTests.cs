@@ -1,4 +1,6 @@
 using System.IO.Pipes;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using SIL.Motif.Client.Worker;
 using SIL.Motif.Contract.Projects;
 using SIL.Motif.Contract.Worker;
@@ -110,6 +112,41 @@ public sealed class LiveHostObservationIntegrationTests : IDisposable
         await Assert.ThrowsAnyAsync<Exception>(() => WorkerWire.ReadAsync(pipe, cancellation.Token));
         cancellation.Cancel();
         await running.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task HandleAsyncDeserializesThePayloadExactlyOnce()
+    {
+        await using var server = WorkerServer.CreateForTests(
+            "live-host-deserialize-" + Guid.NewGuid().ToString("N"), false, _root);
+        using var runtimes = ComposeRuntime(server);
+        var project = Project("deserialize-count");
+        _ = runtimes.GetOrOpen(project);
+        CountingRequest.Count = 0;
+        var handler = new LiveHostObservationCommandHandler<CountingRequest>(
+            WorkerCommands.LiveHostRegister, runtimes, request => request.Project, request => true);
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(
+            new LiveHostRegisterRequest(project, Observation("host", 1)), WorkerJson.CreateOptions()));
+
+        await handler.HandleAsync(document.RootElement.Clone(), CancellationToken.None);
+
+        Assert.Equal(1, CountingRequest.Count);
+    }
+
+    // Same wire shape as LiveHostRegisterRequest; the constructor counts deserializations.
+    private sealed record CountingRequest
+    {
+        [JsonConstructor]
+        public CountingRequest(ProjectLocator project, LiveProjectObservation observation)
+        {
+            Project = project;
+            Observation = observation;
+            Count++;
+        }
+
+        public ProjectLocator Project { get; }
+        public LiveProjectObservation Observation { get; }
+        public static int Count;
     }
 
     [Fact]
