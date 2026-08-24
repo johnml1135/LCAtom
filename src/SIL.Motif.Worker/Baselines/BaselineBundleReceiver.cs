@@ -144,6 +144,14 @@ internal sealed class BaselineBundleReceiver
             foreach (var path in Directory.GetFiles(writingSystems, "*", SearchOption.TopDirectoryOnly))
                 File.Delete(path);
             Directory.Delete(writingSystems);
+            // Pre-created alongside WritingSystemStore by our own publish, but not by every layout seen here.
+            var sharedSettings = Path.Combine(expected, "SharedSettings");
+            if (Directory.Exists(sharedSettings))
+            {
+                foreach (var path in Directory.GetFiles(sharedSettings, "*", SearchOption.TopDirectoryOnly))
+                    File.Delete(path);
+                Directory.Delete(sharedSettings);
+            }
             foreach (var path in Directory.GetFiles(expected, "*", SearchOption.TopDirectoryOnly))
                 File.Delete(path);
             Directory.Delete(expected);
@@ -225,7 +233,9 @@ internal sealed class BaselineBundleReceiver
                 File.Delete(entry);
                 continue;
             }
-            if (!StringComparer.Ordinal.Equals(Path.GetFileName(entry), "WritingSystemStore"))
+            var entryName = Path.GetFileName(entry);
+            if (!StringComparer.Ordinal.Equals(entryName, "WritingSystemStore") &&
+                !StringComparer.Ordinal.Equals(entryName, "SharedSettings"))
                 throw new InvalidDataException("An incomplete Baseline publication has an invalid layout.");
             var files = Directory.GetFileSystemEntries(entry, "*", SearchOption.TopDirectoryOnly);
             if (entries.Length + files.Length > _maximumEntries || files.Any(item => !File.Exists(item) ||
@@ -276,6 +286,8 @@ internal sealed class BaselineBundleReceiver
 
         var fwDataPath = await ExtractEntryAsync(fwData, destination, cancellationToken).ConfigureAwait(false);
         Directory.CreateDirectory(Path.Combine(destination, "WritingSystemStore"));
+        // Pre-create so a project open never mutates this immutable published Baseline.
+        Directory.CreateDirectory(Path.Combine(destination, "SharedSettings"));
         foreach (var entry in writingSystems.OrderBy(item => item.FullName, StringComparer.Ordinal))
             await ExtractEntryAsync(entry, destination, cancellationToken).ConfigureAwait(false);
         return fwDataPath;
@@ -474,6 +486,7 @@ internal sealed class BaselineBundleReceiver
         var fwData = entries.Where(File.Exists)
             .Where(path => path.EndsWith(".fwdata", StringComparison.OrdinalIgnoreCase)).ToArray();
         var writingSystemRoot = Path.Combine(root, "WritingSystemStore");
+        var sharedSettingsRoot = Path.Combine(root, "SharedSettings");
         if (fwData.Length != 1 ||
             (File.GetAttributes(fwData[0]) & FileAttributes.ReparsePoint) != 0 ||
             !Directory.Exists(writingSystemRoot) ||
@@ -482,8 +495,12 @@ internal sealed class BaselineBundleReceiver
             Directory.GetFileSystemEntries(writingSystemRoot, "*", SearchOption.TopDirectoryOnly).Any(path =>
                 !File.Exists(path) || (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0 ||
                 !path.EndsWith(".ldml", StringComparison.OrdinalIgnoreCase)) ||
+            // Optional: pre-created by our own publish, but older or rival layouts may not have it.
+            (Directory.Exists(sharedSettingsRoot) &&
+                (File.GetAttributes(sharedSettingsRoot) & FileAttributes.ReparsePoint) != 0) ||
             entries.Any(path => !StringComparer.OrdinalIgnoreCase.Equals(path, fwData[0]) &&
-                !StringComparer.OrdinalIgnoreCase.Equals(path, writingSystemRoot)))
+                !StringComparer.OrdinalIgnoreCase.Equals(path, writingSystemRoot) &&
+                !StringComparer.OrdinalIgnoreCase.Equals(path, sharedSettingsRoot)))
             throw new InvalidDataException("The existing Baseline publication has an invalid layout.");
         return new BaselinePublication(root, fwData[0], token);
     }
@@ -493,13 +510,16 @@ internal sealed class BaselineBundleReceiver
         if (!Directory.Exists(path)) return;
         try
         {
-            var writingSystems = Path.Combine(path, "WritingSystemStore");
-            if (Directory.Exists(writingSystems) &&
-                (File.GetAttributes(writingSystems) & FileAttributes.ReparsePoint) == 0)
+            // Both are pre-created by ExtractValidatedAsync, so both must go before the parent can.
+            foreach (var name in new[] { "WritingSystemStore", "SharedSettings" })
             {
-                foreach (var file in Directory.GetFiles(writingSystems, "*", SearchOption.TopDirectoryOnly))
-                    File.Delete(file);
-                Directory.Delete(writingSystems);
+                var sub = Path.Combine(path, name);
+                if (Directory.Exists(sub) && (File.GetAttributes(sub) & FileAttributes.ReparsePoint) == 0)
+                {
+                    foreach (var file in Directory.GetFiles(sub, "*", SearchOption.TopDirectoryOnly))
+                        File.Delete(file);
+                    Directory.Delete(sub);
+                }
             }
             foreach (var file in Directory.GetFiles(path, "*", SearchOption.TopDirectoryOnly))
                 File.Delete(file);
