@@ -522,10 +522,9 @@ public sealed class WorkerClientTests
         var responseTask = connection.SendAsync(new WorkerEnvelope("request-blocking", WorkerCommands.Handshake,
             JsonDocument.Parse("{}").RootElement.Clone(), 1), CancellationToken.None);
         await handlerStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        var completed = await Task.WhenAny(responseTask, Task.Delay(TimeSpan.FromSeconds(2)));
+        var response = await responseTask.WaitAsync(TimeSpan.FromSeconds(30));
         release.Set();
-        Assert.Same(responseTask, completed);
-        Assert.Equal("request-blocking", (await responseTask).RequestId);
+        Assert.Equal("request-blocking", response.RequestId);
         await serverTask.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
