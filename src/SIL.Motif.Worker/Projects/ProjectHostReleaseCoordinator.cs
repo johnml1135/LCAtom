@@ -24,7 +24,9 @@ internal sealed class ProjectHostReleaseCoordinator : IDisposable
 
     internal void NotifyReleased(string workspaceKey)
     {
-        var state = State(workspaceKey);
+        // Dispose already cancelled every waiter, so a post-shutdown notification has nothing to signal.
+        if (Volatile.Read(ref _disposed) != 0) return;
+        var state = _states.GetOrAdd(workspaceKey, static _ => new ReleaseState());
         TaskCompletionSource released;
         lock (state.Gate)
         {

@@ -497,7 +497,10 @@ internal sealed class BaselineBundleReceiver
                 !path.EndsWith(".ldml", StringComparison.OrdinalIgnoreCase)) ||
             // Optional: pre-created by our own publish, but older or rival layouts may not have it.
             (Directory.Exists(sharedSettingsRoot) &&
-                (File.GetAttributes(sharedSettingsRoot) & FileAttributes.ReparsePoint) != 0) ||
+                ((File.GetAttributes(sharedSettingsRoot) & FileAttributes.ReparsePoint) != 0 ||
+                    // No extension is trusted here, so every entry must at least be a real, non-reparse file.
+                    Directory.GetFileSystemEntries(sharedSettingsRoot, "*", SearchOption.TopDirectoryOnly).Any(
+                        path => !File.Exists(path) || (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0))) ||
             entries.Any(path => !StringComparer.OrdinalIgnoreCase.Equals(path, fwData[0]) &&
                 !StringComparer.OrdinalIgnoreCase.Equals(path, writingSystemRoot) &&
                 !StringComparer.OrdinalIgnoreCase.Equals(path, sharedSettingsRoot)))

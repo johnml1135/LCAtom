@@ -112,6 +112,30 @@ public sealed class LiveHostObservationIntegrationTests : IDisposable
         await running.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
+    [Fact]
+    public void NotifyReleasedAfterDisposalIsANoOp()
+    {
+        var coordinator = new ProjectHostReleaseCoordinator();
+        coordinator.Observe("workspace");
+        coordinator.Dispose();
+
+        var exception = Record.Exception(() => coordinator.NotifyReleased("workspace"));
+
+        Assert.Null(exception);
+    }
+
+    [Fact]
+    public async Task DisposalCancelsAnAlreadyWaitingRelease()
+    {
+        var coordinator = new ProjectHostReleaseCoordinator();
+        var observed = coordinator.Observe("workspace");
+        var waiting = coordinator.WaitForReleaseAsync("workspace", observed, CancellationToken.None);
+
+        coordinator.Dispose();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiting);
+    }
+
     public void Dispose()
     {
         try { Directory.Delete(_root, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }

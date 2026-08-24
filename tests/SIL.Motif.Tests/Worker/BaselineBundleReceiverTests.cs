@@ -249,6 +249,66 @@ public sealed class BaselineBundleReceiverTests : IDisposable
     }
 
     [Fact]
+    public async Task PublishVerifiedAsync_RejectsAReparsePointInSharedSettingsOfAnExistingPublication()
+    {
+        var first = CreateTransfer(("project.fwdata", "model"),
+            ("WritingSystemStore/en.ldml", "<ldml/>"));
+        var receiver = new BaselineBundleReceiver();
+        var token = Token(first.Sha256);
+        var publication = await receiver.PublishVerifiedAsync(first, token, Target(), CancellationToken.None);
+        var sharedSettings = Path.Combine(publication.RootDirectory, "SharedSettings");
+        var outside = Path.Combine(_root, "outside-shared-settings.txt");
+        File.WriteAllText(outside, "outside");
+        try { File.CreateSymbolicLink(Path.Combine(sharedSettings, "link.txt"), outside); }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
+            PlatformNotSupportedException)
+        {
+            return;
+        }
+        var retry = CreateTransfer(("project.fwdata", "model"),
+            ("WritingSystemStore/en.ldml", "<ldml/>"));
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => receiver.PublishVerifiedAsync(
+            retry, token, Target(), CancellationToken.None));
+        Assert.Equal("outside", File.ReadAllText(outside));
+    }
+
+    [Fact]
+    public async Task PublishVerifiedAsync_RejectsASubdirectoryInSharedSettingsOfAnExistingPublication()
+    {
+        var first = CreateTransfer(("project.fwdata", "model"),
+            ("WritingSystemStore/en.ldml", "<ldml/>"));
+        var receiver = new BaselineBundleReceiver();
+        var token = Token(first.Sha256);
+        var publication = await receiver.PublishVerifiedAsync(first, token, Target(), CancellationToken.None);
+        Directory.CreateDirectory(Path.Combine(publication.RootDirectory, "SharedSettings", "nested"));
+        var retry = CreateTransfer(("project.fwdata", "model"),
+            ("WritingSystemStore/en.ldml", "<ldml/>"));
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => receiver.PublishVerifiedAsync(
+            retry, token, Target(), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task PublishVerifiedAsync_ValidatesAnEmptySharedSettingsInAnExistingPublication()
+    {
+        var first = CreateTransfer(("project.fwdata", "model"),
+            ("WritingSystemStore/en.ldml", "<ldml/>"));
+        var receiver = new BaselineBundleReceiver();
+        var token = Token(first.Sha256);
+        var publication = await receiver.PublishVerifiedAsync(first, token, Target(), CancellationToken.None);
+        var sharedSettings = Path.Combine(publication.RootDirectory, "SharedSettings");
+        Assert.True(Directory.Exists(sharedSettings));
+        Assert.Empty(Directory.GetFileSystemEntries(sharedSettings));
+        var retry = CreateTransfer(("project.fwdata", "model"),
+            ("WritingSystemStore/en.ldml", "<ldml/>"));
+
+        var retried = await receiver.PublishVerifiedAsync(retry, token, Target(), CancellationToken.None);
+
+        Assert.Equal(publication, retried);
+    }
+
+    [Fact]
     public async Task PublishVerifiedAsync_RejectsAnotherProjectIdentity()
     {
         var transfer = CreateTransfer(("project.fwdata", "model"),
