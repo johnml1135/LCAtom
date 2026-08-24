@@ -112,7 +112,7 @@ work.
 - Test: `tests/SIL.Motif.Tests/Worker/WorkerMetadataManifestTests.cs`
 - Test: `tests/SIL.Motif.Tests/Store/BaselineRepositoryTests.cs`
 
-- [ ] **Step 1: Write closed-contract, transfer, and publication tests**
+- [x] **Step 1: Write closed-contract, transfer, and publication tests**
 
 Create a seeded `NewLangProjFixture` with custom writing-system collation and valid characters plus a linked
 media sentinel larger than the `.fwdata`. Stream the bundle through a throttled stream. Assert it contains the
@@ -128,12 +128,12 @@ writing the sibling SQLite Motif store. A valid project
 locator must select the catalog-derived sibling database; no command may accept an arbitrary database or
 publication path, and the worker must never create a second SQLite store.
 
-- [ ] **Step 2: Run red**
+- [x] **Step 2: Run red**
 
 Run `./test.ps1`. Expected: the closed Baseline contracts, client façade, composed handler, receiver, and
 repository tests fail because the bundle slice is not implemented.
 
-- [ ] **Step 3: Implement the closed Baseline protocol and worker capability**
+- [x] **Step 3: Implement the closed Baseline protocol and worker capability**
 
 Add `WorkerCommands.BaselineOffer = "baseline.offer"` and
 `WorkerCommands.BaselinePublish = "baseline.publish"`; both require the exact `baseline.v1` capability.
@@ -185,7 +185,7 @@ close the connection. The Client sequence is `baseline.offer`, binary upload and
 the completion before the publish envelope. The transfer id is the correlation id across all three steps;
 the request id continues to correlate each command response.
 
-- [ ] **Step 4: Implement the worker-owned verified-transfer lifecycle**
+- [x] **Step 4: Implement the worker-owned verified-transfer lifecycle**
 
 `WorkerServer` owns one `BinaryTransferServer` and one `BaselineTransferRegistry`, rooted under the worker
 root passed by `Program` during composition. Only after the process owns the global worker mutex, and before
@@ -215,7 +215,7 @@ delete outside that root. The registry owns a ready file from the atomic `.tmp`-
 publish handler claims it; the receiver owns it after claim and always deletes it when publication finishes
 or fails.
 
-- [ ] **Step 5: Implement streaming capture and atomic publication**
+- [x] **Step 5: Implement streaming capture and atomic publication**
 
 ```csharp
 public sealed class BaselineBundleWriter
@@ -269,7 +269,7 @@ the handler removes only the just-created unreferenced publication and preserves
 and Baseline directory. A same-digest retry is idempotent. Any outcome deletes the claimed transport archive.
 The handler returns the closed failure response for expected operational failures and does not leak paths.
 
-- [ ] **Step 6: Run green and commit**
+- [x] **Step 6: Run green and commit**
 
 Run `./test.ps1` and confirm the media exclusion, path-containment, Ready admission, operation-lease,
 single-sibling-database, old-Baseline-preservation, archive-deletion, and named-pipe integration tests pass,
