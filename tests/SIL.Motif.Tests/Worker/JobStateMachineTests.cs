@@ -24,19 +24,29 @@ public sealed class JobStateMachineTests : IDisposable
         Assert.Throws<ArgumentException>(() => JobJson.ValidateStructured("1", "input"));
     }
 
-    [Fact]
-    public void WaitingStatesMustReturnToQueueBeforeRunningAndTerminalsDoNotReopen()
+    [Theory]
+    [InlineData(JobStatus.WaitingForBaseline)]
+    [InlineData(JobStatus.WaitingForProjectHost)]
+    public void WaitingStatesResumeDirectlyOrRequeueAndTerminalsDoNotReopen(JobStatus waiting)
     {
         var machine = new JobStateMachine(new FixedClock("2026-08-22T12:00:00Z"));
         var job = NewJob();
-        Assert.Throws<InvalidOperationException>(() => machine.Transition(job, JobStatus.WaitingForBaseline, "{\"tooSoon\":true}"));
-        job = machine.Transition(job, JobStatus.WaitingForBaseline);
-        Assert.Throws<InvalidOperationException>(() => machine.Transition(job, JobStatus.Running));
-        job = machine.Transition(job, JobStatus.Queued);
-        job = machine.Transition(job, JobStatus.Running);
-        job = machine.Transition(job, JobStatus.Completed, "{\"ok\":true}");
-        Assert.Throws<InvalidOperationException>(() => machine.Transition(job, JobStatus.Queued));
-        Assert.Throws<InvalidOperationException>(() => machine.Transition(job, JobStatus.Completed));
+        Assert.Throws<InvalidOperationException>(() => machine.Transition(job, waiting, "{\"tooSoon\":true}"));
+        var parked = machine.Transition(job, waiting);
+
+        // A released wait may resume directly, but a running job cannot re-enter either wait.
+        var resumed = machine.Transition(parked, JobStatus.Running);
+        Assert.Throws<InvalidOperationException>(() => machine.Transition(resumed, JobStatus.WaitingForBaseline));
+        Assert.Throws<InvalidOperationException>(() => machine.Transition(resumed, JobStatus.WaitingForProjectHost));
+
+        var requeued = machine.Transition(parked, JobStatus.Queued);
+        var running = machine.Transition(requeued, JobStatus.Running);
+        var completed = machine.Transition(running, JobStatus.Completed, "{\"ok\":true}");
+        Assert.Throws<InvalidOperationException>(() => machine.Transition(completed, JobStatus.Queued));
+        Assert.Throws<InvalidOperationException>(() => machine.Transition(completed, JobStatus.Completed));
+
+        Assert.Equal(JobStatus.Cancelled, machine.Transition(parked, JobStatus.Cancelled).Status);
+        Assert.Equal(JobStatus.Failed, machine.Transition(parked, JobStatus.Failed).Status);
     }
 
     [Fact]

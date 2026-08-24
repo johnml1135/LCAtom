@@ -61,6 +61,40 @@ public sealed class BaselineRefreshCommandHandlerTests : IDisposable
         Assert.False(later.IsCompleted);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task HostDispositionRecordedBeforeReleaseSurvivesResumeToTerminalStatus(bool accepted)
+    {
+        using var context = Context("survives-" + accepted);
+        using var lanes = Lanes(context);
+        using var releases = new ProjectHostReleaseCoordinator();
+        var workspaceKey = ProjectWorkspaceKey.Compute(context.Project);
+        if (accepted) Publish(context, Token('b'));
+        var handler = accepted
+            ? new BaselineRefreshCommandHandler(context.Jobs, context.Baselines, lanes, releases,
+                (_, _) => Task.FromResult(Result(WorkerEventOutcome.Accepted, "linguist", null,
+                    new BaselinePublicationResult(workspaceKey, Token('b')))),
+                _ => throw new Xunit.Sdk.XunitException("The accepted path must not fall back to CLI capture."))
+            : new BaselineRefreshCommandHandler(context.Jobs, context.Baselines, lanes, releases,
+                (_, _) => Task.FromResult(Result(WorkerEventOutcome.Deferred, "linguist", "after close")),
+                _ => Task.FromResult(Publish(context, Token('b'))));
+
+        var run = handler.RunAsync(context.Job.JobId, context.Project, CancellationToken.None);
+        if (!accepted)
+        {
+            await WaitForStatus(context.Jobs, context.Job.JobId, JobStatus.WaitingForProjectHost);
+            releases.NotifyReleased(workspaceKey);
+        }
+        await run.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var durable = context.Jobs.Get(context.Job.JobId)!;
+        Assert.Equal(JobStatus.Completed, durable.Status);
+        Assert.Contains("\"actor\":\"linguist\"", durable.ProgressJson, StringComparison.Ordinal);
+        Assert.Contains("\"response\":\"" + (accepted ? "accepted" : "deferred") + "\"",
+            durable.ProgressJson, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task DeferredRefreshTransfersToCliCaptureAfterHostAuthorityIsReleased()
     {

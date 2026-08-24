@@ -60,9 +60,8 @@ internal sealed class DryRunJobHandler
         {
             await lane.EnqueueAsync(ProjectWorkItem.DryRun(async (_, laneToken) =>
             {
-                // A closed barrier can park this job, and a wait rejoins the queue before it may run.
-                var starting = _jobs.Transition(_jobs.Get(jobId)!, JobStatus.Queued);
-                _jobs.Transition(starting, JobStatus.Running);
+                // A closed barrier can park this job, and a released wait resumes directly into Running.
+                _jobs.Transition(_jobs.Get(jobId)!, JobStatus.Running);
                 dryRun = await _runDryRun(baseline.FwDataPath, proposal, laneToken).ConfigureAwait(false);
             }),
                 cancellationToken).ConfigureAwait(false);
