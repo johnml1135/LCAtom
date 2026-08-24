@@ -16,6 +16,8 @@ internal sealed class BaselineTransferRegistry : IAsyncDisposable
 {
     private const int ClaimReleaseAttempts = 3;
     private static readonly TimeSpan ClaimReleaseRetryDelay = TimeSpan.FromMilliseconds(20);
+    private static readonly TimeSpan BackgroundClaimReleaseInitialDelay = TimeSpan.FromMilliseconds(50);
+    private static readonly TimeSpan BackgroundClaimReleaseMaximumDelay = TimeSpan.FromSeconds(1);
     private readonly string _transferRoot;
     private readonly string _rootPrefix;
     private readonly BinaryTransferServer _binary;
@@ -25,6 +27,9 @@ internal sealed class BaselineTransferRegistry : IAsyncDisposable
     private readonly Action<int>? _onClaimReleaseAttempt;
     private readonly ConcurrentDictionary<string, Registration> _registrations =
         new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<Task, byte> _backgroundCleanups = new();
+    private readonly CancellationTokenSource _cleanupCancellation = new();
+    private readonly object _lifecycleGate = new();
     private bool _disposed;
 
     public BaselineTransferRegistry(string transferRoot, BinaryTransferServer binary,
@@ -161,34 +166,11 @@ internal sealed class BaselineTransferRegistry : IAsyncDisposable
             return true;
         if (!StringComparer.Ordinal.Equals(registration.ConnectionId, connectionId))
             return false;
-        await registration.CleanupGate.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            lock (registration.Gate)
-            {
-                if (registration.State != RegistrationState.Claimed || registration.ReadyPath is null)
-                    return false;
-            }
-            for (var attempt = 1; attempt <= ClaimReleaseAttempts; attempt++)
-            {
-                var deleted = TryDeleteOwnedFile(registration.ReadyPath);
-                _onClaimReleaseAttempt?.Invoke(attempt);
-                if (deleted)
-                {
-                    lock (registration.Gate)
-                        registration.State = RegistrationState.Cancelled;
-                    _registrations.TryRemove(transferId, out _);
-                    return true;
-                }
-                if (attempt < ClaimReleaseAttempts)
-                    await Task.Delay(ClaimReleaseRetryDelay).ConfigureAwait(false);
-            }
-            return false;
-        }
-        finally
-        {
-            registration.CleanupGate.Release();
-        }
+        var released = await TryReleaseClaimAsync(
+            registration, ClaimReleaseAttempts, CancellationToken.None).ConfigureAwait(false);
+        if (!released)
+            EnsureBackgroundCleanup(registration);
+        return released;
     }
 
     public async Task ReleaseConnectionAsync(string connectionId)
@@ -199,14 +181,30 @@ internal sealed class BaselineTransferRegistry : IAsyncDisposable
         foreach (var registration in owned)
         {
             _onReleaseCandidate?.Invoke();
+            var claimed = false;
             lock (registration.Gate)
             {
-                if (registration.State is RegistrationState.Claimed or RegistrationState.Cancelled)
+                if (registration.State == RegistrationState.Cancelled)
                     continue;
-                registration.State = RegistrationState.Cancelled;
-                if (registration.ReadyPath is not null)
-                    DeleteOwnedFile(registration.ReadyPath);
-                _registrations.TryRemove(registration.Offer.TransferId, out _);
+                if (registration.State == RegistrationState.Claimed)
+                {
+                    claimed = true;
+                }
+                else
+                {
+                    registration.State = RegistrationState.Cancelled;
+                    if (registration.ReadyPath is not null)
+                        DeleteOwnedFile(registration.ReadyPath);
+                    _registrations.TryRemove(registration.Offer.TransferId, out _);
+                }
+            }
+            if (claimed)
+            {
+                var released = await TryReleaseClaimAsync(
+                    registration, ClaimReleaseAttempts, CancellationToken.None).ConfigureAwait(false);
+                if (!released)
+                    EnsureBackgroundCleanup(registration);
+                continue;
             }
             _onReleaseRemoved?.Invoke();
             StopMonitoring(registration);
@@ -236,12 +234,98 @@ internal sealed class BaselineTransferRegistry : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (_disposed) return;
-        _disposed = true;
+        lock (_lifecycleGate)
+        {
+            if (_disposed) return;
+            _disposed = true;
+        }
         var connections = _registrations.Values.Select(item => item.ConnectionId)
             .Distinct(StringComparer.Ordinal).ToArray();
         foreach (var connection in connections)
             await ReleaseConnectionAsync(connection).ConfigureAwait(false);
+        _cleanupCancellation.Cancel();
+        var cleanups = _backgroundCleanups.Keys.ToArray();
+        try
+        {
+            await Task.WhenAll(cleanups).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (_cleanupCancellation.IsCancellationRequested) { }
+        _cleanupCancellation.Dispose();
+    }
+
+    private async Task<bool> TryReleaseClaimAsync(
+        Registration registration, int attempts, CancellationToken cancellationToken)
+    {
+        await registration.CleanupGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            lock (registration.Gate)
+            {
+                if (registration.State != RegistrationState.Claimed || registration.ReadyPath is null)
+                    return registration.State == RegistrationState.Cancelled;
+            }
+            for (var attempt = 1; attempt <= attempts; attempt++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var deleted = TryDeleteOwnedFile(registration.ReadyPath);
+                _onClaimReleaseAttempt?.Invoke(attempt);
+                if (deleted)
+                {
+                    lock (registration.Gate)
+                        registration.State = RegistrationState.Cancelled;
+                    if (_registrations.TryGetValue(registration.Offer.TransferId, out var current) &&
+                        ReferenceEquals(current, registration))
+                        _registrations.TryRemove(registration.Offer.TransferId, out _);
+                    return true;
+                }
+                if (attempt < attempts)
+                    await Task.Delay(ClaimReleaseRetryDelay, cancellationToken).ConfigureAwait(false);
+            }
+            return false;
+        }
+        finally
+        {
+            registration.CleanupGate.Release();
+        }
+    }
+
+    private void EnsureBackgroundCleanup(Registration registration)
+    {
+        Task cleanup;
+        lock (_lifecycleGate)
+        {
+            if (_disposed) return;
+            lock (registration.Gate)
+            {
+                if (registration.State != RegistrationState.Claimed ||
+                    registration.CleanupTask is { IsCompleted: false })
+                    return;
+                cleanup = CleanupClaimUntilDeletedAsync(registration, _cleanupCancellation.Token);
+                registration.CleanupTask = cleanup;
+            }
+            _backgroundCleanups.TryAdd(cleanup, 0);
+        }
+        _ = cleanup.ContinueWith(completed => _backgroundCleanups.TryRemove(completed, out _),
+            CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+    }
+
+    private async Task CleanupClaimUntilDeletedAsync(
+        Registration registration, CancellationToken cancellationToken)
+    {
+        var delay = BackgroundClaimReleaseInitialDelay;
+        try
+        {
+            while (true)
+            {
+                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                if (await TryReleaseClaimAsync(registration, 1, cancellationToken).ConfigureAwait(false))
+                    return;
+                var doubledTicks = Math.Min(
+                    delay.Ticks * 2, BackgroundClaimReleaseMaximumDelay.Ticks);
+                delay = TimeSpan.FromTicks(doubledTicks);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
     }
 
     private static string RequireTransferRoot(string transferRoot)
@@ -363,6 +447,7 @@ internal sealed class BaselineTransferRegistry : IAsyncDisposable
         public CancellationTokenSource ExpiryCancellation { get; } = new();
         public CancellationTokenRegistration ExternalCancellation { get; set; }
         public SemaphoreSlim CleanupGate { get; } = new(1, 1);
+        public Task? CleanupTask { get; set; }
     }
 
     private enum RegistrationState { Offered, Completing, Ready, Claimed, Cancelled }

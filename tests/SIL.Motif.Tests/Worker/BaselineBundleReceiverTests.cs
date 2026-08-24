@@ -139,6 +139,41 @@ public sealed class BaselineBundleReceiverTests : IDisposable
     }
 
     [Fact]
+    public async Task PublishVerifiedAsync_RejectsActualHighCountHiddenByForgedEocdBeforeMaterialization()
+    {
+        var path = Path.Combine(_root, Guid.NewGuid().ToString("N") + ".ready");
+        using (var stream = File.Create(path))
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create))
+        {
+            using (var writer = new StreamWriter(archive.CreateEntry("project.fwdata").Open()))
+                writer.Write("model");
+            for (var index = 0; index < 4096; index++)
+            {
+                using var writer = new StreamWriter(archive.CreateEntry(
+                    $"WritingSystemStore/ws-{index:D4}.ldml").Open());
+                writer.Write("<ldml/>");
+            }
+        }
+        var bytes = File.ReadAllBytes(path);
+        var eocd = bytes.Length - 22;
+        Assert.Equal(0x06054b50u, BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(eocd, 4)));
+        Assert.Equal(4097, BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(eocd + 8, 2)));
+        Assert.Equal(4097, BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(eocd + 10, 2)));
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(eocd + 8, 2), 2);
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(eocd + 10, 2), 2);
+        File.WriteAllBytes(path, bytes);
+        var transfer = VerifiedTransfer(path);
+        var materialized = false;
+        var receiver = new BaselineBundleReceiver(
+            beforeArchiveMaterialization: () => materialized = true);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => receiver.PublishVerifiedAsync(
+            transfer, Token(transfer.Sha256), Target(), CancellationToken.None));
+
+        Assert.False(materialized);
+    }
+
+    [Fact]
     public void ExtractedLengthValidationRejectsHostileOverflowAsInvalidData()
     {
         Assert.Throws<InvalidDataException>(() =>

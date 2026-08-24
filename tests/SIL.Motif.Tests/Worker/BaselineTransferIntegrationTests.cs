@@ -164,6 +164,29 @@ public sealed class BaselineTransferIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task BackgroundCleanupDeletesAClaimAfterItsLockClearsDuringTheWorkerLifetime()
+    {
+        var transferRoot = Path.Combine(_root, "claim-background-recovery");
+        await using var binary = new BinaryTransferServer(transferRoot);
+        await using var registry = new BaselineTransferRegistry(transferRoot, binary);
+        var project = Project("claim-background-recovery");
+        var bytes = Encoding.UTF8.GetBytes("claimed bytes");
+        var offer = registry.CreateOffer("connection", project, bytes.Length, TimeSpan.FromMinutes(1));
+        await UploadAsync(offer, bytes);
+        await registry.CompleteAsync("connection", Completion(offer, bytes), CancellationToken.None);
+        var claimed = registry.Claim("connection", project, offer.TransferId);
+        using var locked = new FileStream(claimed.TemporaryPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+
+        Assert.False(await registry.ReleaseClaimAsync("connection", claimed.TransferId));
+        await registry.ReleaseConnectionAsync("connection");
+        Assert.True(File.Exists(claimed.TemporaryPath));
+        locked.Dispose();
+
+        Assert.True(SpinWait.SpinUntil(() => !File.Exists(claimed.TemporaryPath),
+            TimeSpan.FromSeconds(3)));
+    }
+
+    [Fact]
     public async Task DisconnectDeletesReceivingAndReadyTransfersForOnlyThatConnection()
     {
         var transferRoot = Path.Combine(_root, "disconnect");
@@ -224,7 +247,7 @@ public sealed class BaselineTransferIntegrationTests : IDisposable
     }
 
     [Fact]
-    public async Task DisconnectPreservesReadyFileWhenClaimWinsOwnership()
+    public async Task DisconnectRetriesCleanupWhenClaimWinsOwnership()
     {
         var transferRoot = Path.Combine(_root, "claim-race");
         using var releaseCandidate = new ManualResetEventSlim(false);
@@ -256,7 +279,7 @@ public sealed class BaselineTransferIntegrationTests : IDisposable
             allowRelease.Set();
         }
         await releasing;
-        Assert.True(File.Exists(claimed.TemporaryPath));
+        Assert.False(File.Exists(claimed.TemporaryPath));
     }
 
     [Fact]

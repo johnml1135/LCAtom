@@ -40,8 +40,10 @@ internal sealed class BaselineBundleReceiver
 {
     private const int CopyBufferSize = 32 * 1024;
     private const int EndOfCentralDirectoryLength = 22;
+    private const int CentralDirectoryFileHeaderLength = 46;
     private const int MaximumZipCommentLength = ushort.MaxValue;
     private const uint EndOfCentralDirectorySignature = 0x06054b50;
+    private const uint CentralDirectoryFileHeaderSignature = 0x02014b50;
     private const uint Zip64EndOfCentralDirectoryLocatorSignature = 0x07064b50;
     private readonly int _maximumEntries;
     private readonly long _maximumExtractedBytes;
@@ -330,7 +332,72 @@ internal sealed class BaselineBundleReceiver
         var eocdOffset = stream.Length - tailLength + eocd;
         if (centralOffset > eocdOffset || centralSize != eocdOffset - centralOffset)
             throw new InvalidDataException("The Baseline bundle central directory is invalid.");
-        return totalEntries;
+        var parsedEntries = ValidateClassicCentralDirectory(
+            stream, centralOffset, centralSize, maximumEntries);
+        if (parsedEntries != totalEntries)
+            throw new InvalidDataException("The Baseline bundle entry count is invalid.");
+        return parsedEntries;
+    }
+
+    private static int ValidateClassicCentralDirectory(
+        Stream stream, uint centralOffset, uint centralSize, int maximumEntries)
+    {
+        var end = (long)centralOffset + centralSize;
+        var header = new byte[CentralDirectoryFileHeaderLength];
+        stream.Position = centralOffset;
+        var count = 0;
+        while (stream.Position < end)
+        {
+            if (end - stream.Position < header.Length)
+                throw new InvalidDataException("The Baseline bundle central directory is truncated.");
+            ReadExactly(stream, header);
+            if (BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(0, 4)) !=
+                    CentralDirectoryFileHeaderSignature)
+                throw new InvalidDataException("The Baseline bundle central directory is invalid.");
+            if (++count > maximumEntries)
+                throw new InvalidDataException("The Baseline bundle entry count is invalid.");
+
+            var compressedSize = BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(20, 4));
+            var extractedSize = BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(24, 4));
+            var nameLength = BinaryPrimitives.ReadUInt16LittleEndian(header.AsSpan(28, 2));
+            var extraLength = BinaryPrimitives.ReadUInt16LittleEndian(header.AsSpan(30, 2));
+            var commentLength = BinaryPrimitives.ReadUInt16LittleEndian(header.AsSpan(32, 2));
+            var disk = BinaryPrimitives.ReadUInt16LittleEndian(header.AsSpan(34, 2));
+            var localHeaderOffset = BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(42, 4));
+            if (disk != 0)
+                throw new InvalidDataException("Multi-disk Baseline bundles are refused.");
+            if (compressedSize == uint.MaxValue || extractedSize == uint.MaxValue ||
+                localHeaderOffset == uint.MaxValue)
+                throw new InvalidDataException("ZIP64 Baseline bundles are refused.");
+            var variableLength = (long)nameLength + extraLength + commentLength;
+            if (variableLength > end - stream.Position || localHeaderOffset >= centralOffset)
+                throw new InvalidDataException("The Baseline bundle central directory is invalid.");
+            stream.Position += nameLength;
+            ValidateClassicExtraFields(stream, extraLength);
+            stream.Position += commentLength;
+        }
+        if (stream.Position != end)
+            throw new InvalidDataException("The Baseline bundle central directory is invalid.");
+        return count;
+    }
+
+    private static void ValidateClassicExtraFields(Stream stream, int extraLength)
+    {
+        var end = stream.Position + extraLength;
+        var header = new byte[4];
+        while (stream.Position < end)
+        {
+            if (end - stream.Position < header.Length)
+                throw new InvalidDataException("The Baseline bundle extra fields are invalid.");
+            ReadExactly(stream, header);
+            var identifier = BinaryPrimitives.ReadUInt16LittleEndian(header.AsSpan(0, 2));
+            var dataLength = BinaryPrimitives.ReadUInt16LittleEndian(header.AsSpan(2, 2));
+            if (identifier == 0x0001)
+                throw new InvalidDataException("ZIP64 Baseline bundles are refused.");
+            if (dataLength > end - stream.Position)
+                throw new InvalidDataException("The Baseline bundle extra fields are invalid.");
+            stream.Position += dataLength;
+        }
     }
 
     private static void ReadExactly(Stream stream, byte[] buffer)
