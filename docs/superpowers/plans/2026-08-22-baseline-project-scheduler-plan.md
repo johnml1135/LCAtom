@@ -372,7 +372,7 @@ about when that state was captured.
 - Test: `tests/SIL.Motif.Tests/Worker/BaselineDryRunIntegrationTests.cs`
 - Test: `tests/SIL.Motif.Tests/Host/BaselineScratchFactoryTests.cs`
 
-- [ ] **Step 1: Write the twenty-run acceptance test**
+- [x] **Step 1: Write the twenty-run acceptance test**
 
 Capture once, execute the same Proposal twenty times, and assert identical effect and footprint digests,
 unchanged Baseline bytes, no saved scratch mutation, one active scratch at a time, no linked-media bytes in
@@ -382,11 +382,11 @@ operation and the twenty Dry Runs perform no per-run project copy, use one cache
 save or mutate the canonical project. Add cancellation injection before publication and prove no partial Dry
 Run record exists.
 
-- [ ] **Step 2: Run red**
+- [x] **Step 2: Run red**
 
 Run `./test.ps1`. Expected: the Worker job handler and Host scratch factory are absent.
 
-- [ ] **Step 3: Implement file-backed single-use scratches**
+- [x] **Step 3: Implement file-backed single-use scratches**
 
 ```csharp
 public sealed class BaselineScratchFactory
@@ -407,7 +407,7 @@ unchanged, and publish the Dry Run record only after complete read-back.
 Return status containing `BaselineToken` and `CapturedUtc`; use `ProjectFreshnessTracker` to report current,
 known-old, or not-checked status, never to silently refresh or cancel.
 
-- [ ] **Step 4: Run green and commit**
+- [x] **Step 4: Run green and commit**
 
 Run `./test.ps1`, confirm the one-save/twenty-Dry-Run, media exclusion, cache/project ownership, and
 no-saved-mutation assertions, then:
