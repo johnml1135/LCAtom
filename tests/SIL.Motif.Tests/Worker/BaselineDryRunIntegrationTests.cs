@@ -292,6 +292,60 @@ public sealed class BaselineDryRunSchedulingTests : IDisposable
     }
 
     [Fact]
+    public async Task DryRunParkedBehindAClosedBarrierReportsWaitingForBaselineAndDoesNotRun()
+    {
+        using var context = Context("closed-barrier");
+        var lanes = new ProjectLaneRegistry(_ => context.Token);
+        var lane = lanes.GetOrCreate(context.WorkspaceKey);
+        var handler = new DryRunJobHandler(context.Jobs, context.Baselines, lanes, _ => null,
+            (_, _, _) => throw new Xunit.Sdk.XunitException("A parked Dry Run must never run."));
+
+        // Close the barrier exactly as ProjectLaneTests does: a refresh whose capture fails.
+        await Assert.ThrowsAsync<IOException>(() => lane.EnqueueAsync(ProjectWorkItem.Refresh(
+            _ => Task.FromException<BaselineToken>(new IOException("capture failed"))),
+            CancellationToken.None)).WaitAsync(TimeSpan.FromSeconds(5));
+
+        var job = context.CreateJob("parked");
+        var runTask = handler.RunAsync(job.JobId, context.Project, CancellationToken.None);
+
+        Assert.Equal(JobStatus.WaitingForBaseline, context.Jobs.Get(job.JobId)!.Status);
+        Assert.False(runTask.IsCompleted);
+
+        // Drain deterministically instead of leaving the parked task to a bare using-dispose race.
+        lanes.Dispose();
+        await runTask.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task DryRunReleasedByASuccessfulRefreshProceedsToCompletedDryRunOnly()
+    {
+        using var context = Context("released-barrier");
+        using var lanes = new ProjectLaneRegistry(_ => context.Token);
+        var lane = lanes.GetOrCreate(context.WorkspaceKey);
+        var handler = new DryRunJobHandler(context.Jobs, context.Baselines, lanes, _ => null,
+            (_, _, _) => Task.FromResult(DryRunTestSupport.FakeDryRun()));
+
+        await Assert.ThrowsAsync<IOException>(() => lane.EnqueueAsync(ProjectWorkItem.Refresh(
+            _ => Task.FromException<BaselineToken>(new IOException("capture failed"))),
+            CancellationToken.None)).WaitAsync(TimeSpan.FromSeconds(5));
+
+        var job = context.CreateJob("parked");
+        var runTask = handler.RunAsync(job.JobId, context.Project, CancellationToken.None);
+        Assert.Equal(JobStatus.WaitingForBaseline, context.Jobs.Get(job.JobId)!.Status);
+
+        // Only a successful replacement opens the barrier; this releases the parked Dry Run above.
+        await lane.EnqueueAsync(ProjectWorkItem.Refresh(_ => Task.FromResult(context.Token)),
+            CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+
+        await runTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var completed = context.Jobs.Get(job.JobId)!;
+        Assert.Equal(JobStatus.CompletedDryRunOnly, completed.Status);
+        Assert.True(completed.DryRunPublished);
+        Assert.NotNull(completed.DryRunJson);
+    }
+
+    [Fact]
     public async Task RefusesAJobThatIsNotQueuedForThisProjectsDryRunKind()
     {
         using var context = Context("wrong-identity");

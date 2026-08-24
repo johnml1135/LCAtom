@@ -53,13 +53,18 @@ internal sealed class DryRunJobHandler
         var proposal = ProposalJsonParser.Parse(job.InputJson);
         var lane = _lanes.GetOrCreate(workspaceKey);
 
-        job = _jobs.Transition(job, JobStatus.Running);
+        job = _jobs.Transition(job, JobStatus.WaitingForBaseline);
 
         DryRunModel? dryRun = null;
         try
         {
             await lane.EnqueueAsync(ProjectWorkItem.DryRun(async (_, laneToken) =>
-                dryRun = await _runDryRun(baseline.FwDataPath, proposal, laneToken).ConfigureAwait(false)),
+            {
+                // A closed barrier can park this job, and a wait rejoins the queue before it may run.
+                var starting = _jobs.Transition(_jobs.Get(jobId)!, JobStatus.Queued);
+                _jobs.Transition(starting, JobStatus.Running);
+                dryRun = await _runDryRun(baseline.FwDataPath, proposal, laneToken).ConfigureAwait(false);
+            }),
                 cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception)
