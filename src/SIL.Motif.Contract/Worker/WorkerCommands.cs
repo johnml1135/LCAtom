@@ -11,6 +11,9 @@ public static class WorkerCommands
     public const string JobStatus = "job.status";
     public const string BaselineOffer = "baseline.offer";
     public const string BaselinePublish = "baseline.publish";
+    public const string LiveHostRegister = "live-host.register";
+    public const string LiveHostObservationUpdate = "live-host.observation.update";
+    public const string LiveHostDisconnect = "live-host.disconnect";
 
     /// <summary>The publish-side metadata filename that binds an executable to its manifest.</summary>
     public const string BuildMetadataFileName = "worker.metadata.json";
@@ -23,7 +26,8 @@ public static class WorkerCommands
     private static readonly IReadOnlyCollection<string> CommandValues =
         new ReadOnlyCollection<string>(new[]
         {
-            Handshake, JobStatus, BaselineOffer, BaselinePublish,
+            Handshake, JobStatus, BaselineOffer, BaselinePublish, LiveHostRegister,
+            LiveHostObservationUpdate, LiveHostDisconnect,
         });
 
     private static readonly IReadOnlyCollection<string> EventValues =
@@ -50,6 +54,7 @@ public static class WorkerCommands
         Handshake => null,
         JobStatus => "jobs.v1",
         BaselineOffer or BaselinePublish => "baseline.v1",
+        LiveHostRegister or LiveHostObservationUpdate or LiveHostDisconnect => "live-host.v1",
         _ => throw new ArgumentException("Unknown worker command discriminator.", nameof(command))
     };
 

@@ -13,7 +13,8 @@ public sealed class JobStateMachine
             [JobStatus.Queued] = new HashSet<JobStatus>
                 { JobStatus.WaitingForBaseline, JobStatus.WaitingForProjectHost, JobStatus.Running, JobStatus.Cancelled },
             [JobStatus.WaitingForBaseline] = new HashSet<JobStatus> { JobStatus.Queued, JobStatus.Cancelled },
-            [JobStatus.WaitingForProjectHost] = new HashSet<JobStatus> { JobStatus.Queued, JobStatus.Cancelled },
+            [JobStatus.WaitingForProjectHost] = new HashSet<JobStatus>
+                { JobStatus.Queued, JobStatus.Running, JobStatus.Cancelled },
             [JobStatus.Running] = new HashSet<JobStatus>
                 { JobStatus.Completed, JobStatus.CompletedDryRunOnly,
                     JobStatus.CompletedWithAssessmentFailure, JobStatus.Failed, JobStatus.Cancelled, JobStatus.Interrupted },

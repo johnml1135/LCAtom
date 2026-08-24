@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using SIL.Motif.Contract.Projects;
@@ -88,6 +89,32 @@ public sealed record BaselinePublicationResult
 
     [JsonPropertyOrder(0)] public string ProjectKey { get; }
     [JsonPropertyOrder(1)] public BaselineToken Token { get; }
+}
+
+/// <summary>Records a live host's durable response and optional terminal Baseline capture result.</summary>
+public sealed record BaselineRefreshHostResult
+{
+    [JsonConstructor]
+    public BaselineRefreshHostResult(string actor, string? reason, string respondedUtc,
+        BaselinePublicationResult? publication, BaselineCommandFailure? failure)
+    {
+        Actor = WorkerProtocolValidation.Identifier(actor, nameof(actor));
+        if (!DateTimeOffset.TryParse(respondedUtc, CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out var timestamp) || timestamp.Offset != TimeSpan.Zero)
+            throw new ArgumentException("A UTC response timestamp is required.", nameof(respondedUtc));
+        if (publication is not null && failure is not null)
+            throw new ArgumentException("A refresh host result cannot contain both publication and failure.");
+        Reason = reason;
+        RespondedUtc = respondedUtc;
+        Publication = publication;
+        Failure = failure;
+    }
+
+    [JsonPropertyOrder(0)] public string Actor { get; }
+    [JsonPropertyOrder(1)] public string? Reason { get; }
+    [JsonPropertyOrder(2)] public string RespondedUtc { get; }
+    [JsonPropertyOrder(3)] public BaselinePublicationResult? Publication { get; }
+    [JsonPropertyOrder(4)] public BaselineCommandFailure? Failure { get; }
 }
 
 /// <summary>A bounded, classified refusal returned by a Baseline control command.</summary>

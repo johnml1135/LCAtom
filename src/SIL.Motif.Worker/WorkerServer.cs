@@ -16,6 +16,7 @@ using SIL.Motif.Host.Store;
 using SIL.Motif.Worker.Baselines;
 using SIL.Motif.Worker.Jobs;
 using SIL.Motif.Worker.Projects;
+using SIL.Motif.Worker.Scheduling;
 using SIL.Motif.Worker.Store;
 
 namespace SIL.Motif.Worker;
@@ -30,7 +31,11 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
     private readonly IWorkerWorkTracker? _workTracker;
     private readonly ProjectHostRegistry _hostRegistry;
     private readonly WorkerEventSink _eventSink;
+    private readonly ProjectHostReleaseCoordinator _hostReleases;
+    private readonly ConcurrentDictionary<string, ProjectFreshnessTracker> _freshness =
+        new(StringComparer.Ordinal);
     private ProjectRuntimeRegistry? _runtimeRegistry;
+    private ProjectLaneRegistry? _projectLanes;
     private BinaryTransferServer? _binaryTransferServer;
     private BaselineTransferRegistry? _baselineTransfers;
     private BaselineWorkspaceCatalog? _baselineWorkspaces;
@@ -64,6 +69,7 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
         _workTracker = workTracker ?? new WorkerWorkTracker();
         _hostRegistry = new ProjectHostRegistry();
         _eventSink = new WorkerEventSink(_hostRegistry);
+        _hostReleases = new ProjectHostReleaseCoordinator();
     }
 
     /// <summary>Creates an isolated server identity for protocol tests only.</summary>
@@ -105,6 +111,11 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
     internal BaselineTransferRegistry BaselineTransfers => _baselineTransfers ??
         throw new InvalidOperationException("The worker transfer lifecycle is not composed.");
 
+    internal ProjectLaneRegistry ProjectLanes => _projectLanes ??
+        throw new InvalidOperationException("The project scheduler is not composed.");
+
+    internal ProjectHostReleaseCoordinator HostReleases => _hostReleases;
+
     /// <summary>Registers a connection as the live host for one project workspace.</summary>
     public void RegisterLiveHost(ProjectLocator project, string connectionId)
     {
@@ -140,6 +151,13 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
             if (_workTracker is not WorkerWorkTracker work)
                 throw new InvalidOperationException("Runtime composition requires the worker work tracker.");
             _runtimeRegistry = new ProjectRuntimeRegistry(catalog, recoveryFactory, work, now, _hostRegistry);
+            _projectLanes = new ProjectLaneRegistry(key =>
+            {
+                if (!_runtimeRegistry.TryGet(key, out var runtime))
+                    throw new InvalidOperationException("A Ready project runtime is required for its lane.");
+                return runtime.Baselines.GetCurrent(key)?.Token ??
+                    throw new InvalidOperationException("A published Baseline is required for its lane.");
+            });
             _ownsRuntimeRegistry = true;
             return _runtimeRegistry;
         }
@@ -262,6 +280,11 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
             try { await _binaryTransferServer.DisposeAsync().ConfigureAwait(false); }
             catch (Exception exception) { failures.Add(exception); }
         }
+        if (_projectLanes is not null)
+        {
+            try { _projectLanes.Dispose(); }
+            catch (Exception exception) { failures.Add(exception); }
+        }
         if (_ownsRuntimeRegistry)
         {
             try
@@ -281,6 +304,9 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
         catch (Exception exception) { failures.Add(exception); }
         try { _hostRegistry.Dispose(); }
         catch (Exception exception) { failures.Add(exception); }
+        try { _hostReleases.Dispose(); }
+        catch (Exception exception) { failures.Add(exception); }
+        _freshness.Clear();
         if (IsOwner)
         {
             try { _ownerMutex.Release(); }
@@ -337,10 +363,23 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
                         new JobStatusCommandHandler(_runtimeRegistry),
                         new BaselineTransferOfferCommandHandler(_baselineTransfers, connectionId),
                         new BaselinePublishCommandHandler(
-                            _runtimeRegistry, _baselineTransfers, _baselineWorkspaces, connectionId)
+                            _runtimeRegistry, _baselineTransfers, _baselineWorkspaces, connectionId),
+                        LiveHostHandler<LiveHostRegisterRequest>(WorkerCommands.LiveHostRegister,
+                            _runtimeRegistry, () => connection!, static request => request.Project,
+                            static (current, request) => current.RegisterLiveHost(
+                                request.Project, request.Observation)),
+                        LiveHostHandler<LiveHostObservationUpdateRequest>(WorkerCommands.LiveHostObservationUpdate,
+                            _runtimeRegistry, () => connection!, static request => request.Project,
+                            static (current, request) => current.UpdateLiveHost(
+                                request.Project, request.Observation)),
+                        LiveHostHandler<LiveHostDisconnectRequest>(WorkerCommands.LiveHostDisconnect,
+                            _runtimeRegistry, () => connection!, static request => request.Project,
+                            static (current, request) => current.DisconnectLiveHost(
+                                request.Project, request.HostSessionId))
                     };
                 connection = new WorkerControlConnection(pipe, negotiated.ProtocolVersion, negotiated.Capabilities,
-                    _eventSink, new WorkerCommandDispatcher(handlers), _baselineTransfers!, connectionId);
+                    _eventSink, new WorkerCommandDispatcher(handlers), _baselineTransfers!, _freshness,
+                    _hostReleases, connectionId);
                 var offer = new WorkerHandshakeOffer(_offer.ProductVersion, _offer.Protocols,
                     _offer.Capabilities, connectionId);
                 _connections[connection.Id] = connection;
@@ -368,6 +407,13 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
 
     private static string CurrentSid() => WindowsIdentity.GetCurrent().User?.Value ?? "unknown-user";
 
+    private static IWorkerCommandHandler LiveHostHandler<TRequest>(string command,
+        ProjectRuntimeRegistry runtimes, Func<WorkerControlConnection> connection,
+        Func<TRequest, ProjectLocator> project, Func<WorkerControlConnection, TRequest, bool> apply)
+        where TRequest : class => new LiveHostObservationCommandHandler(command, runtimes,
+            payload => project(LiveHostObservationCommandHandler.Deserialize<TRequest>(payload)),
+            payload => apply(connection(), LiveHostObservationCommandHandler.Deserialize<TRequest>(payload)));
+
     private void ThrowIfDisposed()
     {
         if (_disposed)
@@ -382,6 +428,8 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
         private readonly WorkerEventSink _eventSink;
         private readonly WorkerCommandDispatcher _dispatcher;
         private readonly BaselineTransferRegistry _baselineTransfers;
+        private readonly ConcurrentDictionary<string, ProjectFreshnessTracker> _freshness;
+        private readonly ProjectHostReleaseCoordinator _hostReleases;
         private readonly SemaphoreSlim _writeGate = new SemaphoreSlim(1, 1);
         private readonly object _hostSync = new();
         private readonly Dictionary<string, (ProjectLocator Project, string SessionId)> _hostProjects =
@@ -390,7 +438,9 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
 
         public WorkerControlConnection(Stream stream, int protocolVersion, IReadOnlyList<string> capabilities,
             WorkerEventSink eventSink, WorkerCommandDispatcher dispatcher,
-            BaselineTransferRegistry baselineTransfers, string connectionId)
+            BaselineTransferRegistry baselineTransfers,
+            ConcurrentDictionary<string, ProjectFreshnessTracker> freshness,
+            ProjectHostReleaseCoordinator hostReleases, string connectionId)
         {
             _stream = stream;
             _protocolVersion = protocolVersion;
@@ -398,6 +448,8 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
             _eventSink = eventSink;
             _dispatcher = dispatcher;
             _baselineTransfers = baselineTransfers;
+            _freshness = freshness;
+            _hostReleases = hostReleases;
             Id = connectionId;
         }
 
@@ -421,7 +473,12 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
             lock (_hostSync)
             {
                 foreach (var registration in _hostProjects.Values)
+                {
                     _eventSink.UnregisterLiveHost(registration.Project, Id, registration.SessionId);
+                    var key = ProjectWorkspaceKey.Compute(registration.Project);
+                    RemoveFreshness(key, registration.SessionId);
+                    _hostReleases.NotifyReleased(key);
+                }
                 _hostProjects.Clear();
             }
         }
@@ -433,6 +490,8 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
             {
                 if (!_hostProjects.Remove(key, out var registration)) return;
                 _eventSink.UnregisterLiveHost(registration.Project, Id, registration.SessionId);
+                RemoveFreshness(key, registration.SessionId);
+                _hostReleases.NotifyReleased(key);
             }
         }
 
@@ -499,6 +558,63 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
             {
                 _stream.Dispose();
             }
+        }
+
+        public bool RegisterLiveHost(ProjectLocator project, LiveProjectObservation observation)
+        {
+            var key = ProjectWorkspaceKey.Compute(project);
+            lock (_hostSync)
+            {
+                if (_disposed) throw new ObjectDisposedException(nameof(WorkerControlConnection));
+                if (_hostProjects.ContainsKey(key)) return false;
+                try
+                {
+                    _eventSink.RegisterLiveHost(project, Id, observation.HostSessionId, _stream,
+                        _protocolVersion, _writeGate);
+                }
+                catch (ProjectHostBusyException)
+                {
+                    return false;
+                }
+                _hostProjects[key] = (project, observation.HostSessionId);
+                var tracker = new ProjectFreshnessTracker();
+                tracker.Register(observation);
+                _freshness.AddOrUpdate(key, tracker, (_, _) => tracker);
+                return true;
+            }
+        }
+
+        public bool UpdateLiveHost(ProjectLocator project, LiveProjectObservation observation)
+        {
+            var key = ProjectWorkspaceKey.Compute(project);
+            lock (_hostSync)
+            {
+                if (!_hostProjects.TryGetValue(key, out var registration) ||
+                    !StringComparer.Ordinal.Equals(registration.SessionId, observation.HostSessionId)) return false;
+                return _freshness.TryGetValue(key, out var tracker) && tracker.Update(observation);
+            }
+        }
+
+        public bool DisconnectLiveHost(ProjectLocator project, string hostSessionId)
+        {
+            var key = ProjectWorkspaceKey.Compute(project);
+            lock (_hostSync)
+            {
+                if (!_hostProjects.TryGetValue(key, out var registration) ||
+                    !StringComparer.Ordinal.Equals(registration.SessionId, hostSessionId)) return false;
+                _hostProjects.Remove(key);
+                _eventSink.UnregisterLiveHost(registration.Project, Id, registration.SessionId);
+                RemoveFreshness(key, hostSessionId);
+                _hostReleases.NotifyReleased(key);
+                return true;
+            }
+        }
+
+        private void RemoveFreshness(string key, string hostSessionId)
+        {
+            if (!_freshness.TryGetValue(key, out var tracker) || !tracker.Disconnect(hostSessionId)) return;
+            ((ICollection<KeyValuePair<string, ProjectFreshnessTracker>>)_freshness)
+                .Remove(new KeyValuePair<string, ProjectFreshnessTracker>(key, tracker));
         }
 
         private static bool HasBinaryCompletionProperties(JsonElement element) =>

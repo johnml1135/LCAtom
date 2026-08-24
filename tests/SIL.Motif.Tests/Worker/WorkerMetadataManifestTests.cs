@@ -20,7 +20,7 @@ public sealed class WorkerMetadataManifestTests
         Assert.False(string.IsNullOrWhiteSpace(metadata.ProductVersion));
         Assert.True(metadata.Protocols.Minimum >= 1);
         Assert.True(metadata.Protocols.Maximum >= metadata.Protocols.Minimum);
-        Assert.Equal(new[] { "baseline.v1", "jobs.v1" }, metadata.Capabilities);
+        Assert.Equal(new[] { "baseline.v1", "jobs.v1", "live-host.v1" }, metadata.Capabilities);
         Assert.Equal(metadata.Capabilities, metadata.ToHandshakeOffer().Capabilities);
         Assert.Equal(metadata.Capabilities.OrderBy(value => value, StringComparer.Ordinal), metadata.Capabilities);
         Assert.Equal(metadata.Capabilities.Count, metadata.Capabilities.Distinct(StringComparer.Ordinal).Count());

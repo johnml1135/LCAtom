@@ -347,6 +347,9 @@ public sealed class WorkerProtocolTests
             WorkerCommands.JobStatus,
             WorkerCommands.BaselineOffer,
             WorkerCommands.BaselinePublish,
+            WorkerCommands.LiveHostRegister,
+            WorkerCommands.LiveHostObservationUpdate,
+            WorkerCommands.LiveHostDisconnect,
         }, commands);
         Assert.Equal(new[]
         {

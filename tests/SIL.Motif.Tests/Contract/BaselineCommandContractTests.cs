@@ -30,6 +30,10 @@ public sealed class BaselineCommandContractTests
             "{\"Publication\":{\"ProjectKey\":\"project-key\",\"Token\":" + TokenJson() + "},\"Failure\":null}");
         AssertJson(new BaselineCommandFailure(BaselineFailureCode.CapacityUnavailable, true, "Try later."),
             "{\"Code\":\"capacity-unavailable\",\"Retryable\":true,\"Message\":\"Try later.\"}");
+        AssertJson(new BaselineRefreshHostResult("linguist", "saved", "2026-08-24T00:00:00Z",
+                new BaselinePublicationResult("project-key", token), null),
+            "{\"Actor\":\"linguist\",\"Reason\":\"saved\",\"RespondedUtc\":\"2026-08-24T00:00:00Z\"," +
+            "\"Publication\":{\"ProjectKey\":\"project-key\",\"Token\":" + TokenJson() + "},\"Failure\":null}");
     }
 
     [Fact]
@@ -106,6 +110,8 @@ public sealed class BaselineCommandContractTests
         Assert.Throws<ArgumentException>(() => new BaselineOfferResponse(offer, failure));
         Assert.Throws<ArgumentException>(() => new BaselinePublishResponse(null, null));
         Assert.Throws<ArgumentException>(() => new BaselinePublishResponse(publication, failure));
+        Assert.Throws<ArgumentException>(() => new BaselineRefreshHostResult(
+            "linguist", null, "2026-08-24T00:00:00Z", publication, failure));
         Assert.ThrowsAny<Exception>(() => JsonSerializer.Deserialize<BaselineOfferResponse>(
             "{\"Offer\":null,\"Failure\":null}", WorkerJson.CreateOptions()));
     }
