@@ -301,7 +301,7 @@ FieldWorks and background work can coexist only when ownership changes and refre
 - Test: `tests/SIL.Motif.Tests/Contract/LiveHostObservationContractTests.cs`
 - Test: `tests/SIL.Motif.Tests/Worker/LiveHostObservationIntegrationTests.cs`
 
-- [ ] **Step 1: Write deterministic concurrency tests**
+- [x] **Step 1: Write deterministic concurrency tests**
 
 With controlled task completions, assert one lane per project, concurrent lanes across projects, and closed
 JSON/named-pipe schemas for live-host registration, observation updates, and disconnect. Registration and
@@ -316,11 +316,11 @@ a lock-safe saved-project probe is available. For decline, cancellation, save, t
 failure, assert later jobs remain `waiting-for-baseline`; only successful replacement releases the barrier,
 unless the caller cancels and resubmits explicitly against the old token.
 
-- [ ] **Step 2: Run red**
+- [x] **Step 2: Run red**
 
 Run `./test.ps1`. Expected: scheduler types are absent.
 
-- [ ] **Step 3: Implement an explicit lane state machine**
+- [x] **Step 3: Implement an explicit lane state machine**
 
 ```csharp
 public enum ProjectWorkKind { Refresh, DryRun, CandidateExport }
@@ -351,7 +351,7 @@ same lane/reference gate, or use a compare-and-delete generation, so a new pin o
 between checking and deletion. Preserve the checked bottom-up, nonrecursive deletion and rename/reparse
 substitution tests.
 
-- [ ] **Step 4: Run green and commit**
+- [x] **Step 4: Run green and commit**
 
 Run `./test.ps1`, then:
 
