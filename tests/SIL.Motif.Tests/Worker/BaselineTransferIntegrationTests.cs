@@ -104,6 +104,66 @@ public sealed class BaselineTransferIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task ClaimedTransferReleaseRetriesUntilAFileLockClears()
+    {
+        var transferRoot = Path.Combine(_root, "claim-release-retry");
+        using var firstAttemptFinished = new ManualResetEventSlim(false);
+        using var allowRetry = new ManualResetEventSlim(false);
+        var attempts = 0;
+        await using var binary = new BinaryTransferServer(transferRoot);
+        await using var registry = new BaselineTransferRegistry(transferRoot, binary,
+            onClaimReleaseAttempt: attempt =>
+            {
+                attempts = attempt;
+                if (attempt != 1) return;
+                firstAttemptFinished.Set();
+                allowRetry.Wait();
+            });
+        var project = Project("claim-release-retry");
+        var bytes = Encoding.UTF8.GetBytes("claimed bytes");
+        var offer = registry.CreateOffer("connection", project, bytes.Length, TimeSpan.FromMinutes(1));
+        await UploadAsync(offer, bytes);
+        await registry.CompleteAsync("connection", Completion(offer, bytes), CancellationToken.None);
+        var claimed = registry.Claim("connection", project, offer.TransferId);
+        using var locked = new FileStream(claimed.TemporaryPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+
+        var release = Task.Run(() => registry.ReleaseClaimAsync("connection", claimed.TransferId));
+        Assert.True(firstAttemptFinished.Wait(TimeSpan.FromSeconds(1)));
+        Assert.False(release.IsCompleted);
+        locked.Dispose();
+        allowRetry.Set();
+
+        Assert.True(await release);
+        Assert.True(attempts >= 2);
+        Assert.False(File.Exists(claimed.TemporaryPath));
+    }
+
+    [Fact]
+    public async Task PersistentlyLockedClaimRemainsForStartupRecoveryAfterDisconnectAndShutdown()
+    {
+        var transferRoot = Path.Combine(_root, "claim-startup-recovery");
+        await using var binary = new BinaryTransferServer(transferRoot);
+        var registry = new BaselineTransferRegistry(transferRoot, binary);
+        var project = Project("claim-startup-recovery");
+        var bytes = Encoding.UTF8.GetBytes("claimed bytes");
+        var offer = registry.CreateOffer("connection", project, bytes.Length, TimeSpan.FromMinutes(1));
+        await UploadAsync(offer, bytes);
+        await registry.CompleteAsync("connection", Completion(offer, bytes), CancellationToken.None);
+        var claimed = registry.Claim("connection", project, offer.TransferId);
+        using var locked = new FileStream(claimed.TemporaryPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+
+        Assert.False(await registry.ReleaseClaimAsync("connection", claimed.TransferId));
+        await registry.ReleaseConnectionAsync("connection");
+        await registry.DisposeAsync();
+        Assert.True(File.Exists(claimed.TemporaryPath));
+        locked.Dispose();
+
+        Assert.True(File.Exists(claimed.TemporaryPath));
+        BaselineTransferRegistry.CleanupStartup(transferRoot);
+        Assert.False(File.Exists(claimed.TemporaryPath));
+    }
+
+    [Fact]
     public async Task DisconnectDeletesReceivingAndReadyTransfersForOnlyThatConnection()
     {
         var transferRoot = Path.Combine(_root, "disconnect");
@@ -372,6 +432,57 @@ public sealed class BaselineTransferIntegrationTests : IDisposable
 
         await Assert.ThrowsAnyAsync<Exception>(() => WorkerWire.ReadAsync(pipe, cancellation.Token));
 
+        cancellation.Cancel();
+        await running.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task ClaimIoFailureReturnsPathFreeTransferInvalidWithoutClosingThePipe()
+    {
+        var workerRoot = Path.Combine(_root, "claim-io");
+        await using var server = WorkerServer.CreateForTests(
+            "worker-baseline-claim-io-" + Guid.NewGuid().ToString("N"), false, workerRoot);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var runtimes = ComposeRuntime(server, workerRoot);
+        var project = Project("claim-io");
+        _ = runtimes.GetOrOpen(project);
+        var running = server.StartAsync(cancellation.Token);
+        await using var pipe = await ConnectRawAsync(server.EndpointName, new[] { "baseline.v1" },
+            cancellation.Token);
+        _ = await WorkerWire.ReadAsync(pipe, cancellation.Token);
+        var bytes = BundleBytes();
+        await WorkerWire.WriteAsync(pipe, Envelope("offer", WorkerCommands.BaselineOffer,
+            new BaselineOfferRequest(project)), cancellation.Token);
+        var offerEnvelope = WorkerWire.Deserialize<WorkerEnvelope>(
+            await WorkerWire.ReadAsync(pipe, cancellation.Token));
+        var offer = JsonSerializer.Deserialize<BaselineOfferResponse>(
+            offerEnvelope.Payload.GetRawText(), WorkerJson.CreateOptions())!.Offer!;
+        await UploadAsync(offer, bytes);
+        await WorkerWire.WriteAsync(pipe, Completion(offer, bytes), cancellation.Token);
+        var ready = Path.Combine(workerRoot, "transfers", offer.TransferId + ".ready");
+        Assert.True(SpinWait.SpinUntil(() => File.Exists(ready), TimeSpan.FromSeconds(2)));
+        using var locked = new FileStream(ready, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var publish = new BaselinePublishRequest(project, offer.TransferId, Token(project, bytes));
+        await WorkerWire.WriteAsync(pipe, Envelope("publish", WorkerCommands.BaselinePublish, publish),
+            cancellation.Token);
+
+        var responseEnvelope = WorkerWire.Deserialize<WorkerEnvelope>(
+            await WorkerWire.ReadAsync(pipe, cancellation.Token));
+        var response = JsonSerializer.Deserialize<BaselinePublishResponse>(
+            responseEnvelope.Payload.GetRawText(), WorkerJson.CreateOptions())!;
+        Assert.Equal(BaselineFailureCode.TransferInvalid, response.Failure!.Code);
+        Assert.DoesNotContain(workerRoot, response.Failure.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(".ready", response.Failure.Message, StringComparison.OrdinalIgnoreCase);
+        locked.Dispose();
+
+        await WorkerWire.WriteAsync(pipe, Envelope("retry", WorkerCommands.BaselinePublish, publish),
+            cancellation.Token);
+        var retryEnvelope = WorkerWire.Deserialize<WorkerEnvelope>(
+            await WorkerWire.ReadAsync(pipe, cancellation.Token));
+        var retry = JsonSerializer.Deserialize<BaselinePublishResponse>(
+            retryEnvelope.Payload.GetRawText(), WorkerJson.CreateOptions())!;
+        Assert.Equal(BaselineFailureCode.TransferUnknown, retry.Failure!.Code);
+        Assert.False(File.Exists(ready));
         cancellation.Cancel();
         await running.WaitAsync(TimeSpan.FromSeconds(5));
     }

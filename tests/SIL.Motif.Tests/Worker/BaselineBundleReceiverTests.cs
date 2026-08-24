@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using SIL.Motif.Contract.Baselines;
@@ -112,6 +113,38 @@ public sealed class BaselineBundleReceiverTests : IDisposable
             tooLarge, Token(tooLarge.Sha256), Target(), CancellationToken.None));
     }
 
+    [Theory]
+    [InlineData(4097)]
+    [InlineData(ushort.MaxValue)]
+    public async Task PublishVerifiedAsync_RejectsHighOrZip64EocdCountBeforeArchiveMaterialization(
+        int declaredCount)
+    {
+        var transfer = CreateTransfer(("project.fwdata", "model"),
+            ("WritingSystemStore/en.ldml", "<ldml/>"));
+        var bytes = File.ReadAllBytes(transfer.TemporaryPath);
+        var eocd = bytes.Length - 22;
+        Assert.Equal(0x06054b50u, BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(eocd, 4)));
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(eocd + 8, 2), (ushort)declaredCount);
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(eocd + 10, 2), (ushort)declaredCount);
+        File.WriteAllBytes(transfer.TemporaryPath, bytes);
+        transfer = VerifiedTransfer(transfer.TemporaryPath);
+        var materialized = false;
+        var receiver = new BaselineBundleReceiver(
+            beforeArchiveMaterialization: () => materialized = true);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => receiver.PublishVerifiedAsync(
+            transfer, Token(transfer.Sha256), Target(), CancellationToken.None));
+
+        Assert.False(materialized);
+    }
+
+    [Fact]
+    public void ExtractedLengthValidationRejectsHostileOverflowAsInvalidData()
+    {
+        Assert.Throws<InvalidDataException>(() =>
+            BaselineBundleReceiver.AddExtractedLength(long.MaxValue, 1, long.MaxValue));
+    }
+
     [Fact]
     public async Task PublishVerifiedAsync_RejectsAChangedExistingPublication()
     {
@@ -156,6 +189,31 @@ public sealed class BaselineBundleReceiverTests : IDisposable
     }
 
     [Fact]
+    public async Task PublishVerifiedAsync_RejectsAReparsePointFwDataInAnExistingPublication()
+    {
+        var first = CreateTransfer(("project.fwdata", "model"),
+            ("WritingSystemStore/en.ldml", "<ldml/>"));
+        var receiver = new BaselineBundleReceiver();
+        var token = Token(first.Sha256);
+        var publication = await receiver.PublishVerifiedAsync(first, token, Target(), CancellationToken.None);
+        File.Delete(publication.FwDataPath);
+        var outside = Path.Combine(_root, "outside.fwdata");
+        File.WriteAllText(outside, "outside");
+        try { File.CreateSymbolicLink(publication.FwDataPath, outside); }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
+            PlatformNotSupportedException)
+        {
+            return;
+        }
+        var retry = CreateTransfer(("project.fwdata", "model"),
+            ("WritingSystemStore/en.ldml", "<ldml/>"));
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => receiver.PublishVerifiedAsync(
+            retry, token, Target(), CancellationToken.None));
+        Assert.Equal("outside", File.ReadAllText(outside));
+    }
+
+    [Fact]
     public async Task PublishVerifiedAsync_RejectsAnotherProjectIdentity()
     {
         var transfer = CreateTransfer(("project.fwdata", "model"),
@@ -193,6 +251,53 @@ public sealed class BaselineBundleReceiverTests : IDisposable
             Target(), CancellationToken.None));
 
         Assert.False(File.Exists(transfer.TemporaryPath));
+    }
+
+    [Fact]
+    public async Task PublishVerifiedAsync_ReclaimsOnlyExactCrashLeftoverIncomingDirectories()
+    {
+        var target = Target();
+        Directory.CreateDirectory(target.BaselineRoot);
+        var leftover = Path.Combine(target.BaselineRoot, ".incoming-" + new string('a', 32));
+        Directory.CreateDirectory(Path.Combine(leftover, "WritingSystemStore"));
+        File.WriteAllText(Path.Combine(leftover, "project.fwdata"), "partial");
+        File.WriteAllText(Path.Combine(leftover, "WritingSystemStore", "en.ldml"), "partial");
+        var unrelated = Path.Combine(target.BaselineRoot, ".incoming-not-owned");
+        Directory.CreateDirectory(unrelated);
+        File.WriteAllText(Path.Combine(unrelated, "keep.txt"), "keep");
+        var transfer = CreateTransfer(("project.fwdata", "model"),
+            ("WritingSystemStore/en.ldml", "<ldml/>"));
+
+        await new BaselineBundleReceiver().PublishVerifiedAsync(
+            transfer, Token(transfer.Sha256), target, CancellationToken.None);
+
+        Assert.False(Directory.Exists(leftover));
+        Assert.Equal("keep", File.ReadAllText(Path.Combine(unrelated, "keep.txt")));
+    }
+
+    [Fact]
+    public async Task PublishVerifiedAsync_RefusesAReparseIncomingDirectoryWithoutLeavingItsRoot()
+    {
+        var target = Target();
+        Directory.CreateDirectory(target.BaselineRoot);
+        var outside = Path.Combine(_root, "outside-incoming");
+        Directory.CreateDirectory(outside);
+        var sentinel = Path.Combine(outside, "sentinel.fwdata");
+        File.WriteAllText(sentinel, "keep");
+        var link = Path.Combine(target.BaselineRoot, ".incoming-" + new string('b', 32));
+        try { Directory.CreateSymbolicLink(link, outside); }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
+            PlatformNotSupportedException)
+        {
+            return;
+        }
+        var transfer = CreateTransfer(("project.fwdata", "model"),
+            ("WritingSystemStore/en.ldml", "<ldml/>"));
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => new BaselineBundleReceiver().PublishVerifiedAsync(
+            transfer, Token(transfer.Sha256), target, CancellationToken.None));
+
+        Assert.Equal("keep", File.ReadAllText(sentinel));
     }
 
     public void Dispose()

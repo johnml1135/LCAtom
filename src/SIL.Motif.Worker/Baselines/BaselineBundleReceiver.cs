@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using SIL.Motif.Contract.Baselines;
@@ -38,12 +39,18 @@ internal sealed record BaselinePublicationOutcome(
 internal sealed class BaselineBundleReceiver
 {
     private const int CopyBufferSize = 32 * 1024;
+    private const int EndOfCentralDirectoryLength = 22;
+    private const int MaximumZipCommentLength = ushort.MaxValue;
+    private const uint EndOfCentralDirectorySignature = 0x06054b50;
+    private const uint Zip64EndOfCentralDirectoryLocatorSignature = 0x07064b50;
     private readonly int _maximumEntries;
     private readonly long _maximumExtractedBytes;
+    private readonly Action? _beforeArchiveMaterialization;
     private readonly Action<string>? _beforePublicationMove;
 
     public BaselineBundleReceiver(int maximumEntries = 4096,
         long maximumExtractedBytes = 512L * 1024 * 1024,
+        Action? beforeArchiveMaterialization = null,
         Action<string>? beforePublicationMove = null)
     {
         if (maximumEntries < 2)
@@ -52,6 +59,7 @@ internal sealed class BaselineBundleReceiver
             throw new ArgumentOutOfRangeException(nameof(maximumExtractedBytes));
         _maximumEntries = maximumEntries;
         _maximumExtractedBytes = maximumExtractedBytes;
+        _beforeArchiveMaterialization = beforeArchiveMaterialization;
         _beforePublicationMove = beforePublicationMove;
     }
 
@@ -79,6 +87,7 @@ internal sealed class BaselineBundleReceiver
             VerifyProjectIdentity(declaredToken, target);
             VerifyTransfer(transfer, declaredToken);
             var root = PrepareManagedRoot(target.BaselineRoot);
+            ReclaimIncomingDirectories(root);
             var destination = Path.Combine(root, declaredToken.BundleDigest.Substring("sha256:".Length));
             if (Directory.Exists(destination))
                 return new BaselinePublicationOutcome(
@@ -173,13 +182,70 @@ internal sealed class BaselineBundleReceiver
         return path;
     }
 
+    private void ReclaimIncomingDirectories(string root)
+    {
+        var examined = 0;
+        foreach (var path in Directory.EnumerateFileSystemEntries(
+                     root, ".incoming-*", SearchOption.TopDirectoryOnly))
+        {
+            if (++examined > _maximumEntries)
+                throw new InvalidDataException("Too many incomplete Baseline publications were found.");
+            if (!IsOwnedIncomingName(path))
+                continue;
+            if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+                throw new InvalidDataException("A reparse-point incomplete Baseline publication is refused.");
+            if (!Directory.Exists(path))
+                continue;
+            DeleteIncomingStrict(path);
+        }
+    }
+
+    private static bool IsOwnedIncomingName(string path)
+    {
+        var name = Path.GetFileName(path);
+        const string prefix = ".incoming-";
+        return name.Length == prefix.Length + 32 &&
+            name.StartsWith(prefix, StringComparison.Ordinal) &&
+            name.AsSpan(prefix.Length).ToString().All(Uri.IsHexDigit);
+    }
+
+    private void DeleteIncomingStrict(string path)
+    {
+        var entries = Directory.GetFileSystemEntries(path, "*", SearchOption.TopDirectoryOnly);
+        if (entries.Length > _maximumEntries)
+            throw new InvalidDataException("An incomplete Baseline publication exceeds its cleanup bound.");
+        foreach (var entry in entries)
+        {
+            if ((File.GetAttributes(entry) & FileAttributes.ReparsePoint) != 0)
+                throw new InvalidDataException("A reparse point in an incomplete Baseline publication is refused.");
+            if (File.Exists(entry))
+            {
+                File.Delete(entry);
+                continue;
+            }
+            if (!StringComparer.Ordinal.Equals(Path.GetFileName(entry), "WritingSystemStore"))
+                throw new InvalidDataException("An incomplete Baseline publication has an invalid layout.");
+            var files = Directory.GetFileSystemEntries(entry, "*", SearchOption.TopDirectoryOnly);
+            if (entries.Length + files.Length > _maximumEntries || files.Any(item => !File.Exists(item) ||
+                    (File.GetAttributes(item) & FileAttributes.ReparsePoint) != 0))
+                throw new InvalidDataException("An incomplete Baseline publication exceeds its cleanup bound.");
+            foreach (var file in files)
+                File.Delete(file);
+            Directory.Delete(entry);
+        }
+        Directory.Delete(path);
+    }
+
     private async Task<string> ExtractValidatedAsync(
         string archivePath, string destination, CancellationToken cancellationToken)
     {
         using var stream = new FileStream(archivePath, FileMode.Open, FileAccess.Read, FileShare.None,
-            CopyBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
+            CopyBufferSize, FileOptions.Asynchronous | FileOptions.RandomAccess);
+        var declaredEntries = ValidateCentralDirectoryEnvelope(stream, _maximumEntries);
+        _beforeArchiveMaterialization?.Invoke();
+        stream.Position = 0;
         using var archive = new ZipArchive(stream, ZipArchiveMode.Read, false);
-        if (archive.Entries.Count == 0 || archive.Entries.Count > _maximumEntries)
+        if (archive.Entries.Count != declaredEntries)
             throw new InvalidDataException("The Baseline bundle entry count is invalid.");
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         ZipArchiveEntry? fwData = null;
@@ -191,10 +257,7 @@ internal sealed class BaselineBundleReceiver
             if (IsLinkOrReparsePoint(entry) || !names.Add(entry.FullName) ||
                 !IsAllowedEntry(entry.FullName, out var kind))
                 throw new InvalidDataException("The Baseline bundle contains an unsupported entry.");
-            totalBytes = checked(totalBytes + entry.Length);
-            if (entry.Length < 0 || entry.Length > _maximumExtractedBytes ||
-                totalBytes > _maximumExtractedBytes)
-                throw new InvalidDataException("The Baseline bundle expands beyond its bound.");
+            totalBytes = AddExtractedLength(totalBytes, entry.Length, _maximumExtractedBytes);
             if (kind == EntryKind.FwData)
             {
                 if (fwData is not null)
@@ -214,6 +277,72 @@ internal sealed class BaselineBundleReceiver
         foreach (var entry in writingSystems.OrderBy(item => item.FullName, StringComparer.Ordinal))
             await ExtractEntryAsync(entry, destination, cancellationToken).ConfigureAwait(false);
         return fwDataPath;
+    }
+
+    internal static long AddExtractedLength(long total, long length, long maximum)
+    {
+        if (total < 0 || length < 0 || length > maximum || total > maximum - length)
+            throw new InvalidDataException("The Baseline bundle expands beyond its bound.");
+        return total + length;
+    }
+
+    private static int ValidateCentralDirectoryEnvelope(Stream stream, int maximumEntries)
+    {
+        if (!stream.CanSeek || stream.Length < EndOfCentralDirectoryLength)
+            throw new InvalidDataException("The Baseline bundle has an invalid ZIP envelope.");
+        var tailLength = (int)Math.Min(stream.Length,
+            EndOfCentralDirectoryLength + MaximumZipCommentLength);
+        var tail = new byte[tailLength];
+        stream.Position = stream.Length - tailLength;
+        ReadExactly(stream, tail);
+        var eocd = -1;
+        for (var index = tailLength - EndOfCentralDirectoryLength; index >= 0; index--)
+        {
+            if (BinaryPrimitives.ReadUInt32LittleEndian(tail.AsSpan(index, 4)) !=
+                    EndOfCentralDirectorySignature)
+                continue;
+            var commentLength = BinaryPrimitives.ReadUInt16LittleEndian(tail.AsSpan(index + 20, 2));
+            if (index + EndOfCentralDirectoryLength + commentLength == tailLength)
+            {
+                eocd = index;
+                break;
+            }
+        }
+        if (eocd < 0)
+            throw new InvalidDataException("The Baseline bundle has no valid ZIP end record.");
+        if (eocd >= 20 && BinaryPrimitives.ReadUInt32LittleEndian(tail.AsSpan(eocd - 20, 4)) ==
+                Zip64EndOfCentralDirectoryLocatorSignature)
+            throw new InvalidDataException("ZIP64 Baseline bundles are refused.");
+
+        var disk = BinaryPrimitives.ReadUInt16LittleEndian(tail.AsSpan(eocd + 4, 2));
+        var centralDisk = BinaryPrimitives.ReadUInt16LittleEndian(tail.AsSpan(eocd + 6, 2));
+        var diskEntries = BinaryPrimitives.ReadUInt16LittleEndian(tail.AsSpan(eocd + 8, 2));
+        var totalEntries = BinaryPrimitives.ReadUInt16LittleEndian(tail.AsSpan(eocd + 10, 2));
+        var centralSize = BinaryPrimitives.ReadUInt32LittleEndian(tail.AsSpan(eocd + 12, 4));
+        var centralOffset = BinaryPrimitives.ReadUInt32LittleEndian(tail.AsSpan(eocd + 16, 4));
+        if (disk != 0 || centralDisk != 0 || diskEntries != totalEntries)
+            throw new InvalidDataException("Multi-disk Baseline bundles are refused.");
+        if (totalEntries == ushort.MaxValue || centralSize == uint.MaxValue ||
+            centralOffset == uint.MaxValue)
+            throw new InvalidDataException("ZIP64 Baseline bundles are refused.");
+        if (totalEntries == 0 || totalEntries > maximumEntries)
+            throw new InvalidDataException("The Baseline bundle entry count is invalid.");
+        var eocdOffset = stream.Length - tailLength + eocd;
+        if (centralOffset > eocdOffset || centralSize != eocdOffset - centralOffset)
+            throw new InvalidDataException("The Baseline bundle central directory is invalid.");
+        return totalEntries;
+    }
+
+    private static void ReadExactly(Stream stream, byte[] buffer)
+    {
+        var offset = 0;
+        while (offset < buffer.Length)
+        {
+            var read = stream.Read(buffer, offset, buffer.Length - offset);
+            if (read == 0)
+                throw new InvalidDataException("The Baseline bundle ended before its ZIP record.");
+            offset += read;
+        }
     }
 
     private static bool IsAllowedEntry(string name, out EntryKind kind)
@@ -278,7 +407,9 @@ internal sealed class BaselineBundleReceiver
         var fwData = entries.Where(File.Exists)
             .Where(path => path.EndsWith(".fwdata", StringComparison.OrdinalIgnoreCase)).ToArray();
         var writingSystemRoot = Path.Combine(root, "WritingSystemStore");
-        if (fwData.Length != 1 || !Directory.Exists(writingSystemRoot) ||
+        if (fwData.Length != 1 ||
+            (File.GetAttributes(fwData[0]) & FileAttributes.ReparsePoint) != 0 ||
+            !Directory.Exists(writingSystemRoot) ||
             (File.GetAttributes(writingSystemRoot) & FileAttributes.ReparsePoint) != 0 ||
             Directory.GetFiles(writingSystemRoot, "*.ldml", SearchOption.TopDirectoryOnly).Length == 0 ||
             Directory.GetFileSystemEntries(writingSystemRoot, "*", SearchOption.TopDirectoryOnly).Any(path =>

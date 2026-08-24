@@ -85,71 +85,85 @@ internal sealed class BaselinePublishCommandHandler : IWorkerCommandHandler
             }
             catch (InvalidOperationException)
             {
+                await _transfers.ReleaseClaimAsync(_connectionId, request.TransferId).ConfigureAwait(false);
                 return Response(new BaselinePublishResponse(null, Failure(
                     BaselineFailureCode.TransferUnknown, false,
                     "The Baseline transfer is unknown, invalid, or no longer available.")));
             }
-
-            BaselineRecord? previous;
-            try
-            {
-                previous = runtime.Baselines.GetCurrent(workspaceKey);
-            }
-            catch (Exception exception) when (exception is DbException or IOException or InvalidDataException or
-                InvalidOperationException or UnauthorizedAccessException)
-            {
-                BaselineBundleReceiver.DeleteTransport(transfer.TemporaryPath);
-                return Response(new BaselinePublishResponse(null, Failure(
-                    BaselineFailureCode.PublicationFailed, true,
-                    "The Baseline publication could not be recorded.")));
-            }
-            if (previous is not null &&
-                StringComparer.Ordinal.Equals(previous.Token.BundleDigest, request.Token.BundleDigest) &&
-                previous.Token != request.Token)
-            {
-                BaselineBundleReceiver.DeleteTransport(transfer.TemporaryPath);
-                return Response(new BaselinePublishResponse(null, Failure(
-                    BaselineFailureCode.BundleInvalid, false,
-                    "The Baseline token conflicts with the durable publication.")));
-            }
-            BaselinePublicationOutcome outcome;
-            try
-            {
-                outcome = await _receiver.PublishVerifiedWithOutcomeAsync(
-                    transfer, request.Token, target, cancellationToken).ConfigureAwait(false);
-            }
-            catch (InvalidDataException)
-            {
-                return Response(new BaselinePublishResponse(null, Failure(
-                    BaselineFailureCode.BundleInvalid, false,
-                    "The Baseline bundle failed validation.")));
-            }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
+                await _transfers.ReleaseClaimAsync(_connectionId, request.TransferId).ConfigureAwait(false);
                 return Response(new BaselinePublishResponse(null, Failure(
-                    BaselineFailureCode.PublicationFailed, true,
-                    "The Baseline could not be published.")));
+                    BaselineFailureCode.TransferInvalid, false,
+                    "The Baseline transfer could not be verified.")));
             }
-            var publication = outcome.Publication;
 
-            BaselineRecord durable;
             try
             {
-                durable = _record(runtime, workspaceKey, publication, DateTimeOffset.UtcNow);
-            }
-            catch (Exception exception) when (exception is DbException or IOException or InvalidDataException or
-                InvalidOperationException or UnauthorizedAccessException)
-            {
-                if (outcome.Created &&
-                    !StringComparer.Ordinal.Equals(previous?.Token.BundleDigest, publication.Token.BundleDigest))
-                    BaselineBundleReceiver.DeletePublicationIfOwned(publication, target);
-                return Response(new BaselinePublishResponse(null, Failure(
-                    BaselineFailureCode.PublicationFailed, true,
-                    "The Baseline publication could not be recorded.")));
-            }
+                BaselineRecord? previous;
+                try
+                {
+                    previous = runtime.Baselines.GetCurrent(workspaceKey);
+                }
+                catch (Exception exception) when (exception is DbException or IOException or
+                    InvalidDataException or InvalidOperationException or UnauthorizedAccessException)
+                {
+                    return Response(new BaselinePublishResponse(null, Failure(
+                        BaselineFailureCode.PublicationFailed, true,
+                        "The Baseline publication could not be recorded.")));
+                }
+                if (previous is not null &&
+                    StringComparer.Ordinal.Equals(previous.Token.BundleDigest, request.Token.BundleDigest) &&
+                    previous.Token != request.Token)
+                {
+                    return Response(new BaselinePublishResponse(null, Failure(
+                        BaselineFailureCode.BundleInvalid, false,
+                        "The Baseline token conflicts with the durable publication.")));
+                }
+                BaselinePublicationOutcome outcome;
+                try
+                {
+                    outcome = await _receiver.PublishVerifiedWithOutcomeAsync(
+                        transfer, request.Token, target, cancellationToken).ConfigureAwait(false);
+                }
+                catch (InvalidDataException)
+                {
+                    return Response(new BaselinePublishResponse(null, Failure(
+                        BaselineFailureCode.BundleInvalid, false,
+                        "The Baseline bundle failed validation.")));
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    return Response(new BaselinePublishResponse(null, Failure(
+                        BaselineFailureCode.PublicationFailed, true,
+                        "The Baseline could not be published.")));
+                }
+                var publication = outcome.Publication;
 
-            return Response(new BaselinePublishResponse(
-                new BaselinePublicationResult(workspaceKey, durable.Token), null));
+                BaselineRecord durable;
+                try
+                {
+                    durable = _record(runtime, workspaceKey, publication, DateTimeOffset.UtcNow);
+                }
+                catch (Exception exception) when (exception is DbException or IOException or
+                    InvalidDataException or InvalidOperationException or UnauthorizedAccessException)
+                {
+                    if (outcome.Created && !StringComparer.Ordinal.Equals(
+                            previous?.Token.BundleDigest, publication.Token.BundleDigest))
+                        BaselineBundleReceiver.DeletePublicationIfOwned(publication, target);
+                    return Response(new BaselinePublishResponse(null, Failure(
+                        BaselineFailureCode.PublicationFailed, true,
+                        "The Baseline publication could not be recorded.")));
+                }
+
+                return Response(new BaselinePublishResponse(
+                    new BaselinePublicationResult(workspaceKey, durable.Token), null));
+            }
+            finally
+            {
+                await _transfers.ReleaseClaimAsync(
+                    _connectionId, transfer.TransferId).ConfigureAwait(false);
+            }
         }
     }
 

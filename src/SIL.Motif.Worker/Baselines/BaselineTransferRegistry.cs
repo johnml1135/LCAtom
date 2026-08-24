@@ -14,18 +14,22 @@ internal sealed record VerifiedBinaryTransfer(
 
 internal sealed class BaselineTransferRegistry : IAsyncDisposable
 {
+    private const int ClaimReleaseAttempts = 3;
+    private static readonly TimeSpan ClaimReleaseRetryDelay = TimeSpan.FromMilliseconds(20);
     private readonly string _transferRoot;
     private readonly string _rootPrefix;
     private readonly BinaryTransferServer _binary;
     private readonly IWorkerClock _clock;
     private readonly Action? _onReleaseCandidate;
     private readonly Action? _onReleaseRemoved;
+    private readonly Action<int>? _onClaimReleaseAttempt;
     private readonly ConcurrentDictionary<string, Registration> _registrations =
         new(StringComparer.Ordinal);
     private bool _disposed;
 
     public BaselineTransferRegistry(string transferRoot, BinaryTransferServer binary,
-        IWorkerClock? clock = null, Action? onReleaseCandidate = null, Action? onReleaseRemoved = null)
+        IWorkerClock? clock = null, Action? onReleaseCandidate = null, Action? onReleaseRemoved = null,
+        Action<int>? onClaimReleaseAttempt = null)
     {
         _transferRoot = RequireTransferRoot(transferRoot);
         _rootPrefix = _transferRoot + Path.DirectorySeparatorChar;
@@ -33,6 +37,7 @@ internal sealed class BaselineTransferRegistry : IAsyncDisposable
         _clock = clock ?? new RegistryClock();
         _onReleaseCandidate = onReleaseCandidate;
         _onReleaseRemoved = onReleaseRemoved;
+        _onClaimReleaseAttempt = onClaimReleaseAttempt;
     }
 
     public BinaryTransferOffer CreateOffer(string connectionId, ProjectLocator project,
@@ -119,7 +124,6 @@ internal sealed class BaselineTransferRegistry : IAsyncDisposable
             readyPath = registration.ReadyPath;
             byteCount = registration.ByteCount;
             sha256 = registration.Sha256;
-            _registrations.TryRemove(transferId, out _);
         }
         StopMonitoring(registration);
 
@@ -139,8 +143,51 @@ internal sealed class BaselineTransferRegistry : IAsyncDisposable
         }
         catch
         {
-            DeleteOwnedFile(readyPath);
+            if (TryDeleteOwnedFile(readyPath))
+            {
+                lock (registration.Gate)
+                    registration.State = RegistrationState.Cancelled;
+                _registrations.TryRemove(transferId, out _);
+            }
             throw;
+        }
+    }
+
+    public async Task<bool> ReleaseClaimAsync(string connectionId, string transferId)
+    {
+        RequireConnection(connectionId);
+        if (string.IsNullOrWhiteSpace(transferId) ||
+            !_registrations.TryGetValue(transferId, out var registration))
+            return true;
+        if (!StringComparer.Ordinal.Equals(registration.ConnectionId, connectionId))
+            return false;
+        await registration.CleanupGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            lock (registration.Gate)
+            {
+                if (registration.State != RegistrationState.Claimed || registration.ReadyPath is null)
+                    return false;
+            }
+            for (var attempt = 1; attempt <= ClaimReleaseAttempts; attempt++)
+            {
+                var deleted = TryDeleteOwnedFile(registration.ReadyPath);
+                _onClaimReleaseAttempt?.Invoke(attempt);
+                if (deleted)
+                {
+                    lock (registration.Gate)
+                        registration.State = RegistrationState.Cancelled;
+                    _registrations.TryRemove(transferId, out _);
+                    return true;
+                }
+                if (attempt < ClaimReleaseAttempts)
+                    await Task.Delay(ClaimReleaseRetryDelay).ConfigureAwait(false);
+            }
+            return false;
+        }
+        finally
+        {
+            registration.CleanupGate.Release();
         }
     }
 
@@ -263,20 +310,26 @@ internal sealed class BaselineTransferRegistry : IAsyncDisposable
 
     private void DeleteOwnedFile(string path)
     {
+        _ = TryDeleteOwnedFile(path);
+    }
+
+    private bool TryDeleteOwnedFile(string path)
+    {
         var full = Path.GetFullPath(path);
         if (!full.StartsWith(_rootPrefix, StringComparison.OrdinalIgnoreCase) ||
             !StringComparer.OrdinalIgnoreCase.Equals(Path.GetDirectoryName(full), _transferRoot))
-            return;
+            return false;
         try
         {
             if (!Directory.Exists(_transferRoot) ||
                 (File.GetAttributes(_transferRoot) & FileAttributes.ReparsePoint) != 0)
-                return;
+                return false;
             if (File.Exists(full) && (File.GetAttributes(full) & FileAttributes.ReparsePoint) == 0)
                 File.Delete(full);
+            return !File.Exists(full);
         }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
     }
 
     private static void RequireConnection(string connectionId)
@@ -309,6 +362,7 @@ internal sealed class BaselineTransferRegistry : IAsyncDisposable
         public string? Sha256 { get; set; }
         public CancellationTokenSource ExpiryCancellation { get; } = new();
         public CancellationTokenRegistration ExternalCancellation { get; set; }
+        public SemaphoreSlim CleanupGate { get; } = new(1, 1);
     }
 
     private enum RegistrationState { Offered, Completing, Ready, Claimed, Cancelled }
