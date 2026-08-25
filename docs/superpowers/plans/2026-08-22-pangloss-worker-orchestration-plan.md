@@ -80,18 +80,18 @@ Parser work must stay responsive and predictable even when several projects or W
 - Test: `tests/SIL.Motif.Tests/Worker/MachinePanGlossQueueTests.cs`
 - Test: `tests/SIL.Motif.Tests/Worker/WindowsCpuJobTests.cs`
 
-- [ ] **Step 1: Write controlled-process tests**
+- [x] **Step 1: Write controlled-process tests**
 
 Queue jobs from three projects in one user namespace and prove FIFO admission. Add two simulated user
 namespaces and assert only capacity, not cross-user order: never more than two machine leases, each process
 tree assigned before resume, 25-percent hard cap even with one job, combined cap of 50 percent, child-process
 containment, cancellation, and lease recovery after owner death.
 
-- [ ] **Step 2: Run red**
+- [x] **Step 2: Run red**
 
 Run `./test.ps1`. Expected: machine scheduling types are absent.
 
-- [ ] **Step 3: Implement machine leases and Windows Job Object limits**
+- [x] **Step 3: Implement machine leases and Windows Job Object limits**
 
 ```csharp
 public sealed class MachinePanGlossQueue
@@ -113,7 +113,7 @@ Use the Windows Job Object CPU hard-cap flag at 2500 basis points and kill-on-cl
 through a machine-global primitive plus ownership metadata so independent per-user workers cannot exceed the
 PC total. Do not raise a lone job above 25 percent.
 
-- [ ] **Step 4: Run green and commit**
+- [x] **Step 4: Run green and commit**
 
 Run `./test.ps1`, then:
 
