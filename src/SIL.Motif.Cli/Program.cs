@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using SIL.Motif.Cli;
+using SIL.Motif.Cli.Worker;
 using SIL.Motif.Contract.Canonicalization;
 using SIL.Motif.Projection.Usage;
 
@@ -345,6 +347,13 @@ try
                 : CorpusCommands.ShowCorpus(storeDir, positionals[0], usage);
             break;
 
+        case "store-cutover":
+            if (!flags.TryGetValue("project", out var cutoverProject))
+                return Usage("Usage: motif store-cutover --project <fwdata> [--store <dir>]");
+            result = StoreCommands.CutoverAsync(new LaunchedWorkerCommandSession(), storeDir, cutoverProject,
+                CliProductVersion(), CancellationToken.None).GetAwaiter().GetResult();
+            break;
+
         default:
             Console.Error.WriteLine($"Unknown command '{verb}'.");
             PrintUsage(Console.Error);
@@ -382,6 +391,7 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine();
     writer.WriteLine("Commands:");
     writer.WriteLine("  open <fwdata> [--json]");
+    writer.WriteLine("  store-cutover --project <fwdata> [--store <dir>]");
     writer.WriteLine("  analyses --project <fwdata> [--json]");
     writer.WriteLine(
         "  analyses --project <fwdata> --assessment <assessmentId> --current-corpus-sha256 <sha256> " +
@@ -468,5 +478,9 @@ static (Dictionary<string, string> Flags, List<string> Positionals) ParseArgs(st
 
     return (flags, positionals);
 }
+
+// The version this CLI negotiates with; the worker decides compatibility from the protocol range, not this.
+static string CliProductVersion() =>
+    typeof(Commands).Assembly.GetName().Version?.ToString(3) ?? "1.0.0";
 
 static bool IsTruthyFlag(string value) => !string.Equals(value, "false", StringComparison.OrdinalIgnoreCase);

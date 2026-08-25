@@ -627,7 +627,11 @@ public sealed class WorkerClientTests
             TimeSpan.FromSeconds(5), CancellationToken.None);
         var pending = connection.SendAsync(new WorkerEnvelope("request-1", WorkerCommands.Handshake,
             JsonDocument.Parse("{}").RootElement.Clone(), 1), CancellationToken.None);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => pending);
+
+        await Assert.ThrowsAnyAsync<Exception>(() => pending);
+        // The send's own exception races teardown; the connection's terminal reason does not.
+        var terminal = await Assert.ThrowsAsync<InvalidOperationException>(() => connection.Completion);
+        Assert.Contains("not outstanding", terminal.Message, StringComparison.Ordinal);
         await serverTask.WaitAsync(TimeSpan.FromSeconds(5));
     }
 

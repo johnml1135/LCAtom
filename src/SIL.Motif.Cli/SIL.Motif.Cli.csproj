@@ -12,6 +12,7 @@
     <ProjectReference Include="..\SIL.Motif.Host\SIL.Motif.Host.csproj" />
     <ProjectReference Include="..\SIL.Motif.Runner\SIL.Motif.Runner.csproj" />
     <ProjectReference Include="..\SIL.Motif.Client\SIL.Motif.Client.csproj" />
+    <ProjectReference Include="..\SIL.Motif.Launcher\SIL.Motif.Launcher.csproj" />
     <ProjectReference Include="..\SIL.Motif.Contract\SIL.Motif.Contract.csproj" />
     <ProjectReference Include="..\SIL.Motif.Model\SIL.Motif.Model.csproj" />
     <ProjectReference Include="..\SIL.Motif.Projection\SIL.Motif.Projection.csproj" />

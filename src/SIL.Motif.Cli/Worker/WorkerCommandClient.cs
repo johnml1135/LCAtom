@@ -42,8 +42,9 @@ public sealed class WorkerCommandUnavailableException : InvalidOperationExceptio
 /// </para>
 /// <para>
 /// It is not a substitute for the worker's own refusal. This client checks what it can see -- the closed
-/// command registry and the capabilities negotiated for this connection -- and the worker still refuses
-/// anything it will not act on, including payloads only it can judge.
+/// command registry and the capabilities negotiated for this connection -- while the worker refuses what
+/// only it can judge, such as a malformed payload, pinned by
+/// `AWorkerRefusalSurfacesTypedAndLeavesTheConnectionUsable`.
 /// </para>
 /// </remarks>
 public sealed class WorkerCommandClient
