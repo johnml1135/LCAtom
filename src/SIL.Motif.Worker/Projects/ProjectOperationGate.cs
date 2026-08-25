@@ -23,6 +23,21 @@ public sealed class ProjectOperationGate : IDisposable
     public Task<IDisposable> AcquireExclusiveAsync(CancellationToken cancellationToken = default) =>
         AcquireAsync(true, cancellationToken);
 
+    /// <summary>Tries to acquire a shared operation lease immediately, without waiting or queuing.</summary>
+    public bool TryAcquireOperation(out IDisposable lease)
+    {
+        lock (_sync)
+        {
+            if (_disposed || !CanEnterImmediately(false))
+            {
+                lease = null!;
+                return false;
+            }
+            lease = Enter(false);
+            return true;
+        }
+    }
+
     /// <summary>Stops admission, faults waiters, and waits for granted leases to leave.</summary>
     public void Dispose()
     {

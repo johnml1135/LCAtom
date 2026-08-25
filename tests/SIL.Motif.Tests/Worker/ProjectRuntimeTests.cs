@@ -134,6 +134,42 @@ public sealed class ProjectRuntimeTests : IDisposable
     }
 
     [Fact]
+    public void TryAcquireOperationGrantsALeaseWhenTheGateIsFree()
+    {
+        using var gate = new ProjectOperationGate();
+
+        Assert.True(gate.TryAcquireOperation(out var lease));
+        lease.Dispose();
+    }
+
+    [Fact]
+    public async Task TryAcquireOperationFailsWhileExclusiveIsHeldAndSucceedsAfterItIsReleased()
+    {
+        using var gate = new ProjectOperationGate();
+        var exclusive = await gate.AcquireExclusiveAsync(CancellationToken.None);
+
+        Assert.False(gate.TryAcquireOperation(out var busyLease));
+        Assert.Null(busyLease);
+
+        exclusive.Dispose();
+        Assert.True(gate.TryAcquireOperation(out var freeLease));
+        freeLease.Dispose();
+    }
+
+    [Fact]
+    public async Task TryAcquireOperationFailureDoesNotCorruptALaterBlockingAcquire()
+    {
+        using var gate = new ProjectOperationGate();
+        var exclusive = await gate.AcquireExclusiveAsync(CancellationToken.None);
+        Assert.False(gate.TryAcquireOperation(out _));
+
+        var blockingShared = gate.AcquireOperationAsync(CancellationToken.None);
+        Assert.False(blockingShared.IsCompleted);
+        exclusive.Dispose();
+        using var sharedLease = await blockingShared.WaitAsync(TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
     public async Task RuntimeDisposeWaitsForAnActiveOperationBeforeClosingTheDatabase()
     {
         var project = Project("C:/workspace/dispose-active.fwdata", "project");
@@ -223,6 +259,22 @@ public sealed class ProjectRuntimeTests : IDisposable
             runtime.AcquireOperationAsync(CancellationToken.None));
         var reopened = registry.GetOrOpen(project);
         Assert.NotSame(runtime, reopened);
+    }
+
+    [Fact]
+    public async Task TryReleaseIfIdleReturnsFalseWithoutBlockingWhileExclusiveLeaseIsHeld()
+    {
+        var project = Project("C:/workspace/exclusive-idle.fwdata", "project");
+        using var work = new WorkerWorkTracker();
+        using var registry = Registry(work);
+        var runtime = registry.GetOrOpen(project);
+        var exclusive = await runtime.AcquireExclusiveAsync(CancellationToken.None);
+
+        var releasing = Task.Run(() => registry.TryReleaseIfIdle(runtime.WorkspaceKey));
+        Assert.False(await releasing.WaitAsync(TimeSpan.FromSeconds(5)));
+
+        exclusive.Dispose();
+        Assert.True(registry.TryReleaseIfIdle(runtime.WorkspaceKey));
     }
 
     [Fact]

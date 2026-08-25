@@ -153,6 +153,32 @@ public sealed class ProjectRuntime : IDisposable
         return true;
     }
 
+    /// <summary>Refreshes the keepalive lease without waiting when the operation gate is busy.</summary>
+    internal bool TryRefreshWorkLease()
+    {
+        lock (_state)
+        {
+            if (_disposed || Admission is ProjectRuntimeAdmission.Rejected or ProjectRuntimeAdmission.Disposed)
+                return false;
+        }
+        if (!TryAcquireOperationLease(out var operation)) return false;
+        using (operation) RefreshWorkLeaseCore();
+        return true;
+    }
+
+    private bool TryAcquireOperationLease(out IDisposable lease)
+    {
+        EnterAdmission();
+        if (_operations.TryAcquireOperation(out var gateLease))
+        {
+            lease = new OperationLease(this, gateLease);
+            return true;
+        }
+        ExitAdmission();
+        lease = null!;
+        return false;
+    }
+
     internal void RefreshWorkLeaseDuringRecovery()
     {
         lock (_state)
@@ -192,7 +218,7 @@ public sealed class ProjectRuntime : IDisposable
 
     internal bool TryBeginReleaseIfIdle()
     {
-        if (!RefreshWorkLease()) return false;
+        if (!TryRefreshWorkLease()) return false;
         lock (_state)
         {
             if (_disposed || _draining || _activeOperations != 0 || _workLease is not null ||
