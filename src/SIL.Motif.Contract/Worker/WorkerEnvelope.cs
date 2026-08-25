@@ -12,6 +12,8 @@ public sealed record WorkerEnvelope
     {
         RequestId = WorkerProtocolValidation.Identifier(requestId, nameof(requestId));
         Command = WorkerCommands.RequireKnown(command);
+        if (payload.ValueKind == JsonValueKind.Undefined)
+            throw new ArgumentException("A command payload is required.", nameof(payload));
         Payload = payload.Clone();
         ProtocolVersion = ValidateProtocolVersion(protocolVersion);
     }

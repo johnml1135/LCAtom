@@ -99,7 +99,7 @@ public sealed class WorkerJobStatusIntegrationTests
     }
 
     [Fact]
-    public async Task CapabilityMismatchClosesBeforeDatabaseDispatch()
+    public async Task CapabilityMismatchIsRefusedBeforeDatabaseDispatch()
     {
         await using var server = WorkerServer.CreateForTests("worker-job-status-capability-" + Guid.NewGuid().ToString("N"));
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
@@ -108,8 +108,56 @@ public sealed class WorkerJobStatusIntegrationTests
             new WorkerHandshakeRequest("test-client", "1.0.0", new ProtocolRange(1, 1),
                 Array.Empty<string>()), TimeSpan.FromSeconds(5), cancellation.Token);
 
-        await Assert.ThrowsAnyAsync<Exception>(() => new WorkerJobClient(connection).GetStatusAsync(
-            new ProjectLocator("C:\\workspace\\demo.fwdata", "project"), "job-1", cancellation.Token));
+        var refused = await Assert.ThrowsAsync<WorkerRequestRefusedException>(() =>
+            new WorkerJobClient(connection).GetStatusAsync(
+                new ProjectLocator("C:\\workspace\\demo.fwdata", "project"), "job-1", cancellation.Token));
+
+        Assert.Equal(WorkerRefusalReason.CapabilityNotNegotiated, refused.Reason);
+
+        cancellation.Cancel();
+        await running.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task MalformedPayloadIsRefusedAndTheSameConnectionStillAnswers()
+    {
+        using var temporary = new TemporaryRoot("motif-job-status-refused-");
+        var root = temporary.RootPath;
+        await using var server = WorkerServer.CreateForTests("worker-job-status-refused-" + Guid.NewGuid().ToString("N"), false);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var ownership = WorkspaceOwnership.Bootstrap(Path.Combine(root, "owned"));
+        var catalog = new ProjectDatabaseCatalog(MotifSchema.CurrentSchema, new Version(1, 0));
+        using var runtimes = server.CreateRuntimeRegistry(catalog,
+            (jobs, key) => new WorkerRecoveryCoordinator(new WorkerRecovery(jobs),
+                new WorkspaceCleaner(ownership)));
+        var project = new ProjectLocator(Path.Combine(root, "demo.fwdata"), "fieldworks-project");
+        var runtime = runtimes.GetOrOpen(project);
+        JobRecord record;
+        using (var operation = await runtime.AcquireOperationAsync(cancellation.Token))
+        {
+            record = runtime.Jobs.Create("job-1", runtime.WorkspaceKey, "dry-run", "{}",
+                "2026-08-23T12:00:00Z");
+        }
+
+        var running = server.StartAsync(cancellation.Token);
+        using var connection = await new WorkerClient().ConnectAsync(server.EndpointName,
+            new WorkerHandshakeRequest("test-client", "1.0.0", new ProtocolRange(1, 1),
+                new[] { "jobs.v1" }), TimeSpan.FromSeconds(5), cancellation.Token);
+
+        // The relative path is refused inside the handler's own deserialization, past every wire-level check.
+        using var malformed = JsonDocument.Parse(
+            "{\"Project\":{\"FullFwDataPath\":\"demo.fwdata\",\"FieldWorksProjectIdentity\":\"p\"}," +
+            "\"JobId\":\"job-1\"}");
+        var refused = await Assert.ThrowsAsync<WorkerRequestRefusedException>(() => connection.SendAsync(
+            new WorkerEnvelope("request-1", WorkerCommands.JobStatus, malformed.RootElement.Clone(), 1),
+            cancellation.Token));
+
+        Assert.Equal(WorkerRefusalReason.MalformedPayload, refused.Reason);
+
+        var status = await new WorkerJobClient(connection).GetStatusAsync(project, record.JobId, cancellation.Token);
+
+        Assert.True(status.Found);
+        Assert.Equal(record.JobId, status.JobId);
 
         cancellation.Cancel();
         await running.WaitAsync(TimeSpan.FromSeconds(5));

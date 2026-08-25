@@ -39,6 +39,23 @@ public sealed class WorkerRequestQueueOverflowException : InvalidOperationExcept
     public int Capacity { get; }
 }
 
+/// <summary>
+/// Signals that the worker refused one request and kept the connection open. Every other outstanding request
+/// on the same connection is unaffected, so a caller may correct the refused request and send it again.
+/// </summary>
+public sealed class WorkerRequestRefusedException : InvalidOperationException
+{
+    /// <summary>Creates an exception reporting the worker's closed refusal reason.</summary>
+    public WorkerRequestRefusedException(WorkerRefusalReason reason)
+        : base("The worker refused the request: " + reason + ".")
+    {
+        Reason = reason;
+    }
+
+    /// <summary>The worker's reason for refusing.</summary>
+    public WorkerRefusalReason Reason { get; }
+}
+
 /// <summary>Multiplexes correlated control requests and worker events over one pipe.</summary>
 public sealed class WorkerConnection : IDisposable
 {
@@ -183,6 +200,12 @@ public sealed class WorkerConnection : IDisposable
             await WriteControlAsync(request, cancellationToken).ConfigureAwait(false);
             return await completion.Task.ConfigureAwait(false);
         }
+        catch (WorkerRequestRefusedException)
+        {
+            lock (_stateGate)
+                _pending.Remove(request.RequestId);
+            throw;
+        }
         catch (Exception exception)
         {
             lock (_stateGate)
@@ -267,6 +290,7 @@ public sealed class WorkerConnection : IDisposable
             {
                 var frame = await WorkerFrame.ReadAsync(_stream, _shutdownCancellation.Token).ConfigureAwait(false);
                 using var document = JsonDocument.Parse(frame);
+                TaskCompletionSource<WorkerEnvelope> completion;
                 if (document.RootElement.TryGetProperty("EventId", out _))
                 {
                     var eventEnvelope = WorkerFrame.Deserialize<WorkerEventEnvelope>(frame);
@@ -287,21 +311,34 @@ public sealed class WorkerConnection : IDisposable
                     continue;
                 }
 
-                var response = WorkerFrame.Deserialize<WorkerEnvelope>(frame);
-                TaskCompletionSource<WorkerEnvelope>? completion;
-                lock (_stateGate)
+                if (document.RootElement.TryGetProperty("Refusal", out _))
                 {
-                    ThrowIfClosed();
-                    if (!_pending.TryGetValue(response.RequestId, out completion))
-                        throw new InvalidOperationException("The worker response identifier is not outstanding.");
-                    _pending.Remove(response.RequestId);
+                    var refusal = WorkerFrame.Deserialize<WorkerRefusalEnvelope>(frame);
+                    completion = TakePending(refusal.RequestId);
+                    completion.TrySetException(new WorkerRequestRefusedException(refusal.Refusal));
+                    continue;
                 }
+
+                var response = WorkerFrame.Deserialize<WorkerEnvelope>(frame);
+                completion = TakePending(response.RequestId);
                 completion.TrySetResult(response);
             }
         }
         catch (Exception exception)
         {
             Close(exception);
+        }
+    }
+
+    private TaskCompletionSource<WorkerEnvelope> TakePending(string requestId)
+    {
+        lock (_stateGate)
+        {
+            ThrowIfClosed();
+            if (!_pending.TryGetValue(requestId, out var completion))
+                throw new InvalidOperationException("The worker response identifier is not outstanding.");
+            _pending.Remove(requestId);
+            return completion;
         }
     }
 

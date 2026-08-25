@@ -379,6 +379,33 @@ public sealed class WorkerProtocolTests
     }
 
     [Fact]
+    public void Refusal_ValidatesItsIdentifierReasonAndProtocolLikeEveryOtherFrame()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            new WorkerRefusalEnvelope(" ", WorkerRefusalReason.MalformedPayload, 1));
+        Assert.Throws<ArgumentException>(() =>
+            new WorkerRefusalEnvelope("request\u0001", WorkerRefusalReason.MalformedPayload, 1));
+        Assert.Throws<ArgumentException>(() =>
+            new WorkerRefusalEnvelope(new string('x', 257), WorkerRefusalReason.MalformedPayload, 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new WorkerRefusalEnvelope("request-1", (WorkerRefusalReason)99, 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new WorkerRefusalEnvelope("request-1", WorkerRefusalReason.MalformedPayload, 0));
+    }
+
+    [Fact]
+    public void Refusal_RoundTripsItsReasonAsAName()
+    {
+        var refusal = new WorkerRefusalEnvelope("request-1", WorkerRefusalReason.CapabilityNotNegotiated, 2);
+
+        var json = JsonSerializer.Serialize(refusal, WorkerJson.CreateOptions());
+        var restored = JsonSerializer.Deserialize<WorkerRefusalEnvelope>(json, WorkerJson.CreateOptions());
+
+        Assert.Contains("\"CapabilityNotNegotiated\"", json);
+        Assert.Equal(refusal, restored);
+    }
+
+    [Fact]
     public void ProductVersion_DoesNotDecideCompatibility()
     {
         var request = new WorkerHandshakeRequest(

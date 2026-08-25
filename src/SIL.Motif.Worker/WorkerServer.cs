@@ -502,43 +502,114 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
             while (!cancellationToken.IsCancellationRequested)
             {
                 var frame = await WorkerWire.ReadAsync(_stream, cancellationToken).ConfigureAwait(false);
-                using var document = JsonDocument.Parse(frame);
-                if (document.RootElement.TryGetProperty("EventId", out _) &&
-                    document.RootElement.TryGetProperty("Outcome", out _))
-                {
-                    _eventSink.AcceptResult(WorkerWire.Deserialize<WorkerEventResultEnvelope>(frame), Id);
-                    continue;
-                }
-                if (!document.RootElement.TryGetProperty("Command", out var command))
-                {
-                    if (document.RootElement.TryGetProperty("EventId", out _))
-                        throw new InvalidDataException("A worker event result is not a client command.");
-                    if (!HasBinaryCompletionProperties(document.RootElement))
-                        throw new InvalidDataException("A worker request command is required.");
-                    var completion = WorkerWire.Deserialize<BinaryTransferCompletion>(frame);
-                    await _baselineTransfers.CompleteAsync(Id, completion, cancellationToken)
-                        .ConfigureAwait(false);
-                    continue;
-                }
-                var request = WorkerWire.Deserialize<WorkerEnvelope>(frame);
-                if (request.ProtocolVersion != _protocolVersion)
-                    throw new InvalidDataException("The request protocol does not match negotiation.");
-                if (string.Equals(request.Command, WorkerCommands.Handshake, StringComparison.Ordinal))
-                {
-                    await WriteSerializedAsync(new WorkerEnvelope(
-                        request.RequestId, WorkerCommands.Handshake, EmptyPayload(), _protocolVersion), cancellationToken)
-                        .ConfigureAwait(false);
-                    continue;
-                }
-                var capability = WorkerCommands.RequiredCapability(request.Command);
-                if (capability is not null && !_capabilities.Contains(capability))
-                    throw new InvalidDataException("The command capability was not negotiated.");
-                var payload = await _dispatcher.DispatchAsync(request.Command, request.Payload, cancellationToken)
-                    .ConfigureAwait(false);
-                await WriteSerializedAsync(new WorkerEnvelope(
-                    request.RequestId, request.Command, payload, _protocolVersion), cancellationToken)
-                    .ConfigureAwait(false);
+                var refusal = await ReadOneAsync(frame, cancellationToken).ConfigureAwait(false);
+                if (refusal is not null)
+                    await WriteSerializedAsync(refusal, cancellationToken).ConfigureAwait(false);
             }
+        }
+
+        /// A frame this connection can name a request for is refused; anything else still ends the connection.
+        private async Task<WorkerRefusalEnvelope?> ReadOneAsync(byte[] frame, CancellationToken cancellationToken)
+        {
+            try
+            {
+                await DispatchFrameAsync(frame, cancellationToken).ConfigureAwait(false);
+                return null;
+            }
+            catch (Exception exception)
+            {
+                var reason = Classify(exception);
+                var refusal = reason is null ? null : TryRefuse(frame, reason.Value);
+                if (refusal is null)
+                    throw;
+                return refusal;
+            }
+        }
+
+        private async Task DispatchFrameAsync(byte[] frame, CancellationToken cancellationToken)
+        {
+            using var document = JsonDocument.Parse(frame);
+            if (document.RootElement.TryGetProperty("EventId", out _) &&
+                document.RootElement.TryGetProperty("Outcome", out _))
+            {
+                _eventSink.AcceptResult(WorkerWire.Deserialize<WorkerEventResultEnvelope>(frame), Id);
+                return;
+            }
+            if (!document.RootElement.TryGetProperty("Command", out var command))
+            {
+                if (document.RootElement.TryGetProperty("EventId", out _))
+                    throw new InvalidDataException("A worker event result is not a client command.");
+                if (!HasBinaryCompletionProperties(document.RootElement))
+                    throw new InvalidDataException("A worker request command is required.");
+                var completion = WorkerWire.Deserialize<BinaryTransferCompletion>(frame);
+                await _baselineTransfers.CompleteAsync(Id, completion, cancellationToken)
+                    .ConfigureAwait(false);
+                return;
+            }
+            // Naming the command before deserialization keeps an unknown one distinct from a bad payload.
+            if (command.ValueKind != JsonValueKind.String || !WorkerCommands.IsKnown(command.GetString()))
+                throw new RefusedRequestException(WorkerRefusalReason.UnknownCommand);
+            var request = WorkerWire.Deserialize<WorkerEnvelope>(frame);
+            if (request.ProtocolVersion != _protocolVersion)
+                throw new RefusedRequestException(WorkerRefusalReason.ProtocolMismatch);
+            if (string.Equals(request.Command, WorkerCommands.Handshake, StringComparison.Ordinal))
+            {
+                await WriteSerializedAsync(new WorkerEnvelope(
+                    request.RequestId, WorkerCommands.Handshake, EmptyPayload(), _protocolVersion), cancellationToken)
+                    .ConfigureAwait(false);
+                return;
+            }
+            var capability = WorkerCommands.RequiredCapability(request.Command);
+            if (capability is not null && !_capabilities.Contains(capability))
+                throw new RefusedRequestException(WorkerRefusalReason.CapabilityNotNegotiated);
+            if (!_dispatcher.Handles(request.Command))
+                throw new RefusedRequestException(WorkerRefusalReason.UnknownCommand);
+            var payload = await _dispatcher.DispatchAsync(request.Command, request.Payload, cancellationToken)
+                .ConfigureAwait(false);
+            await WriteSerializedAsync(new WorkerEnvelope(
+                request.RequestId, request.Command, payload, _protocolVersion), cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        /// Transport, cancellation and disposal failures map to null, which keeps them fatal to the connection.
+        private static WorkerRefusalReason? Classify(Exception exception) => exception switch
+        {
+            RefusedRequestException refused => refused.Reason,
+            JsonException or ArgumentException or InvalidDataException or FormatException =>
+                WorkerRefusalReason.MalformedPayload,
+            _ => null,
+        };
+
+        /// A refusal no caller can correlate says nothing, so an unusable request id declines to refuse.
+        private WorkerRefusalEnvelope? TryRefuse(byte[] frame, WorkerRefusalReason reason)
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(frame);
+                if (!document.RootElement.TryGetProperty("RequestId", out var value) ||
+                    value.ValueKind != JsonValueKind.String)
+                    return null;
+                return new WorkerRefusalEnvelope(value.GetString()!, reason, _protocolVersion);
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
+            catch (ArgumentException)
+            {
+                return null;
+            }
+        }
+
+        private sealed class RefusedRequestException : Exception
+        {
+            public RefusedRequestException(WorkerRefusalReason reason)
+                : base("The worker request was refused.")
+            {
+                Reason = reason;
+            }
+
+            public WorkerRefusalReason Reason { get; }
         }
 
         public async ValueTask DisposeAsync()

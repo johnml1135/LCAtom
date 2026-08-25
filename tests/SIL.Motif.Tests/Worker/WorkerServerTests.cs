@@ -392,7 +392,7 @@ public sealed class WorkerServerTests
     }
 
     [Fact]
-    public async Task UnknownCommandAfterHandshakeClosesBeforeDispatch()
+    public async Task FrameWithoutARequestIdentifierClosesBecauseNoRefusalCouldBeCorrelated()
     {
         var name = "worker-test-" + Guid.NewGuid().ToString("N");
         await using var server = WorkerServer.CreateForTests(name);
@@ -406,6 +406,53 @@ public sealed class WorkerServerTests
         await WriteFrameAsync(pipe, "{\"Command\":\"unknown\",\"ProtocolVersion\":1}");
         var read = new byte[1];
         Assert.Equal(0, await pipe.ReadAsync(read, cancellation.Token));
+        cancellation.Cancel();
+        await running.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Theory]
+    [InlineData("{\"RequestId\":\"request-1\",\"Command\":\"unknown\",\"Payload\":{},\"ProtocolVersion\":1}",
+        WorkerRefusalReason.UnknownCommand)]
+    [InlineData("{\"RequestId\":\"request-1\",\"Command\":7,\"Payload\":{},\"ProtocolVersion\":1}",
+        WorkerRefusalReason.UnknownCommand)]
+    [InlineData("{\"RequestId\":\"request-1\",\"Command\":\"job.status\",\"Payload\":{},\"ProtocolVersion\":1}",
+        WorkerRefusalReason.CapabilityNotNegotiated)]
+    [InlineData("{\"RequestId\":\"request-1\",\"Command\":\"job.status\",\"Payload\":{},\"ProtocolVersion\":2}",
+        WorkerRefusalReason.ProtocolMismatch)]
+    [InlineData("{\"RequestId\":\"request-1\",\"Command\":\"job.status\",\"ProtocolVersion\":1}",
+        WorkerRefusalReason.MalformedPayload)]
+    public async Task AddressableBadRequestIsRefusedAndTheConnectionKeepsServing(
+        string frame, WorkerRefusalReason expected)
+    {
+        var name = "worker-test-" + Guid.NewGuid().ToString("N");
+        await using var server = WorkerServer.CreateForTests(name);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var running = server.StartAsync(cancellation.Token);
+        using var pipe = new NamedPipeClientStream(".", server.EndpointName, PipeDirection.InOut,
+            PipeOptions.Asynchronous);
+        await pipe.ConnectAsync(5000, cancellation.Token);
+        await WriteFrameAsync(pipe, JsonSerializer.Serialize(Handshake()));
+        _ = await ReadFrameAsync(pipe, cancellation.Token);
+
+        await WriteFrameAsync(pipe, frame);
+        var refusal = JsonSerializer.Deserialize<WorkerRefusalEnvelope>(
+            await ReadFrameAsync(pipe, cancellation.Token), WorkerJson.CreateOptions());
+
+        Assert.NotNull(refusal);
+        Assert.Equal("request-1", refusal!.RequestId);
+        Assert.Equal(expected, refusal.Refusal);
+        Assert.Equal(1, refusal.ProtocolVersion);
+
+        // A refusal that quietly poisoned the connection would still satisfy every assertion above.
+        await WriteFrameAsync(pipe, JsonSerializer.Serialize(new WorkerEnvelope(
+            "request-2", WorkerCommands.Handshake, EmptyPayload(), 1), WorkerJson.CreateOptions()));
+        var answer = JsonSerializer.Deserialize<WorkerEnvelope>(
+            await ReadFrameAsync(pipe, cancellation.Token), WorkerJson.CreateOptions());
+
+        Assert.NotNull(answer);
+        Assert.Equal("request-2", answer!.RequestId);
+        Assert.Equal(WorkerCommands.Handshake, answer.Command);
+
         cancellation.Cancel();
         await running.WaitAsync(TimeSpan.FromSeconds(5));
     }
@@ -1140,6 +1187,9 @@ public sealed class WorkerServerTests
         });
         return process ?? throw new InvalidOperationException("The worker process did not start.");
     }
+
+    private static JsonElement EmptyPayload() =>
+        JsonDocument.Parse("{}").RootElement.Clone();
 
     private static WorkerHandshakeRequest Handshake() => new WorkerHandshakeRequest(
         "test-client", "1.0.0", new ProtocolRange(1, 1), Array.Empty<string>());

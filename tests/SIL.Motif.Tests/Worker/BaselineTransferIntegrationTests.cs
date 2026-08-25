@@ -808,7 +808,11 @@ public sealed class BaselineTransferIntegrationTests : IDisposable
         await WorkerWire.WriteAsync(pipe, Envelope("offer", WorkerCommands.BaselineOffer,
             new BaselineOfferRequest(Project("capability"))), cancellation.Token);
 
-        await Assert.ThrowsAnyAsync<Exception>(() => WorkerWire.ReadAsync(pipe, cancellation.Token));
+        var refusal = WorkerWire.Deserialize<WorkerRefusalEnvelope>(
+            await WorkerWire.ReadAsync(pipe, cancellation.Token));
+
+        Assert.Equal("offer", refusal.RequestId);
+        Assert.Equal(WorkerRefusalReason.CapabilityNotNegotiated, refusal.Refusal);
 
         cancellation.Cancel();
         await running.WaitAsync(TimeSpan.FromSeconds(5));
@@ -831,7 +835,11 @@ public sealed class BaselineTransferIntegrationTests : IDisposable
         await WorkerWire.WriteAsync(pipe, Envelope("publish", WorkerCommands.BaselinePublish,
             new BaselinePublishRequest(project, "transfer", Token(project, bytes))), cancellation.Token);
 
-        await Assert.ThrowsAnyAsync<Exception>(() => WorkerWire.ReadAsync(pipe, cancellation.Token));
+        var refusal = WorkerWire.Deserialize<WorkerRefusalEnvelope>(
+            await WorkerWire.ReadAsync(pipe, cancellation.Token));
+
+        Assert.Equal("publish", refusal.RequestId);
+        Assert.Equal(WorkerRefusalReason.CapabilityNotNegotiated, refusal.Refusal);
 
         cancellation.Cancel();
         await running.WaitAsync(TimeSpan.FromSeconds(5));

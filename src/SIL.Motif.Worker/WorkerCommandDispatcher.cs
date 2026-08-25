@@ -40,6 +40,9 @@ public sealed class WorkerCommandDispatcher
         _handlers = map;
     }
 
+    /// <summary>Returns whether this worker composed a handler for a command.</summary>
+    public bool Handles(string command) => command is not null && _handlers.ContainsKey(command);
+
     /// <summary>Dispatches a registered command.</summary>
     public Task<JsonElement> DispatchAsync(string command, JsonElement payload,
         CancellationToken cancellationToken)

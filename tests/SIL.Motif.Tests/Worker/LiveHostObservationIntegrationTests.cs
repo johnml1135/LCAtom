@@ -109,7 +109,11 @@ public sealed class LiveHostObservationIntegrationTests : IDisposable
         await WorkerWire.WriteAsync(pipe, new WorkerEnvelope("request", WorkerCommands.LiveHostRegister,
             document.RootElement.Clone(), 1), cancellation.Token);
 
-        await Assert.ThrowsAnyAsync<Exception>(() => WorkerWire.ReadAsync(pipe, cancellation.Token));
+        var refusal = WorkerWire.Deserialize<WorkerRefusalEnvelope>(
+            await WorkerWire.ReadAsync(pipe, cancellation.Token));
+
+        Assert.Equal("request", refusal.RequestId);
+        Assert.Equal(WorkerRefusalReason.CapabilityNotNegotiated, refusal.Refusal);
         cancellation.Cancel();
         await running.WaitAsync(TimeSpan.FromSeconds(5));
     }
