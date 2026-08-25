@@ -134,7 +134,7 @@ parser evidence.
 - Modify: `src/SIL.Motif.Worker/Store/MotifSchema.cs`
 - Test: `tests/SIL.Motif.Tests/Worker/DryRunAssessmentPipelineTests.cs`
 
-- [ ] **Step 1: Write pipeline outcome tests**
+- [x] **Step 1: Write pipeline outcome tests**
 
 Assert Assessment defaults on, `--no-assessment` stops after Dry Run, scratch disposal occurs immediately
 after export, the next project Dry Run begins while prior PanGloss runs, late results bind exact intent and
@@ -143,11 +143,11 @@ Baseline, poor linguistic results complete normally, tool failure yields
 `completed-dry-run-only`. Cancel during export or Assessment, retain the published Dry Run, mark the pipeline
 job cancelled and Assessment disposition cancelled, and delete the candidate workspace.
 
-- [ ] **Step 2: Run red**
+- [x] **Step 2: Run red**
 
 Run `./test.ps1`. Expected: pipeline coordinator is absent.
 
-- [ ] **Step 3: Implement durable stage boundaries**
+- [x] **Step 3: Implement durable stage boundaries**
 
 ```csharp
 public sealed record DryRunAssessmentRequest(
@@ -168,7 +168,7 @@ public sealed class DryRunAssessmentPipeline
 Run before export/Assessment. Store immutable Assessment and bounded log only after complete parse. Never
 persist the engine or retry deterministic PanGloss refusal automatically.
 
-- [ ] **Step 4: Run green and commit**
+- [x] **Step 4: Run green and commit**
 
 Run `./test.ps1`, then:
 
