@@ -186,16 +186,16 @@ Large parser inputs and engine work should disappear as soon as their small dura
 - Modify: `src/SIL.Motif.Worker/Jobs/WorkerRecovery.cs`
 - Test: `tests/SIL.Motif.Tests/Worker/PanGlossWorkspaceTests.cs`
 
-- [ ] **Step 1: Write terminal and startup cleanup tests**
+- [x] **Step 1: Write terminal and startup cleanup tests**
 
 Cover success, failure, cancellation, worker crash, locked file, and malicious path escape. Assert result and
 bounded log remain durable while candidate export, engine work, and partial output disappear.
 
-- [ ] **Step 2: Run red**
+- [x] **Step 2: Run red**
 
 Run `./test.ps1`. Expected: workspace ownership API is absent.
 
-- [ ] **Step 3: Implement owned workspace cleanup**
+- [x] **Step 3: Implement owned workspace cleanup**
 
 ```csharp
 public sealed class PanGlossWorkspace : IDisposable
@@ -209,7 +209,7 @@ Create under the verified worker `work` root with an ownership marker. On startu
 PanGloss workspace before requeueing safe jobs. Failure to delete becomes a bounded diagnostic and next-start
 retry, never retention under the 30-day archive policy.
 
-- [ ] **Step 4: Run green and commit**
+- [x] **Step 4: Run green and commit**
 
 Run `./test.ps1`, then:
 
