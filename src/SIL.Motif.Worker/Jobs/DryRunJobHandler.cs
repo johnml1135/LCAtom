@@ -85,7 +85,7 @@ internal sealed class DryRunJobHandler
         }
 
         var freshness = _freshnessTrackers(workspaceKey)?.Check(baseline.Token) ?? BaselineFreshness.CurrentnessNotChecked;
-        var publishedJson = JsonSerializer.Serialize(BuildPublishedDryRun(dryRun!), WorkerJson.CreateOptions());
+        var publishedJson = BuildPublishedDryRunJson(dryRun!);
         var beforePublish = _jobs.Get(jobId)!;
         var published = _jobs.PublishDryRun(jobId, publishedJson, beforePublish.Version);
         var completionJson = JsonSerializer.Serialize(
@@ -93,6 +93,10 @@ internal sealed class DryRunJobHandler
             WorkerJson.CreateOptions());
         _jobs.Transition(published, JobStatus.CompletedDryRunOnly, completionJson);
     }
+
+    /// <summary>The canonical published-Dry-Run wire shape, shared with <see cref="DryRunAssessmentPipeline"/>.</summary>
+    internal static string BuildPublishedDryRunJson(DryRunModel dryRun) =>
+        JsonSerializer.Serialize(BuildPublishedDryRun(dryRun), WorkerJson.CreateOptions());
 
     private static PublishedDryRun BuildPublishedDryRun(DryRunModel dryRun)
     {
