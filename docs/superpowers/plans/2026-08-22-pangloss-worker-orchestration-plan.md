@@ -28,17 +28,17 @@ PanGloss should receive everything it needs once, then finish without keeping th
 - Modify: `src/SIL.Motif.Host/Parser/PanGlossParser.cs`
 - Test: `tests/SIL.Motif.Tests/Parser/PanGlossCandidateExportTests.cs`
 
-- [ ] **Step 1: Write contract tests with a fake PanGloss executable**
+- [x] **Step 1: Write contract tests with a fake PanGloss executable**
 
 Assert export consumes the live candidate `LcmCache`, execution consumes only the exported directory, each
 attempt exports anew, cancellation kills the process, and no engine path/id/cache key appears in any public or
 persisted type.
 
-- [ ] **Step 2: Run red**
+- [x] **Step 2: Run red**
 
 Run `./test.ps1`. Expected: exporter and assessment process types are absent.
 
-- [ ] **Step 3: Implement the two-stage seam**
+- [x] **Step 3: Implement the two-stage seam**
 
 ```csharp
 public interface IPanGlossCandidateExporter
@@ -60,7 +60,7 @@ public sealed class PanGlossAssessmentProcess
 PanGloss owns filenames and content. Motif validates only containment, completion, and bounded output. Keep the
 existing direct file seam as compatibility scaffolding until the worker path is green.
 
-- [ ] **Step 4: Run green and commit**
+- [x] **Step 4: Run green and commit**
 
 Run `./test.ps1`, then:
 
