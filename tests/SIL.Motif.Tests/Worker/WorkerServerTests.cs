@@ -367,6 +367,13 @@ public sealed class WorkerServerTests
         AssertPipeRules(BinaryTransferServer.CreatePipeSecurity(sid), sid);
     }
 
+    // Proves ACL shape only; a real cross-identity/remote refusal is unproven without a 2nd account.
+    [Fact(Skip = "Requires a second local identity or remote-machine access to open the pipe as a " +
+                 "different principal and observe an actual refusal; not available in this environment.")]
+    public void ADifferentLocalIdentityOrARemotePipeAttemptIsRefused()
+    {
+    }
+
     [Fact]
     public async Task UnknownControlTrafficClosesBeforeDispatch()
     {
@@ -1114,16 +1121,28 @@ public sealed class WorkerServerTests
 
     private static void AssertPipeRules(PipeSecurity security, string ownerSid)
     {
-        var rules = security.GetAccessRules(true, true, typeof(SecurityIdentifier)).Cast<PipeAccessRule>();
+        var localSystemSid = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null).Value;
+        var networkSid = new SecurityIdentifier(WellKnownSidType.NetworkSid, null).Value;
+        var rules = security.GetAccessRules(true, true, typeof(SecurityIdentifier)).Cast<PipeAccessRule>().ToList();
+
         Assert.Contains(rules, rule =>
             rule.IdentityReference.Value == ownerSid && rule.AccessControlType == AccessControlType.Allow &&
             rule.PipeAccessRights.HasFlag(PipeAccessRights.ReadWrite));
         Assert.Contains(rules, rule =>
-            rule.IdentityReference.Value == "S-1-5-18" && rule.AccessControlType == AccessControlType.Allow &&
+            rule.IdentityReference.Value == localSystemSid && rule.AccessControlType == AccessControlType.Allow &&
             rule.PipeAccessRights.HasFlag(PipeAccessRights.FullControl));
+        // A partial deny would still let a remote caller connect, so require every pipe right denied.
         Assert.Contains(rules, rule =>
-            rule.IdentityReference.Value == "S-1-5-2" && rule.AccessControlType == AccessControlType.Deny &&
-            rule.PipeAccessRights.HasFlag(PipeAccessRights.FullControl));
+            rule.IdentityReference.Value == networkSid && rule.AccessControlType == AccessControlType.Deny &&
+            rule.PipeAccessRights == PipeAccessRights.FullControl);
+
+        // What blocks a broader grant (Everyone, Users, ...) is that no such rule exists at all.
+        var permittedAllowIdentities = new[] { ownerSid, localSystemSid };
+        Assert.All(rules, rule => Assert.True(
+            rule.AccessControlType == AccessControlType.Deny
+                ? rule.IdentityReference.Value == networkSid
+                : permittedAllowIdentities.Contains(rule.IdentityReference.Value),
+            $"Unexpected ACL rule for identity {rule.IdentityReference.Value} ({rule.AccessControlType})."));
     }
 
     private static async Task WriteFrameAsync(Stream stream, string json)

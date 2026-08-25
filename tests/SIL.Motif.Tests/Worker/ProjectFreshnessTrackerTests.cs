@@ -41,6 +41,45 @@ public sealed class ProjectFreshnessTrackerTests
     }
 
     [Fact]
+    public void SuppliedProbeWithMatchingDigestIsCurrentWhenNoObservationExists()
+    {
+        var tracker = new ProjectFreshnessTracker();
+
+        Assert.Equal(BaselineFreshness.Current,
+            tracker.Check(Token("first", 1, DigestA), () => DigestA));
+    }
+
+    [Fact]
+    public void SuppliedProbeWithDifferingDigestIsKnownOldWhenNoObservationExists()
+    {
+        var tracker = new ProjectFreshnessTracker();
+
+        Assert.Equal(BaselineFreshness.KnownOld,
+            tracker.Check(Token("first", 1, DigestA), () => DigestB));
+    }
+
+    [Fact]
+    public void NoProbeAndNoObservationReportsCurrentnessNotChecked()
+    {
+        var tracker = new ProjectFreshnessTracker();
+
+        Assert.Equal(BaselineFreshness.CurrentnessNotChecked,
+            tracker.Check(Token("first", 1, DigestA), savedProjectProbe: null));
+    }
+
+    [Fact]
+    public void LiveObservationTakesPrecedenceOverASuppliedProbe()
+    {
+        var tracker = new ProjectFreshnessTracker();
+        tracker.Register(Observation("first", 2, false, DigestA));
+
+        var freshness = tracker.Check(Token("first", 2, DigestA),
+            () => throw new InvalidOperationException("Probe must not run when a live observation exists."));
+
+        Assert.Equal(BaselineFreshness.Current, freshness);
+    }
+
+    [Fact]
     public void DirtyOrLaterSameEpochObservationMakesBaselineKnownOld()
     {
         var tracker = new ProjectFreshnessTracker();
