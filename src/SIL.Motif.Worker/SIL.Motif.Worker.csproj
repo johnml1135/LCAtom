@@ -9,7 +9,7 @@
     <WorkerProductVersion Condition="'$(Version)' != ''">$(Version)</WorkerProductVersion>
     <WorkerProtocolMinimum>1</WorkerProtocolMinimum>
     <WorkerProtocolMaximum>1</WorkerProtocolMaximum>
-    <WorkerMetadataCanonicalJson>{&quot;productVersion&quot;:&quot;$(WorkerProductVersion)&quot;,&quot;min&quot;:$(WorkerProtocolMinimum),&quot;max&quot;:$(WorkerProtocolMaximum),&quot;capabilities&quot;:[&quot;baseline.v1&quot;,&quot;jobs.v1&quot;,&quot;live-host.v1&quot;]}</WorkerMetadataCanonicalJson>
+    <WorkerMetadataCanonicalJson>{&quot;productVersion&quot;:&quot;$(WorkerProductVersion)&quot;,&quot;min&quot;:$(WorkerProtocolMinimum),&quot;max&quot;:$(WorkerProtocolMaximum),&quot;capabilities&quot;:[&quot;baseline.v1&quot;,&quot;jobs.v1&quot;,&quot;live-host.v1&quot;,&quot;store.v1&quot;]}</WorkerMetadataCanonicalJson>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\SIL.Motif.Contract\SIL.Motif.Contract.csproj" />

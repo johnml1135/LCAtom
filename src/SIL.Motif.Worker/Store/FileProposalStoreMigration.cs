@@ -22,91 +22,15 @@ public static class FileProposalStoreMigration
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(destination);
-        var sourcePath = Path.GetFullPath(source.RootDirectory);
-        if (PathsEqual(sourcePath, destination.FullPath))
-            throw new InvalidOperationException("A file Proposal source cannot be the destination Motif database.");
-        var sourceFiles = ReadSourceFiles(source);
-        var digest = Digest(sourceFiles.Values);
         using var connection = destination.OpenConnection();
-        if (LedgerExists(connection, "file-proposals", sourcePath, digest))
-        {
-            if (renameSourceAfterCommit && Directory.Exists(source.RootDirectory))
-            {
-                beforeArchive?.Invoke();
-                EnsureSourceDigest(source, digest);
-                ArchiveSource(source.RootDirectory, digest);
-                return new ProposalMigrationResult(Array.Empty<string>(), sourceFiles.Count, digest, true);
-            }
-            return ProposalMigrationResult.Empty(digest);
-        }
-        if (sourceFiles.Count == 0)
-            return ProposalMigrationResult.Empty(digest);
-
         using var transaction = connection.BeginTransaction();
+        PendingSourceArchive? pending;
+        ProposalMigrationResult result;
         try
         {
-            var objects = ReadObjectNames(sourceFiles);
-            var manifests = ReadManifests(sourceFiles).Select(ToManifestInfo).ToList();
-            ValidateObjectsAndManifests(objects, manifests);
-            var imported = new List<string>();
-            foreach (var manifest in manifests)
-            {
-                UpsertProposal(connection, transaction, manifest.Id, manifest.CurrentIntentDigest, manifest.Status,
-                    manifest.Label, manifest.Comment, manifest.SupersededBy, manifest.AnchorJson);
-                afterBoundary?.Invoke("Proposals");
-                imported.Add(manifest.Id);
-            }
-
-            foreach (var objectFile in objects.Values)
-            {
-                var envelope = ProposalJsonParser.Parse(objectFile.File.Text);
-                UpsertRevision(connection, transaction, envelope.ProposalId.Value, objectFile.Digest,
-                    objectFile.File.Bytes);
-                afterBoundary?.Invoke("ProposalRevisions");
-            }
-
-            foreach (var manifest in manifests)
-            {
-                if (manifest.Decision is not null)
-                {
-                    UpsertDecision(connection, transaction, manifest.Id, manifest.CurrentIntentDigest, manifest.Decision.Value);
-                    afterBoundary?.Invoke("Decisions");
-                }
-            }
-
-            foreach (var draft in ReadDrafts(sourceFiles))
-            {
-                var id = RequiredString(draft.Text, "proposalId");
-                using var command = connection.CreateCommand();
-                command.Transaction = transaction;
-                command.CommandText = """
-                    INSERT INTO Drafts (DraftName, ProposalId, DraftJson)
-                    VALUES ($name, $id, $json)
-                    ON CONFLICT(DraftName) DO UPDATE SET ProposalId = excluded.ProposalId, DraftJson = excluded.DraftJson;
-                    """;
-                command.Parameters.AddWithValue("$name", draft.Name);
-                command.Parameters.AddWithValue("$id", id);
-                command.Parameters.AddWithValue("$json", draft.Text);
-                command.ExecuteNonQuery();
-                afterBoundary?.Invoke("Drafts");
-            }
-
-            beforeCommit?.Invoke();
-            var finalFiles = ReadSourceFiles(source);
-            var finalDigest = Digest(finalFiles.Values);
-            if (!string.Equals(finalDigest, digest, StringComparison.Ordinal))
-                throw new InvalidDataException("The file Proposal source changed during migration.");
-            AddLedger(connection, transaction, "file-proposals", sourcePath, finalDigest);
-            afterBoundary?.Invoke("MigrationLedger");
-            VerifyForeignKeys(connection, transaction);
+            result = Import(source, connection, transaction, destination.FullPath, out pending,
+                afterBoundary, renameSourceAfterCommit, beforeCommit);
             transaction.Commit();
-            if (renameSourceAfterCommit)
-            {
-                beforeArchive?.Invoke();
-                EnsureSourceDigest(source, digest);
-                ArchiveSource(source.RootDirectory, digest);
-            }
-            return new ProposalMigrationResult(imported, sourceFiles.Count, digest, renameSourceAfterCommit);
         }
         catch
         {
@@ -114,6 +38,120 @@ public static class FileProposalStoreMigration
             catch (Exception exception) when (exception is SqliteException or InvalidOperationException) { }
             throw;
         }
+        if (pending is null)
+            return result;
+        beforeArchive?.Invoke();
+        pending.Archive();
+        return result;
+    }
+
+    /// <summary>
+    /// Imports one file store into a transaction the caller owns, leaving both the commit and the source
+    /// archival to that caller. A cutover spanning several legacy sources needs every import to land or none
+    /// to, which one shared transaction gives and per-importer transactions cannot.
+    /// </summary>
+    /// <param name="pendingArchive">
+    /// The archival the caller must perform once it commits, or null when there is nothing to archive. It is
+    /// deliberately not performed here: renaming a source before its transaction commits would leave a
+    /// rollback with the destination unchanged and the source already moved.
+    /// </param>
+    internal static ProposalMigrationResult Import(
+        LegacyProposalStoreLayout source,
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string destinationPath,
+        out PendingSourceArchive? pendingArchive,
+        Action<string>? afterBoundary = null,
+        bool renameSourceAfterCommit = true,
+        Action? beforeCommit = null)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(transaction);
+        var sourcePath = Path.GetFullPath(source.RootDirectory);
+        if (PathsEqual(sourcePath, destinationPath))
+            throw new InvalidOperationException("A file Proposal source cannot be the destination Motif database.");
+        var sourceFiles = ReadSourceFiles(source);
+        var digest = Digest(sourceFiles.Values);
+        pendingArchive = null;
+        if (LedgerExists(connection, "file-proposals", sourcePath, digest, transaction))
+        {
+            if (renameSourceAfterCommit && Directory.Exists(source.RootDirectory))
+            {
+                pendingArchive = new PendingSourceArchive(FileProposalsKind, sourcePath, digest);
+                return new ProposalMigrationResult(Array.Empty<string>(), sourceFiles.Count, digest, true);
+            }
+            return ProposalMigrationResult.Empty(digest);
+        }
+        if (sourceFiles.Count == 0)
+            return ProposalMigrationResult.Empty(digest);
+
+        var objects = ReadObjectNames(sourceFiles);
+        var manifests = ReadManifests(sourceFiles).Select(ToManifestInfo).ToList();
+        ValidateObjectsAndManifests(objects, manifests);
+        var imported = new List<string>();
+        foreach (var manifest in manifests)
+        {
+            UpsertProposal(connection, transaction, manifest.Id, manifest.CurrentIntentDigest, manifest.Status,
+                manifest.Label, manifest.Comment, manifest.SupersededBy, manifest.AnchorJson);
+            afterBoundary?.Invoke("Proposals");
+            imported.Add(manifest.Id);
+        }
+
+        foreach (var objectFile in objects.Values)
+        {
+            var envelope = ProposalJsonParser.Parse(objectFile.File.Text);
+            UpsertRevision(connection, transaction, envelope.ProposalId.Value, objectFile.Digest,
+                objectFile.File.Bytes);
+            afterBoundary?.Invoke("ProposalRevisions");
+        }
+
+        foreach (var manifest in manifests)
+        {
+            if (manifest.Decision is not null)
+            {
+                UpsertDecision(connection, transaction, manifest.Id, manifest.CurrentIntentDigest, manifest.Decision.Value);
+                afterBoundary?.Invoke("Decisions");
+            }
+        }
+
+        foreach (var draft in ReadDrafts(sourceFiles))
+        {
+            var id = RequiredString(draft.Text, "proposalId");
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                INSERT INTO Drafts (DraftName, ProposalId, DraftJson)
+                VALUES ($name, $id, $json)
+                ON CONFLICT(DraftName) DO UPDATE SET ProposalId = excluded.ProposalId, DraftJson = excluded.DraftJson;
+                """;
+            command.Parameters.AddWithValue("$name", draft.Name);
+            command.Parameters.AddWithValue("$id", id);
+            command.Parameters.AddWithValue("$json", draft.Text);
+            command.ExecuteNonQuery();
+            afterBoundary?.Invoke("Drafts");
+        }
+
+        beforeCommit?.Invoke();
+        var finalFiles = ReadSourceFiles(source);
+        var finalDigest = Digest(finalFiles.Values);
+        if (!string.Equals(finalDigest, digest, StringComparison.Ordinal))
+            throw new InvalidDataException("The file Proposal source changed during migration.");
+        AddLedger(connection, transaction, "file-proposals", sourcePath, finalDigest);
+        afterBoundary?.Invoke("MigrationLedger");
+        VerifyForeignKeys(connection, transaction);
+        if (renameSourceAfterCommit)
+            pendingArchive = new PendingSourceArchive(FileProposalsKind, sourcePath, digest);
+        return new ProposalMigrationResult(imported, sourceFiles.Count, digest, renameSourceAfterCommit);
+    }
+
+    /// <summary>The ledger and archival discriminator for a legacy file Proposal store.</summary>
+    internal const string FileProposalsKind = "file-proposals";
+
+    internal static void ArchiveFileProposals(string path, string digest)
+    {
+        EnsureSourceDigest(new LegacyProposalStoreLayout(path), digest);
+        ArchiveSource(path, digest);
     }
 
     private static Dictionary<string, SourceFile> ReadSourceFiles(LegacyProposalStoreLayout source)

@@ -350,6 +350,7 @@ public sealed class WorkerProtocolTests
             WorkerCommands.LiveHostRegister,
             WorkerCommands.LiveHostObservationUpdate,
             WorkerCommands.LiveHostDisconnect,
+            WorkerCommands.StoreCutover,
         }, commands);
         Assert.Equal(new[]
         {

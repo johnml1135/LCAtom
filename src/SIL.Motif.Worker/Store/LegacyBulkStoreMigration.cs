@@ -83,58 +83,21 @@ public static class LegacyBulkStoreMigration
         Action<string>? afterBoundary = null, bool renameSourceAfterCommit = true,
         Action? beforeCommit = null, Action? beforeArchive = null)
     {
-        if (string.IsNullOrWhiteSpace(legacyPath))
-            throw new ArgumentException("A source path is required.", nameof(legacyPath));
         ArgumentNullException.ThrowIfNull(destination);
-        var fullPath = Path.GetFullPath(legacyPath);
-        if (PathsEqual(fullPath, destination.FullPath))
-            throw new InvalidOperationException("A legacy bulk source cannot be the destination Motif database.");
-
         using var connection = destination.OpenConnection();
-        if (!File.Exists(fullPath))
-        {
-            if (LedgerPathExists(connection, "legacy-bulk", fullPath))
-                return new LegacyMigrationResult("", 0, false);
-            throw new FileNotFoundException("Legacy Motif database was not found.", fullPath);
-        }
-
-        AttachReadOnly(connection, fullPath);
-        var committed = false;
-        var shouldArchive = false;
-        string? committedDigest = null;
+        var attached = Attach(legacyPath, connection, destination.FullPath, out var missing);
+        if (missing is not null)
+            return missing;
+        PendingSourceArchive? pending;
+        LegacyMigrationResult result;
         try
         {
             using var transaction = connection.BeginTransaction();
             try
             {
-                var available = ReadTables(connection, transaction);
-                ValidateSourceSchema(connection, transaction, available);
-                VerifySourceForeignKeys(connection, transaction);
-                ValidateLogicalKeys(connection, transaction);
-                var digest = LogicalDigest(connection, transaction);
-                if (FileProposalStoreMigration.LedgerExists(connection, "legacy-bulk", fullPath, digest, transaction))
-                {
-                    shouldArchive = renameSourceAfterCommit;
-                    committedDigest = digest;
-                    transaction.Commit();
-                    committed = true;
-                    return new LegacyMigrationResult(digest, 0, renameSourceAfterCommit);
-                }
-
-                var count = 0;
-                foreach (var map in Maps)
-                    count += CopyTable(connection, transaction, map, afterBoundary);
-                VerifyExactCounts(connection, transaction);
-                FileProposalStoreMigration.AddLedger(connection, transaction, "legacy-bulk", fullPath, digest);
-                afterBoundary?.Invoke("MigrationLedger");
-                VerifyForeignKeys(connection, transaction);
-                beforeCommit?.Invoke();
-                EnsureSourceDigest(fullPath, digest);
+                result = Import(attached!, connection, transaction, out pending, afterBoundary,
+                    renameSourceAfterCommit, beforeCommit);
                 transaction.Commit();
-                committed = true;
-                shouldArchive = renameSourceAfterCommit;
-                committedDigest = digest;
-                return new LegacyMigrationResult(digest, count, renameSourceAfterCommit);
             }
             catch
             {
@@ -145,21 +108,105 @@ public static class LegacyBulkStoreMigration
         }
         finally
         {
-            try
-            {
-                using var detach = connection.CreateCommand();
-                detach.CommandText = "DETACH DATABASE legacy;";
-                detach.ExecuteNonQuery();
-            }
-            catch (Exception exception) when (exception is SqliteException or InvalidOperationException) { }
-
-            if (committed && shouldArchive)
-            {
-                beforeArchive?.Invoke();
-                EnsureSourceDigest(fullPath, committedDigest!);
-                ArchiveSourceBundle(fullPath, committedDigest!);
-            }
+            // An attached source file is locked, so archival cannot move it until after this detach.
+            Detach(connection);
         }
+        if (pending is null)
+            return result;
+        beforeArchive?.Invoke();
+        pending.Archive();
+        return result;
+    }
+
+    /// <summary>
+    /// Attaches one legacy bulk source read-only, or reports the already-migrated result when the file is
+    /// gone. Attaching is separated from importing so the caller owns the moment of detachment: an attached
+    /// source cannot be moved aside, pinned by `AnAttachedSourceCannotBeMovedUntilItIsDetached`, so a caller
+    /// that archives its sources has to detach before it can archive this one.
+    /// </summary>
+    /// <param name="alreadyMigrated">
+    /// The result to return without importing, when the source file is absent but the ledger shows it was
+    /// already taken. Null when the caller should go on to <see cref="Import"/>.
+    /// </param>
+    /// <returns>The resolved full source path, or null when <paramref name="alreadyMigrated"/> is set.</returns>
+    internal static string? Attach(string legacyPath, SqliteConnection connection, string destinationPath,
+        out LegacyMigrationResult? alreadyMigrated)
+    {
+        if (string.IsNullOrWhiteSpace(legacyPath))
+            throw new ArgumentException("A source path is required.", nameof(legacyPath));
+        ArgumentNullException.ThrowIfNull(connection);
+        var fullPath = Path.GetFullPath(legacyPath);
+        if (PathsEqual(fullPath, destinationPath))
+            throw new InvalidOperationException("A legacy bulk source cannot be the destination Motif database.");
+        alreadyMigrated = null;
+        if (!File.Exists(fullPath))
+        {
+            if (LedgerPathExists(connection, "legacy-bulk", fullPath))
+            {
+                alreadyMigrated = new LegacyMigrationResult("", 0, false);
+                return null;
+            }
+            throw new FileNotFoundException("Legacy Motif database was not found.", fullPath);
+        }
+        AttachReadOnly(connection, fullPath);
+        return fullPath;
+    }
+
+    /// <summary>Detaches a source attached by <see cref="Attach"/>, after its transaction has settled.</summary>
+    internal static void Detach(SqliteConnection connection)
+    {
+        try
+        {
+            using var detach = connection.CreateCommand();
+            detach.CommandText = "DETACH DATABASE legacy;";
+            detach.ExecuteNonQuery();
+        }
+        catch (Exception exception) when (exception is SqliteException or InvalidOperationException) { }
+    }
+
+    /// <summary>
+    /// Imports one attached legacy bulk source into a transaction the caller owns, leaving both the commit
+    /// and the source archival to that caller.
+    /// </summary>
+    /// <param name="pendingArchive">
+    /// The archival the caller must perform once it commits, or null when there is nothing to archive.
+    /// </param>
+    internal static LegacyMigrationResult Import(string fullPath, SqliteConnection connection,
+        SqliteTransaction transaction, out PendingSourceArchive? pendingArchive,
+        Action<string>? afterBoundary = null, bool renameSourceAfterCommit = true, Action? beforeCommit = null)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(transaction);
+        pendingArchive = null;
+        var available = ReadTables(connection, transaction);
+        ValidateSourceSchema(connection, transaction, available);
+        VerifySourceForeignKeys(connection, transaction);
+        ValidateLogicalKeys(connection, transaction);
+        var digest = LogicalDigest(connection, transaction);
+        if (renameSourceAfterCommit)
+            pendingArchive = new PendingSourceArchive(LegacyBulkKind, fullPath, digest);
+        if (FileProposalStoreMigration.LedgerExists(connection, "legacy-bulk", fullPath, digest, transaction))
+            return new LegacyMigrationResult(digest, 0, renameSourceAfterCommit);
+
+        var count = 0;
+        foreach (var map in Maps)
+            count += CopyTable(connection, transaction, map, afterBoundary);
+        VerifyExactCounts(connection, transaction);
+        FileProposalStoreMigration.AddLedger(connection, transaction, "legacy-bulk", fullPath, digest);
+        afterBoundary?.Invoke("MigrationLedger");
+        VerifyForeignKeys(connection, transaction);
+        beforeCommit?.Invoke();
+        EnsureSourceDigest(fullPath, digest);
+        return new LegacyMigrationResult(digest, count, renameSourceAfterCommit);
+    }
+
+    /// <summary>The ledger and archival discriminator for a legacy bulk Motif database.</summary>
+    internal const string LegacyBulkKind = "legacy-bulk";
+
+    internal static void ArchiveLegacyBulk(string path, string digest)
+    {
+        EnsureSourceDigest(path, digest);
+        ArchiveSourceBundle(path, digest);
     }
 
     private static void AttachReadOnly(SqliteConnection connection, string path)

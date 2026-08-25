@@ -361,6 +361,7 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
                     : new IWorkerCommandHandler[]
                     {
                         new JobStatusCommandHandler(_runtimeRegistry),
+                        new StoreCutoverCommandHandler(_runtimeRegistry),
                         new BaselineTransferOfferCommandHandler(_baselineTransfers, connectionId),
                         new BaselinePublishCommandHandler(
                             _runtimeRegistry, _baselineTransfers, _baselineWorkspaces, connectionId),
