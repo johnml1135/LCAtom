@@ -506,7 +506,7 @@ public sealed class WorkerServer : IAsyncDisposable, IWorkerWorkTracker
                 if (document.RootElement.TryGetProperty("EventId", out _) &&
                     document.RootElement.TryGetProperty("Outcome", out _))
                 {
-                    _eventSink.AcceptResult(WorkerWire.Deserialize<WorkerEventResultEnvelope>(frame));
+                    _eventSink.AcceptResult(WorkerWire.Deserialize<WorkerEventResultEnvelope>(frame), Id);
                     continue;
                 }
                 if (!document.RootElement.TryGetProperty("Command", out var command))

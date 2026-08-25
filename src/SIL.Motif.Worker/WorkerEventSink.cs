@@ -108,15 +108,20 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
     public Task<WorkerEventResultEnvelope> RequestCancellationAsync(ProjectLocator project, JsonElement payload,
         CancellationToken cancellationToken) => SendAsync(project, WorkerCommands.CancellationRequested, payload, cancellationToken);
 
-    /// <summary>Records one event result by its correlation identifier.</summary>
-    public void AcceptResult(WorkerEventResultEnvelope result)
+    /// <summary>Records one event result by its correlation identifier, refusing a result submitted by any
+    /// connection other than the one the pending event was sent to.</summary>
+    public void AcceptResult(WorkerEventResultEnvelope result, string connectionId)
     {
         ArgumentNullException.ThrowIfNull(result);
+        if (string.IsNullOrWhiteSpace(connectionId))
+            throw new ArgumentException("A worker connection identity is required.", nameof(connectionId));
         lock (_activity.SyncRoot)
         lock (_gate)
         {
             if (!_pending.TryGetValue(result.EventId, out var pending))
                 throw new InvalidOperationException("The event result identifier is unknown or duplicated.");
+            if (!StringComparer.Ordinal.Equals(pending.ConnectionId, connectionId))
+                throw new InvalidOperationException("The event result belongs to another connection.");
             if (result.ProtocolVersion != pending.ProtocolVersion)
                 throw new InvalidOperationException("The event result protocol is not negotiated.");
             _pending.Remove(result.EventId);
@@ -167,7 +172,7 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
             completion = new TaskCompletionSource<WorkerEventResultEnvelope>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
             _pending.Add(envelope.EventId, new PendingEvent(workspaceKey, registration.ProtocolVersion,
-                completion, _activity.AcquirePendingEvent(workspaceKey)));
+                registration.ConnectionId, completion, _activity.AcquirePendingEvent(workspaceKey)));
         }
         return SendCoreAsync(envelope, registration, completion, cancellationToken);
     }
@@ -221,6 +226,6 @@ public sealed class WorkerEventSink : IDisposable, IAsyncDisposable
         if (_disposed) throw new ObjectDisposedException(nameof(WorkerEventSink));
     }
 
-    private sealed record PendingEvent(string WorkspaceKey, int ProtocolVersion,
+    private sealed record PendingEvent(string WorkspaceKey, int ProtocolVersion, string ConnectionId,
         TaskCompletionSource<WorkerEventResultEnvelope> Completion, IDisposable ActivityLease);
 }

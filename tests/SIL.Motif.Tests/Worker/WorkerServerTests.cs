@@ -306,7 +306,7 @@ public sealed class WorkerServerTests
         Assert.Contains(frames, frame => frame.Contains(WorkerCommands.ApplyRequested, StringComparison.Ordinal));
         Assert.Contains(frames, frame => frame.Contains("response", StringComparison.Ordinal));
         sink.AcceptResult(new WorkerEventResultEnvelope(ReadEventId(stream),
-            WorkerEventOutcome.Completed, document.RootElement.Clone(), 1));
+            WorkerEventOutcome.Completed, document.RootElement.Clone(), 1), "connection");
         await pending.WaitAsync(TimeSpan.FromSeconds(1));
     }
 
@@ -421,11 +421,11 @@ public sealed class WorkerServerTests
             new SemaphoreSlim(1, 1)));
         using var document = JsonDocument.Parse("{}");
         await CompleteEventAsync(sink, project, host, document.RootElement.Clone(),
-            sink.RequestBaselineRefreshAsync, WorkerCommands.BaselineRefreshRequested);
+            sink.RequestBaselineRefreshAsync, WorkerCommands.BaselineRefreshRequested, "connection");
         await CompleteEventAsync(sink, project, host, document.RootElement.Clone(),
-            sink.RequestApplyAsync, WorkerCommands.ApplyRequested);
+            sink.RequestApplyAsync, WorkerCommands.ApplyRequested, "connection");
         await CompleteEventAsync(sink, project, host, document.RootElement.Clone(),
-            sink.RequestReconciliationAsync, WorkerCommands.ReconciliationRequested);
+            sink.RequestReconciliationAsync, WorkerCommands.ReconciliationRequested, "connection");
         using var cancellation = new CancellationTokenSource();
         var beforeCancellation = host.Length;
         var cancelled = sink.RequestCancellationAsync(project, document.RootElement.Clone(), cancellation.Token);
@@ -443,10 +443,11 @@ public sealed class WorkerServerTests
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelled);
         Assert.Throws<InvalidOperationException>(() => sink.AcceptResult(
-            new WorkerEventResultEnvelope("unknown", WorkerEventOutcome.Failed, document.RootElement.Clone(), 1)));
+            new WorkerEventResultEnvelope("unknown", WorkerEventOutcome.Failed, document.RootElement.Clone(), 1),
+            "connection"));
         Assert.Throws<InvalidOperationException>(() => sink.AcceptResult(
             new WorkerEventResultEnvelope(ReadLastEventId(host), WorkerEventOutcome.Failed,
-                document.RootElement.Clone(), 2)));
+                document.RootElement.Clone(), 2), "connection"));
     }
 
     [Fact]
@@ -484,8 +485,32 @@ public sealed class WorkerServerTests
         Assert.False(pendingB.IsCompleted);
         var resultB = new WorkerEventResultEnvelope(ReadEventId(hostB), WorkerEventOutcome.Completed,
             document.RootElement.Clone(), 1);
-        sink.AcceptResult(resultB);
+        sink.AcceptResult(resultB, "connection-b");
         await pendingB.WaitAsync(TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public async Task AcceptResultFromAnotherConnectionIsRefusedAndLeavesTheOwnersPendingEventIncomplete()
+    {
+        using var sink = new WorkerEventSink();
+        using var hostA = new MemoryStream();
+        using var hostB = new MemoryStream();
+        var projectA = EventProject("owner-a");
+        var projectB = EventProject("owner-b");
+        sink.RegisterLiveHost(projectA, "connection-a", "session-a", hostA, 1, new SemaphoreSlim(1, 1));
+        sink.RegisterLiveHost(projectB, "connection-b", "session-b", hostB, 1, new SemaphoreSlim(1, 1));
+
+        using var document = JsonDocument.Parse("{}");
+        var pendingA = sink.RequestApplyAsync(projectA, document.RootElement.Clone(), CancellationToken.None);
+        Assert.True(SpinWait.SpinUntil(() => hostA.Length >= 4, TimeSpan.FromSeconds(1)));
+        var forgedResult = new WorkerEventResultEnvelope(ReadEventId(hostA), WorkerEventOutcome.Completed,
+            document.RootElement.Clone(), 1);
+
+        Assert.Throws<InvalidOperationException>(() => sink.AcceptResult(forgedResult, "connection-b"));
+        Assert.False(pendingA.IsCompleted);
+
+        sink.AcceptResult(forgedResult, "connection-a");
+        Assert.Same(forgedResult, await pendingA.WaitAsync(TimeSpan.FromSeconds(1)));
     }
 
     [Fact]
@@ -603,12 +628,12 @@ public sealed class WorkerServerTests
         var result = new WorkerEventResultEnvelope(
             ReadEventId(host), WorkerEventOutcome.Completed, document.RootElement.Clone(), 1);
 
-        sink.AcceptResult(result);
+        sink.AcceptResult(result, "connection");
         Assert.Same(result, await pending.WaitAsync(TimeSpan.FromSeconds(1)));
-        Assert.Throws<InvalidOperationException>(() => sink.AcceptResult(result));
+        Assert.Throws<InvalidOperationException>(() => sink.AcceptResult(result, "connection"));
         Assert.Throws<InvalidOperationException>(() => sink.AcceptResult(
             new WorkerEventResultEnvelope("unknown", WorkerEventOutcome.Failed,
-                document.RootElement.Clone(), 1)));
+                document.RootElement.Clone(), 1), "connection"));
     }
 
     [Fact]
@@ -1168,7 +1193,7 @@ public sealed class WorkerServerTests
     private static async Task CompleteEventAsync(
         WorkerEventSink sink, ProjectLocator project, MemoryStream host, JsonElement payload,
         Func<ProjectLocator, JsonElement, CancellationToken, Task<WorkerEventResultEnvelope>> request,
-        string expectedName)
+        string expectedName, string connectionId)
     {
         var before = host.Length;
         var pending = request(project, payload, CancellationToken.None);
@@ -1180,7 +1205,7 @@ public sealed class WorkerServerTests
         var eventElement = eventDocument.RootElement;
         Assert.Equal(expectedName, eventElement.GetProperty("Event").GetString());
         var eventId = eventElement.GetProperty("EventId").GetString()!;
-        sink.AcceptResult(new WorkerEventResultEnvelope(eventId, WorkerEventOutcome.Completed, payload, 1));
+        sink.AcceptResult(new WorkerEventResultEnvelope(eventId, WorkerEventOutcome.Completed, payload, 1), connectionId);
         await pending.WaitAsync(TimeSpan.FromSeconds(1));
     }
 

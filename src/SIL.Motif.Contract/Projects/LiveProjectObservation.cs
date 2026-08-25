@@ -1,6 +1,7 @@
 using System;
 using System.Text.Json.Serialization;
 using SIL.Motif.Contract.Canonicalization;
+using SIL.Motif.Contract.Worker;
 
 namespace SIL.Motif.Contract.Projects;
 
@@ -14,13 +15,11 @@ public sealed record LiveProjectObservation
         bool hasUnsavedChanges,
         string savedSemanticDigest)
     {
-        if (string.IsNullOrWhiteSpace(hostSessionId))
-            throw new ArgumentException("A nonblank host session id is required.", nameof(hostSessionId));
         if (editGeneration < 0)
             throw new ArgumentOutOfRangeException(nameof(editGeneration), "Edit generation cannot be negative.");
         Sha256Value.RequireCanonical(savedSemanticDigest, nameof(savedSemanticDigest));
 
-        HostSessionId = hostSessionId;
+        HostSessionId = WorkerProtocolValidation.Identifier(hostSessionId, nameof(hostSessionId));
         EditGeneration = editGeneration;
         HasUnsavedChanges = hasUnsavedChanges;
         SavedSemanticDigest = savedSemanticDigest;

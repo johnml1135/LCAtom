@@ -44,6 +44,15 @@ public sealed class LiveHostObservationContractTests
             "{\"Project\":null,\"Observation\":null}", WorkerJson.CreateOptions()));
     }
 
+    [Fact]
+    public void LiveProjectObservation_RejectsOverLongOrControlCharacterHostSessionIds()
+    {
+        var overLong = new string('a', 257);
+        Assert.Throws<ArgumentException>(() => new LiveProjectObservation(overLong, 0, false, Digest));
+        var withControlCharacter = "host" + (char)7 + "session";
+        Assert.Throws<ArgumentException>(() => new LiveProjectObservation(withControlCharacter, 0, false, Digest));
+    }
+
     private static void AssertJson<T>(T value, string expected)
     {
         var json = JsonSerializer.Serialize(value, WorkerJson.CreateOptions());
