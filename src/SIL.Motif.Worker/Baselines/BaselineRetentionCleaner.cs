@@ -91,7 +91,7 @@ public sealed class BaselineRetentionCleaner
                         failures.Add(new WorkspaceCleanupFailure(baseline.Path, "Reparse-point Baseline is refused."));
                         continue;
                     }
-                    _fileSystem.DeleteFile(baseline.Path);
+                    DeleteTree(baseline.Path);
                     deleted.Add(baseline.Path);
                 }
             }
@@ -106,6 +106,41 @@ public sealed class BaselineRetentionCleaner
             }
         }
         return new BaselineRetentionResult(deleted, failures);
+    }
+
+    // A published Baseline is a directory tree, so one top-level check can go stale mid-walk.
+    private void DeleteTree(string target)
+    {
+        if (!_ownership.IsOwned(target))
+            throw new InvalidOperationException("A Baseline entry is outside the worker-owned root.");
+        if (!_fileSystem.Exists(target)) return;
+        var attributes = _fileSystem.GetAttributes(target);
+        if ((attributes & FileAttributes.ReparsePoint) != 0)
+            throw new InvalidOperationException("A reparse-point Baseline entry is refused.");
+        if ((attributes & FileAttributes.Directory) != 0)
+        {
+            foreach (var entry in _fileSystem.EnumerateFileSystemEntries(target))
+            {
+                if (!IsLexicallyContained(target, entry) || !_ownership.IsOwned(entry))
+                    throw new InvalidOperationException("A Baseline entry is outside the exact published directory.");
+                DeleteTree(entry);
+            }
+            attributes = _fileSystem.GetAttributes(target);
+            if ((attributes & FileAttributes.ReparsePoint) != 0)
+                throw new InvalidOperationException("A reparse-point Baseline entry is refused.");
+            _fileSystem.DeleteDirectory(target);
+        }
+        else
+        {
+            _fileSystem.DeleteFile(target);
+        }
+    }
+
+    private static bool IsLexicallyContained(string root, string candidate)
+    {
+        var relative = Path.GetRelativePath(Path.GetFullPath(root), Path.GetFullPath(candidate));
+        return relative != "." && relative != ".." && !relative.StartsWith(".." + Path.DirectorySeparatorChar) &&
+            !Path.IsPathRooted(relative);
     }
 
     private bool IsExactPublishedPath(string projectKey, string path)

@@ -12,12 +12,11 @@ public sealed class BaselineRetentionCleanerTests : IDisposable
     public BaselineRetentionCleanerTests() => Directory.CreateDirectory(Path.Combine(_root, "project", "baseline"));
 
     [Fact]
-    public void DeletesOnlyOldSupersededUnpinnedPublishedFiles()
+    public void DeletesOnlyOldSupersededUnpinnedPublishedDirectories()
     {
-        var oldPath = Path.Combine(_root, "project", "baseline", "old.bundle");
-        var pinnedPath = Path.Combine(_root, "project", "baseline", "pinned.bundle");
-        File.WriteAllText(oldPath, "old");
-        File.WriteAllText(pinnedPath, "pinned");
+        var baselineRoot = Path.Combine(_root, "project", "baseline");
+        var oldPath = CreatePublishedBaseline(baselineRoot, "old");
+        var pinnedPath = CreatePublishedBaseline(baselineRoot, "pinned");
         var query = new BaselineQuery(oldPath, pinnedPath);
         var cleaner = new BaselineRetentionCleaner(WorkspaceOwnership.Bootstrap(_root), query, query,
             ArchivePolicy.Default, new FixedClock("2026-08-23T00:00:00Z"));
@@ -25,14 +24,29 @@ public sealed class BaselineRetentionCleanerTests : IDisposable
         var result = cleaner.Clean("project");
 
         Assert.Equal([oldPath], result.DeletedPaths);
-        Assert.True(File.Exists(pinnedPath));
+        Assert.True(Directory.Exists(pinnedPath));
+    }
+
+    [Fact]
+    public void DeletesSupersededUnpinnedDirectoryShapedBaselineFromDisk()
+    {
+        var baselineRoot = Path.Combine(_root, "project", "baseline");
+        var oldPath = CreatePublishedBaseline(baselineRoot, "old");
+        var query = new SingleUnpinnedBaselineQuery(oldPath);
+        var cleaner = new BaselineRetentionCleaner(WorkspaceOwnership.Bootstrap(_root), query, query,
+            ArchivePolicy.Default, new FixedClock("2026-08-23T00:00:00Z"));
+
+        var result = cleaner.Clean("project");
+
+        Assert.Equal([oldPath], result.DeletedPaths);
+        Assert.Empty(result.Failures);
+        Assert.False(Directory.Exists(oldPath));
     }
 
     [Fact]
     public void RefusesOutsideAndTraversalPaths()
     {
-        var outside = Path.Combine(_root, "outside.bundle");
-        File.WriteAllText(outside, "keep");
+        var outside = CreatePublishedBaseline(_root, "outside");
         var query = new BaselineQuery(outside, outside);
         var cleaner = new BaselineRetentionCleaner(WorkspaceOwnership.Bootstrap(_root), query, query,
             new ArchivePolicy(TimeSpan.Zero), new FixedClock("2026-08-23T00:00:00Z"));
@@ -40,26 +54,36 @@ public sealed class BaselineRetentionCleanerTests : IDisposable
         var result = cleaner.Clean("../other");
 
         Assert.NotEmpty(result.Failures);
-        Assert.True(File.Exists(outside));
+        Assert.True(Directory.Exists(outside));
     }
 
     [Fact]
-    public void EveryDurablePinSourcePreventsDeletionAndUnpinnedFileIsRemoved()
+    public void EveryDurablePinSourcePreventsDeletionAndUnpinnedDirectoryIsRemoved()
     {
         var baselineRoot = Path.Combine(_root, "project", "baseline");
         var paths = Enum.GetValues<BaselinePinSources>().Where(source => source != BaselinePinSources.None)
-            .ToDictionary(source => source, source => Path.Combine(baselineRoot, source + ".fwdata"));
-        var free = Path.Combine(baselineRoot, "free.fwdata");
-        foreach (var path in paths.Values.Append(free)) File.WriteAllText(path, "baseline");
-        var query = new MultiPinQuery(paths);
+            .ToDictionary(source => source, source => CreatePublishedBaseline(baselineRoot, source.ToString()));
+        var free = CreatePublishedBaseline(baselineRoot, "free");
+        var query = new MultiPinQuery(paths, free);
         var cleaner = new BaselineRetentionCleaner(WorkspaceOwnership.Bootstrap(_root), query, query,
             new ArchivePolicy(TimeSpan.Zero), new FixedClock("2026-08-23T00:00:00Z"));
 
         var result = cleaner.Clean("project");
 
         Assert.Equal([free], result.DeletedPaths);
-        Assert.All(paths.Values, path => Assert.True(File.Exists(path)));
-        Assert.False(File.Exists(free));
+        Assert.All(paths.Values, path => Assert.True(Directory.Exists(path)));
+        Assert.False(Directory.Exists(free));
+    }
+
+    /// <summary>Guards the production shape: a published Baseline is a directory, not a file.</summary>
+    private static string CreatePublishedBaseline(string baselineRoot, string digest)
+    {
+        var path = Path.Combine(baselineRoot, digest);
+        Directory.CreateDirectory(path);
+        File.WriteAllText(Path.Combine(path, digest + ".fwdata"), "baseline");
+        Directory.CreateDirectory(Path.Combine(path, "WritingSystemStore"));
+        Directory.CreateDirectory(Path.Combine(path, "SharedSettings"));
+        return path;
     }
 
     public void Dispose()
@@ -76,10 +100,17 @@ public sealed class BaselineRetentionCleanerTests : IDisposable
             baselinePath == pinnedPath ? BaselinePinSources.ActiveJob : BaselinePinSources.None;
     }
 
-    private sealed class MultiPinQuery(IReadOnlyDictionary<BaselinePinSources, string> paths) : IPublishedBaselineQuery, IBaselinePinQuery
+    private sealed class SingleUnpinnedBaselineQuery(string path) : IPublishedBaselineQuery, IBaselinePinQuery
     {
         public IReadOnlyList<PublishedBaseline> ListPublished(string projectKey) =>
-            paths.Values.Append(Path.Combine(Path.GetDirectoryName(paths.Values.First())!, "free.fwdata"))
+            [new(path, DateTimeOffset.Parse("2026-07-01T00:00:00Z"), true, true)];
+        public BaselinePinSources GetPinSources(string baselinePath) => BaselinePinSources.None;
+    }
+
+    private sealed class MultiPinQuery(IReadOnlyDictionary<BaselinePinSources, string> paths, string free) : IPublishedBaselineQuery, IBaselinePinQuery
+    {
+        public IReadOnlyList<PublishedBaseline> ListPublished(string projectKey) =>
+            paths.Values.Append(free)
                 .Select(path => new PublishedBaseline(path, DateTimeOffset.Parse("2026-07-01T00:00:00Z"), true, true))
                 .ToArray();
 
