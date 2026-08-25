@@ -1,5 +1,7 @@
 using SIL.Motif.Contract.Jobs;
 using SIL.Motif.Host.Store;
+using SIL.Motif.Worker.PanGloss;
+using SIL.Motif.Worker.Store;
 
 namespace SIL.Motif.Worker.Jobs;
 
@@ -10,11 +12,19 @@ public sealed class WorkerRecovery
         RecoveryGates = new();
     private readonly JobRepository _jobs;
     private readonly IJobClock _clock;
+    private readonly IWorkspaceOwnership? _panGlossOwnership;
 
-    public WorkerRecovery(JobRepository jobs, IJobClock? clock = null)
+    /// <param name="jobs">The durable job store this recovery pass reads and mutates.</param>
+    /// <param name="clock">Supplies the recovery timestamp; defaults to the system clock.</param>
+    /// <param name="panGlossOwnership">
+    /// When supplied, every marked PanGloss workspace under its worker root is swept and removed before
+    /// any job in this pass is requeued; omit to skip the sweep entirely.
+    /// </param>
+    public WorkerRecovery(JobRepository jobs, IJobClock? clock = null, IWorkspaceOwnership? panGlossOwnership = null)
     {
         _jobs = jobs ?? throw new ArgumentNullException(nameof(jobs));
         _clock = clock ?? new SystemJobClock();
+        _panGlossOwnership = panGlossOwnership;
     }
 
     public RecoveryResult RecoverInterruptedJobs(DateTimeOffset now)
@@ -23,7 +33,8 @@ public sealed class WorkerRecovery
         gate.Wait();
         try
         {
-            return RecoverInterruptedJobsCore(now);
+            var panGlossCleanup = _panGlossOwnership is null ? null : PanGlossWorkspace.SweepStartup(_panGlossOwnership);
+            return RecoverInterruptedJobsCore(now) with { PanGlossCleanup = panGlossCleanup };
         }
         finally
         {
@@ -74,7 +85,11 @@ public sealed class WorkerRecovery
 }
 
 /// <summary>Reports durable interruption and retry outcomes from one startup pass.</summary>
+/// <param name="PanGlossCleanup">
+/// The PanGloss workspace sweep outcome, or <c>null</c> when the pass was not configured to sweep.
+/// </param>
 public sealed record RecoveryResult(
     IReadOnlyList<string> InterruptedJobIds,
     IReadOnlyList<JobRecord> RetryJobs,
-    IReadOnlyList<string>? ExhaustedJobIds = null);
+    IReadOnlyList<string>? ExhaustedJobIds = null,
+    WorkspaceCleanupResult? PanGlossCleanup = null);

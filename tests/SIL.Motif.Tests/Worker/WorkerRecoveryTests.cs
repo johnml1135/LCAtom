@@ -2,6 +2,7 @@ using SIL.Motif.Contract.Jobs;
 using SIL.Motif.Contract.Projects;
 using SIL.Motif.Host.Store;
 using SIL.Motif.Worker.Jobs;
+using SIL.Motif.Worker.PanGloss;
 using SIL.Motif.Worker.Store;
 using Xunit;
 
@@ -207,6 +208,89 @@ public sealed class WorkerRecoveryTests : IDisposable
         Assert.Equal(JobStatus.Queued, Assert.Single(attempts.Where(job => job.Attempt == 2)).Status);
         Assert.Equal(1, results.Sum(result => result.RetryJobs.Count));
         Assert.DoesNotContain(attempts, job => job.Attempt > 2);
+    }
+
+    [Fact]
+    public void RecoverInterruptedJobs_WithoutConfiguredOwnership_SkipsTheSweepAndStillRequeues()
+    {
+        var project = new ProjectLocator(Path.Combine(_root, "no-sweep.fwdata"), "no-sweep");
+        using var database = MotifDatabase.OpenOwned(Path.Combine(_root, "no-sweep.motif.db"), project,
+            MotifSchema.CurrentSchema, new Version(1, 0));
+        var clock = new FixedClock("2026-08-23T12:00:00Z");
+        var jobs = new JobRepository(database, clock);
+        jobs.Transition(jobs.Create(NewJob() with { JobId = "no-sweep" }), JobStatus.Running);
+
+        var result = new WorkerRecovery(jobs, clock).RecoverInterruptedJobs(clock.UtcNow);
+
+        Assert.Null(result.PanGlossCleanup);
+        Assert.Single(result.RetryJobs);
+    }
+
+    [Fact]
+    public void RecoverInterruptedJobs_SweepsAWorkerCrashedPanGlossWorkspaceBeforeRequeueing()
+    {
+        var sweepRoot = Path.Combine(_root, "sweep-owned");
+        Directory.CreateDirectory(sweepRoot);
+        var ownership = WorkspaceOwnership.Bootstrap(sweepRoot);
+        var orphaned = PanGlossWorkspace.Create(ownership, "orphaned-attempt");
+        File.WriteAllText(Path.Combine(orphaned.Root, "candidate.tsv"), "candidate");
+
+        var project = new ProjectLocator(Path.Combine(_root, "sweep.fwdata"), "sweep");
+        using var database = MotifDatabase.OpenOwned(Path.Combine(_root, "sweep.motif.db"), project,
+            MotifSchema.CurrentSchema, new Version(1, 0));
+        var clock = new FixedClock("2026-08-23T12:00:00Z");
+        var jobs = new JobRepository(database, clock);
+        var running = jobs.Transition(jobs.Create(NewJob() with { JobId = "sweep" }), JobStatus.Running);
+
+        var result = new WorkerRecovery(jobs, clock, ownership).RecoverInterruptedJobs(clock.UtcNow);
+
+        Assert.NotNull(result.PanGlossCleanup);
+        Assert.Contains(orphaned.Root, result.PanGlossCleanup!.DeletedPaths);
+        Assert.Empty(result.PanGlossCleanup.Failures);
+        Assert.False(Directory.Exists(orphaned.Root));
+        Assert.Contains(running.JobId, result.InterruptedJobIds);
+        Assert.Single(result.RetryJobs);
+    }
+
+    [Fact]
+    public void RecoverInterruptedJobs_WhenAPanGlossWorkspaceFileIsLocked_ReportsADiagnosticWithoutAbortingRecovery()
+    {
+        var sweepRoot = Path.Combine(_root, "sweep-locked");
+        Directory.CreateDirectory(sweepRoot);
+        var ownership = WorkspaceOwnership.Bootstrap(sweepRoot);
+        var stuck = PanGlossWorkspace.Create(ownership, "stuck-attempt");
+        var lockedFile = Path.Combine(stuck.Root, "locked.bin");
+        File.WriteAllText(lockedFile, "data");
+
+        var project = new ProjectLocator(Path.Combine(_root, "locked.fwdata"), "locked");
+        using var database = MotifDatabase.OpenOwned(Path.Combine(_root, "locked.motif.db"), project,
+            MotifSchema.CurrentSchema, new Version(1, 0));
+        var clock = new FixedClock("2026-08-23T12:00:00Z");
+        var jobs = new JobRepository(database, clock);
+        var running = jobs.Transition(jobs.Create(NewJob() with { JobId = "locked" }), JobStatus.Running);
+
+        RecoveryResult? result = null;
+        var lockStream = new FileStream(lockedFile, FileMode.Open, FileAccess.Read, FileShare.None);
+        try
+        {
+            var exception = Record.Exception(() =>
+                result = new WorkerRecovery(jobs, clock, ownership).RecoverInterruptedJobs(clock.UtcNow));
+            Assert.Null(exception);
+        }
+        finally
+        {
+            lockStream.Dispose();
+        }
+
+        Assert.NotNull(result);
+        Assert.NotEmpty(result!.PanGlossCleanup!.Failures);
+        Assert.Contains(running.JobId, result.InterruptedJobIds);
+        Assert.Single(result.RetryJobs);
+        Assert.True(Directory.Exists(stuck.Root));
+
+        var retry = PanGlossWorkspace.SweepStartup(ownership);
+        Assert.Empty(retry.Failures);
+        Assert.False(Directory.Exists(stuck.Root));
     }
 
     private static JobRecord NewJob() => new("job", "project", "dry-run", JobStatus.Queued, 1,
