@@ -21,6 +21,13 @@ public sealed record ParserRunResult(BatchAnalysis? Analysis, ParserRefusal? Ref
 /// </summary>
 /// <remarks>
 /// <para>
+/// <b>This is the direct file seam, kept as compatibility scaffolding.</b> <see cref="IPanGlossCandidateExporter"/>
+/// and <see cref="PanGlossAssessmentProcess"/> split "get the candidate onto disk" from "run PanGloss
+/// against it" so the second half needs no open <see cref="SIL.LCModel.LcmCache"/>, scratch, or Baseline.
+/// This type still does both in one call and remains the path callers use until that split is wired
+/// through end to end.
+/// </para>
+/// <para>
 /// <b>The project file is the input, and that is the whole point.</b> PanGloss reads <c>.fwdata</c> directly
 /// (<c>pg_fwdata::import_file</c> → snapshot → <c>compile_project</c>), which takes ~253 ms on a 56 MB
 /// project and needs no FieldWorks assemblies, no HermitCrab dependency and no vendored grammar extractor. It
