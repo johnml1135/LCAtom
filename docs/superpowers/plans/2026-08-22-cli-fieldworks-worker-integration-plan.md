@@ -1,5 +1,9 @@
 # CLI and FieldWorks Worker Integration Implementation Plan
 
+> **WITHDRAWN (2026-08-26)**. This plan routes CLI verbs through the worker and hosts a Motif client
+> in-process in FieldWorks. [ADR 0040](../../adr/0040-one-api-the-cli.md) rejects both: there is one API and it is the CLI, and the
+> FieldWorks surface runs the executable rather than loading Motif. **Do not execute it.**
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or
 > superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for
 > tracking.

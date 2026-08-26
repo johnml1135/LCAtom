@@ -1,5 +1,9 @@
 # Motif Worker and Baseline Implementation Plan Set
 
+> **PARTLY SUPERSEDED (2026-08-26) by [ADR 0040](../../adr/0040-one-api-the-cli.md).** The protocol, client, and in-process
+> FieldWorks steps are withdrawn. The durable store, job state machine, Baseline capture, and recovery steps
+> survive and are the parts that were load-bearing all along.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or
 > superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for
 > tracking.

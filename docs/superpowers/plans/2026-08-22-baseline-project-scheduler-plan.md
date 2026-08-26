@@ -1,5 +1,9 @@
 # Baseline and Project Scheduler Implementation Plan
 
+> **PARTLY SUPERSEDED (2026-08-26) by [ADR 0040](../../adr/0040-one-api-the-cli.md).** Steps that transport Baselines over the
+> binary pipe or negotiate capabilities are withdrawn. The Baseline lifecycle, per-project live-access queue,
+> and scheduling behaviour survive — they are now reached in-process and through the job runner.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or
 > superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for
 > tracking.

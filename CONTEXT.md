@@ -126,11 +126,18 @@ immutable intent and evidence, but the storage container is not itself content-a
 merge engine and no replication.
 _Avoid_: proposal store, change store, database, repository, queue
 
-**Motif worker**:
-The one on-demand process for a logged-in Windows user that owns Motif stores, durable jobs, project
-queues, Baselines, and PanGloss orchestration. CLI and FieldWorks are clients; the worker never owns a
-FieldWorks user's live `LcmCache`.
-_Avoid_: server, service, daemon, project host
+**Motif job runner**:
+The one on-demand process for a logged-in Windows user that takes work which must outlive a command —
+durable jobs, project queues, Baseline refreshes, and PanGloss orchestration. It claims work from the
+paired database; nothing sends it requests, and it answers none. It never owns a FieldWorks user's live
+`LcmCache`. Called *the worker* in documents written before 2026-08-26, when it also served a named-pipe
+protocol that [ADR 0040](docs/adr/0040-one-api-the-cli.md) withdrew.
+_Avoid_: server, service, daemon, project host, worker
+
+**Motif API**:
+The `motif` executable and its `--json` output. The only interface Motif exposes — to AI agents, scripts,
+tests, and the FieldWorks surface alike. There is no library entry point for a host and no wire protocol.
+_Avoid_: wire protocol, worker protocol, endpoint, RPC
 
 **Text**:
 FieldWorks' term, kept for FieldWorks' meaning: an interlinearised document **in the language project**.

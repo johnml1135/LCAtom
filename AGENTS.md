@@ -129,36 +129,52 @@ one-sided version while removing the `using` block along with the comment above 
 
 ## Compatibility targets
 
-**Two runtimes only: `net10.0` and `net48`. `net8.0` is not a target anywhere in this repository.**
-Where one assembly must load in both, it targets `netstandard2.0`, which `net48` can consume.
+**One runtime: `net10.0`.** `net8.0` is not a target anywhere in this repository, and since
+[ADR 0040](docs/adr/0040-one-api-the-cli.md) neither is `net48`. No Motif assembly loads in a
+`net48` host to *run* Motif, because the FieldWorks surface runs the `motif` executable and reads its JSON
+rather than hosting Motif in-process. **One assembly still crosses, as shapes only:** `SIL.Motif.Contract`
+keeps `netstandard2.0` so a `net48` FieldWorks — and the non-.NET runners its project file already names —
+can deserialise `motif --json` into typed values and render a diff. The rule is consumption, not
+convention: an assembly targets `netstandard2.0` if and only if something outside Motif references it.
+`SIL.Motif.Runner` no longer qualifies and is being retired from it.
 
-**Actual current targets (measured from the `.csproj` files):**
+**Actual current targets (measured from the `.csproj` files).** The Runner's `netstandard2.0` is awaiting
+retirement, not defended — ADR 0040 withdrew its reason and the target has not been removed yet:
 
 | Project | Target | Why |
 | --- | --- | --- |
-| `SIL.Motif.Contract` | `netstandard2.0` | LibLCM-free wire contract; also consumed by non-.NET runners |
-| `SIL.Motif.Model` | `netstandard2.0` | LibLCM-free |
-| `SIL.Motif.Runner` | `netstandard2.0;net10.0` | **Must load in-process in `net48` FieldWorks** — see below |
-| `SIL.Motif.Host` | `net10.0` | Opens/saves projects; FieldWorks is its own host and never loads this |
-| `SIL.Motif.Cli` | `net10.0` | |
+| `SIL.Motif.Contract` | `netstandard2.0` | **Keeps it.** The one assembly that crosses: `net48` FieldWorks and the non-.NET runners deserialise `motif --json` with it |
+| `SIL.Motif.Model` | `netstandard2.0` | Keeps it only if Contract's response records need it; otherwise retires with the Runner |
+| `SIL.Motif.Runner` | `netstandard2.0;net10.0` | Reason withdrawn: its host is always a `net10.0` Motif process — see below |
+| `SIL.Motif.Host` | `net10.0` | Opens/saves projects |
+| `SIL.Motif.Projection` | `net10.0` | |
+| `SIL.Motif.Worker` | `net10.0` | Becomes the job runner; owns no wire |
+| `SIL.Motif.Cli` | `net10.0` | The one API |
 | `SIL.Motif.Tests` | `net10.0` | |
 
 All LibLCM-dependent projects pin `SIL.LCModel 11.0.0-beta0150`.
 
-**Why the Runner multi-targets.** There is no separate companion process. Assessment and apply both
-need read-back from a live `LcmCache` ([ADR 0006](docs/adr/0006-engine-reality-apply-readback-preflight.md)),
-so the Runner runs in-process in whatever host owns the cache: FieldWorks during the `net48`
-coexistence window, and the `net10.0` host afterwards. `netstandard2.0` is the only target both can
-load. `SIL.Motif.Runner/Compatibility/ModuleInitializerAttribute.cs` polyfills the one framework type
-`netstandard2.0` lacks; the multi-target build and the full test suite pass.
+**Why the Runner used to multi-target, and why it no longer needs to.** Assessment and apply both need
+read-back from a live `LcmCache` ([ADR 0006](docs/adr/0006-engine-reality-apply-readback-preflight.md)), so
+the Runner runs in-process with whatever host owns that cache. That requirement is unchanged and still
+binding. What changed is who the host is: under
+[ADR 0040](docs/adr/0040-one-api-the-cli.md) it is always a Motif `net10.0` process, never FieldWorks, so
+`netstandard2.0` is no longer needed to make the Runner loadable by a `net48` host. The compatibility
+shims under `SIL.Motif.Runner/Compatibility/` exist only for that target and go with it.
 
 **Package versions are not target frameworks.** `SIL.Motif.Contract` references
 `System.Text.Json 8.0.5` because that is the current `netstandard2.0`-compatible release line, not
 because anything targets `net8.0`. Do not "fix" it to match a TFM.
 
-**Not yet built:** the `net48` FieldWorks-side adapter that hosts the Runner (UI-thread marshalling,
-one undoable UOW, save and invalidation). The Runner is now *loadable* by it; the adapter itself is
-Phase 9 ([implementation-plan.md](docs/implementation-plan.md)).
+**Not yet built:** the FieldWorks-side Motif surface. It is a renderer over `motif --json`, not a host for
+the Runner — it references `SIL.Motif.Contract` for shapes and nothing else of Motif's, no SQLite provider,
+and never opens `Project.motif.db` ([ADR 0040](docs/adr/0040-one-api-the-cli.md) decision 1). When
+FieldWorks must hand a live project over, it saves and releases it, runs the verb, and reloads — the
+pattern FLExBridge already uses.
+
+**Also not yet built, and a prerequisite for that surface:** the records `--json` serialises live in
+`SIL.Motif.Projection`, which references LibLCM. They must move to Contract, leaving the
+`LcmCache`-dependent builders behind, before any consumer can bind to them.
 
 ## Definition of done for each operation family
 

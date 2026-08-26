@@ -6,15 +6,16 @@ milestones and the `MOT-*` items; nothing else defines milestones.*
 
 ## Delivery
 
-**Motif delivers exactly two user-facing things: the `motif` CLI and a FieldWorks integration.** One
-on-demand local worker supports both, but it is internal infrastructure rather than a third product.
+**Motif delivers exactly two user-facing things: the `motif` CLI and a FieldWorks integration.** They are
+the same product reached two ways — [there is one API and it is the CLI](cli-api.md),
+[ADR 0040](adr/0040-one-api-the-cli.md).
 
 | | |
 | --- | --- |
-| `motif` CLI | `net10.0` worker client for batch, automation, and AI-agent use; its Host owns live projects only while FieldWorks is closed |
-| FieldWorks integration | `netstandard2.0` Runner and worker client hosted in-process, behind FieldWorks-owned Avalonia surfaces |
+| `motif` CLI | `net10.0`. The API. Batch, automation, and AI-agent use; its Host owns a live project while it holds the FieldWorks lock |
+| FieldWorks integration | FieldWorks-owned Avalonia surfaces that run `motif --json` and render the result. Only `SIL.Motif.Contract` crosses, as the shapes to deserialise into |
 
-Everything else Plan A touches is infrastructure or a dependency: the worker ships with Motif, the Lexbox
+Everything else Plan A touches is infrastructure or a dependency: the job runner ships with Motif, the Lexbox
 receipt store (`MOT-14`) is server work in another repository, PanGloss is a subprocess, and
 `SIL.Motif.Contract` is a published contract. There is no Motif web app, network service, or mobile surface.
 
@@ -66,8 +67,8 @@ them through one LibLCM unit of work in whatever process owns the live cache, an
 One live authority and one live writer remain; a paired Motif database owns workflow state, not language data.
 
 ```
-CLI / FieldWorks ──named pipe──▶ per-user Motif worker ──▶ Project.motif.db
-                                      │
+FieldWorks ──runs motif --json──▶ CLI ──▶ Project.motif.db ◀── per-user job runner
+                                      │        (claims rows; answers nothing)
                               saved file-backed Baseline
                                       │
 Proposal ──▶ Dry Run scratch ──▶ effects + optional PanGloss Assessment
@@ -79,16 +80,19 @@ live host Preflight + Apply, one UOW ──▶ Receipt + applied-log entry
 **One authority, one writer.** The process holding the loaded `LcmCache` is the only writer; Chorus moves
 projects between people as it already does. There is no second merge engine and no replicated copy of the
 language data. The worker coordinates saved Baselines and workflow records without retaining an idle live
-cache. [ADR 0039](adr/0039-one-worker-baseline-and-live-host-authority.md) and the
-[detailed design](superpowers/specs/2026-08-20-baseline-dry-run-session-design.md) bind this boundary. Why an
+cache. [ADR 0040](adr/0040-one-api-the-cli.md) binds the process boundary;
+[ADR 0039](adr/0039-one-worker-baseline-and-live-host-authority.md) and the
+[detailed design](superpowers/specs/2026-08-20-baseline-dry-run-session-design.md) still bind the Baseline
+and evaluation model, with their named-pipe sections withdrawn. Why an
 alternative merge design was considered and rejected is recorded once, in the
 [adoption report](harmony-adoption-report.md) — it is history, not a plan, and nothing below depends on it.
 
 ## Two scopes
 
-[ADR 0020](adr/0020-cli-first-fieldworks-planned-not-built.md), as amended by ADR 0039. **Scope 1 establishes
-the LibLCM seams and the shared worker-backed workflow through the CLI with an AI agent as the author. Scope 2
-adds the `net48` FieldWorks adapter to the same worker and Runner contracts.**
+[ADR 0020](adr/0020-cli-first-fieldworks-planned-not-built.md), as amended by ADR 0039 and
+[ADR 0040](adr/0040-one-api-the-cli.md). **Scope 1 establishes the LibLCM seams and the durable workflow
+through the CLI with an AI agent as the author. Scope 2 adds FieldWorks surfaces that render the same CLI
+output — not an adapter that hosts Motif.**
 
 The acceptance question for scope 1: *can an AI agent, through the CLI alone, author a Proposal against
 a real project, see its dry-run effects, and apply it — repeatedly, with drift refused?*
@@ -100,10 +104,14 @@ point — the agent-facing Layer 1 is **expected to churn** while FieldWorks is 
 What may not churn is anything hashed: Layer 0 `kind` strings, payload schemas, the canonical JSON form,
 and the digest algorithm. That boundary is ADR 0021 decision 3.
 
-Scope 2 is planned now precisely so scope 1 does not make it more expensive. The obligations that must
-hold throughout — `netstandard2.0` on Contract/Model/Runner, one JSON stack, the Runner never owning a
-cache, apply never calling `Save`, the Layer 0/Layer 1 split, the applied log's unresolved Chorus
-caveat — are listed as decision 3 of ADR 0020 and are build-time invariants, not intentions.
+Scope 2 is planned now precisely so scope 1 does not make it more expensive. The obligations that must hold
+throughout are listed as decision 3 of ADR 0020 and are build-time invariants, not intentions — with one
+narrowed by ADR 0040: `netstandard2.0` is required on **Contract alone**, which FieldWorks references to
+deserialise `motif --json`, and no longer on the Runner, which nothing outside Motif loads. The rest stand:
+one JSON stack, the Runner never owning a cache, apply never calling `Save`, the Layer 0/Layer 1 split, and
+the applied log's unresolved Chorus caveat. Two obligations are added by ADR 0040 — the FieldWorks surface
+never opens `Project.motif.db`, and the `--json` response records must move from `Projection` into Contract
+before any consumer can bind to them.
 
 ## Milestones
 
@@ -135,7 +143,7 @@ This table shows which user-visible capabilities work today and which still requ
 | `MOT-4` — emit the operation catalog for one family | M2 | Medium | **Slices A and B built 2026-08-06**, plus a third slice the same day that carries the same three shapes past the lexical-entry family into ADR 0025's parser-first slice — 93 kinds emitted in total (15 lexEntry/moForm + 78 grammar/lexical rows), every one round-tripping against a real project. Owning/atomic beyond the one hand-written `LexemeForm` field, and every owning/col and owning/seq row, still needs its own creation-validity logic and is not emitted |
 | `MOT-11` — scratch-cache DryRun, replacing mutate-then-rollback | M2 | Medium | **Built 2026-08-06.** Run takes a single-use `DryRunScratch` and never rolls back; the four poisoning items and the manifest column are deleted; the CLI saves, copies, and holds the project lock. Two real defects surfaced on the way: LibLCM's save is asynchronous, and `classify.ps1` has fallen behind the manifest (`D7`). The DAG closure is also built: each un-applied prerequisite executes once in deterministic topological order, while the Dry Run reports only the requested Proposal's effects. Scratch adoption rejects memory-only backends before taking ownership, closing the writing-system fidelity gap. |
 | `MOT-16` — reusable file-backed Dry Run state | M2 | Small–medium | **Prototype built** — `CliSession` proves one pristine file-backed scratch can fan out stable Dry Runs and that memory-only caches are invalid. ADR 0039 replaces the long-lived CLI cache with a durable minimal Baseline owned by the worker; `CliSession` is measurement scaffolding, not the final process boundary |
-| `MOT-19` — the CLI as the full product surface, text and JSON | M2/M4 | Large, and grows with every other item | **Partly built** — current commands render shared text/JSON projections, including stored Assessment provenance. The next surface is a named-pipe client with async job status/wait/cancel, `--wait`, refresh requests, old-Baseline warnings, archive/conflict views, and synchronous Apply; PanGloss execution remains separate from the `analyses` query |
+| `MOT-19` — the CLI as the full product surface, text and JSON | M2/M4 | Large, and grows with every other item | **Partly built** — current commands render shared text/JSON projections, including stored Assessment provenance. The next surface is async job status/wait/cancel, `--wait`, refresh requests, old-Baseline warnings, archive/conflict views, and synchronous Apply — all as verbs over the durable store, not over a wire ([ADR 0040](adr/0040-one-api-the-cli.md)). The structured failure envelope and exit-code set in [the Motif API](cli-api.md) belong to this item. PanGloss execution remains separate from the `analyses` query |
 | `MOT-9` — Baseline Token, Dry Run binding, Apply Authorization, Receipt | M4 | Medium, correctness-critical | **Partly built** — Dry Run binding exists. ADR 0039 settles reusable Baseline identity, final live Preflight, exact approved Decision, advisory Assessment semantics, `--force` only for unavailable parser evidence, one-use authorization, and no automatic Apply retry |
 | `MOT-10` — Proposal revisions, Check Runs, Reviews, Decisions | M4 | Medium, the PR-like product core | **Statuses, the Decision loop, and the rationale presence gate are built.** Apply requiring the exact current approved Decision is now decided by ADR 0039. Remaining: immutable rationale history and Receipt projection, typed Check Runs with exact-input binding, semantic owner routing, policy-versioned autonomous approval, terminal archive/withdrawal, and derived Conflict presentation |
 | `MOT-17` — Layer-1 semantic and batch authoring for agents | M4 | Medium, and **expected to churn** | **Slice 1 built 2026-08-13** — the CLI's first Layer-1 authoring surface: `compose-author-lexeme-form` resolves one authored intent against a live project into `AuthorLexemeFormComposer`'s operations (up to three, already built for `MOT-4`'s hand-written `LexemeForm` field) and appends them to a draft the agent never enumerated by hand. The authored intent round-trips as non-hashed `extensions` provenance — verified byte-for-byte excluded from the intent digest — and survives `reopen`/`duplicate` rather than being silently dropped. **Found and fixed on the way:** `DraftOperation.After` was `Dictionary<string,string>`, so any composer emitting a non-string payload (e.g. `setIsAbstract`'s `{"value":true}`) would have thrown or silently stringified a boolean; it is now `Dictionary<string,JsonElement>` everywhere a draft operation is built or replayed. **Not yet built:** batch reads/updates over a live query (this slice batches one intent into many operations, not one query into many targets), and further composers beyond `AuthorLexemeForm` |
@@ -144,11 +152,11 @@ This table shows which user-visible capabilities work today and which still requ
 | `MOT-15` — the parser seam and job orchestration | M5 | Medium | **Direct seam built** — GUID-keyed analyses and real-project correlation are proven. The target handoff is a fresh PanGloss-owned export from each candidate scratch. Remaining: async orchestration, global two-job FIFO, a 25-percent CPU cap per process tree, result/log persistence, cancellation, and immediate/startup workspace cleanup; engines are never persisted |
 | `MOT-7` — the remaining 29 constructs | M6 | Large | Not started — gated on `MOT-6` by the plan's own execution order (M1 → M2 → M4 → M5 → M6), and `MOT-6` has only slice 1. The literal "29" is stale: `Construct` (manifest column) stopped naming operation kinds under ADR 0023, and all 495 `Scope=in` rows already carry one; the real remaining work is per-family creation-validity composers like `MOT-6`'s, not a count against the manifest |
 | `MOT-8` — ordered-grammar review proof | M6 | Medium | Not started |
-| `MOT-12` — FieldWorks in-process adapter | M3 | Medium | **Scope 2, specified** — the `netstandard2.0` package hosts Runner Apply on FieldWorks' `LcmCache`, starts and negotiates with the worker, streams saved Baselines, reports applied-log deltas, and exposes refresh requests; the adapter itself is not built |
+| `MOT-12` — FieldWorks surface over the CLI | M3 | Medium | **Scope 2, respecified by [ADR 0040](adr/0040-one-api-the-cli.md)** — Avalonia views that run `motif --json` and render it. No in-process host, no Motif assembly reference, no database access. To hand over a live project FieldWorks saves, releases, runs the verb, and reloads. The former in-process adapter — hosting Runner Apply on FieldWorks' `LcmCache` and negotiating with a worker — is withdrawn |
 | `MOT-13` — `System.Text.Json` on `net48` proof | M3 | Small | **Scope 2** — research says clean (`A4`); the proof itself remains |
 | `MOT-14` — Receipt store and sync in Lexbox | M4b | Medium | **Scope 2** |
 | `MOT-20` — the Motif store | M2 | Medium, and newly load-bearing | **File ingestion built; target layout settled by ADR 0039** — one sibling `Project.motif.db` holds Proposals and all workflow/bulk records. Terminal archive defaults to 30 days; stale work may live forever; ephemeral PanGloss work is deleted immediately or at startup; applied minima remain in both project log and database. Migration is not built |
-| `MOT-24` — per-user worker, protocol, jobs, and scheduler | M2/M4 | Large, architecture foundation | **Partly built** — the worker, named-pipe control and binary transfer, capability negotiation, database ownership/migration, project runtime, verified minimal Baseline publication, live-host lease integration with the per-project lane, and twenty reusable Dry Runs from one published Baseline are built. Next is durable job scheduling, PanGloss limits, launcher/version selection, and the remaining recovery surfaces |
+| `MOT-24` — per-user job runner, jobs, and scheduler | M2/M4 | Large, architecture foundation | **Partly built, and narrowed by [ADR 0040](adr/0040-one-api-the-cli.md)** — database ownership/migration, project runtime, verified minimal Baseline publication, live-host lease integration with the per-project lane, and twenty reusable Dry Runs from one published Baseline are built and survive. The named-pipe control channel, binary transfer, and capability negotiation are withdrawn and are to be deleted. Next is durable job scheduling with lease-based claiming, PanGloss limits, launcher/version selection, and the remaining recovery surfaces |
 | `MOT-21` — promotion: pulling a curated subset into FieldWorks | M4 | Medium | **Slice 1 built 2026-08-13** — `promote-gloss` is the only sanctioned route from the Motif store into the language project ([ADR 0036](adr/0036-motif-has-its-own-data-store.md) decision 2): an ordinary `lexical/lexSense/setGloss` operation, reviewable and applied like any other, whose evidencing corpus's origin (description, licence, retrieval date) travels as non-hashed `extensions.promotions` provenance — verified excluded from the intent digest, and surfaced in `show`/`ShowJson` so a reviewer never has to open the store's raw files to see it. **Not yet built:** promoting a genuinely *new* stem (a `LexEntry`) has no route at all, because entry creation has no Layer-0 primitive yet ([ADR 0022](adr/0022-structure-is-derived-policy-is-five-rows.md) — "Creation validity" is still hand-authored, per-family, unbuilt for `LexEntry`); promoting a word form worth interlinearising or an analysis worth keeping, similarly unbuilt |
 | `MOT-22` — mark a word form as not correctly spelled | M3 | Small | **Built 2026-08-10** — `analysis/wfiWordform/set`/`clearSpellingStatus` are generated from a fourth emit shape (basic `Integer` enum, range-checked payload). Writing it moves the Hunspell dictionary, so the dry run must say so |
 | `MOT-23` — the analysis aggregate read API | M3 | Medium | **Built 2026-08-13** — [ADR 0038](adr/0038-expectations-are-fieldworks-approved-analyses.md). Per word form: manual and automatic analyses, counts and instances, links through to the words. "What changed" is the diff between two responses, so there is no separate change-tracking type. It never parses: a missing or stale Assessment is reported, not repaired, which is what let it ship ahead of the rest of `MOT-20`. Three rules are structural rather than careful — the reader holds no parser reference; a reflection test rejects any numeric field on the manual diff that could net removals against passes; another rejects any property name implying Motif knows which change caused which. The unanalysed-reach figure has no bare-number rendering, so "reach, not correctness" travels with it. **Open interpretation**: a word the stored Assessment never covered counts as not parsed, making the figure a floor on reach — the decision record does not say this either way |
@@ -433,7 +441,7 @@ ADR 0036 established the separate store; [ADR 0039](adr/0039-one-worker-baseline
 settles its shape and lifecycle. Every project has one sibling `Project.motif.db` containing Proposals,
 revisions, Decisions, jobs, Corpora, Assessments, Reports, Receipts, and the applied index. Content digests
 remain the identity of immutable intent and evidence even though their container is SQLite. Only the selected
-worker opens and migrates it; the `net48` FieldWorks adapter never loads the database library.
+the CLI and the job runner open and migrate it, shipping together at one version; the FieldWorks surface never loads the database library and never opens the file ([ADR 0040](adr/0040-one-api-the-cli.md) decision 1).
 
 Terminal Proposals archive immediately and default to 30-day local retention, configurable through forever.
 Stale work is nonterminal and may remain indefinitely. PanGloss exports and workspaces are never archived:

@@ -1,5 +1,9 @@
 # Worker Composition Bridge Implementation Plan
 
+> **WITHDRAWN (2026-08-26)**. This plan wires handlers into the worker's pipe server, which
+> [ADR 0040](../../adr/0040-one-api-the-cli.md) deletes. **Do not execute it.** The composition it describes is still needed — it now
+> happens in the CLI process and the job runner.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or
 > superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for
 > tracking.

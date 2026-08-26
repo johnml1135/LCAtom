@@ -2,9 +2,11 @@
 
 
 > **Current Motif architecture.** Motif targets LibLCM objects directly; Harmony, Chorus, LcmCrdt, and
-> replication are outside this product boundary. [ADR 0039](adr/0039-one-worker-baseline-and-live-host-authority.md)
-> defines the process boundary: one local worker owns workflow state, a saved Baseline supports reusable Dry
-> Runs, and Apply is immediate in the live host.
+> replication are outside this product boundary. [ADR 0040](adr/0040-one-api-the-cli.md) defines the process
+> boundary: there is one API and it is the CLI, a job runner takes work that outlives a command, and no Motif
+> assembly loads inside FieldWorks. [ADR 0039](adr/0039-one-worker-baseline-and-live-host-authority.md)
+> still defines the evaluation model — a saved Baseline supports reusable Dry Runs and Apply is immediate in
+> the live host — but its named-pipe protocol is withdrawn.
 
 *This is the product-level architecture served by the cross-repository milestone ladder. It
 consolidates the controlled-materialization amendment and the 2026-08-01 literature reviews.*
@@ -38,12 +40,15 @@ One live project has one writer, while Motif keeps review workflow and reusable 
 
 - **Motif** owns semantic operations and the Proposal, Check Run, Review, Decision, Dry Run, authorization,
   rebase, Conflict, and Receipt contracts used by humans and agents.
-- **Motif worker** owns paired SQLite stores, durable jobs, Baselines, queues, PanGloss orchestration, archive,
-  and reconciliation. It never owns a FieldWorks process's live cache.
+- **Motif job runner** owns durable jobs, Baselines, queues, PanGloss orchestration, archive, and
+  reconciliation. It claims work from the paired SQLite store and answers no requests. It never owns a
+  FieldWorks process's live cache.
 - **LibLCM/FieldWorks or the CLI Host** owns model invariants, live project lifecycle, lock, unit of work,
   persistence, and read-back while it hosts the project.
-- **FieldWorks adapter** invokes the shared Runner on FieldWorks' cache and communicates with the worker; it
-  contains no SQLite ownership or independent project loader.
+- **FieldWorks surface** renders `motif --json` and causes changes by running verbs. It references
+  `SIL.Motif.Contract` for response shapes and nothing else of Motif's, owns no SQLite, and never opens the
+  paired database — not even to read ([ADR 0040](adr/0040-one-api-the-cli.md) decision 1). To hand over a
+  live project it saves, releases, runs the verb, and reloads.
 - **PanGloss** owns immutable Assessments and parser facts; Motif policy decides what evidence is required and
   never turns one Assessment into a linguistic verdict.
 
@@ -57,7 +62,7 @@ shape is defined by ADR 0039.
 | State | Authority | Other components' role |
 | --- | --- | --- |
 | Language-project data | Live `LcmCache` supplied by its owning host | Worker holds only a saved Baseline and observed evidence |
-| Proposal workflow and evidence | Sibling `Project.motif.db` owned by the worker | Live host reports Apply and reconciliation facts |
+| Proposal workflow and evidence | Sibling `Project.motif.db`, shared by the CLI and the job runner, which ship together at one version | Live host reports Apply and reconciliation facts |
 
 The live host is the only writer of language-project fields. Motif's sibling database stores workflow and
 evidence, not a competing materialization of those fields.

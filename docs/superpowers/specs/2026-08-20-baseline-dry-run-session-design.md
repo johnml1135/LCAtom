@@ -1,5 +1,11 @@
 # Motif worker, Baseline, Dry Run, and Apply architecture
 
+> **PARTLY SUPERSEDED (2026-08-26) by [ADR 0040](../../adr/0040-one-api-the-cli.md).** The named-pipe
+> protocol, capability negotiation, binary transfer pipe, and in-process FieldWorks client specified here
+> are withdrawn — the CLI is now the only API. **The Baseline, live-host authority, per-project live-access
+> queue, PanGloss bounding, Apply-is-synchronous, and one-sibling-database designs remain binding** and are
+> still the contract for those subjects. Read the protocol sections as history.
+
 Motif should let people and AI tools build and evaluate Proposals without repeatedly opening or copying a
 FieldWorks project. FieldWorks remains usable during that background work, while every live-project change
 still passes through the one process that currently owns its `LcmCache`.

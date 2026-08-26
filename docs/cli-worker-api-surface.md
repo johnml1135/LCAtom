@@ -1,5 +1,13 @@
 # CLI → worker API surface
 
+> **SUPERSEDED (2026-08-26) by [ADR 0040](adr/0040-one-api-the-cli.md).** The worker protocol this
+> document designs a command set for has been deleted; there is now one API and it is the CLI. **The ten
+> commands, the four capabilities, and the negotiation model below do not stand.** The analysis that
+> survives — and that caused the change — is section 4's finding that re-encoding 59 refusals across a
+> process boundary was the largest step in the migration and larger than the other five combined. That is
+> the cost that disappears when the boundary does. For the live contract see
+> [the Motif API](cli-api.md).
+
 *2026-08-25. Research and design for CLI plan Task 1, step 3 — "move state changes and queries behind
 explicit worker commands". Written because the plan gives that sentence one paragraph, and the shape of the
 wire it implies is a decision that outlives every other choice in the task.*

@@ -17,26 +17,28 @@ unit of work.
 > **Status: this is the target architecture and delivery plan, not the current implementation.**
 >
 > The repository contains a tested CLI-first control path, generated operation families, Proposal workflow,
-> scratch Dry Runs, and stored Assessment reporting. The local worker, paired database, durable job system,
-> PanGloss orchestrator, Apply Authorization, and FieldWorks adapter are specified but not built. Nothing in
-> the plans should be read as already shipped.
+> scratch Dry Runs, and stored Assessment reporting. The paired database, durable job system, PanGloss
+> orchestrator, Apply Authorization, and FieldWorks surface are specified but not built. Nothing in the plans
+> should be read as already shipped. The named-pipe worker protocol described in older documents has been
+> withdrawn ([ADR 0040](docs/adr/0040-one-api-the-cli.md)): there is one API and it is the CLI.
 
 **Start with [Plan A](docs/plan-motif.md).** It is the live plan and owns both the milestones and the
 work items.
 
 ## Delivery
 
-**Motif delivers exactly two user-facing things: the `motif` CLI and a FieldWorks integration.** Both use
-one on-demand local worker, which is internal infrastructure rather than a third product.
+**Motif delivers exactly two user-facing things: the `motif` CLI and a FieldWorks integration.** They are
+the same product reached two ways — [there is one API and it is the CLI](docs/cli-api.md).
 
 | | |
 | --- | --- |
-| `motif` CLI | `net10.0` client. Batch, automation, and AI-agent use; when FieldWorks is closed, its Host may temporarily own the live project |
-| FieldWorks integration | `netstandard2.0` Runner and worker client hosted in-process, behind FieldWorks-owned Avalonia surfaces |
+| `motif` CLI | `net10.0`. Batch, automation, and AI-agent use; owns the live project while it holds the FieldWorks lock |
+| FieldWorks integration | FieldWorks-owned Avalonia surfaces that run `motif --json` and render the result. Only `SIL.Motif.Contract` crosses, as the shapes to deserialise into |
 
-Everything else is infrastructure or a dependency — the worker is installed with Motif, PanGloss is a
-subprocess, and `SIL.Motif.Contract` is a published contract other runners consume. There is no Motif web
-app, network service, or mobile surface.
+Everything else is infrastructure or a dependency — a job runner installed with Motif takes work that must
+outlive a command, PanGloss is a subprocess, and `SIL.Motif.Contract` is a published contract that
+FieldWorks and non-.NET runners consume as the normative description of Motif's field and response shapes.
+There is no Motif web app, network service, or mobile surface.
 
 ## Scope
 
@@ -98,9 +100,9 @@ deterministically rather than merged optimistically.
 | Component | Responsibility |
 | --- | --- |
 | **Motif** | Semantic operations; Proposal, Check Run, Review, Decision, Dry Run, authorization, rebase, and Receipt contracts |
-| **Motif worker** | Paired databases, durable jobs, Baselines, per-project queues, PanGloss limits, cleanup, and reconciliation |
+| **Motif job runner** | Durable jobs, Baselines, per-project queues, PanGloss limits, cleanup, and reconciliation. Claims work from the paired database; nothing asks it anything |
 | **LibLCM / FieldWorks** | Model invariants, project lifecycle, unit of work, persistence, and compatibility validation. **The only authority on Motif's path** |
-| **FieldWorks adapter** | Hosts the `netstandard2.0` Runner and worker client in-process; UI-thread marshalling, one undoable unit of work, save, Baseline capture, and recovery |
+| **FieldWorks surface** | Renders `motif --json`, deserialising with `SIL.Motif.Contract`. To hand over a live project it saves, releases, runs the verb, and reloads — the pattern FLExBridge already uses |
 | **Lexbox** | Optional future sharing of Proposal and Receipt records |
 | **PanGloss** | Immutable parser Assessments and parser facts; Motif policy decides what evidence is required |
 
@@ -217,9 +219,10 @@ fail-closed, derives operation metadata, and emits the implemented families. The
 - exercise the whole flow through the `motif` CLI — `open`, `analyses`, `new`, `add-set-gloss`,
   `finalize`, `list`, `show`, `dry-run`, `apply`, `log`.
 
-The worker architecture above is not implemented yet. Today each argv invocation owns its process, Proposal
+The durable architecture above is not implemented yet. Today each argv invocation owns its process, Proposal
 storage is file-based, the CLI opens projects directly, and Apply does not yet use the new authorization and
-reconciliation protocol.
+reconciliation protocol. One process per call is not a limitation being removed — it is the contract
+([ADR 0040](docs/adr/0040-one-api-the-cli.md)); what is missing is the job runner behind it.
 
 The analysis aggregate is a cheap read that never invokes PanGloss. Without an Assessment it reports
 the project's manually approved analyses:

@@ -1,5 +1,9 @@
 # Apply Authorization and Reconciliation Implementation Plan
 
+> **AMENDED (2026-08-26) by [ADR 0040](../../adr/0040-one-api-the-cli.md).** Apply, its authorization, and reconciliation remain
+> as designed; only the transport changes — the authorization no longer crosses a pipe, and the live host is
+> always a Motif process. Read any step that names the worker client as naming an in-process call.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or
 > superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for
 > tracking.

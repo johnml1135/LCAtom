@@ -1,5 +1,10 @@
 # Worker Protocol and Launcher Implementation Plan
 
+> **WITHDRAWN (2026-08-26)**. This plan builds the named-pipe protocol, handshake, and capability
+> negotiation that [ADR 0040](../../adr/0040-one-api-the-cli.md) deletes. **Do not execute it.** The launcher half of it survives as
+> shipped code — installed-executable catalog, newest-compatible selection, per-user mutex, run-until-idle —
+> and is how the job runner is started; only the wire is withdrawn.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or
 > superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for
 > tracking.
