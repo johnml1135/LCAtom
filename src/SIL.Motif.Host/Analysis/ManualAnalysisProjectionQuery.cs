@@ -1,3 +1,4 @@
+using SIL.Motif.Contract.Responses;
 using System;
 using SIL.LCModel;
 using SIL.Motif.Projection;

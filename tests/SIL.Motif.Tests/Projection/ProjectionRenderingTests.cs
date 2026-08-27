@@ -1,3 +1,4 @@
+using SIL.Motif.Contract.Responses;
 using System.Collections.Generic;
 using SIL.Motif.Projection;
 using SIL.Motif.Projection.Rendering;

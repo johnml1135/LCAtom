@@ -126,10 +126,10 @@ negotiation in the deleted protocol existed to manage. It is managed here instea
   rather than re-deriving the vocabulary. Contract keeps `netstandard2.0` for exactly this reason
   (ADR 0040 decision 3) and holds no behaviour that reaches storage.
 
-  **This is not yet true of the code.** The records `--json` serialises are declared in
-  `SIL.Motif.Projection`, which references LibLCM, ICU, and libpalaso. Until the serialisable response
-  records move to Contract — leaving the `LcmCache`-dependent builders behind — a consumer can only parse
-  this output loosely. That move is the prerequisite for the typed half of this contract.
+  The response records now live in `SIL.Motif.Contract.Responses`, with the `LcmCache`-dependent builders
+  left behind in `SIL.Motif.Projection`. `ResponseBindingTests` stands in for the consumer: it names no
+  Motif namespace but Contract's, so a shape that ever needs a type from another assembly stops it
+  compiling rather than failing quietly in a consumer nobody has built yet.
 - **No access to the database as an interface.** `Project.motif.db` is an implementation detail shared by
   the CLI and the job runner, which ship together at one version. It is not a contract for anyone else.
 - **No long-lived connection, no server, no port.** The job runner exists so that queued work outlives a

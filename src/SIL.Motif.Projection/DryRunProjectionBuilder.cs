@@ -1,19 +1,8 @@
-using System.Collections.Generic;
 using DryRunResult = SIL.Motif.Model.DryRun.DryRun;
+using SIL.Motif.Contract.Responses;
+using System.Collections.Generic;
 
 namespace SIL.Motif.Projection;
-
-/// <summary>
-/// The <c>dry-run</c> report: the effects a Proposal would have, read back from a live baseline
-/// without mutating it.
-/// </summary>
-public sealed record DryRunProjection(
-    string ProposalId,
-    string IntentDigest,
-    string BaselineNote,
-    IReadOnlyList<EffectView> Effects,
-    string EffectDigest,
-    string FootprintDigest);
 
 /// <summary>Shapes a Runner <see cref="DryRunResult"/> into a <see cref="DryRunProjection"/>.</summary>
 public static class DryRunProjectionBuilder

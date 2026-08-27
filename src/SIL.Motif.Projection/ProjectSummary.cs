@@ -1,9 +1,7 @@
 using SIL.LCModel;
+using SIL.Motif.Contract.Responses;
 
 namespace SIL.Motif.Projection;
-
-/// <summary>The <c>open</c> report: the identity of a project and its lexicon's size.</summary>
-public sealed record ProjectSummaryProjection(string ProjectName, int LexicalEntryCount);
 
 /// <summary>Builds a <see cref="ProjectSummaryProjection"/> from a live, already-open project.</summary>
 public static class ProjectSummaryReader

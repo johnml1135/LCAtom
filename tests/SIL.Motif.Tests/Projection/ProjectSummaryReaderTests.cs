@@ -1,3 +1,4 @@
+using SIL.Motif.Contract.Responses;
 using SIL.Motif.Projection;
 using SIL.Motif.Projection.Rendering;
 using SIL.Motif.Tests.TestFixtures;

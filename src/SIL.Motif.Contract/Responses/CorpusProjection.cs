@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace SIL.Motif.Projection;
+namespace SIL.Motif.Contract.Responses;
 
 /// <summary>One row of the <c>corpora</c> report.</summary>
 public sealed record CorpusListItem(

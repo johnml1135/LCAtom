@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace SIL.Motif.Projection.Rendering;
+namespace SIL.Motif.Contract.Responses;
 
 /// <summary>
 /// Serializes any projection record to JSON — the other renderer over the same object

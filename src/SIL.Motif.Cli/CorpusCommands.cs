@@ -1,3 +1,4 @@
+using SIL.Motif.Contract.Responses;
 using System;
 using System.Collections.Generic;
 using System.IO;

@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace SIL.Motif.Projection;
+namespace SIL.Motif.Contract.Responses;
 
 /// <summary>
 /// A link to one word position carrying a manually approved analysis. The Segment GUID identifies the

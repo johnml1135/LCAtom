@@ -73,12 +73,9 @@ a diff rather than re-deriving the vocabulary. It holds no behaviour that reache
 reference, and no project loader. That is a narrower footprint than the superseded design gave FieldWorks,
 which was Contract plus a live protocol client.
 
-This creates an obligation the current code does not meet: **the response shapes a consumer deserialises
-must live in `SIL.Motif.Contract`.** Today the projections rendered by `--json` are declared in
-`SIL.Motif.Projection`, which references LibLCM, ICU, and libpalaso — types no FieldWorks surface should
-have to bind to in order to read a list. The serialisable response records move to Contract; the builders
-that need an `LcmCache` to populate them stay where they are. Until that move happens, a consumer can only
-read the JSON loosely, and this decision is not fully delivered.
+This creates an obligation: **the response shapes a consumer deserialises must live in
+`SIL.Motif.Contract`.** The serialisable response records belong there; the builders that need an
+`LcmCache` to populate them stay in `SIL.Motif.Projection`.
 
 ### 2. There is one API surface: `motif <verb>` and its JSON
 
@@ -206,9 +203,8 @@ boundary.
 
 The ordered work is in
 [the one-API CLI implementation plan](../superpowers/plans/2026-08-27-one-api-cli-implementation-plan.md).
-Two items in this ADR are specified but not delivered by the code today: the response shapes still live in
-`SIL.Motif.Projection` rather than Contract, so no consumer can bind to them, and the CLI's failure
-rendering is still plain text under `--json`.
+One item in this ADR is specified but not yet delivered by the code: the CLI's failure rendering is still
+plain text under `--json`, so a machine consumer that asked for JSON gets prose when something goes wrong.
 
 ## Amendments
 
