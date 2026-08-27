@@ -85,20 +85,20 @@ public static class Commands
     public static CommandResult Open(string fwDataPath, UsageLog? usage = null)
     {
         usage?.Record("open", new[] { UsageArgumentShape.Text("fwDataPath") });
-        var (exitCode, projection, error) = BuildProjectSummary(fwDataPath);
-        return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : new CommandResult(exitCode, error!);
+        var (reason, projection, error) = BuildProjectSummary(fwDataPath);
+        return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : Refused(reason, error!);
     }
 
     /// <summary>The <c>open</c> report as JSON — the same <see cref="ProjectSummaryProjection"/> <see cref="Open"/> renders as text.</summary>
     public static CommandResult OpenJson(string fwDataPath, UsageLog? usage = null)
     {
         usage?.Record("open", new[] { UsageArgumentShape.Text("fwDataPath") });
-        var (exitCode, projection, error) = BuildProjectSummary(fwDataPath);
+        var (reason, projection, error) = BuildProjectSummary(fwDataPath);
         return projection is not null ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
-            : new CommandResult(exitCode, error!);
+            : Refused(reason, error!);
     }
 
-    private static (int ExitCode, ProjectSummaryProjection? Projection, string? Error) BuildProjectSummary(
+    private static (FailureReason? Reason, ProjectSummaryProjection? Projection, string? Error) BuildProjectSummary(
         string fwDataPath)
     {
         try
@@ -106,19 +106,19 @@ public static class Commands
             var fullPath = ResolveProjectPath(fwDataPath);
             var loader = new FwDataProjectLoader();
             using var cache = loader.LoadCache(fullPath);
-            return (0, ProjectSummaryReader.Read(cache), null);
+            return (null, ProjectSummaryReader.Read(cache), null);
         }
         catch (Exception ex)
         {
-            return (1, null, FailText(ex.Message));
+            return (ReasonFor(ex), null, FailText(ex.Message));
         }
     }
 
     public static CommandResult Analyses(string fwDataPath, UsageLog? usage = null)
     {
         usage?.Record("analyses", new[] { UsageArgumentShape.Text("fwDataPath") });
-        var (exitCode, projection, error) = BuildManualAnalysisProjection(fwDataPath);
-        return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : new CommandResult(exitCode, error!);
+        var (reason, projection, error) = BuildManualAnalysisProjection(fwDataPath);
+        return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : Refused(reason, error!);
     }
 
     /// <summary>
@@ -128,10 +128,10 @@ public static class Commands
     public static CommandResult AnalysesJson(string fwDataPath, UsageLog? usage = null)
     {
         usage?.Record("analyses", new[] { UsageArgumentShape.Text("fwDataPath") });
-        var (exitCode, projection, error) = BuildManualAnalysisProjection(fwDataPath);
+        var (reason, projection, error) = BuildManualAnalysisProjection(fwDataPath);
         return projection is not null
             ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
-            : new CommandResult(exitCode, error!);
+            : Refused(reason, error!);
     }
 
     public static CommandResult Analyses(
@@ -143,9 +143,9 @@ public static class Commands
         UsageLog? usage = null)
     {
         RecordAssessmentAnalysisUsage(usage);
-        var (exitCode, projection, error) = BuildAssessmentAnalysisProjection(
+        var (reason, projection, error) = BuildAssessmentAnalysisProjection(
             storeDir, fwDataPath, assessmentId, currentCorpusSha256, currentGrammarSourceSha256);
-        return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : new CommandResult(exitCode, error!);
+        return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : Refused(reason, error!);
     }
 
     /// <summary>The Assessment-backed <c>analyses</c> report as JSON.</summary>
@@ -158,11 +158,11 @@ public static class Commands
         UsageLog? usage = null)
     {
         RecordAssessmentAnalysisUsage(usage);
-        var (exitCode, projection, error) = BuildAssessmentAnalysisProjection(
+        var (reason, projection, error) = BuildAssessmentAnalysisProjection(
             storeDir, fwDataPath, assessmentId, currentCorpusSha256, currentGrammarSourceSha256);
         return projection is not null
             ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
-            : new CommandResult(exitCode, error!);
+            : Refused(reason, error!);
     }
 
     private static void RecordAssessmentAnalysisUsage(UsageLog? usage) =>
@@ -176,7 +176,7 @@ public static class Commands
                 UsageArgumentShape.Text("currentGrammarSourceSha256"),
             });
 
-    private static (int ExitCode, AnalysisAggregateProjection? Projection, string? Error)
+    private static (FailureReason? Reason, AnalysisAggregateProjection? Projection, string? Error)
         BuildAssessmentAnalysisProjection(
             string storeDir,
             string fwDataPath,
@@ -192,12 +192,12 @@ public static class Commands
 
             var databasePath = Path.Combine(storeDir, "motif.db");
             if (!File.Exists(databasePath))
-                return (1, null, FailText($"Assessment '{assessmentId}' was not found in the Motif store."));
+                return (FailureReason.NotFound, null, FailText($"Assessment '{assessmentId}' was not found in the Motif store."));
 
             var store = new SqliteAssessmentStore(databasePath);
             var assessment = store.Load(assessmentId);
             if (assessment is null)
-                return (1, null, FailText($"Assessment '{assessmentId}' was not found in the Motif store."));
+                return (FailureReason.NotFound, null, FailText($"Assessment '{assessmentId}' was not found in the Motif store."));
 
             var fullPath = ResolveProjectPath(fwDataPath);
             var loader = new FwDataProjectLoader();
@@ -210,11 +210,11 @@ public static class Commands
         }
         catch (Exception ex)
         {
-            return (1, null, FailText(ex.Message));
+            return (ReasonFor(ex), null, FailText(ex.Message));
         }
     }
 
-    private static (int ExitCode, AnalysisAggregateProjection? Projection, string? Error)
+    private static (FailureReason? Reason, AnalysisAggregateProjection? Projection, string? Error)
         BuildManualAnalysisProjection(string fwDataPath)
     {
         try
@@ -222,11 +222,11 @@ public static class Commands
             var fullPath = ResolveProjectPath(fwDataPath);
             var loader = new FwDataProjectLoader();
             using var cache = loader.LoadScratchCache(fullPath);
-            return (0, ManualAnalysisProjectionQuery.Read(cache), null);
+            return (null, ManualAnalysisProjectionQuery.Read(cache), null);
         }
         catch (Exception ex)
         {
-            return (1, null, FailText(ex.Message));
+            return (ReasonFor(ex), null, FailText(ex.Message));
         }
     }
 
@@ -1291,57 +1291,57 @@ public static class Commands
     public static CommandResult List(string storeDir, UsageLog? usage = null)
     {
         usage?.Record("list", new[] { UsageArgumentShape.Text("storeDir") });
-        var (exitCode, projection, error) = BuildProposalList(storeDir);
-        return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : new CommandResult(exitCode, error!);
+        var (reason, projection, error) = BuildProposalList(storeDir);
+        return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : Refused(reason, error!);
     }
 
     /// <summary>The <c>list</c> report as JSON — the same <see cref="ProposalListProjection"/> <see cref="List"/> renders as text.</summary>
     public static CommandResult ListJson(string storeDir, UsageLog? usage = null)
     {
         usage?.Record("list", new[] { UsageArgumentShape.Text("storeDir") });
-        var (exitCode, projection, error) = BuildProposalList(storeDir);
+        var (reason, projection, error) = BuildProposalList(storeDir);
         return projection is not null ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
-            : new CommandResult(exitCode, error!);
+            : Refused(reason, error!);
     }
 
-    private static (int ExitCode, ProposalListProjection? Projection, string? Error) BuildProposalList(string storeDir)
+    private static (FailureReason? Reason, ProposalListProjection? Projection, string? Error) BuildProposalList(string storeDir)
     {
         try
         {
             var store = new ProposalStore(storeDir);
             if (!Directory.Exists(store.ManifestsDirectory))
-                return (0, new ProposalListProjection(Array.Empty<ProposalListItem>()), null);
+                return (null, new ProposalListProjection(Array.Empty<ProposalListItem>()), null);
 
             var manifests = Directory.GetFiles(store.ManifestsDirectory, "*.json")
                 .OrderBy(f => f, StringComparer.Ordinal)
                 .Select(ReadManifest)
                 .ToList();
 
-            return (0, ProposalListProjectionBuilder.Build(manifests), null);
+            return (null, ProposalListProjectionBuilder.Build(manifests), null);
         }
         catch (Exception ex)
         {
-            return (1, null, FailText(ex.Message));
+            return (ReasonForProposal(ex), null, FailText(ex.Message));
         }
     }
 
     public static CommandResult Show(string storeDir, string proposalId, UsageLog? usage = null)
     {
         usage?.Record("show", new[] { UsageArgumentShape.Text("storeDir"), UsageArgumentShape.Text("proposalId") });
-        var (exitCode, projection, error) = BuildProposalDetail(storeDir, proposalId);
-        return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : new CommandResult(exitCode, error!);
+        var (reason, projection, error) = BuildProposalDetail(storeDir, proposalId);
+        return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : Refused(reason, error!);
     }
 
     /// <summary>The <c>show</c> report as JSON — the same <see cref="ProposalDetailProjection"/> <see cref="Show"/> renders as text.</summary>
     public static CommandResult ShowJson(string storeDir, string proposalId, UsageLog? usage = null)
     {
         usage?.Record("show", new[] { UsageArgumentShape.Text("storeDir"), UsageArgumentShape.Text("proposalId") });
-        var (exitCode, projection, error) = BuildProposalDetail(storeDir, proposalId);
+        var (reason, projection, error) = BuildProposalDetail(storeDir, proposalId);
         return projection is not null ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
-            : new CommandResult(exitCode, error!);
+            : Refused(reason, error!);
     }
 
-    private static (int ExitCode, ProposalDetailProjection? Projection, string? Error) BuildProposalDetail(
+    private static (FailureReason? Reason, ProposalDetailProjection? Projection, string? Error) BuildProposalDetail(
         string storeDir, string proposalId)
     {
         try
@@ -1349,19 +1349,19 @@ public static class Commands
             var store = new ProposalStore(storeDir);
             var id = NormalizeId(proposalId);
             var (manifest, _, envelope) = store.LoadFinalizedProposal(id);
-            return (0, ProposalDetailProjectionBuilder.Build(id, manifest, envelope), null);
+            return (null, ProposalDetailProjectionBuilder.Build(id, manifest, envelope), null);
         }
         catch (Exception ex)
         {
-            return (1, null, FailText(ex.Message));
+            return (ReasonForProposal(ex), null, FailText(ex.Message));
         }
     }
 
     public static CommandResult DryRun(string storeDir, string proposalId, string fwDataPath, UsageLog? usage = null)
     {
         RecordDryRunUsage(usage, "storeDir", "proposalId", "fwDataPath");
-        var (exitCode, projection, error) = BuildFileDryRunProjection(storeDir, proposalId, fwDataPath);
-        if (projection is null) return new CommandResult(exitCode, error!);
+        var (reason, projection, error) = BuildFileDryRunProjection(storeDir, proposalId, fwDataPath);
+        if (projection is null) return Refused(reason, error!);
 
         var sb = new StringBuilder(CommandTextRenderer.Render(projection));
         // State the side effect: a dry run reads as "nothing happens", but it saved the project first (ADR 0016).
@@ -1374,12 +1374,12 @@ public static class Commands
     public static CommandResult DryRunJson(string storeDir, string proposalId, string fwDataPath, UsageLog? usage = null)
     {
         RecordDryRunUsage(usage, "storeDir", "proposalId", "fwDataPath");
-        var (exitCode, projection, error) = BuildFileDryRunProjection(storeDir, proposalId, fwDataPath);
+        var (reason, projection, error) = BuildFileDryRunProjection(storeDir, proposalId, fwDataPath);
         return projection is not null ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
-            : new CommandResult(exitCode, error!);
+            : Refused(reason, error!);
     }
 
-    private static (int ExitCode, DryRunProjection? Projection, string? Error) BuildFileDryRunProjection(
+    private static (FailureReason? Reason, DryRunProjection? Projection, string? Error) BuildFileDryRunProjection(
         string storeDir, string proposalId, string fwDataPath)
     {
         LcmCache? cache = null;
@@ -1418,17 +1418,17 @@ public static class Commands
             manifest.Anchor = dryRun.Anchor;
             WriteManifest(manifestPath, manifest);
 
-            return (0, DryRunProjectionBuilder.Build(id, dryRun), null);
+            return (null, DryRunProjectionBuilder.Build(id, dryRun), null);
         }
         catch (LcmFileLockedException)
         {
             // A held project is retryable once it is let go, which is what Busy tells a caller.
-            return (FailureEnvelope.ExitCodeFor(FailureReason.Busy), null,
+            return (FailureReason.Busy, null,
                 FailText(ProjectInUseMessage(fwDataPath, "dry-run")));
         }
         catch (Exception ex)
         {
-            return (1, null, FailText(ex.Message));
+            return (ReasonFor(ex), null, FailText(ex.Message));
         }
         finally
         {
@@ -1453,20 +1453,20 @@ public static class Commands
     public static CommandResult Apply(string storeDir, string proposalId, string fwDataPath, string user, UsageLog? usage = null)
     {
         RecordApplyUsage(usage, "storeDir", "proposalId", "fwDataPath", "user");
-        var (exitCode, projection, error) = BuildFileApplyProjection(storeDir, proposalId, fwDataPath, user);
-        return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : new CommandResult(exitCode, error!);
+        var (reason, projection, error) = BuildFileApplyProjection(storeDir, proposalId, fwDataPath, user);
+        return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : Refused(reason, error!);
     }
 
     /// <summary>The <c>apply</c> report as JSON — the same <see cref="ApplyProjection"/> <see cref="Apply(string,string,string,string,UsageLog)"/> renders as text.</summary>
     public static CommandResult ApplyJson(string storeDir, string proposalId, string fwDataPath, string user, UsageLog? usage = null)
     {
         RecordApplyUsage(usage, "storeDir", "proposalId", "fwDataPath", "user");
-        var (exitCode, projection, error) = BuildFileApplyProjection(storeDir, proposalId, fwDataPath, user);
+        var (reason, projection, error) = BuildFileApplyProjection(storeDir, proposalId, fwDataPath, user);
         return projection is not null ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
-            : new CommandResult(exitCode, error!);
+            : Refused(reason, error!);
     }
 
-    private static (int ExitCode, ApplyProjection? Projection, string? Error) BuildFileApplyProjection(
+    private static (FailureReason? Reason, ApplyProjection? Projection, string? Error) BuildFileApplyProjection(
         string storeDir, string proposalId, string fwDataPath, string user)
     {
         LcmCache? cache = null;
@@ -1479,7 +1479,7 @@ public static class Commands
             // ADR 0004 decision 3: a bare apply with no bound DryRun is a hard error, checked before loading the project.
             if (manifest.Anchor is null)
             {
-                return (1, null, FailText(
+                return (FailureReason.Refused, null, FailText(
                     $"Proposal {id} has no bound DryRun recorded. Run " +
                     $"'dry-run {id} --project <fwdata>' first, then 'apply'."));
             }
@@ -1524,7 +1524,7 @@ public static class Commands
                         ex);
                 }
 
-                return (0, ApplyProjectionBuilder.Build(id, receipt), null);
+                return (null, ApplyProjectionBuilder.Build(id, receipt), null);
             }
             finally
             {
@@ -1534,18 +1534,18 @@ public static class Commands
         catch (LcmFileLockedException)
         {
             // A held project is retryable once it is let go, which is what Busy tells a caller.
-            return (FailureEnvelope.ExitCodeFor(FailureReason.Busy), null,
+            return (FailureReason.Busy, null,
                 FailText(ProjectInUseMessage(fwDataPath, "apply")));
         }
         catch (NeedsReconciliationException ex)
         {
             // Distinct from the rollback wording below: the mutation may already be durable.
-            return (1, null, FailText(ex.Message));
+            return (ReasonFor(ex), null, FailText(ex.Message));
         }
         catch (Exception ex)
         {
             // A failed apply rolled back, not Undo: derived caches may be stale (ADR 0016) -- see the remarks above.
-            return (1, null, FailText(
+            return (FailureReason.StoreInconsistent, null, FailText(
                 ex.Message +
                 " [This LcmCache is no longer trustworthy: a failed apply rolls back, which does not " +
                 "refresh LibLCM's derived caches. Discard it and reload the project.]"));
@@ -1565,20 +1565,20 @@ public static class Commands
     public static CommandResult DryRun(CliSession session, string storeDir, string proposalId, UsageLog? usage = null)
     {
         RecordDryRunUsage(usage, "storeDir", "proposalId");
-        var (exitCode, projection, error) = BuildSessionDryRunProjection(session, storeDir, proposalId);
-        return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : new CommandResult(exitCode, error!);
+        var (reason, projection, error) = BuildSessionDryRunProjection(session, storeDir, proposalId);
+        return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : Refused(reason, error!);
     }
 
     /// <summary>The <c>dry-run</c> report as JSON, session-backed — see <see cref="DryRun(CliSession,string,string,UsageLog)"/>.</summary>
     public static CommandResult DryRunJson(CliSession session, string storeDir, string proposalId, UsageLog? usage = null)
     {
         RecordDryRunUsage(usage, "storeDir", "proposalId");
-        var (exitCode, projection, error) = BuildSessionDryRunProjection(session, storeDir, proposalId);
+        var (reason, projection, error) = BuildSessionDryRunProjection(session, storeDir, proposalId);
         return projection is not null ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
-            : new CommandResult(exitCode, error!);
+            : Refused(reason, error!);
     }
 
-    private static (int ExitCode, DryRunProjection? Projection, string? Error) BuildSessionDryRunProjection(
+    private static (FailureReason? Reason, DryRunProjection? Projection, string? Error) BuildSessionDryRunProjection(
         CliSession session, string storeDir, string proposalId)
     {
         if (session is null) throw new ArgumentNullException(nameof(session));
@@ -1588,7 +1588,7 @@ public static class Commands
                     storeDir, proposalId, out var manifest, out var manifestPath, out var id,
                     out var envelope, out var failure))
             {
-                return (failure!.ExitCode, null, failure.Output);
+                return (failure!.Reason ?? FailureReason.Refused, null, failure.Output);
             }
 
             var appliedProposalIds = ProjectAppliedLog.ReadAll(session.LiveCache)
@@ -1602,11 +1602,11 @@ public static class Commands
             manifest.Anchor = dryRun.Anchor;
             WriteManifest(manifestPath, manifest);
 
-            return (0, DryRunProjectionBuilder.Build(id, dryRun), null);
+            return (null, DryRunProjectionBuilder.Build(id, dryRun), null);
         }
         catch (Exception ex)
         {
-            return (1, null, FailText(ex.Message));
+            return (ReasonFor(ex), null, FailText(ex.Message));
         }
     }
 
@@ -1619,21 +1619,21 @@ public static class Commands
     public static CommandResult Apply(CliSession session, string storeDir, string proposalId, string user, UsageLog? usage = null)
     {
         RecordApplyUsage(usage, "storeDir", "proposalId", "user");
-        var (exitCode, projection, error) = BuildSessionApplyProjection(session, storeDir, proposalId, user);
-        return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : new CommandResult(exitCode, error!);
+        var (reason, projection, error) = BuildSessionApplyProjection(session, storeDir, proposalId, user);
+        return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : Refused(reason, error!);
     }
 
     /// <summary>The <c>apply</c> report as JSON, session-backed — see <see cref="Apply(CliSession,string,string,string,UsageLog)"/>.</summary>
     public static CommandResult ApplyJson(CliSession session, string storeDir, string proposalId, string user, UsageLog? usage = null)
     {
         RecordApplyUsage(usage, "storeDir", "proposalId", "user");
-        var (exitCode, projection, error) = BuildSessionApplyProjection(session, storeDir, proposalId, user);
+        var (reason, projection, error) = BuildSessionApplyProjection(session, storeDir, proposalId, user);
         return projection is not null ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
-            : new CommandResult(exitCode, error!);
+            : Refused(reason, error!);
     }
 
     // On failure the session already discarded its live cache (ADR 0016); the caller must open a new one.
-    private static (int ExitCode, ApplyProjection? Projection, string? Error) BuildSessionApplyProjection(
+    private static (FailureReason? Reason, ApplyProjection? Projection, string? Error) BuildSessionApplyProjection(
         CliSession session, string storeDir, string proposalId, string user)
     {
         if (session is null) throw new ArgumentNullException(nameof(session));
@@ -1643,13 +1643,13 @@ public static class Commands
                     storeDir, proposalId, out var manifest, out var manifestPath, out var id,
                     out var envelope, out var failure))
             {
-                return (failure!.ExitCode, null, failure.Output);
+                return (failure!.Reason ?? FailureReason.Refused, null, failure.Output);
             }
 
             // ADR 0004 decision 3: a bare apply with no bound DryRun is a hard error, checked before applying.
             if (manifest.Anchor is null)
             {
-                return (1, null, FailText(
+                return (FailureReason.Refused, null, FailText(
                     $"Proposal {id} has no bound DryRun recorded. Run " +
                     $"'dry-run {id} --project <fwdata>' first, then 'apply'."));
             }
@@ -1673,17 +1673,17 @@ public static class Commands
                     ex);
             }
 
-            return (0, ApplyProjectionBuilder.Build(id, receipt), null);
+            return (null, ApplyProjectionBuilder.Build(id, receipt), null);
         }
         catch (NeedsReconciliationException ex)
         {
             // Distinct from the rollback wording below: the mutation may already be durable.
-            return (1, null, FailText(ex.Message));
+            return (ReasonFor(ex), null, FailText(ex.Message));
         }
         catch (Exception ex)
         {
             // A failed apply rolled back, not Undo: the session already discarded its live cache above.
-            return (1, null, FailText(
+            return (FailureReason.StoreInconsistent, null, FailText(
                 ex.Message +
                 " [This session's live cache is no longer trustworthy: a failed apply rolls back, which " +
                 "does not refresh LibLCM's derived caches. Open a new session rather than reuse this one.]"));
@@ -1717,20 +1717,20 @@ public static class Commands
     public static CommandResult Log(string fwDataPath, UsageLog? usage = null)
     {
         usage?.Record("log", new[] { UsageArgumentShape.Text("fwDataPath") });
-        var (exitCode, projection, error) = BuildAppliedLog(fwDataPath);
-        return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : new CommandResult(exitCode, error!);
+        var (reason, projection, error) = BuildAppliedLog(fwDataPath);
+        return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : Refused(reason, error!);
     }
 
     /// <summary>The <c>log</c> report as JSON — the same <see cref="AppliedLogProjection"/> <see cref="Log(string,UsageLog)"/> renders as text.</summary>
     public static CommandResult LogJson(string fwDataPath, UsageLog? usage = null)
     {
         usage?.Record("log", new[] { UsageArgumentShape.Text("fwDataPath") });
-        var (exitCode, projection, error) = BuildAppliedLog(fwDataPath);
+        var (reason, projection, error) = BuildAppliedLog(fwDataPath);
         return projection is not null ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
-            : new CommandResult(exitCode, error!);
+            : Refused(reason, error!);
     }
 
-    private static (int ExitCode, AppliedLogProjection? Projection, string? Error) BuildAppliedLog(string fwDataPath)
+    private static (FailureReason? Reason, AppliedLogProjection? Projection, string? Error) BuildAppliedLog(string fwDataPath)
     {
         try
         {
@@ -1743,11 +1743,11 @@ public static class Commands
                 cache,
                 (name, error) => diagnostics.Add($"  [unparseable Motif entry] name='{name}' error='{error}'"));
 
-            return (0, AppliedLogProjectionBuilder.Build(fullFwDataPath, entries, diagnostics), null);
+            return (null, AppliedLogProjectionBuilder.Build(fullFwDataPath, entries, diagnostics), null);
         }
         catch (Exception ex)
         {
-            return (1, null, FailText(ex.Message));
+            return (ReasonFor(ex), null, FailText(ex.Message));
         }
     }
 
@@ -1847,6 +1847,27 @@ public static class Commands
     private static CommandResult Ok(StringBuilder sb) => new(0, sb.ToString());
 
     private static CommandResult Ok(string text) => new(0, text);
+
+    private static CommandResult Refused(FailureReason? reason, string text) =>
+        new(FailureEnvelope.ExitCodeFor(reason ?? FailureReason.Refused), text,
+            reason ?? FailureReason.Refused);
+
+    /// In a Proposal-loading helper an absent file names an absent Proposal, which the type alone cannot say.
+    private static FailureReason ReasonForProposal(Exception exception) => exception switch
+    {
+        FileNotFoundException or DirectoryNotFoundException => FailureReason.NotFound,
+        _ => ReasonFor(exception),
+    };
+
+    /// A caught exception knows more than a broad catch does; anything else is refused, which does not retry.
+    private static FailureReason ReasonFor(Exception exception) => exception switch
+    {
+        FileNotFoundException or DirectoryNotFoundException => FailureReason.InvalidArgument,
+        ArgumentException => FailureReason.InvalidArgument,
+        KeyNotFoundException => FailureReason.NotFound,
+        InvalidDataException => FailureReason.StoreInconsistent,
+        _ => FailureReason.Refused,
+    };
 
     private static CommandResult Fail(string message) => Fail(FailureReason.Refused, message);
 

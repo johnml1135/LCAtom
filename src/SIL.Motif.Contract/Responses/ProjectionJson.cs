@@ -16,7 +16,22 @@ public static class ProjectionJson
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        // Names not ordinals, domain converters first so JobStatus stays "queued" rather than "Queued".
+        Converters =
+        {
+            new SIL.Motif.Contract.Jobs.JobStatusJsonConverter(),
+            new SIL.Motif.Contract.Jobs.JobFailureCategoryJsonConverter(),
+            new JsonStringEnumConverter(),
+        },
     };
 
     public static string Serialize<T>(T projection) => JsonSerializer.Serialize(projection, Options);
+
+    /// <summary>Reads a response back with the same conventions it was written with.</summary>
+    /// <remarks>
+    /// A consumer that reconstructs the options itself has to know the naming policy and that reasons are
+    /// written as names — two facts nothing was telling it. Reading through here makes the round trip one
+    /// module's business rather than every caller's.
+    /// </remarks>
+    public static T? Deserialize<T>(string json) => JsonSerializer.Deserialize<T>(json, Options);
 }

@@ -21,8 +21,7 @@ public sealed class FailureContractTests : IDisposable
             "\" --store \"" + _root + "\" --json");
 
         Assert.Equal(string.Empty, result.Output);
-        var envelope = JsonSerializer.Deserialize<FailureEnvelope>(result.Error,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        var envelope = ProjectionJson.Deserialize<FailureEnvelope>(result.Error);
         Assert.NotNull(envelope);
         Assert.False(envelope!.Ok);
         Assert.Contains("Project file not found", envelope.Message, StringComparison.Ordinal);
@@ -62,6 +61,56 @@ public sealed class FailureContractTests : IDisposable
     }
 
     [Fact]
+    public void AnAbsentProposalIsNotFoundAndEnveloped()
+    {
+        // A well-formed id that nothing queued: the caller may act on the reason, and must not retry.
+        var absent = "proposal/" + new string('A', 22);
+
+        var result = Run($"show {absent} --store \"{_root}\" --json");
+
+        Assert.Equal(2, result.ExitCode);
+        Assert.Equal(FailureReason.NotFound, Envelope(result.Error).Reason);
+        Assert.Equal(string.Empty, result.Output);
+    }
+
+    [Fact]
+    public void AMalformedProposalIdIsAnInvocationErrorAndEnveloped()
+    {
+        var result = Run($"show proposal/short --store \"{_root}\" --json");
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Equal(FailureReason.InvalidArgument, Envelope(result.Error).Reason);
+    }
+
+    [Fact]
+    public void AMissingProjectFileIsAnInvocationErrorAndEnveloped()
+    {
+        var absent = Path.Combine(_root, "not-here.fwdata");
+
+        var result = Run($"open \"{absent}\" --json");
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Equal(FailureReason.InvalidArgument, Envelope(result.Error).Reason);
+    }
+
+    [Fact]
+    public void EveryFailureUnderJsonCarriesAnEnvelopeRatherThanProse()
+    {
+        // One reader must handle every verb; a verb opting out silently is worse than one that fails.
+        foreach (var invocation in new[]
+                 {
+                     $"show proposal/short --store \"{_root}\" --json",
+                     $"show proposal/{new string('A', 22)} --store \"{_root}\" --json",
+                     $"open \"{Path.Combine(_root, "absent.fwdata")}\" --json",
+                 })
+        {
+            var result = Run(invocation);
+            Assert.NotEqual(0, result.ExitCode);
+            Assert.StartsWith("{", result.Error.TrimStart(), StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
     public void AHeldProjectIsRetryableWhereAMalformedFlagIsNot()
     {
         // The whole point of the split: an agent must not retry a refusal and must be free to retry a lock.
@@ -73,8 +122,7 @@ public sealed class FailureContractTests : IDisposable
     }
 
     private static FailureEnvelope Envelope(string stderr) =>
-        JsonSerializer.Deserialize<FailureEnvelope>(stderr,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+        ProjectionJson.Deserialize<FailureEnvelope>(stderr)!;
 
     private static CliRun Run(string arguments)
     {

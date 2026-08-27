@@ -100,7 +100,8 @@ public sealed class ProposalStore
         var manifestPath = ManifestPath(proposalId);
         if (!File.Exists(manifestPath))
         {
-            throw new InvalidOperationException(
+            // A lookup miss, not an invalid operation: the CLI classifies its failure from the type.
+            throw new KeyNotFoundException(
                 $"Proposal '{proposalId}' not found in store '{RootDirectory}'. Run 'list' to see " +
                 "committed proposals.");
         }

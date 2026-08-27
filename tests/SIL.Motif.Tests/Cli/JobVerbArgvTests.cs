@@ -93,8 +93,7 @@ public sealed class JobVerbArgvTests : IDisposable
     }
 
     private static FailureEnvelope Envelope(string stderr) =>
-        JsonSerializer.Deserialize<FailureEnvelope>(stderr,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+        ProjectionJson.Deserialize<FailureEnvelope>(stderr)!;
 
     private static CliRun Run(string arguments)
     {
