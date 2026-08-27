@@ -202,6 +202,14 @@ boundary.
   FieldWorks surface and the non-.NET runners — and must be versioned accordingly. Moving the `--json`
   response records into it is a prerequisite for the first, and is not yet done.
 
+## Implementation
+
+The ordered work is in
+[the one-API CLI implementation plan](../superpowers/plans/2026-08-27-one-api-cli-implementation-plan.md).
+Two items in this ADR are specified but not delivered by the code today: the response shapes still live in
+`SIL.Motif.Projection` rather than Contract, so no consumer can bind to them, and the CLI's failure
+rendering is still plain text under `--json`.
+
 ## Rejected alternatives
 
 - **Keep the worker protocol and finish routing the verbs through it.** Rejected because it is the only
