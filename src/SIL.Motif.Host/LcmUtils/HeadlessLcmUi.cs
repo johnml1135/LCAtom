@@ -17,12 +17,19 @@ public class HeadlessLcmUi(ISynchronizeInvoke synchronizeInvoke) : ILcmUI
         Console.WriteLine(msg);
     }
 
-    public bool ConflictingSave()
-    {
-        Console.WriteLine("HeadlessLcmUi.ConflictingSave...");
-        // Revert to saved state
-        return true;
-    }
+    /// <summary>Refuses a conflicted save, because neither answer is safe without a person.</summary>
+    /// <remarks>
+    /// LibLCM asks this when a foreign peer committed between this process's read and its save. Answering
+    /// <c>true</c> reverts to the saved state and lets <c>Save</c> return normally, so the caller is told
+    /// its work landed when it was discarded; answering <c>false</c> keeps changes LibLCM has already
+    /// judged unreconcilable. A headless process has neither a person to ask nor standing to pick, so it
+    /// fails where the caller can see it. Pinned by
+    /// `AConflictingSaveFailsLoudlyRatherThanSilentlyDiscardingTheWork`.
+    /// </remarks>
+    public bool ConflictingSave() =>
+        throw new NotSupportedException(
+            "A conflicting save needs a decision this headless host cannot make: another writer changed " +
+            "the project since it was read.");
 
     public bool ConnectionLost()
     {
