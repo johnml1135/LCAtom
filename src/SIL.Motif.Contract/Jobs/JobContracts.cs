@@ -164,9 +164,22 @@ public sealed record JobRecord(
     string? DryRunJson = null,
     JobFailureCategory FailureCategory = JobFailureCategory.None,
     string? NotBeforeUtc = null,
-    string? ArchivedUtc = null)
+    string? ArchivedUtc = null,
+    string? OwnerId = null,
+    string? ClaimToken = null,
+    string? LeaseUntilUtc = null,
+    string? HeartbeatUtc = null)
 {
     public string LogicalJobId => LineageId ?? JobId;
+
+    /// <summary>Whether this row is currently held by a runner whose lease has not run out.</summary>
+    /// <remarks>
+    /// Held is a fact about time, not about status: a running job whose lease expired is claimable, which
+    /// is what lets a runner that stopped breathing have its work taken back rather than stranding it.
+    /// </remarks>
+    public bool IsHeldAt(string nowUtc) =>
+        ClaimToken is not null && LeaseUntilUtc is not null &&
+        string.CompareOrdinal(LeaseUntilUtc, nowUtc) > 0;
 }
 
 /// <summary>Injectable UTC clock used to make durable transitions deterministic.</summary>

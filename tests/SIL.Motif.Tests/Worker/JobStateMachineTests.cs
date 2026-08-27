@@ -307,7 +307,7 @@ public sealed class JobStateMachineTests : IDisposable
             var job = new JobRepository(upgraded).Get("historical-job");
             Assert.Equal("{\"dryRun\":true}", job!.DryRunJson);
             Assert.Equal("{\"progress\":1}", job.ProgressJson);
-            Assert.Equal(18, ReadJobColumnShapes(connection).Count);
+            Assert.Equal(22, ReadJobColumnShapes(connection).Count);
             Assert.Equal("DryRunJson", ReadJobColumnShapes(connection)[14].Split('|')[0]);
         }
         using var reopened = MotifDatabase.OpenOwned(path, project, MotifSchema.CurrentSchema, new Version(1, 0));
@@ -385,13 +385,15 @@ public sealed class JobStateMachineTests : IDisposable
             "ProgressJson|TEXT|0||0", "CancellationRequested|INTEGER|1|0|0", "CreatedUtc|TEXT|1||0",
             "UpdatedUtc|TEXT|1||0", "Version|INTEGER|1|0|0", "DryRunPublished|INTEGER|1|0|0",
             "DryRunJson|TEXT|0||0", "FailureCategory|TEXT|1|'none'|0", "NotBeforeUtc|TEXT|0||0",
-            "ArchivedUtc|TEXT|0||0" }, shapes);
+            "ArchivedUtc|TEXT|0||0", "OwnerId|TEXT|0||0", "ClaimToken|TEXT|0||0",
+            "LeaseUntilUtc|TEXT|0||0", "HeartbeatUtc|TEXT|0||0" }, shapes);
         using var indexes = connection.CreateCommand();
         indexes.CommandText = "SELECT name, \"unique\" FROM pragma_index_list('Jobs') WHERE origin = 'c' ORDER BY name;";
         using var indexReader = indexes.ExecuteReader();
         var indexShapes = new List<string>();
         while (indexReader.Read()) indexShapes.Add(indexReader.GetString(0) + "|" + indexReader.GetInt32(1));
-        Assert.Equal(new[] { "IX_Jobs_Lineage_Attempt|1", "IX_Jobs_Status_Updated|0" }, indexShapes);
+        Assert.Equal(new[] { "IX_Jobs_Lease|0", "IX_Jobs_Lineage_Attempt|1", "IX_Jobs_Status_Updated|0" },
+            indexShapes);
         using var indexColumns = connection.CreateCommand();
         indexColumns.CommandText = "SELECT name, group_concat(column_name, ',') FROM (" +
             "SELECT i.name, ii.seqno, ii.name AS column_name FROM pragma_index_list('Jobs') i " +
@@ -400,7 +402,9 @@ public sealed class JobStateMachineTests : IDisposable
         using var indexColumnReader = indexColumns.ExecuteReader();
         var columnShapes = new List<string>();
         while (indexColumnReader.Read()) columnShapes.Add(indexColumnReader.GetString(0) + "|" + indexColumnReader.GetString(1));
-        Assert.Equal(new[] { "IX_Jobs_Lineage_Attempt|LineageId,Attempt", "IX_Jobs_Status_Updated|Status,UpdatedUtc" }, columnShapes);
+        Assert.Equal(new[] { "IX_Jobs_Lease|Status,LeaseUntilUtc",
+            "IX_Jobs_Lineage_Attempt|LineageId,Attempt", "IX_Jobs_Status_Updated|Status,UpdatedUtc" },
+            columnShapes);
     }
 
     [Fact]

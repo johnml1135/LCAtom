@@ -24,6 +24,109 @@ public sealed class JobRepository
     /// <summary>Gets the owned database identity used to serialize recovery for its lifetime.</summary>
     internal MotifDatabase Database => _database;
 
+    /// <summary>Takes the oldest due job for one project, or returns null when another claimant won.</summary>
+    /// <remarks>
+    /// <para>
+    /// SQLite has no SKIP LOCKED, and does not need one: it admits a single writer at a time, and that
+    /// global write lock is the serialisation. The claim is therefore one conditional statement — the
+    /// subquery picks a candidate and the outer status predicate makes the write a no-op if anybody took
+    /// it in between. Affecting zero rows is an ordinary outcome, not an error.
+    /// </para>
+    /// <para>
+    /// A running job whose lease has run out is claimable too, which is how work left by a runner that
+    /// stopped breathing is taken back. That path increments the attempt, so a job that wedges repeatedly
+    /// exhausts its attempts instead of cycling forever.
+    /// </para>
+    /// </remarks>
+    public JobRecord? ClaimNext(string projectKey, string ownerId, string nowUtc, TimeSpan lease)
+    {
+        if (string.IsNullOrWhiteSpace(projectKey))
+            throw new ArgumentException("A project key is required.", nameof(projectKey));
+        if (string.IsNullOrWhiteSpace(ownerId))
+            throw new ArgumentException("An owner identity is required.", nameof(ownerId));
+        if (string.IsNullOrWhiteSpace(nowUtc))
+            throw new ArgumentException("A timestamp is required.", nameof(nowUtc));
+        if (lease <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(lease), "A lease must be positive.");
+
+        var queuedAndDue = "(Status = 'queued' AND (NotBeforeUtc IS NULL OR NotBeforeUtc <= $now))";
+        var runningAndExpired = "(Status = 'running' AND (LeaseUntilUtc IS NULL OR LeaseUntilUtc <= $now))";
+        using var connection = _database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+        var token = Guid.NewGuid().ToString("N");
+        using (var claim = connection.CreateCommand())
+        {
+            claim.Transaction = transaction;
+            claim.CommandText =
+                "UPDATE Jobs SET Status = 'running', OwnerId = $owner, ClaimToken = $token, " +
+                "LeaseUntilUtc = $until, HeartbeatUtc = $now, UpdatedUtc = $now, Version = Version + 1, " +
+                "Attempt = Attempt + CASE WHEN Status = 'running' THEN 1 ELSE 0 END " +
+                "WHERE JobId = (SELECT JobId FROM Jobs WHERE ProjectKey = $project AND ArchivedUtc IS NULL " +
+                "AND (" + queuedAndDue + " OR " + runningAndExpired + ") ORDER BY UpdatedUtc LIMIT 1) " +
+                "AND (" + queuedAndDue + " OR " + runningAndExpired + ");";
+            claim.Parameters.AddWithValue("$owner", ownerId);
+            claim.Parameters.AddWithValue("$token", token);
+            claim.Parameters.AddWithValue("$until", Stamp(nowUtc, lease));
+            claim.Parameters.AddWithValue("$now", nowUtc);
+            claim.Parameters.AddWithValue("$project", projectKey);
+            if (claim.ExecuteNonQuery() == 0)
+            {
+                transaction.Rollback();
+                return null;
+            }
+        }
+
+        using var read = connection.CreateCommand();
+        read.Transaction = transaction;
+        read.CommandText = SelectSql + " WHERE ClaimToken = $token;";
+        read.Parameters.AddWithValue("$token", token);
+        JobRecord claimed;
+        using (var reader = read.ExecuteReader())
+        {
+            if (!reader.Read()) throw new InvalidDataException("The claimed job could not be read back.");
+            claimed = Read(reader);
+        }
+        transaction.Commit();
+        return claimed;
+    }
+
+    /// <summary>Pushes one held job lease forward, refusing a token that no longer owns the row.</summary>
+    /// <remarks>
+    /// The token, not the owner identity, is what authorises this. A runner can stall past its lease, lose
+    /// the row, and wake up still carrying the same owner identity — only a token minted by the claim that
+    /// actually holds the row now tells those two apart.
+    /// </remarks>
+    public bool Heartbeat(string jobId, string claimToken, string nowUtc, TimeSpan lease)
+    {
+        if (string.IsNullOrWhiteSpace(jobId))
+            throw new ArgumentException("A job id is required.", nameof(jobId));
+        if (string.IsNullOrWhiteSpace(claimToken))
+            throw new ArgumentException("A claim token is required.", nameof(claimToken));
+        if (lease <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(lease), "A lease must be positive.");
+
+        using var connection = _database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            "UPDATE Jobs SET LeaseUntilUtc = $until, HeartbeatUtc = $now " +
+            "WHERE JobId = $id AND ClaimToken = $token;";
+        command.Parameters.AddWithValue("$until", Stamp(nowUtc, lease));
+        command.Parameters.AddWithValue("$now", nowUtc);
+        command.Parameters.AddWithValue("$id", jobId);
+        command.Parameters.AddWithValue("$token", claimToken);
+        var extended = command.ExecuteNonQuery() == 1;
+        transaction.Commit();
+        return extended;
+    }
+
+    /// A lease deadline is written in the same sortable form as every other timestamp in this store.
+    private static string Stamp(string nowUtc, TimeSpan lease) =>
+        (DateTimeOffset.Parse(nowUtc, CultureInfo.InvariantCulture,
+            DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal) + lease)
+        .UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture);
+
     public JobRecord Create(JobRecord requested)
     {
         var record = Normalize(requested);
@@ -239,13 +342,23 @@ public sealed class JobRepository
         return retry;
     }
 
-    public IReadOnlyList<JobRecord> MarkRunningInterrupted(DateTimeOffset now)
+    /// <summary>Marks running jobs interrupted at startup, optionally only this runner's own.</summary>
+    /// <remarks>
+    /// Sweeping every running row was right while one process could have left one. With several runners
+    /// it is not: a row held by a live runner is none of a starting process's business, and a row held by
+    /// a dead one is reclaimed by lease expiry, which does not need a second mechanism racing it. Passing
+    /// an owner narrows the sweep to what this process itself abandoned; passing none keeps the whole
+    /// sweep for a caller that is the only owner, which is what recovery still is until a runner claims.
+    /// </remarks>
+    public IReadOnlyList<JobRecord> MarkRunningInterrupted(DateTimeOffset now, string? ownerId = null)
     {
         using var connection = _database.OpenConnection();
         using var transaction = connection.BeginTransaction();
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = SelectSql + " WHERE Status = 'running' ORDER BY JobId;";
+        command.CommandText = SelectSql + " WHERE Status = 'running'" +
+            (ownerId is null ? string.Empty : " AND OwnerId = $owner") + " ORDER BY JobId;";
+        if (ownerId is not null) command.Parameters.AddWithValue("$owner", ownerId);
         using var reader = command.ExecuteReader();
         var current = new List<JobRecord>();
         while (reader.Read()) current.Add(Read(reader));
@@ -528,7 +641,8 @@ public sealed class JobRepository
     }
 
     private static readonly string SelectSql = "SELECT JobId, ProjectKey, Kind, Status, Attempt, LineageId, InputJson, ResultJson, ProgressJson, DryRunJson, " +
-        "CancellationRequested, CreatedUtc, UpdatedUtc, Version, DryRunPublished, FailureCategory, NotBeforeUtc, ArchivedUtc FROM Jobs";
+        "CancellationRequested, CreatedUtc, UpdatedUtc, Version, DryRunPublished, FailureCategory, NotBeforeUtc, ArchivedUtc, " +
+        "OwnerId, ClaimToken, LeaseUntilUtc, HeartbeatUtc FROM Jobs";
 
     private static JobRecord ReadRequired(SqliteConnection connection, SqliteTransaction transaction, string jobId)
     {
@@ -565,10 +679,15 @@ public sealed class JobRepository
             var failure = JobFailureCategoryJson.Parse(reader.GetString(15));
             var notBefore = reader.IsDBNull(16) ? null : reader.GetString(16);
             var archived = reader.IsDBNull(17) ? null : reader.GetString(17);
+            var owner = reader.IsDBNull(18) ? null : reader.GetString(18);
+            var claimToken = reader.IsDBNull(19) ? null : reader.GetString(19);
+            var leaseUntil = reader.IsDBNull(20) ? null : reader.GetString(20);
+            var heartbeat = reader.IsDBNull(21) ? null : reader.GetString(21);
             ValidatePersisted(jobId, projectKey, kind, status, attempt, lineage, input, result, progress, dryRun,
                 cancellation, created, updated, version, published, failure, notBefore, archived);
             return new JobRecord(jobId, projectKey, kind, status, attempt, input, result, created, updated,
-                progress, lineage, cancellation, version, published, dryRun, failure, notBefore, archived);
+                progress, lineage, cancellation, version, published, dryRun, failure, notBefore, archived,
+                owner, claimToken, leaseUntil, heartbeat);
         }
         catch (InvalidDataException) { throw; }
         catch (Exception exception) when (exception is FormatException or ArgumentException or InvalidOperationException or

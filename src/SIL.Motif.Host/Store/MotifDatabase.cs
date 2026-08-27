@@ -80,7 +80,9 @@ public sealed class MotifDatabase : IDisposable
             if (schema < 0)
                 throw new InvalidDataException("The Motif database has an invalid schema generation.");
             if (schema > supportedSchema)
-                throw new NotSupportedException($"Motif schema {schema} is newer than supported schema {supportedSchema}.");
+                throw new NotSupportedException(
+                    $"This project database is at Motif schema {schema} and this build understands "  +
+                    $"{supportedSchema}. Something newer opened it; update Motif and try again.");
 
             var hasTables = MotifSchema.HasUserTables(connection);
             if (applicationId == 0 && schema != 0)

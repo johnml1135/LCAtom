@@ -11,14 +11,14 @@ public static class MotifSchema
     public const int ApplicationId = 0x4D4F5446;
 
     /// <summary>The newest ordered schema generation implemented by this assembly.</summary>
-    public const int CurrentSchema = 7;
+    public const int CurrentSchema = 8;
 
     /// <summary>The connection busy timeout used for short-lived worker database sessions.</summary>
     public const int BusyTimeoutMilliseconds = 15000;
 
     internal static Version MinimumWorkerVersion(int schema) => schema switch
     {
-        1 or 2 or 3 or 4 or 5 or 6 or 7 => new Version(1, 0),
+        1 or 2 or 3 or 4 or 5 or 6 or 7 or 8 => new Version(1, 0),
         _ => throw new NotSupportedException($"Motif schema {schema} is not known to this worker.")
     };
 
@@ -77,6 +77,9 @@ public static class MotifSchema
                 case 7:
                     CreateBaselineTable(connection, transaction);
                     break;
+                case 8:
+                    AddJobLeaseColumns(connection, transaction);
+                    break;
                 default:
                     throw new NotSupportedException($"Motif schema {schema} is not known to this worker.");
             }
@@ -126,7 +129,7 @@ public static class MotifSchema
                 "ParsedAnalyses", "AssessmentPins", "Proposals", "ProposalRevisions", "Drafts",
                 "Decisions", "Receipts", "Reports", "AppliedIndex", "MigrationLedger", "Jobs"
             },
-            7 => new HashSet<string>(StringComparer.Ordinal)
+            7 or 8 => new HashSet<string>(StringComparer.Ordinal)
             {
                 "MotifMetadata", "Corpora", "CorpusDocuments", "Assessments", "AssessedWords",
                 "ParsedAnalyses", "AssessmentPins", "Proposals", "ProposalRevisions", "Drafts",
@@ -145,6 +148,7 @@ public static class MotifSchema
             expectedIndexes.Add("IX_Jobs_Lineage_Attempt");
             expectedIndexes.Add("IX_Jobs_Status_Updated");
         }
+        if (schema >= 8) expectedIndexes.Add("IX_Jobs_Lease");
 
         using (var objects = connection.CreateCommand())
         {
@@ -310,6 +314,19 @@ public static class MotifSchema
         drop.Transaction = transaction;
         drop.CommandText = "DROP TABLE Jobs_GenerationFour;";
         drop.ExecuteNonQuery();
+    }
+
+    // Additive and nullable: an existing row stays valid with all four null, meaning nobody has claimed it.
+    private static void AddJobLeaseColumns(SqliteConnection connection, SqliteTransaction? transaction)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "ALTER TABLE Jobs ADD COLUMN OwnerId TEXT NULL; " +
+            "ALTER TABLE Jobs ADD COLUMN ClaimToken TEXT NULL; " +
+            "ALTER TABLE Jobs ADD COLUMN LeaseUntilUtc TEXT NULL; " +
+            "ALTER TABLE Jobs ADD COLUMN HeartbeatUtc TEXT NULL; " +
+            "CREATE INDEX IF NOT EXISTS IX_Jobs_Lease ON Jobs(Status, LeaseUntilUtc);";
+        command.ExecuteNonQuery();
     }
 
     private static void AddRecoveryAndArchiveFacts(SqliteConnection connection, SqliteTransaction? transaction)
@@ -493,7 +510,7 @@ public static class MotifSchema
     {
         "IX_AssessedWords_Assessment" or "IX_AssessedWords_Word" => "AssessedWords",
         "IX_ParsedAnalyses_Word" => "ParsedAnalyses",
-        "IX_Jobs_Lineage_Attempt" or "IX_Jobs_Status_Updated" => "Jobs",
+        "IX_Jobs_Lineage_Attempt" or "IX_Jobs_Status_Updated" or "IX_Jobs_Lease" => "Jobs",
         _ => throw new InvalidDataException($"Motif index {index} is not registered.")
     };
 
@@ -506,6 +523,7 @@ public static class MotifSchema
         "IX_ParsedAnalyses_Word" => ["AssessedWordId"],
         "IX_Jobs_Lineage_Attempt" => ["LineageId", "Attempt"],
         "IX_Jobs_Status_Updated" => ["Status", "UpdatedUtc"],
+        "IX_Jobs_Lease" => ["Status", "LeaseUntilUtc"],
         _ => throw new InvalidDataException($"Motif index {index} is not registered.")
     };
 
@@ -604,7 +622,11 @@ public static class MotifSchema
             C("ResultJson", "TEXT"), C("ProgressJson", "TEXT"), C("CancellationRequested", "INTEGER", true, defaultValue: "0"),
             C("CreatedUtc", "TEXT", true), C("UpdatedUtc", "TEXT", true), C("Version", "INTEGER", true, defaultValue: "0"),
             C("DryRunPublished", "INTEGER", true, defaultValue: "0"), C("DryRunJson", "TEXT"),
-            C("FailureCategory", "TEXT", true, defaultValue: "'none'"), C("NotBeforeUtc", "TEXT"), C("ArchivedUtc", "TEXT")]
+            C("FailureCategory", "TEXT", true, defaultValue: "'none'"), C("NotBeforeUtc", "TEXT"), C("ArchivedUtc", "TEXT"),
+            .. schema >= 8
+                ? new[] { C("OwnerId", "TEXT"), C("ClaimToken", "TEXT"), C("LeaseUntilUtc", "TEXT"),
+                    C("HeartbeatUtc", "TEXT") }
+                : []]
         : [C("JobId", "TEXT", false, 1), C("ProjectKey", "TEXT", true), C("Kind", "TEXT", true), C("Status", "TEXT", true),
             C("Attempt", "INTEGER", true, defaultValue: "1"), C("LineageId", "TEXT", true), C("InputJson", "TEXT", true),
             C("ResultJson", "TEXT"), C("ProgressJson", "TEXT"), C("CancellationRequested", "INTEGER", true, defaultValue: "0"),
