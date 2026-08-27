@@ -15,17 +15,20 @@ namespace SIL.Motif.Tests.Cli;
 /// Proof, on a real project: drives the CLI command handlers directly (never shells out to
 /// the built executable) through the full <c>new -&gt; add-set-gloss -&gt; finalize -&gt; dry-run -&gt;
 /// apply -&gt; log</c> loop against a real sense's <c>CanonicalId.FromGuid(sense.Guid)</c>, proving
-/// the files store (drafts/objects/manifests) and the thin CLI drive the real Contract/Runner/Host
-/// end to end.
+/// the files store (drafts/objects/manifests) and the thin CLI drive the real Contract/Runner/Host.
 /// </summary>
+/// <remarks>
+/// A workflow test, not an end-to-end one: no process boundary is crossed here. Whether the shipped
+/// executables do this is <c>RunnerSpineTests</c>' subject.
+/// </remarks>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
-public sealed class EndToEndCliTests
+public sealed class ProposalWorkflowTests
 {
     private readonly SeededProject _seed;
     private readonly string _fwDataPath;
     private readonly string _storeDir;
 
-    public EndToEndCliTests(PristineProjectFixture pristine)
+    public ProposalWorkflowTests(PristineProjectFixture pristine)
     {
         _seed = pristine.Seed;
         using var scratch = pristine.NewScratch();

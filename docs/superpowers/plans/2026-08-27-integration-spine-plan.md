@@ -33,18 +33,18 @@ count and its delta.
 - Create: `src/SIL.Motif.Cli/JobCommands.cs`
 - Test: `tests/SIL.Motif.Tests/Cli/`
 
-- [ ] **Step 1: Write the argv tests for the two verbs**
+- [x] **Step 1: Write the argv tests for the two verbs**
 
 Enqueue prints a job id and exits 0; `jobs show <id>` prints the durable status as JSON; an unknown job id
 is `NotFound` (exit 2) rather than a crash; a malformed id is `InvalidArgument` (exit 1). These are argv
 tests against the real executable, because a verb that only works in-process is the thing this whole plan
 exists to stop believing.
 
-- [ ] **Step 2: Run red**
+- [x] **Step 2: Run red**
 
 Run `./test.ps1`. Expected: unknown verbs.
 
-- [ ] **Step 3: Add the verbs and the overrides**
+- [x] **Step 3: Add the verbs and the overrides**
 
 Two verbs, both routed through `JobRepository` in-process like every other verb. The runner gains:
 `MOTIF_WORKER_ROOT` (an operator needs this to run two installations), a lease-duration option (an
@@ -54,7 +54,7 @@ operator needs this to tune a wedged runner), and an owner-namespace override.
 runner would otherwise fight the developer's real runner, and two concurrent test runs would fight each
 other. Do not describe it as an operational feature.
 
-- [ ] **Step 4: Run green and commit**
+- [x] **Step 4: Run green and commit**
 
 ---
 
@@ -68,7 +68,7 @@ There is no `Kind` → handler dispatch anywhere, so the loop and its first hand
 - Modify: `src/SIL.Motif.Worker/Program.cs` — run the loop instead of idling
 - Test: `tests/SIL.Motif.Tests/Worker/`
 
-- [ ] **Step 1: Write the loop's tests in-process**
+- [x] **Step 1: Write the loop's tests in-process**
 
 Claim → dispatch → terminal transition; a kind with no handler fails the job rather than looping on it
 forever; a handler that throws produces a failed job carrying the reason; the loop heartbeats while a
@@ -77,16 +77,16 @@ handler runs; the loop exits when idle and does **not** exit while holding a lea
 That last one is the property most easily lost: a runner that exits on an idle timer while a job is
 running abandons a leased row for the lease's whole duration.
 
-- [ ] **Step 2: Run red**
+- [x] **Step 2: Run red**
 
-- [ ] **Step 3: Implement the loop and the refresh handler**
+- [x] **Step 3: Implement the loop and the refresh handler**
 
 Jittered polling, per [the job lease design](../specs/2026-08-27-job-lease-design.md). The handler calls
 `BaselineRefreshBarrier` — its first production construction — and translates its three outcomes into job
 states: `Refreshed` → completed; `ProjectInUse` → a retryable failure; `CaptureFailed` → failed with the
 reason.
 
-- [ ] **Step 4: Run green and commit**
+- [x] **Step 4: Run green and commit**
 
 ---
 
@@ -98,7 +98,7 @@ The test that has never existed.
 - Create: `tests/SIL.Motif.Tests/Integration/RunnerSpineTests.cs`
 - Create: `tests/SIL.Motif.Tests/TestFixtures/RunnerProcess.cs`
 
-- [ ] **Step 1: Write it**
+- [x] **Step 1: Write it**
 
 A real `motif.exe` enqueues against a real project (a 48 KB copy from `PristineProjectFixture`), a real
 runner process claims and completes it, and a second `motif.exe` reads the terminal status back. The
@@ -107,17 +107,17 @@ fails if it is still alive at the end.
 
 Assert the *stored* result, not just the exit codes: a Baseline row exists that the refresh published.
 
-- [ ] **Step 2: Run red, and read the failure**
+- [x] **Step 2: Run red, and read the failure**
 
 It will fail for a real reason — a missing override, a path assumption, a runner that exits before
 claiming. Record what it was in the commit, because those are the findings this task exists to produce.
 
-- [ ] **Step 3: Make it pass without weakening it**
+- [x] **Step 3: Make it pass without weakening it**
 
 If a step needs a longer timeout, say so and say why. If it needs a sleep, that is a signal the loop lacks
 an observable state, and the fix belongs in the loop rather than the test.
 
-- [ ] **Step 4: Run green and commit**
+- [x] **Step 4: Run green and commit**
 
 ---
 
@@ -126,7 +126,7 @@ an observable state, and the fix belongs in the loop rather than the test.
 **Files:**
 - Modify: `tests/SIL.Motif.Tests/Integration/RunnerSpineTests.cs`
 
-- [ ] **Step 1: Write it**
+- [x] **Step 1: Write it**
 
 Enqueue, let a runner with a one-second lease claim, kill the process outright, start a second runner, and
 assert the row is reclaimed with `Attempt` incremented and reaches a terminal state.
@@ -134,15 +134,15 @@ assert the row is reclaimed with `Attempt` incremented and reaches a terminal st
 Killing must be a real process kill, not a cancellation: the failure the lease was designed for is a
 process that stops existing without unwinding anything.
 
-- [ ] **Step 2: Run red**
+- [x] **Step 2: Run red**
 
-- [ ] **Step 3: Make it deterministic**
+- [x] **Step 3: Make it deterministic**
 
 A refresh over a 48 KB project may finish before the kill lands. Make the *lease* short rather than the
 work slow: the reclaim is a function of lease expiry, so a one-second lease and a killed process is
 deterministic without racing the handler.
 
-- [ ] **Step 4: Run green and commit**
+- [x] **Step 4: Run green and commit**
 
 ---
 
@@ -152,13 +152,13 @@ deterministic without racing the handler.
 - Modify: `tests/SIL.Motif.Tests/Parser/ParserSeamIntegrationTests.cs` (attribute unchanged; document why)
 - Modify: `tests/SIL.Motif.Tests/Parser/GrammarCoverageFigureIntegrationTests.cs`
 
-- [ ] **Step 1: Add the fake-backed coverage-figure test**
+- [x] **Step 1: Add the fake-backed coverage-figure test**
 
 Assert the figure cites the digests its run carried — Motif's provenance plumbing, which a fake serves
 honestly. Leave the two correlation tests on `RealParserFact` and record in the attribute's own docs why
 a fake cannot serve them.
 
-- [ ] **Step 2: Run green and commit**
+- [x] **Step 2: Run green and commit**
 
 ---
 
@@ -167,7 +167,7 @@ a fake cannot serve them.
 **Files:**
 - Rename: `tests/SIL.Motif.Tests/Cli/EndToEndCliTests.cs`
 
-- [ ] **Step 1: Rename to what it covers, and commit**
+- [x] **Step 1: Rename to what it covers, and commit**
 
 It walks new → add-set-gloss → finalize → list → show through the command layer. Name it for the proposal
 workflow it exercises. The false name is part of why the absence of end-to-end coverage went unnoticed.
