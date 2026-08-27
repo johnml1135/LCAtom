@@ -197,14 +197,20 @@ boundary.
   Newtonsoft-based `net48` host remain to be settled when FieldWorks first references it.
 - `SIL.Motif.Contract` becomes a genuine published contract with two consumer families — a `net48`
   FieldWorks surface and the non-.NET runners — and must be versioned accordingly. Moving the `--json`
-  response records into it is a prerequisite for the first, and is not yet done.
+  response records into it was a prerequisite for the first, and is done.
 
 ## Implementation
 
-The ordered work is in
-[the one-API CLI implementation plan](../superpowers/plans/2026-08-27-one-api-cli-implementation-plan.md).
-One item in this ADR is specified but not yet delivered by the code: the CLI's failure rendering is still
-plain text under `--json`, so a machine consumer that asked for JSON gets prose when something goes wrong.
+The ordered work was in
+[the one-API CLI implementation plan](../superpowers/plans/2026-08-27-one-api-cli-implementation-plan.md),
+and every decision above is now delivered by the code: the wire is gone, `netstandard2.0` survives only on
+Contract, the response shapes and the failure envelope live there, and a job carries the ownership a second
+process needs to reclaim it.
+
+What this ADR does **not** claim is that the product runs. The job runner takes its mutex, composes a
+runtime registry, and idles: nothing calls `ClaimNext`, and `DryRunJobHandler`,
+`DryRunAssessmentPipeline`, `PanGlossParser`, `BaselineRetentionCleaner` and `MachinePanGlossQueue` each
+have zero production constructions. The seams are tested; the spine has still never been stood up.
 
 ## Amendments
 
