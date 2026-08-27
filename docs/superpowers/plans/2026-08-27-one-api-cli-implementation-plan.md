@@ -79,8 +79,8 @@ binary transfer, none of which carries domain behaviour.
   `PublishWorkerBuildMetadata` protocol-metadata targets
 - Modify: `src/SIL.Motif.Worker/Program.cs`, `WorkerLifetime.cs` — start and idle-exit without an endpoint
 - Modify: `Motif.sln` — remove the Client project
-- Keep, untouched: `src/SIL.Motif.Launcher/` (catalog, newest-compatible selection, mutex, idle lifetime),
-  `WorkerMutexOwner.cs`, `WorkerWorkTracker.cs`
+- Modify, **not keep untouched**: `src/SIL.Motif.Launcher/` — see the widening note below
+- Keep, untouched: `WorkerMutexOwner.cs`, `WorkerWorkTracker.cs`
 - Delete: `tests/SIL.Motif.Tests/Client/` (2 files) and the wire tests under
   `tests/SIL.Motif.Tests/Worker/` (24 files — protocol, handshake, refusal, transfer)
 
@@ -101,10 +101,27 @@ in-process seam they need does not exist yet for every handler.
 Remove the files above. Where a deleted handler was the only caller of durable logic, the logic moves to
 the CLI or job runner — it is not deleted with its handler.
 
-- [ ] **Step 4: Run green and commit**
+- [ ] **Step 4: Re-ground the Launcher on schema, not protocol**
 
-Run `./test.ps1`. Report the new total and the delta, split into "wire tests deleted" and "tests
-retargeted", so the drop is accounted for rather than merely noted.
+Widened after Task 1 disproved the ADR's "the Launcher survives intact"
+([ADR 0040 amendment, 2026-08-27](../../adr/0040-one-api-the-cli.md)). All three Launcher files are
+protocol-coupled and the project references `SIL.Motif.Client`.
+
+Keep the mechanism — registration, listing, digest and hash verification, the per-user mutex, process
+start, run-until-idle. Replace the criterion: `WorkerBuildMetadata` becomes `{productVersion,
+supportedSchema}`, `InstalledWorker` drops `Protocols` and `Capabilities` for the supported schema
+generation, `WorkerSelector` compares that, and `EnsureConnectedAsync` becomes "ensure the runner is
+running" with no handshake. `WorkerSelectorTests` (25) and `WorkerLauncherReviewTests` (9) are rewritten
+against the new criterion rather than deleted — the behaviour they cover survives, its input changes.
+
+The catalog's on-disk manifest format changes with it. Decide and record whether an existing manifest is
+migrated or discarded; discarding is defensible pre-alpha, but it should be a decision rather than a
+surprise.
+
+- [ ] **Step 5: Run green and commit**
+
+Run `./test.ps1`. Report the new total and the delta, split into "wire tests deleted", "tests retargeted",
+and "launcher tests rewritten", so the drop is accounted for rather than merely noted.
 
 ---
 

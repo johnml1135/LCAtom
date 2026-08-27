@@ -210,6 +210,29 @@ Two items in this ADR are specified but not delivered by the code today: the res
 `SIL.Motif.Projection` rather than Contract, so no consumer can bind to them, and the CLI's failure
 rendering is still plain text under `--json`.
 
+## Amendments
+
+### 2026-08-27 — "the Launcher survives intact" was wrong
+
+Decision 4 says `SIL.Motif.Launcher` survives intact and that none of its parts depend on a wire.
+Implementing Task 1 disproved that. All three of its files are protocol-coupled, and `WorkerSelector`'s own
+summary states the coupling outright: *"Chooses an installed worker using wire compatibility before product
+ordering."* `InstalledWorker` carries a `ProtocolRange` and a capability list; `WorkerBuildMetadata` — which
+the worker build generates and publishes as `worker.metadata.json` — carries `{productVersion, min, max,
+capabilities}`; `WorkerLauncher.EnsureConnectedAsync` takes a `WorkerHandshakeRequest`, connects, and
+negotiates. The project references `SIL.Motif.Client`.
+
+What survives is the mechanism, not the criterion: the catalog's registration, listing, digest and hash
+verification, the per-user mutex, process start, and run-until-idle are all independent of any protocol.
+What has to be redesigned is what *compatible* means. With no wire there is no protocol range to compare,
+and the honest replacement is the one decision 5 already names — a job runner must be compatible with the
+**database schema generation** it will open, not with a pipe. `WorkerBuildMetadata` becomes
+`{productVersion, supportedSchema}` and `WorkerSelector` compares that.
+
+This is a better criterion than the one it replaces, because it is the compatibility that can actually
+break a user. It is also more work than decision 4 implied, and the implementation plan's Task 2 has been
+widened to carry it.
+
 ## Rejected alternatives
 
 - **Keep the worker protocol and finish routing the verbs through it.** Rejected because it is the only
