@@ -47,27 +47,20 @@ success from the exit code, never by inspecting output.
 **No verb requires a prior verb in the same process.** Anything a call needs is either passed as a flag or
 already durable in the store.
 
-## The gap this contract has to close
+## The failure contract
 
-Today every failure — all 59 refusal sites in `Commands.cs`, plus unknown verbs and usage errors — renders
-the same way:
+Every refusal in `Commands.cs`, plus unknown verbs and usage errors, used to render the same way — plain
+`error: <message>` on stderr with exit code `1`, **regardless of `--json`**. A machine consumer that asked
+for JSON got prose when something went wrong, and could not tell a malformed invocation from a locked
+project from a refused Apply.
 
-```
-error: <message>
-```
+That was the whole of the work ADR 0040 left behind, and it was small for a reason worth naming: under
+the superseded worker protocol each refusal had to be re-expressed as a typed payload a remote client
+could reconstitute a message from, which the [API surface note](cli-worker-api-surface.md) called the
+largest step in that migration. Here the decision to refuse and its wording stay in one process, so only
+the envelope was missing.
 
-as plain text on stderr with exit code `1`, **regardless of `--json`**. A machine consumer that asked for
-JSON gets prose when something goes wrong, and cannot tell a malformed invocation from a locked project
-from a refused Apply.
-
-That is the whole of the work ADR 0040 leaves behind. It is worth being precise about why it is small:
-under the superseded worker protocol, each refusal had to be re-expressed as a typed payload that a remote
-client could reconstitute a message from, which is why the
-[API surface note](cli-worker-api-surface.md) called it the largest step in that migration. Here the
-decision to refuse and the wording of the refusal stay in the same process. Only the *envelope* is
-missing.
-
-### Specified: the failure envelope
+### The failure envelope
 
 Under `--json`, a failure emits a single JSON object on stderr and nothing on stdout:
 
@@ -87,7 +80,7 @@ set of machine-stable codes; `detail` is optional and reason-specific. Without `
 Successful `--json` output stays as it is today: the projection itself, unwrapped. A consumer distinguishes
 the two by exit code and stream, not by probing for an envelope.
 
-### Specified: exit codes
+### Exit codes
 
 One code for every failure makes the caller guess. The set is deliberately small, because a code is a
 promise and a large set is a large promise:
@@ -103,7 +96,7 @@ promise and a large set is a large promise:
 The `2` and `3` split is the one that earns its keep: an agent must not retry a refusal, and must be
 allowed to retry a lock.
 
-### Specified: versioning
+### Versioning
 
 The JSON surface is now a compatibility surface with real consumers, which is what the capability
 negotiation in the deleted protocol existed to manage. It is managed here instead by additive discipline:

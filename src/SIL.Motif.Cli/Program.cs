@@ -1,3 +1,4 @@
+using SIL.Motif.Contract.Responses;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -35,27 +36,27 @@ try
     {
         case "open":
             if (positionals.Count != 1)
-                return Usage("Usage: motif open <path-to-.fwdata> [--json]");
+                return Usage("Usage: motif open <path-to-.fwdata> [--json]", asJson);
             result = asJson ? Commands.OpenJson(positionals[0], usage) : Commands.Open(positionals[0], usage);
             break;
 
         case "analyses":
             if (!flags.TryGetValue("project", out var analysesProject))
-                return Usage(AnalysesUsage());
+                return Usage(AnalysesUsage(), asJson);
             var hasAssessment = flags.TryGetValue("assessment", out var assessmentId);
             var hasCurrentCorpus = flags.TryGetValue("current-corpus-sha256", out var currentCorpusSha256);
             var hasCurrentGrammar = flags.TryGetValue("current-grammar-sha256", out var currentGrammarSha256);
             if ((hasAssessment || hasCurrentCorpus || hasCurrentGrammar)
                 && !(hasAssessment && hasCurrentCorpus && hasCurrentGrammar))
             {
-                return Usage(AnalysesUsage());
+                return Usage(AnalysesUsage(), asJson);
             }
             if (hasAssessment
                 && (!Sha256Value.IsCanonical(assessmentId)
                     || !Sha256Value.IsCanonical(currentCorpusSha256)
                     || !Sha256Value.IsCanonical(currentGrammarSha256)))
             {
-                return Usage(AnalysesUsage());
+                return Usage(AnalysesUsage(), asJson);
             }
             result = hasAssessment
                 ? asJson
@@ -70,7 +71,7 @@ try
 
         case "new":
             if (!flags.TryGetValue("draft", out var newDraftName))
-                return Usage("Usage: motif new --draft <name> [--label <text>]");
+                return Usage("Usage: motif new --draft <name> [--label <text>]", asJson);
             result = Commands.New(storeDir, newDraftName, flags.GetValueOrDefault("label"));
             break;
 
@@ -82,7 +83,7 @@ try
             {
                 return Usage(
                     "Usage: motif add-set-gloss --draft <name> --target <canonicalId> --ws <wsTag> --text <text> " +
-                    "[--depends-on <opId>[,<opId>...]]");
+                    "[--depends-on <opId>[,<opId>...]]", asJson);
             }
             var addDependsOn = flags.TryGetValue("depends-on", out var addDependsOnRaw)
                 ? addDependsOnRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
@@ -94,7 +95,7 @@ try
             if (!flags.TryGetValue("draft", out var addDelDraftName) ||
                 !flags.TryGetValue("target", out var addDelTarget))
             {
-                return Usage("Usage: motif add-delete-lexeme-form --draft <name> --target <canonicalId>");
+                return Usage("Usage: motif add-delete-lexeme-form --draft <name> --target <canonicalId>", asJson);
             }
             result = Commands.AddDeleteLexemeForm(storeDir, addDelDraftName, addDelTarget);
             break;
@@ -106,7 +107,7 @@ try
             {
                 return Usage(
                     "Usage: motif compose-author-lexeme-form --draft <name> --project <fwdata> --intent " +
-                    "'{\"entry\":...,\"morphType\":...,\"ws\":...,\"text\":...}'");
+                    "'{\"entry\":...,\"morphType\":...,\"ws\":...,\"text\":...}'", asJson);
             }
             result = Commands.ComposeAuthorLexemeForm(storeDir, composeDraftName, composeProject, composeIntent);
             break;
@@ -118,7 +119,7 @@ try
             {
                 return Usage(
                     "Usage: motif compose-author-feature-structure --draft <name> --project <fwdata> " +
-                    "--intent '{\"msa\":...}'");
+                    "--intent '{\"msa\":...}'", asJson);
             }
             result = Commands.ComposeAuthorFeatureStructure(
                 storeDir, composeFsDraftName, composeFsProject, composeFsIntent);
@@ -133,7 +134,7 @@ try
             {
                 return Usage(
                     "Usage: motif promote-gloss --draft <name> --target <canonicalId> --ws <wsTag> " +
-                    "--text <text> --corpus <corpusId> [--document <docId>]");
+                    "--text <text> --corpus <corpusId> [--document <docId>]", asJson);
             }
             result = Commands.PromoteGloss(
                 storeDir, promoteDraftName, promoteTarget, promoteWs, promoteText, promoteCorpus,
@@ -142,37 +143,37 @@ try
 
         case "label":
             if (!flags.TryGetValue("draft", out var labelDraftName) || positionals.Count != 1)
-                return Usage("Usage: motif label --draft <name> <text>");
+                return Usage("Usage: motif label --draft <name> <text>", asJson);
             result = Commands.Label(storeDir, labelDraftName, positionals[0]);
             break;
 
         case "comment":
             if (!flags.TryGetValue("draft", out var commentDraftName) || positionals.Count != 1)
-                return Usage("Usage: motif comment --draft <name> <text>");
+                return Usage("Usage: motif comment --draft <name> <text>", asJson);
             result = Commands.Comment(storeDir, commentDraftName, positionals[0]);
             break;
 
         case "finalize":
             if (!flags.TryGetValue("draft", out var finalizeDraftName))
-                return Usage("Usage: motif finalize --draft <name>");
+                return Usage("Usage: motif finalize --draft <name>", asJson);
             result = Commands.Finalize(storeDir, finalizeDraftName);
             break;
 
         case "reopen":
             if (!flags.TryGetValue("draft", out var reopenDraftName) || positionals.Count != 1)
-                return Usage("Usage: motif reopen --draft <name> <proposalId>");
+                return Usage("Usage: motif reopen --draft <name> <proposalId>", asJson);
             result = Commands.Reopen(storeDir, reopenDraftName, positionals[0]);
             break;
 
         case "duplicate":
             if (!flags.TryGetValue("draft", out var dupDraftName) || positionals.Count != 1)
-                return Usage("Usage: motif duplicate --draft <newName> <proposalId>");
+                return Usage("Usage: motif duplicate --draft <newName> <proposalId>", asJson);
             result = Commands.Duplicate(storeDir, positionals[0], dupDraftName);
             break;
 
         case "remove-operations":
             if (!flags.TryGetValue("draft", out var removeDraftName) || positionals.Count == 0)
-                return Usage("Usage: motif remove-operations --draft <name> <operationId> [<operationId>...] [--force]");
+                return Usage("Usage: motif remove-operations --draft <name> <operationId> [<operationId>...] [--force]", asJson);
             var removeForce = flags.TryGetValue("force", out var removeForceRaw) && IsTruthyFlag(removeForceRaw);
             result = Commands.RemoveOperations(storeDir, removeDraftName, positionals, removeForce);
             break;
@@ -182,7 +183,7 @@ try
             {
                 return Usage(
                     "Usage: motif split <proposalId> <draftName>=<opId>[,<opId>...] " +
-                    "[<draftName>=<opId>[,<opId>...] ...] [--force]");
+                    "[<draftName>=<opId>[,<opId>...] ...] [--force]", asJson);
             }
             var splitForce = flags.TryGetValue("force", out var splitForceRaw) && IsTruthyFlag(splitForceRaw);
             var splitGroups = new List<Commands.SplitGroup>();
@@ -192,7 +193,7 @@ try
                 if (eq <= 0 || eq == spec.Length - 1)
                 {
                     return Usage(
-                        $"Invalid split group '{spec}'. Expected '<draftName>=<opId>[,<opId>...]'.");
+                        $"Invalid split group '{spec}'. Expected '<draftName>=<opId>[,<opId>...]'.", asJson);
                 }
                 var groupDraftName = spec[..eq];
                 var groupOpIds = spec[(eq + 1)..]
@@ -204,7 +205,7 @@ try
 
         case "defer":
             if (positionals.Count != 1)
-                return Usage("Usage: motif defer <proposalId>");
+                return Usage("Usage: motif defer <proposalId>", asJson);
             result = Commands.Defer(storeDir, positionals[0]);
             break;
 
@@ -214,7 +215,7 @@ try
                 !flags.TryGetValue("actor-id", out var approveActorId))
             {
                 return Usage(
-                    "Usage: motif approve <proposalId> --actor-type human|ai --actor-id <name> [--comment <text>]");
+                    "Usage: motif approve <proposalId> --actor-type human|ai --actor-id <name> [--comment <text>]", asJson);
             }
             result = Commands.Approve(
                 storeDir, positionals[0], approveActorType, approveActorId, flags.GetValueOrDefault("comment"));
@@ -226,7 +227,7 @@ try
                 !flags.TryGetValue("actor-id", out var rejectActorId))
             {
                 return Usage(
-                    "Usage: motif reject <proposalId> --actor-type human|ai --actor-id <name> [--comment <text>]");
+                    "Usage: motif reject <proposalId> --actor-type human|ai --actor-id <name> [--comment <text>]", asJson);
             }
             result = Commands.Reject(
                 storeDir, positionals[0], rejectActorType, rejectActorId, flags.GetValueOrDefault("comment"));
@@ -234,7 +235,7 @@ try
 
         case "supersede":
             if (positionals.Count != 2)
-                return Usage("Usage: motif supersede <proposalId> <supersededByProposalId>");
+                return Usage("Usage: motif supersede <proposalId> <supersededByProposalId>", asJson);
             result = Commands.Supersede(storeDir, positionals[0], positionals[1]);
             break;
 
@@ -244,7 +245,7 @@ try
 
         case "show":
             if (positionals.Count != 1)
-                return Usage("Usage: motif show <proposalId> [--json]");
+                return Usage("Usage: motif show <proposalId> [--json]", asJson);
             result = asJson
                 ? Commands.ShowJson(storeDir, positionals[0], usage)
                 : Commands.Show(storeDir, positionals[0], usage);
@@ -252,7 +253,7 @@ try
 
         case "dry-run":
             if (positionals.Count != 1 || !flags.TryGetValue("project", out var dryRunProject))
-                return Usage("Usage: motif dry-run <proposalId> --project <fwdata> [--json]");
+                return Usage("Usage: motif dry-run <proposalId> --project <fwdata> [--json]", asJson);
             result = asJson
                 ? Commands.DryRunJson(storeDir, positionals[0], dryRunProject, usage)
                 : Commands.DryRun(storeDir, positionals[0], dryRunProject, usage);
@@ -263,7 +264,7 @@ try
                 !flags.TryGetValue("project", out var applyProject) ||
                 !flags.TryGetValue("user", out var applyUser))
             {
-                return Usage("Usage: motif apply <proposalId> --project <fwdata> --user <name> [--json]");
+                return Usage("Usage: motif apply <proposalId> --project <fwdata> --user <name> [--json]", asJson);
             }
             result = asJson
                 ? Commands.ApplyJson(storeDir, positionals[0], applyProject, applyUser, usage)
@@ -272,7 +273,7 @@ try
 
         case "log":
             if (!flags.TryGetValue("project", out var logProject))
-                return Usage("Usage: motif log --project <fwdata> [--json]");
+                return Usage("Usage: motif log --project <fwdata> [--json]", asJson);
             result = asJson ? Commands.LogJson(logProject, usage) : Commands.Log(logProject, usage);
             break;
 
@@ -287,7 +288,7 @@ try
                     "--tokeniser-version <v> [--uri <url>] [--licence <text>] [--tokeniser-notes <text>] " +
                     "[--may-derive true|false] [--may-redistribute true|false] " +
                     "[--may-use-commercially true|false] [--requires-attribution true|false] " +
-                    "[--licence-basis <text>]");
+                    "[--licence-basis <text>]", asJson);
             }
 
             result = CorpusCommands.AddCorpus(
@@ -309,7 +310,7 @@ try
             {
                 return Usage(
                     "Usage: motif add-document --corpus <id> --doc <id> --source <file-or-url> " +
-                    "[--title <text>] [--licence <text>] [--may-derive true|false] [--licence-basis <text>]");
+                    "[--title <text>] [--licence <text>] [--may-derive true|false] [--licence-basis <text>]", asJson);
             }
 
             // No flags means "same as corpus", not "nothing established": pass null, not Unknown, or it overrides one.
@@ -329,7 +330,7 @@ try
 
         case "add-corpus-bundle":
             if (!flags.TryGetValue("bundle", out var bundlePath))
-                return Usage("Usage: motif add-corpus-bundle --bundle <path-to-bundle.json>");
+                return Usage("Usage: motif add-corpus-bundle --bundle <path-to-bundle.json>", asJson);
             result = CorpusCommands.AddBundle(storeDir, bundlePath);
             break;
 
@@ -341,7 +342,7 @@ try
 
         case "show-corpus":
             if (positionals.Count != 1)
-                return Usage("Usage: motif show-corpus <corpusId>");
+                return Usage("Usage: motif show-corpus <corpusId>", asJson);
             result = asJson
                 ? CorpusCommands.ShowCorpusJson(storeDir, positionals[0], usage)
                 : CorpusCommands.ShowCorpus(storeDir, positionals[0], usage);
@@ -349,34 +350,47 @@ try
 
         case "store-cutover":
             if (!flags.TryGetValue("project", out var cutoverProject))
-                return Usage("Usage: motif store-cutover --project <fwdata> [--store <dir>]");
+                return Usage("Usage: motif store-cutover --project <fwdata> [--store <dir>]", asJson);
             result = StoreCommands.Cutover(storeDir, cutoverProject, CliProductVersion());
             break;
 
         default:
-            Console.Error.WriteLine($"Unknown command '{verb}'.");
-            PrintUsage(Console.Error);
-            return 1;
+            return Usage($"Unknown command '{verb}'.", asJson, withUsageBanner: true);
     }
 
     // One process is one call; appending to a local file is what accumulates a session (ADR 0021 decision 4).
     foreach (var entry in usage.Entries)
         UsageLogFile.Append(Path.Combine(storeDir, "usage.jsonl"), entry);
 
-    var stream = result.ExitCode == 0 ? Console.Out : Console.Error;
-    stream.Write(result.Output);
+    if (result.ExitCode == 0)
+    {
+        Console.Out.Write(result.Output);
+        return result.ExitCode;
+    }
+    // A caller that asked for JSON gets JSON when it goes wrong too.
+    Console.Error.Write(asJson && result.Reason is { } reason
+        ? ProjectionJson.Serialize(new FailureEnvelope(reason, result.Output.Trim())) + Environment.NewLine
+        : result.Output);
     return result.ExitCode;
 }
 catch (Exception ex)
 {
+    // Nothing decided this; it escaped. That is a bug, not a refusal, and it gets its own code.
     Console.Error.WriteLine($"error: {ex.Message}");
-    return 1;
+    return FailureEnvelope.ExitCodeFor(FailureReason.StoreInconsistent);
 }
 
-static int Usage(string message)
+static int Usage(string message, bool asJson = false, bool withUsageBanner = false)
 {
+    if (asJson)
+    {
+        Console.Error.WriteLine(ProjectionJson.Serialize(
+            new FailureEnvelope(FailureReason.InvalidArgument, message)));
+        return FailureEnvelope.ExitCodeFor(FailureReason.InvalidArgument);
+    }
     Console.Error.WriteLine(message);
-    return 1;
+    if (withUsageBanner) PrintUsage(Console.Error);
+    return FailureEnvelope.ExitCodeFor(FailureReason.InvalidArgument);
 }
 
 static string AnalysesUsage() =>

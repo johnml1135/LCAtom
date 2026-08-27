@@ -108,7 +108,8 @@ public sealed class StoreCutoverArgvTests : IDisposable
 
         var result = Run("store-cutover --project \"" + project + "\" --store \"" + store + "\"");
 
-        Assert.Equal(1, result.ExitCode);
+        // Busy, not malformed: the caller may retry once whoever holds the database lets go.
+        Assert.Equal(3, result.ExitCode);
         Assert.Contains("error: ", result.Error, StringComparison.Ordinal);
         Assert.DoesNotContain("   at ", result.Error, StringComparison.Ordinal);
         // Refused, not partially applied: the store is untouched and still awaits a cutover.

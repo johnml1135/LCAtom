@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using SIL.Motif.Contract.Projects;
+using SIL.Motif.Contract.Responses;
 using SIL.Motif.Contract.Store;
 using SIL.Motif.Host.Store;
 using SIL.Motif.Worker.Projects;
@@ -32,7 +33,7 @@ public static class StoreCommands
         }
         catch (Exception exception) when (exception is ArgumentException or IOException)
         {
-            return new CommandResult(1, "error: " + exception.Message + Environment.NewLine);
+            return Refuse(FailureReason.InvalidArgument, exception);
         }
 
         var catalog = new ProjectDatabaseCatalog(MotifSchema.CurrentSchema, ParseVersion(productVersion));
@@ -44,14 +45,18 @@ public static class StoreCommands
         }
         catch (IOException exception)
         {
-            // The owner lock is held elsewhere, or the database is unreadable; both are "try again", not a bug.
-            return new CommandResult(1, "error: " + exception.Message + Environment.NewLine);
+            // The owner lock is held elsewhere, or the database is unreadable; both are "try again".
+            return Refuse(FailureReason.Busy, exception);
         }
         catch (Exception exception) when (exception is NotSupportedException or InvalidDataException)
         {
-            return new CommandResult(1, "error: " + exception.Message + Environment.NewLine);
+            return Refuse(FailureReason.Refused, exception);
         }
     }
+
+    private static CommandResult Refuse(FailureReason reason, Exception exception) =>
+        new CommandResult(FailureEnvelope.ExitCodeFor(reason),
+            "error: " + exception.Message + Environment.NewLine, reason);
 
     private static StoreCutoverResponse Describe(ProjectLocator project, ProjectStoreCutoverResult result) =>
         new StoreCutoverResponse(

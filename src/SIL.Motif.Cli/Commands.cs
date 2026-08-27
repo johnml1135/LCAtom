@@ -27,8 +27,13 @@ using SIL.LCModel;
 
 namespace SIL.Motif.Cli;
 
-/// <summary>The result of one CLI command: a captured exit code and the text to print.</summary>
-public sealed record CommandResult(int ExitCode, string Output);
+/// <summary>The result of one CLI command: an exit code, the text to print, and why it refused.</summary>
+/// <remarks>
+/// <see cref="Reason"/> is null on success and on the few failures raised before a verb is entered.
+/// It is what <c>--json</c> renders as a structured envelope; the text in <see cref="Output"/> is the
+/// same wording either way, because the human interface did not need changing.
+/// </remarks>
+public sealed record CommandResult(int ExitCode, string Output, FailureReason? Reason = null);
 
 /// <summary>
 /// Testable command handlers for every Motif CLI verb, driving the Stage E files store (see
@@ -276,13 +281,13 @@ public static class Commands
             var store = new ProposalStore(storeDir);
             var draftPath = store.DraftPath(draftName);
             if (!File.Exists(draftPath))
-                return Fail(DraftNotFoundMessage(store, draftName));
+                return Missing(DraftNotFoundMessage(store, draftName));
 
             if (!CanonicalId.TryParse(target, out var targetId, out var idError))
-                return Fail($"--target '{target}' is not a valid canonical id: {idError}");
+                return Invalid($"--target '{target}' is not a valid canonical id: {idError}");
 
             if (string.IsNullOrEmpty(ws))
-                return Fail("--ws must not be empty.");
+                return Invalid("--ws must not be empty.");
 
             var draft = ReadDraft(draftPath);
 
@@ -337,10 +342,10 @@ public static class Commands
             var store = new ProposalStore(storeDir);
             var draftPath = store.DraftPath(draftName);
             if (!File.Exists(draftPath))
-                return Fail(DraftNotFoundMessage(store, draftName));
+                return Missing(DraftNotFoundMessage(store, draftName));
 
             if (!CanonicalId.TryParse(target, out var targetId, out var idError))
-                return Fail($"--target '{target}' is not a valid canonical id: {idError}");
+                return Invalid($"--target '{target}' is not a valid canonical id: {idError}");
 
             var draft = ReadDraft(draftPath);
             var operationId = CanonicalId.Mint();
@@ -390,7 +395,7 @@ public static class Commands
             var store = new ProposalStore(storeDir);
             var draftPath = store.DraftPath(draftName);
             if (!File.Exists(draftPath))
-                return Fail(DraftNotFoundMessage(store, draftName));
+                return Missing(DraftNotFoundMessage(store, draftName));
 
             using var intentDocument = JsonDocument.Parse(intentJson);
             var intent = AuthorLexemeFormIntentParser.Parse(intentDocument.RootElement);
@@ -443,7 +448,7 @@ public static class Commands
             var store = new ProposalStore(storeDir);
             var draftPath = store.DraftPath(draftName);
             if (!File.Exists(draftPath))
-                return Fail(DraftNotFoundMessage(store, draftName));
+                return Missing(DraftNotFoundMessage(store, draftName));
 
             using var intentDocument = JsonDocument.Parse(intentJson);
             var intent = AuthorFeatureStructureIntentParser.Parse(intentDocument.RootElement);
@@ -498,7 +503,7 @@ public static class Commands
             var store = new ProposalStore(storeDir);
             var draftPath = store.DraftPath(draftName);
             if (!File.Exists(draftPath))
-                return Fail(DraftNotFoundMessage(store, draftName));
+                return Missing(DraftNotFoundMessage(store, draftName));
 
             var corpus = CorpusCommands.StoreFor(storeDir).Load(corpusId);
             if (corpus is null)
@@ -508,13 +513,13 @@ public static class Commands
             }
 
             if (documentId is not null && corpus.Documents.All(d => d.DocumentId != documentId))
-                return Fail($"Corpus '{corpusId}' has no document '{documentId}'.");
+                return Missing($"Corpus '{corpusId}' has no document '{documentId}'.");
 
             if (!CanonicalId.TryParse(target, out var targetId, out var idError))
-                return Fail($"--target '{target}' is not a valid canonical id: {idError}");
+                return Invalid($"--target '{target}' is not a valid canonical id: {idError}");
 
             if (string.IsNullOrEmpty(ws))
-                return Fail("--ws must not be empty.");
+                return Invalid("--ws must not be empty.");
 
             var draft = ReadDraft(draftPath);
             var operationId = CanonicalId.Mint();
@@ -610,7 +615,7 @@ public static class Commands
             var store = new ProposalStore(storeDir);
             var draftPath = store.DraftPath(draftName);
             if (!File.Exists(draftPath))
-                return Fail(DraftNotFoundMessage(store, draftName));
+                return Missing(DraftNotFoundMessage(store, draftName));
 
             var draft = ReadDraft(draftPath);
             setter(draft);
@@ -633,7 +638,7 @@ public static class Commands
             var store = new ProposalStore(storeDir);
             var draftPath = store.DraftPath(draftName);
             if (!File.Exists(draftPath))
-                return Fail(DraftNotFoundMessage(store, draftName));
+                return Missing(DraftNotFoundMessage(store, draftName));
 
             var draft = ReadDraft(draftPath);
             if (string.IsNullOrWhiteSpace(draft.Label) || string.IsNullOrWhiteSpace(draft.Comment))
@@ -743,12 +748,12 @@ public static class Commands
             var id = NormalizeId(proposalId);
             var manifestPath = store.ManifestPath(id);
             if (!File.Exists(manifestPath))
-                return Fail(ProposalNotFoundMessage(store, id));
+                return Missing(ProposalNotFoundMessage(store, id));
 
             var manifest = ReadManifest(manifestPath);
             var objectPath = store.ObjectPath(manifest.CurrentIntentDigest);
             if (!File.Exists(objectPath))
-                return Fail(StoreInconsistencyMessage(id, manifest.CurrentIntentDigest, objectPath));
+                return Fail(FailureReason.StoreInconsistent, StoreInconsistencyMessage(id, manifest.CurrentIntentDigest, objectPath));
 
             var envelope = ProposalJsonParser.Parse(File.ReadAllText(objectPath));
 
@@ -823,7 +828,7 @@ public static class Commands
         }
         catch (ArgumentException ex)
         {
-            return Fail(ex.Message);
+            return Invalid(ex.Message);
         }
 
         return TransitionStatus(storeDir, proposalId, ManifestStatus.Superseded, SupersedableFrom, manifest =>
@@ -845,7 +850,7 @@ public static class Commands
         }
 
         if (string.IsNullOrWhiteSpace(actorId))
-            return Fail("actorId must not be empty — a Decision must name who made it.");
+            return Invalid("actorId must not be empty — a Decision must name who made it.");
 
         return TransitionStatus(storeDir, proposalId, newStatus, allowedFrom, manifest =>
         {
@@ -872,7 +877,7 @@ public static class Commands
             var id = NormalizeId(proposalId);
             var manifestPath = store.ManifestPath(id);
             if (!File.Exists(manifestPath))
-                return Fail(ProposalNotFoundMessage(store, id));
+                return Missing(ProposalNotFoundMessage(store, id));
 
             var manifest = ReadManifest(manifestPath);
             if (Array.IndexOf(allowedFrom, manifest.Status) < 0)
@@ -972,12 +977,12 @@ public static class Commands
             var sourceId = NormalizeId(sourceProposalId);
             var manifestPath = store.ManifestPath(sourceId);
             if (!File.Exists(manifestPath))
-                return Fail(ProposalNotFoundMessage(store, sourceId));
+                return Missing(ProposalNotFoundMessage(store, sourceId));
 
             var manifest = ReadManifest(manifestPath);
             var objectPath = store.ObjectPath(manifest.CurrentIntentDigest);
             if (!File.Exists(objectPath))
-                return Fail(StoreInconsistencyMessage(sourceId, manifest.CurrentIntentDigest, objectPath));
+                return Fail(FailureReason.StoreInconsistent, StoreInconsistencyMessage(sourceId, manifest.CurrentIntentDigest, objectPath));
 
             var envelope = ProposalJsonParser.Parse(File.ReadAllText(objectPath));
 
@@ -1030,10 +1035,10 @@ public static class Commands
             var store = new ProposalStore(storeDir);
             var draftPath = store.DraftPath(draftName);
             if (!File.Exists(draftPath))
-                return Fail(DraftNotFoundMessage(store, draftName));
+                return Missing(DraftNotFoundMessage(store, draftName));
 
             if (operationIds.Count == 0)
-                return Fail("Specify at least one operation id to remove.");
+                return Invalid("Specify at least one operation id to remove.");
 
             var draft = ReadDraft(draftPath);
 
@@ -1041,7 +1046,7 @@ public static class Commands
             foreach (var raw in operationIds)
             {
                 if (!CanonicalId.TryParse(raw, out var id, out var error))
-                    return Fail($"'{raw}' is not a valid canonical operation id: {error}");
+                    return Invalid($"'{raw}' is not a valid canonical operation id: {error}");
                 requestedIds.Add(id.Value);
             }
 
@@ -1141,18 +1146,18 @@ public static class Commands
         try
         {
             if (groups.Count == 0)
-                return Fail("Specify at least one group to split into.");
+                return Invalid("Specify at least one group to split into.");
 
             var store = new ProposalStore(storeDir);
             var sourceId = NormalizeId(sourceProposalId);
             var manifestPath = store.ManifestPath(sourceId);
             if (!File.Exists(manifestPath))
-                return Fail(ProposalNotFoundMessage(store, sourceId));
+                return Missing(ProposalNotFoundMessage(store, sourceId));
 
             var manifest = ReadManifest(manifestPath);
             var objectPath = store.ObjectPath(manifest.CurrentIntentDigest);
             if (!File.Exists(objectPath))
-                return Fail(StoreInconsistencyMessage(sourceId, manifest.CurrentIntentDigest, objectPath));
+                return Fail(FailureReason.StoreInconsistent, StoreInconsistencyMessage(sourceId, manifest.CurrentIntentDigest, objectPath));
 
             var envelope = ProposalJsonParser.Parse(File.ReadAllText(objectPath));
             var sourceOperations = envelope.Operations.Select(ToDraftOperation).ToList();
@@ -1168,7 +1173,7 @@ public static class Commands
                 }
             }
             if (groups.Select(g => g.DraftName).Distinct(StringComparer.Ordinal).Count() != groups.Count)
-                return Fail("Each split group must target a distinct draft name.");
+                return Invalid("Each split group must target a distinct draft name.");
 
             // Validate the groups partition every source operation exactly once.
             var groupOfId = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -1179,7 +1184,7 @@ public static class Commands
                 foreach (var rawId in group.OperationIds)
                 {
                     if (!CanonicalId.TryParse(rawId, out var id, out var idError))
-                        return Fail($"'{rawId}' is not a valid canonical operation id: {idError}");
+                        return Invalid($"'{rawId}' is not a valid canonical operation id: {idError}");
 
                     if (!allIds.Contains(id.Value))
                     {
@@ -1839,7 +1844,16 @@ public static class Commands
 
     private static CommandResult Ok(string text) => new(0, text);
 
-    private static CommandResult Fail(string message) => new(1, FailText(message));
+    private static CommandResult Fail(string message) => Fail(FailureReason.Refused, message);
+
+    private static CommandResult Fail(FailureReason reason, string message) =>
+        new(FailureEnvelope.ExitCodeFor(reason), FailText(message), reason);
+
+    /// A malformed flag or value: retrying the same invocation cannot help.
+    private static CommandResult Invalid(string message) => Fail(FailureReason.InvalidArgument, message);
+
+    /// The request named something that is not there.
+    private static CommandResult Missing(string message) => Fail(FailureReason.NotFound, message);
 
     // Same rendering as Fail, for a Build* helper returning a bare string rather than a CommandResult.
     private static string FailText(string message) => "error: " + message + Environment.NewLine;
