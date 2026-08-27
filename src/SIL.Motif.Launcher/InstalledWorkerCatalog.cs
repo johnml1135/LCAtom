@@ -6,7 +6,7 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using SIL.Motif.Contract.Worker;
+using SIL.Motif.Contract.Runner;
 
 namespace SIL.Motif.Launcher;
 
@@ -14,12 +14,14 @@ namespace SIL.Motif.Launcher;
 public sealed record InstalledWorker(
     Version ProductVersion,
     string ExecutablePath,
-    ProtocolRange Protocols,
-    IReadOnlyList<string> Capabilities);
+    int SupportedSchema);
 
 /// <summary>Publishes and reads immutable worker registrations under one user-owned root.</summary>
 public sealed class InstalledWorkerCatalog
 {
+    /// <summary>The metadata file an installed runner publishes beside its executable.</summary>
+    public const string RunnerMetadataFileName = "runner.metadata.json";
+
     private const int MaximumManifestBytes = 64 * 1024;
     private const int MaximumMetadataBytes = 64 * 1024;
     private readonly Func<string, FileAttributes> _fileAttributes;
@@ -61,7 +63,7 @@ public sealed class InstalledWorkerCatalog
     }
 
     /// <summary>Registers an executable after checking its compiled metadata record.</summary>
-    public InstalledWorker Register(InstalledWorker worker, WorkerBuildMetadata compiled)
+    public InstalledWorker Register(InstalledWorker worker, RunnerBuildMetadata compiled)
     {
         if (worker is null)
             throw new ArgumentNullException(nameof(worker));
@@ -79,10 +81,10 @@ public sealed class InstalledWorkerCatalog
         var metadata = ReadMetadata(path);
         if (!Version.TryParse(metadata.ProductVersion, out var version) || version is null)
             throw new InvalidDataException("The worker build metadata has an invalid product version.");
-        return Register(new InstalledWorker(version, path, metadata.Protocols, metadata.Capabilities), metadata);
+        return Register(new InstalledWorker(version, path, metadata.SupportedSchema), metadata);
     }
 
-    private InstalledWorker RegisterCore(InstalledWorker worker, WorkerBuildMetadata? compiled)
+    private InstalledWorker RegisterCore(InstalledWorker worker, RunnerBuildMetadata? compiled)
     {
         ValidateWorker(worker, requireExecutable: true);
         var canonical = CanonicalWorker(worker);
@@ -94,9 +96,9 @@ public sealed class InstalledWorkerCatalog
             Directory.CreateDirectory(Root);
             Directory.CreateDirectory(versionDirectory);
             var sidecar = ReadMetadata(canonical.ExecutablePath);
-            WorkerMetadataAgreement.RequireMatch(sidecar, canonical);
+            WorkerSelector.RequireMatch(sidecar, canonical);
             if (compiled is not null)
-                WorkerMetadataAgreement.RequireMatch(compiled, canonical);
+                WorkerSelector.RequireMatch(compiled, canonical);
             if (File.Exists(manifestPath))
             {
                 var existing = ReadManifest(manifestPath);
@@ -168,19 +170,19 @@ public sealed class InstalledWorkerCatalog
             if (!Equivalent(registered, canonical))
                 throw new InvalidDataException("The selected worker registration changed after selection.");
             var sidecar = ReadMetadata(registered.ExecutablePath);
-            WorkerMetadataAgreement.RequireMatch(sidecar, registered);
+            WorkerSelector.RequireMatch(sidecar, registered);
             return registered;
         }
     }
 
-    private WorkerBuildMetadata ReadMetadata(string? executablePath)
+    private RunnerBuildMetadata ReadMetadata(string? executablePath)
     {
         if (string.IsNullOrWhiteSpace(executablePath))
             throw new InvalidDataException("The worker build metadata sidecar is missing.");
         var directory = Path.GetDirectoryName(executablePath);
         if (string.IsNullOrWhiteSpace(directory))
             throw new InvalidDataException("The worker build metadata sidecar is missing.");
-        var sidecar = Path.Combine(directory, WorkerCommands.BuildMetadataFileName);
+        var sidecar = Path.Combine(directory, RunnerMetadataFileName);
         if (!File.Exists(sidecar))
             throw new InvalidDataException("The worker build metadata sidecar is missing.");
         try
@@ -203,7 +205,7 @@ public sealed class InstalledWorkerCatalog
             }
             if (count > MaximumMetadataBytes || reader.Peek() >= 0)
                 throw new InvalidDataException("The worker build metadata sidecar exceeds its bound.");
-            return WorkerBuildMetadata.Parse(new string(buffer, 0, count));
+            return RunnerBuildMetadata.Parse(new string(buffer, 0, count));
         }
         catch (Exception exception) when (exception is ArgumentException || exception is IOException)
         {
@@ -219,8 +221,8 @@ public sealed class InstalledWorkerCatalog
             worker.ProductVersion.Minor < 0 || worker.ProductVersion.Build < -1 ||
             worker.ProductVersion.Revision < -1)
             throw new ArgumentException("The worker product version is invalid.", nameof(worker));
-        if (worker.Protocols is null)
-            throw new ArgumentException("The worker protocol range is required.", nameof(worker));
+        if (worker.SupportedSchema < 1)
+            throw new ArgumentException("The worker supported schema generation is invalid.", nameof(worker));
         if (string.IsNullOrWhiteSpace(worker.ExecutablePath) || !Path.IsPathRooted(worker.ExecutablePath))
             throw new ArgumentException("The worker executable path must be absolute.", nameof(worker));
         var path = CanonicalPath(worker.ExecutablePath);
@@ -229,7 +231,6 @@ public sealed class InstalledWorkerCatalog
                 nameof(worker));
         if (requireExecutable && (!File.Exists(path) || !IsExecutable(path)))
             throw new FileNotFoundException("The registered worker executable does not exist or is not executable.", path);
-        ValidateCapabilities(worker.Capabilities);
     }
 
     private static bool IsExecutable(string path)
@@ -239,27 +240,11 @@ public sealed class InstalledWorkerCatalog
             string.Equals(extension, ".com", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static void ValidateCapabilities(IReadOnlyList<string> capabilities)
-    {
-        if (capabilities is null)
-            throw new ArgumentNullException(nameof(capabilities));
-        if (capabilities.Count > 128)
-            throw new ArgumentException("The capability list exceeds its bound.", nameof(capabilities));
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var capability in capabilities)
-        {
-            if (string.IsNullOrWhiteSpace(capability) || capability.Length > 128 ||
-                capability.Any(char.IsControl) || !seen.Add(capability))
-                throw new ArgumentException("The worker capabilities are invalid.", nameof(capabilities));
-        }
-    }
-
     private static InstalledWorker CanonicalWorker(InstalledWorker worker)
     {
         return worker with
         {
-            ExecutablePath = CanonicalPath(worker.ExecutablePath),
-            Capabilities = worker.Capabilities.OrderBy(value => value, StringComparer.Ordinal).ToArray()
+            ExecutablePath = CanonicalPath(worker.ExecutablePath)
         };
     }
 
@@ -306,16 +291,14 @@ public sealed class InstalledWorkerCatalog
         return left.ProductVersion == right.ProductVersion &&
             string.Equals(left.ExecutablePath, right.ExecutablePath,
                 StringComparison.OrdinalIgnoreCase) &&
-            left.Protocols.Minimum == right.Protocols.Minimum &&
-            left.Protocols.Maximum == right.Protocols.Maximum &&
-            left.Capabilities.SequenceEqual(right.Capabilities, StringComparer.Ordinal);
+            left.SupportedSchema == right.SupportedSchema;
     }
 
     private static string Serialize(InstalledWorker worker, string versionDirectory)
     {
         var executableHash = Hash(worker.ExecutablePath);
         return JsonSerializer.Serialize(new Manifest(worker.ProductVersion.ToString(), worker.ExecutablePath,
-            new ManifestProtocols(worker.Protocols.Minimum, worker.Protocols.Maximum), worker.Capabilities,
+            worker.SupportedSchema,
             executableHash, Digest(worker, versionDirectory, executableHash)),
             new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
     }
@@ -345,23 +328,12 @@ public sealed class InstalledWorkerCatalog
         if (!Version.TryParse(product, out var productVersion) || productVersion is null)
             throw new InvalidDataException("The worker registration has an invalid product version.");
         var executable = RequiredString(root, "executablePath");
-        var protocolElement = RequiredObject(root, "protocols");
-        var minimum = RequiredInt(protocolElement, "minimum");
-        var maximum = RequiredInt(protocolElement, "maximum");
-        var capabilitiesElement = RequiredArray(root, "capabilities");
-        var capabilities = new List<string>();
-        foreach (var value in capabilitiesElement.EnumerateArray())
-        {
-            if (value.ValueKind != JsonValueKind.String)
-                throw new InvalidDataException("The worker registration has an invalid capability.");
-            capabilities.Add(value.GetString()!);
-        }
+        var supportedSchema = RequiredInt(root, "supportedSchema");
         var hash = RequiredString(root, "sha256");
         var digest = RequiredString(root, "digest");
         try
         {
-            var worker = new InstalledWorker(productVersion, executable,
-                new ProtocolRange(minimum, maximum), capabilities);
+            var worker = new InstalledWorker(productVersion, executable, supportedSchema);
             ValidateWorker(worker, requireExecutable: true);
             var canonical = CanonicalWorker(worker);
             var versionDirectory = Path.GetDirectoryName(path)!;
@@ -418,9 +390,7 @@ public sealed class InstalledWorkerCatalog
     }
 
     private sealed record Manifest(string ProductVersion, string ExecutablePath,
-        ManifestProtocols Protocols, IReadOnlyList<string> Capabilities, string Sha256, string Digest);
-
-    private sealed record ManifestProtocols(int Minimum, int Maximum);
+        int SupportedSchema, string Sha256, string Digest);
 
     private static string Hash(string path)
     {
@@ -437,9 +407,7 @@ public sealed class InstalledWorkerCatalog
         if (OperatingSystem.IsWindows())
             relativePath = relativePath.ToUpperInvariant();
         var canonical = string.Join("\n", worker.ProductVersion.ToString(), relativePath,
-            worker.Protocols.Minimum.ToString(CultureInfo.InvariantCulture),
-            worker.Protocols.Maximum.ToString(CultureInfo.InvariantCulture),
-            string.Join("\n", worker.Capabilities), executableHash);
+            worker.SupportedSchema.ToString(CultureInfo.InvariantCulture), executableHash);
         using var sha = SHA256.Create();
         return Convert.ToHexString(sha.ComputeHash(Encoding.UTF8.GetBytes(canonical)));
     }

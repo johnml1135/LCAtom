@@ -4,30 +4,9 @@ using System.IO;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
-using SIL.Motif.Client.Worker;
-using SIL.Motif.Contract.Worker;
+using SIL.Motif.Contract.Runner;
 
 namespace SIL.Motif.Launcher;
-
-/// <summary>Signals that no worker endpoint could be contacted.</summary>
-public sealed class WorkerEndpointUnavailableException : Exception
-{
-    /// <summary>Creates an endpoint-unavailable diagnostic.</summary>
-    public WorkerEndpointUnavailableException(string message, Exception? innerException = null)
-        : base(message, innerException)
-    {
-    }
-}
-
-/// <summary>Signals that an existing endpoint refused the client's compatibility request.</summary>
-public sealed class WorkerEndpointIncompatibleException : InvalidOperationException
-{
-    /// <summary>Creates an endpoint-incompatibility diagnostic.</summary>
-    public WorkerEndpointIncompatibleException(string message, Exception? innerException = null)
-        : base(message, innerException)
-    {
-    }
-}
 
 /// <summary>Signals that no safe worker startup or connection path completed.</summary>
 public class WorkerLaunchException : InvalidOperationException
@@ -80,22 +59,33 @@ public interface ILauncherDelay
     Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken);
 }
 
-/// <summary>Exposes only the connection lifetime needed by launcher orchestration.</summary>
-public interface IWorkerConnection : IDisposable
+/// <summary>Reports whether a job runner already holds the user-scoped owner mutex.</summary>
+/// <remarks>
+/// A runner answers no requests, so liveness cannot be confirmed by talking to it. What it does hold, for
+/// exactly as long as it runs, is the named mutex that makes it the one runner for this user. Probing that
+/// mutex is therefore the whole of "is one already running", and it is a seam so a test can drive startup
+/// without starting a process.
+/// </remarks>
+public interface IRunnerPresence
 {
-    /// <summary>The handshake negotiated with the endpoint.</summary>
-    WorkerHandshakeResult Negotiated { get; }
-
-    /// <summary>The complete worker offer received from the endpoint.</summary>
-    WorkerHandshakeOffer Offer { get; }
+    /// <summary>Whether some process currently owns the runner mutex for this user.</summary>
+    bool IsRunning(string ownerMutexName);
 }
 
-/// <summary>Connects to the stable endpoint through an injectable transport seam.</summary>
-public interface IWorkerConnector
+/// <summary>Probes the real named mutex a running job runner holds.</summary>
+public sealed class NamedMutexRunnerPresence : IRunnerPresence
 {
-    /// <summary>Connects and confirms the requested handshake before returning.</summary>
-    Task<IWorkerConnection> ConnectAsync(string endpointName, WorkerHandshakeRequest request,
-        TimeSpan timeout, CancellationToken cancellationToken);
+    /// <inheritdoc />
+    public bool IsRunning(string ownerMutexName)
+    {
+        if (string.IsNullOrWhiteSpace(ownerMutexName))
+            throw new ArgumentException("An owner mutex name is required.", nameof(ownerMutexName));
+        // Opening succeeds only while some process holds it; the handle is released immediately.
+        if (!Mutex.TryOpenExisting(ownerMutexName, out var existing))
+            return false;
+        using (existing)
+            return true;
+    }
 }
 
 /// <summary>Starts one exact registered worker executable.</summary>
@@ -125,26 +115,26 @@ public interface IWorkerProcess : IDisposable
 public sealed class WorkerLauncher
 {
     private readonly InstalledWorkerCatalog _catalog;
-    private readonly IWorkerConnector _connector;
+    private readonly IRunnerPresence _presence;
     private readonly IWorkerProcessStarter _processStarter;
-    private readonly string _endpointName;
+    private readonly string _ownerMutexName;
     private readonly TimeSpan _startupTimeout;
     private readonly ILauncherClock _clock;
     private readonly ILauncherDelay _delay;
 
-    /// <summary>Creates a launcher with injectable catalog, transport, process, and endpoint seams.</summary>
-    public WorkerLauncher(InstalledWorkerCatalog catalog, IWorkerConnector connector,
-        IWorkerProcessStarter processStarter, string endpointName, TimeSpan startupTimeout,
+    /// <summary>Creates a launcher with injectable catalog, presence, process, and mutex seams.</summary>
+    public WorkerLauncher(InstalledWorkerCatalog catalog, IRunnerPresence presence,
+        IWorkerProcessStarter processStarter, string ownerMutexName, TimeSpan startupTimeout,
         ILauncherClock? clock = null, ILauncherDelay? delay = null)
     {
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
-        _connector = connector ?? throw new ArgumentNullException(nameof(connector));
+        _presence = presence ?? throw new ArgumentNullException(nameof(presence));
         _processStarter = processStarter ?? throw new ArgumentNullException(nameof(processStarter));
-        if (string.IsNullOrWhiteSpace(endpointName))
-            throw new ArgumentException("A worker endpoint is required.", nameof(endpointName));
+        if (string.IsNullOrWhiteSpace(ownerMutexName))
+            throw new ArgumentException("A runner owner mutex name is required.", nameof(ownerMutexName));
         if (startupTimeout <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(startupTimeout));
-        _endpointName = endpointName;
+        _ownerMutexName = ownerMutexName;
         _startupTimeout = startupTimeout;
         _clock = clock ?? SystemLauncherClock.Instance;
         _delay = delay ?? SystemLauncherDelay.Instance;
@@ -152,35 +142,25 @@ public sealed class WorkerLauncher
 
     /// <summary>Creates a launcher using the stable user catalog and worker endpoint.</summary>
     public WorkerLauncher()
-        : this(new InstalledWorkerCatalog(), new WorkerClientConnector(), new WorkerProcessStarter(),
-            WorkerEndpointNames.ControlPipe(CurrentSid()), TimeSpan.FromSeconds(15))
+        : this(new InstalledWorkerCatalog(), new NamedMutexRunnerPresence(), new WorkerProcessStarter(),
+            OwnerMutexNameFor(CurrentSid()), TimeSpan.FromSeconds(15))
     {
     }
 
-    /// <summary>Ensures one compatible endpoint is connected, disposing the confirmation connection.</summary>
-    public async Task EnsureConnectedAsync(WorkerHandshakeRequest request,
-        CancellationToken cancellationToken = default)
+    /// <summary>Ensures one runner able to open the given schema generation is running.</summary>
+    public async Task EnsureRunningAsync(int requiredSchema, CancellationToken cancellationToken = default)
     {
-        if (request is null)
-            throw new ArgumentNullException(nameof(request));
+        if (requiredSchema < 1)
+            throw new ArgumentOutOfRangeException(nameof(requiredSchema));
         var deadline = Deadline(_clock.Timestamp, _startupTimeout, _clock.Frequency);
-        var first = await TryConnectAsync(request, Remaining(deadline), cancellationToken).ConfigureAwait(false);
-        if (first is not null)
-        {
-            using (first)
-            {
-                if (first.Offer is null)
-                    throw new WorkerEndpointIncompatibleException(
-                        "The existing worker did not report complete build metadata.");
-            }
+        if (_presence.IsRunning(_ownerMutexName))
             return;
-        }
 
         EnsureBeforeDeadline(deadline);
         InstalledWorker candidate;
         try
         {
-            candidate = WorkerSelector.SelectNewestCompatible(_catalog.List(), request);
+            candidate = WorkerSelector.SelectNewestCompatible(_catalog.List(), requiredSchema);
         }
         catch (Exception exception) when (exception is InvalidDataException || exception is IOException ||
             exception is UnauthorizedAccessException)
@@ -190,7 +170,7 @@ public sealed class WorkerLauncher
                 exception);
         }
         catch (InvalidOperationException exception) when (exception.Message.StartsWith(
-            "No installed worker overlaps", StringComparison.Ordinal))
+            "No installed runner supports", StringComparison.Ordinal))
         {
             throw new WorkerLaunchException(
                 "No compatible worker is installed; install or update Motif and try again.", exception,
@@ -237,34 +217,14 @@ public sealed class WorkerLauncher
                 var remaining = deadline - _clock.Timestamp;
                 if (remaining <= 0)
                     break;
-                var connectionTimeout = TimeSpan.FromSeconds(remaining / (double)_clock.Frequency);
-                var connection = await TryConnectAsync(request, connectionTimeout, cancellationToken)
-                    .ConfigureAwait(false);
-                if (connection is not null)
+                if (_presence.IsRunning(_ownerMutexName))
                 {
-                    using (connection)
-                    {
-                        if (connection.Offer is null)
-                            throw new WorkerLaunchException(
-                                "The selected worker did not report complete build metadata; reinstall or update " +
-                                "Motif and try again.");
-                        try
-                        {
-                            WorkerMetadataAgreement.RequireMatch(connection.Offer, candidate);
-                        }
-                        catch (InvalidDataException exception)
-                        {
-                            throw new WorkerLaunchException(
-                                "The selected worker reported metadata different from its installed manifest; " +
-                                "reinstall or update Motif and try again.", exception);
-                        }
-                    }
                     accepted = true;
                     return;
                 }
                 if (process.HasExited)
                     throw new WorkerLaunchException(
-                        "Worker startup failed: the installed worker exited before its endpoint became ready; " +
+                        "Runner startup failed: the installed runner exited before it took ownership; " +
                         "reinstall or update Motif and try again.");
                 remaining = deadline - _clock.Timestamp;
                 if (remaining <= 0)
@@ -274,7 +234,7 @@ public sealed class WorkerLauncher
                 await _delay.DelayAsync(delay, cancellationToken).ConfigureAwait(false);
             }
             throw new WorkerLaunchException(
-                "Worker startup failed: the endpoint did not become ready before startup timed out; " +
+                "Runner startup failed: it did not take ownership before startup timed out; " +
                 "reinstall or update Motif and try again.");
         }
         catch (Exception exception)
@@ -307,35 +267,11 @@ public sealed class WorkerLauncher
         }
     }
 
-    private async Task<IWorkerConnection?> TryConnectAsync(WorkerHandshakeRequest request,
-        TimeSpan timeout, CancellationToken cancellationToken)
-    {
-        try
-        {
-            return await _connector.ConnectAsync(_endpointName, request, timeout, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (WorkerEndpointUnavailableException)
-        {
-            return null;
-        }
-        catch (WorkerEndpointIncompatibleException)
-        {
-            throw;
-        }
-        catch (WorkerConnectionFailureException exception) when (
-            exception.Stage == WorkerConnectionFailureStage.BeforePeerConnection)
-        {
-            return null;
-        }
-        catch (WorkerConnectionFailureException exception)
-        {
-            throw new WorkerEndpointIncompatibleException(
-                "The existing worker endpoint returned an invalid or incompatible response.", exception);
-        }
-    }
-
     private static string CurrentSid() => WindowsIdentity.GetCurrent().User?.Value ?? "unknown-user";
+
+    /// <summary>The runner owner mutex name for one user namespace.</summary>
+    public static string OwnerMutexNameFor(string userNamespace) =>
+        @"Local\SIL.Motif.Worker.Owner." + userNamespace;
 
     private long Deadline(long start, TimeSpan timeout, long frequency)
     {
@@ -369,48 +305,6 @@ public sealed class WorkerLauncher
         public static readonly SystemLauncherDelay Instance = new SystemLauncherDelay();
         public Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken) =>
             Task.Delay(delay, cancellationToken);
-    }
-}
-
-/// <summary>Adapts the cross-runtime worker client to launcher connection semantics.</summary>
-public sealed class WorkerClientConnector : IWorkerConnector
-{
-    /// <inheritdoc />
-    public async Task<IWorkerConnection> ConnectAsync(string endpointName, WorkerHandshakeRequest request,
-        TimeSpan timeout, CancellationToken cancellationToken)
-    {
-        try
-        {
-            var connection = await new WorkerClient().ConnectAsync(endpointName, request, timeout,
-                cancellationToken).ConfigureAwait(false);
-            return new WorkerConnectionAdapter(connection);
-        }
-        catch (WorkerConnectionFailureException exception) when (
-            exception.Stage == WorkerConnectionFailureStage.BeforePeerConnection)
-        {
-            throw new WorkerEndpointUnavailableException("The worker endpoint did not respond.", exception);
-        }
-        catch (WorkerConnectionFailureException exception)
-        {
-            throw new WorkerEndpointIncompatibleException(
-                "The existing worker endpoint returned an invalid or incompatible response.", exception);
-        }
-    }
-
-    private sealed class WorkerConnectionAdapter : IWorkerConnection
-    {
-        private readonly WorkerConnection _connection;
-
-        public WorkerConnectionAdapter(WorkerConnection connection)
-        {
-            _connection = connection;
-        }
-
-        public WorkerHandshakeResult Negotiated => _connection.Negotiated;
-
-        public WorkerHandshakeOffer Offer => _connection.Offer;
-
-        public void Dispose() => _connection.Dispose();
     }
 }
 
@@ -496,7 +390,6 @@ public static class Program
 {
     private const int Success = 0;
     private const int NoCompatibleInstall = 2;
-    private const int ExistingWorkerIncompatible = 3;
     private const int StartupFailure = 4;
     private const int CatalogFailure = 5;
 
@@ -521,17 +414,12 @@ public static class Program
             throw new ArgumentNullException(nameof(error));
         try
         {
-            var request = Parse(args);
+            var requiredSchema = Parse(args);
             if (launcher is null)
                 throw new ArgumentNullException(nameof(launcher));
-            await launcher.EnsureConnectedAsync(request).ConfigureAwait(false);
-            await output.WriteLineAsync("Connected to the Motif worker.").ConfigureAwait(false);
+            await launcher.EnsureRunningAsync(requiredSchema).ConfigureAwait(false);
+            await output.WriteLineAsync("The Motif job runner is running.").ConfigureAwait(false);
             return Success;
-        }
-        catch (WorkerEndpointIncompatibleException exception)
-        {
-            await error.WriteLineAsync(exception.Message).ConfigureAwait(false);
-            return ExistingWorkerIncompatible;
         }
         catch (WorkerCatalogException exception)
         {
@@ -545,47 +433,25 @@ public static class Program
         }
         catch (Exception exception) when (exception is ArgumentException || exception is FormatException)
         {
-            await error.WriteLineAsync("The client compatibility request is invalid.").ConfigureAwait(false);
+            await error.WriteLineAsync("The required schema generation is invalid.").ConfigureAwait(false);
             return StartupFailure;
         }
     }
 
-    private static WorkerHandshakeRequest Parse(string[] args)
+    private static int Parse(string[] args)
     {
-        if (args is null || args.Length > 20)
+        if (args is null || args.Length > 4)
             throw new ArgumentException("Too many launcher arguments.", nameof(args));
-        string clientId = "motif-launcher";
-        string productVersion = "0.0.0";
-        var minimum = 1;
-        var maximum = 1;
-        var capabilities = new System.Collections.Generic.List<string>();
+        var requiredSchema = 1;
         for (var index = 0; index < args.Length; index++)
         {
-            var option = args[index];
-            if (option is "--client-id" or "--product-version" or "--protocol-min" or "--protocol-max")
-            {
-                if (++index >= args.Length)
-                    throw new ArgumentException("A launcher option is missing its value.");
-                var value = args[index];
-                if (option == "--client-id") clientId = value;
-                else if (option == "--product-version") productVersion = value;
-                else if (option == "--protocol-min" && !int.TryParse(value, out minimum))
-                    throw new FormatException("The protocol minimum is invalid.");
-                else if (option == "--protocol-max" && !int.TryParse(value, out maximum))
-                    throw new FormatException("The protocol maximum is invalid.");
-            }
-            else if (option == "--required-capability")
-            {
-                if (++index >= args.Length || capabilities.Count >= 16)
-                    throw new ArgumentException("A required capability is missing or exceeds the bound.");
-                capabilities.Add(args[index]);
-            }
-            else
-            {
+            if (args[index] != "--required-schema")
                 throw new ArgumentException("Unknown launcher option.");
-            }
+            if (++index >= args.Length)
+                throw new ArgumentException("A launcher option is missing its value.");
+            if (!int.TryParse(args[index], out requiredSchema))
+                throw new FormatException("The required schema generation is invalid.");
         }
-        return new WorkerHandshakeRequest(clientId, productVersion,
-            new ProtocolRange(minimum, maximum), capabilities);
+        return requiredSchema;
     }
 }

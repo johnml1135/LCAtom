@@ -259,6 +259,22 @@ code means the classification was not really done.
 
 ---
 
+### Task 6b: Design and rebuild the Baseline refresh barrier
+
+Found while executing Task 2, and owed a design rather than an improvisation. The refresh barrier ran an
+accept/defer/decline conversation with the live host over the event pipe, so a refresh could ask FieldWorks
+to release a project and learn whether it agreed, deferred, or refused. ADR 0040 removes that transport and
+decision 6 declines to peer into a live project, so the conversation has no replacement mechanism.
+`BaselineRefreshCommandHandler` was deleted with the wire rather than half-ported.
+
+This is a real capability currently removed, not merely re-plumbed. It needs a design note first, settling:
+what a refresh does when FieldWorks holds the project (wait on the `.fwdata.lock`, refuse, or queue for the
+next opportunity); how "the host declined" is expressed when nothing can ask it; and whether the barrier
+semantics in ADR 0039 decision 3 survive unchanged or need amending. Do not restore the handler by
+inventing a channel.
+
+---
+
 ### Task 7: Design and build the job lease
 
 The only genuinely new design in ADR 0040. `Jobs` has `Version`, `Attempt`, `LineageId` and the

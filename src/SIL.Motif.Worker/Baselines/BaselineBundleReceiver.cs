@@ -169,7 +169,7 @@ internal sealed class BaselineBundleReceiver
         if ((File.GetAttributes(transfer.TemporaryPath) & FileAttributes.ReparsePoint) != 0)
             throw new InvalidDataException("A reparse-point Baseline transport is refused.");
         if (stream.Length != transfer.ByteCount || transfer.ByteCount <= 0 ||
-            transfer.ByteCount > BaselineTransferOfferCommandHandler.MaximumBundleBytes)
+            transfer.ByteCount > BaselineBundleBounds.MaximumBundleBytes)
             throw new InvalidDataException("The Baseline transport length is invalid.");
         using var sha = SHA256.Create();
         var actual = Convert.ToHexString(sha.ComputeHash(stream)).ToLowerInvariant();

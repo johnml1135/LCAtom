@@ -1,3 +1,4 @@
+using SIL.Motif.Contract;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using SIL.Motif.Contract.Baselines;
@@ -5,7 +6,7 @@ using SIL.Motif.Contract.Jobs;
 using SIL.Motif.Contract.Model;
 using SIL.Motif.Contract.Parsing;
 using SIL.Motif.Contract.Projects;
-using SIL.Motif.Contract.Worker;
+
 using SIL.Motif.Model.DryRun;
 using SIL.Motif.Model.Effects;
 using SIL.Motif.Worker.Baselines;
@@ -72,7 +73,7 @@ internal sealed class DryRunJobHandler
             if (JobStateMachine.IsTerminal(current.Status)) return;
             var status = exception is OperationCanceledException ? JobStatus.Cancelled : JobStatus.Failed;
             _jobs.Transition(current, status,
-                JsonSerializer.Serialize(new DryRunFailure(exception.GetType().Name), WorkerJson.CreateOptions()));
+                JsonSerializer.Serialize(new DryRunFailure(exception.GetType().Name), MotifJson.CreateOptions()));
             return;
         }
 
@@ -90,13 +91,13 @@ internal sealed class DryRunJobHandler
         var published = _jobs.PublishDryRun(jobId, publishedJson, beforePublish.Version);
         var completionJson = JsonSerializer.Serialize(
             new DryRunCompletion(baseline.Token, baseline.Token.CapturedUtc, ToWire(freshness)),
-            WorkerJson.CreateOptions());
+            MotifJson.CreateOptions());
         _jobs.Transition(published, JobStatus.CompletedDryRunOnly, completionJson);
     }
 
     /// <summary>The canonical published-Dry-Run wire shape, shared with <see cref="DryRunAssessmentPipeline"/>.</summary>
     internal static string BuildPublishedDryRunJson(DryRunModel dryRun) =>
-        JsonSerializer.Serialize(BuildPublishedDryRun(dryRun), WorkerJson.CreateOptions());
+        JsonSerializer.Serialize(BuildPublishedDryRun(dryRun), MotifJson.CreateOptions());
 
     private static PublishedDryRun BuildPublishedDryRun(DryRunModel dryRun)
     {

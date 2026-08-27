@@ -11,7 +11,6 @@
   <ItemGroup>
     <ProjectReference Include="..\SIL.Motif.Host\SIL.Motif.Host.csproj" />
     <ProjectReference Include="..\SIL.Motif.Runner\SIL.Motif.Runner.csproj" />
-    <ProjectReference Include="..\SIL.Motif.Client\SIL.Motif.Client.csproj" />
     <!-- The durable store the CLI now writes directly; the wire that used to stand between them is going. -->
     <ProjectReference Include="..\SIL.Motif.Worker\SIL.Motif.Worker.csproj" />
     <ProjectReference Include="..\SIL.Motif.Launcher\SIL.Motif.Launcher.csproj" />

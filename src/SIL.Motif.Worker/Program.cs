@@ -14,18 +14,18 @@ internal static class Program
     {
         var idleTimeout = ReadIdleTimeout(args);
         using var tracker = new WorkerWorkTracker();
-        await using var server = new WorkerServer(workTracker: tracker);
+        using var host = new JobRunnerHost(tracker);
         var workerRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "SIL", "Motif");
         var ownership = WorkspaceOwnership.Bootstrap(workerRoot);
-        server.ConfigureTransfers(ownership);
+        host.ConfigureWorkspaces(ownership);
         var catalog = new ProjectDatabaseCatalog(MotifSchema.CurrentSchema, new Version(1, 0));
-        server.CreateRuntimeRegistry(catalog,
+        host.CreateRuntimeRegistry(catalog,
             (jobs, key) => new WorkerRecoveryCoordinator(new WorkerRecovery(jobs),
                 new WorkspaceCleaner(ownership)));
-        if (!server.TryAcquireOwnership())
+        if (!host.TryAcquireOwnership())
         {
-            Console.WriteLine("existing endpoint: " + server.EndpointName);
+            Console.WriteLine("existing runner: " + host.OwnerName);
             return 0;
         }
 
@@ -35,12 +35,10 @@ internal static class Program
             eventArgs.Cancel = true;
             shutdown.Cancel();
         };
-        Console.WriteLine(server.EndpointName);
-        var run = server.StartAsync(shutdown.Token);
-        await new WorkerLifetime().RunUntilIdleAsync(idleTimeout, server, shutdown.Token)
-            .ConfigureAwait(false);
+        Console.WriteLine(host.OwnerName);
+        host.Start();
+        await new WorkerLifetime().RunUntilIdleAsync(idleTimeout, host, shutdown.Token).ConfigureAwait(false);
         shutdown.Cancel();
-        await run.ConfigureAwait(false);
         return 0;
     }
 

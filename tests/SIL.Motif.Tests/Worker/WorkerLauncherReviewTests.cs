@@ -6,7 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using SIL.Motif.Contract.Worker;
+using SIL.Motif.Contract.Runner;
 using SIL.Motif.Launcher;
 using Xunit;
 
@@ -24,7 +24,7 @@ public sealed class WorkerLauncherReviewTests
             captured = info;
             return Process.GetCurrentProcess();
         }).Start(new InstalledWorker(
-            new Version(1, 0), executable, new ProtocolRange(1, 1), Array.Empty<string>()));
+            new Version(1, 0), executable, 7));
 
         Assert.NotNull(captured);
         Assert.Equal(executable, captured!.FileName);
@@ -42,9 +42,8 @@ public sealed class WorkerLauncherReviewTests
         var executable = Path.Combine(root.Path, "catalog", "1.0", "worker.exe");
         Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
         File.WriteAllText(executable, "worker");
-        var first = new InstalledWorker(new Version(1, 0), executable,
-            new ProtocolRange(1, 1), Array.Empty<string>());
-        var second = first with { Protocols = new ProtocolRange(1, 2) };
+        var first = new InstalledWorker(new Version(1, 0), executable, 7);
+        var second = first with { SupportedSchema = 8 };
         WriteSidecar(first);
         var catalogs = new[] { new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog")),
             new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog")) };
@@ -64,14 +63,14 @@ public sealed class WorkerLauncherReviewTests
     {
         using var root = TemporaryDirectory.Create();
         var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"));
-        var connector = new UnavailableConnector();
+        var presence = new AbsentPresence();
         var clock = new AdvancingClock();
-        var launcher = new WorkerLauncher(catalog, connector, new NoopStarter(), "endpoint", TimeSpan.FromMilliseconds(5),
+        var launcher = new WorkerLauncher(catalog, presence, new NoopStarter(), @"Local\motif-review-runner", TimeSpan.FromMilliseconds(5),
             clock, new NoopDelay());
 
-        await Assert.ThrowsAsync<WorkerLaunchException>(() => launcher.EnsureConnectedAsync(Client()));
+        await Assert.ThrowsAsync<WorkerLaunchException>(() => launcher.EnsureRunningAsync(7));
 
-        Assert.InRange(connector.Attempts, 1, 8);
+        Assert.InRange(presence.Attempts, 1, 8);
     }
 
     [Fact]
@@ -82,13 +81,12 @@ public sealed class WorkerLauncherReviewTests
         Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
         File.WriteAllText(executable, "worker");
         var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"));
-        Register(catalog, new InstalledWorker(new Version(1, 0), executable,
-            new ProtocolRange(1, 1), Array.Empty<string>()));
+        Register(catalog, new InstalledWorker(new Version(1, 0), executable, 7));
         var starter = new CountingStarter();
-        var launcher = new WorkerLauncher(catalog, new UnavailableConnector(), starter, "endpoint",
+        var launcher = new WorkerLauncher(catalog, new AbsentPresence(), starter, "endpoint",
             TimeSpan.FromSeconds(10), new ExactDeadlineClock(), new NoopDelay());
 
-        await Assert.ThrowsAsync<WorkerLaunchException>(() => launcher.EnsureConnectedAsync(Client()));
+        await Assert.ThrowsAsync<WorkerLaunchException>(() => launcher.EnsureRunningAsync(7));
 
         Assert.Equal(0, starter.Starts);
     }
@@ -100,16 +98,15 @@ public sealed class WorkerLauncherReviewTests
         var executable = Path.Combine(root.Path, "catalog", "1.0", "worker.exe");
         Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
         File.WriteAllText(executable, "worker");
-        var candidate = new InstalledWorker(new Version(1, 0), executable,
-            new ProtocolRange(1, 1), Array.Empty<string>());
+        var candidate = new InstalledWorker(new Version(1, 0), executable, 7);
         var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"));
         Register(catalog, candidate);
-        File.Delete(Path.Combine(Path.GetDirectoryName(executable)!, WorkerCommands.BuildMetadataFileName));
+        File.Delete(Path.Combine(Path.GetDirectoryName(executable)!, InstalledWorkerCatalog.RunnerMetadataFileName));
         var starter = new CountingStarter();
-        var launcher = NewLauncher(catalog, new UnavailableConnector(), starter);
+        var launcher = NewLauncher(catalog, new AbsentPresence(), starter);
 
         await Assert.ThrowsAsync<WorkerCatalogException>(() =>
-            launcher.EnsureConnectedAsync(Client(), CancellationToken.None));
+            launcher.EnsureRunningAsync(7, CancellationToken.None));
 
         Assert.Equal(0, starter.Starts);
     }
@@ -120,27 +117,24 @@ public sealed class WorkerLauncherReviewTests
         using var root = TemporaryDirectory.Create();
         var emptyCatalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "empty"));
         Assert.Equal(0, await SIL.Motif.Launcher.Program.RunAsync(Array.Empty<string>(),
-            NewLauncher(emptyCatalog, new ConnectedConnector(), new NoopStarter())));
+            NewLauncher(emptyCatalog, new RunningPresence(), new NoopStarter())));
         Assert.Equal(2, await SIL.Motif.Launcher.Program.RunAsync(Array.Empty<string>(),
-            NewLauncher(emptyCatalog, new UnavailableConnector(), new NoopStarter())));
-        Assert.Equal(3, await SIL.Motif.Launcher.Program.RunAsync(Array.Empty<string>(),
-            NewLauncher(emptyCatalog, new IncompatibleConnector(), new NoopStarter())));
+            NewLauncher(emptyCatalog, new AbsentPresence(), new NoopStarter())));
 
         var executable = Path.Combine(root.Path, "startup", "1.0", "worker.exe");
         Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
         File.WriteAllText(executable, "worker");
         var startupCatalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "startup"));
-        Register(startupCatalog, new InstalledWorker(new Version(1, 0), executable,
-            new ProtocolRange(1, 1), Array.Empty<string>()));
+        Register(startupCatalog, new InstalledWorker(new Version(1, 0), executable, 7));
         Assert.Equal(4, await SIL.Motif.Launcher.Program.RunAsync(Array.Empty<string>(),
-            NewLauncher(startupCatalog, new UnavailableConnector(), new ExitedStarter())));
+            NewLauncher(startupCatalog, new AbsentPresence(), new ExitedStarter())));
 
         var corruptRoot = Path.Combine(root.Path, "corrupt", "1.0");
         Directory.CreateDirectory(corruptRoot);
         File.WriteAllText(Path.Combine(corruptRoot, "manifest.json"), "{}");
         Assert.Equal(5, await SIL.Motif.Launcher.Program.RunAsync(Array.Empty<string>(),
             NewLauncher(new InstalledWorkerCatalog(Path.Combine(root.Path, "corrupt")),
-                new UnavailableConnector(), new NoopStarter())));
+                new AbsentPresence(), new NoopStarter())));
     }
 
     [Fact]
@@ -150,7 +144,7 @@ public sealed class WorkerLauncherReviewTests
         var error = new StringWriter(new StringBuilder(), System.Globalization.CultureInfo.InvariantCulture);
         var code = await SIL.Motif.Launcher.Program.RunAsync(Array.Empty<string>(),
             NewLauncher(new InstalledWorkerCatalog(Path.Combine(root.Path, "empty")),
-                new UnavailableConnector(), new NoopStarter()), TextWriter.Null, error);
+                new AbsentPresence(), new NoopStarter()), TextWriter.Null, error);
 
         Assert.Equal(2, code);
         Assert.Contains("install", error.ToString(), StringComparison.OrdinalIgnoreCase);
@@ -166,17 +160,18 @@ public sealed class WorkerLauncherReviewTests
         Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
         File.WriteAllText(executable, "worker");
         var catalog = new InstalledWorkerCatalog(Path.Combine(root.Path, "catalog"));
-        Register(catalog, new InstalledWorker(new Version(1, 0), executable,
-            new ProtocolRange(1, 1), Array.Empty<string>()));
-        var connector = new ConvergingConnector();
+        Register(catalog, new InstalledWorker(new Version(1, 0), executable, 7));
+        var presence = new ConvergingPresence();
         var starter = new CountingStarter();
-        var first = NewLauncher(catalog, connector, starter);
-        var second = NewLauncher(catalog, connector, starter);
+        var first = NewLauncher(catalog, presence, starter);
+        var second = NewLauncher(catalog, presence, starter);
 
-        await Task.WhenAll(first.EnsureConnectedAsync(Client()), second.EnsureConnectedAsync(Client()));
+        // The presence probe is synchronous, so each call must own a thread or the second never starts.
+        await Task.WhenAll(Task.Run(() => first.EnsureRunningAsync(7)),
+            Task.Run(() => second.EnsureRunningAsync(7)));
 
         Assert.Equal(2, starter.Starts);
-        Assert.Equal(4, connector.Attempts);
+        Assert.Equal(4, presence.Attempts);
     }
 
     [Fact]
@@ -210,44 +205,30 @@ public sealed class WorkerLauncherReviewTests
     {
         var directory = Path.GetDirectoryName(worker.ExecutablePath)!;
         Directory.CreateDirectory(directory);
-        var metadata = new WorkerBuildMetadata(worker.ProductVersion.ToString(), worker.Protocols,
-            worker.Capabilities);
-        File.WriteAllText(Path.Combine(directory, WorkerCommands.BuildMetadataFileName),
+        var metadata = new RunnerBuildMetadata(worker.ProductVersion.ToString(), worker.SupportedSchema);
+        File.WriteAllText(Path.Combine(directory, InstalledWorkerCatalog.RunnerMetadataFileName),
             metadata.ToCanonicalJson());
     }
 
-    private static WorkerHandshakeRequest Client() => new WorkerHandshakeRequest(
-        "review", "1.0", new ProtocolRange(1, 1), Array.Empty<string>());
+    private static WorkerLauncher NewLauncher(InstalledWorkerCatalog catalog, IRunnerPresence presence,
+        IWorkerProcessStarter starter) => new WorkerLauncher(catalog, presence, starter,
+        @"Local\motif-review-runner", TimeSpan.FromSeconds(1));
 
-    private static WorkerLauncher NewLauncher(InstalledWorkerCatalog catalog, IWorkerConnector connector,
-        IWorkerProcessStarter starter) => new WorkerLauncher(catalog, connector, starter, "endpoint",
-        TimeSpan.FromSeconds(1));
-
-    private sealed class UnavailableConnector : IWorkerConnector
+    /// Never present, and counts how often it was asked, so deadline discipline is observable.
+    private sealed class AbsentPresence : IRunnerPresence
     {
         public int Attempts { get; private set; }
 
-        public Task<IWorkerConnection> ConnectAsync(string endpointName, WorkerHandshakeRequest request,
-            TimeSpan timeout, CancellationToken cancellationToken)
+        public bool IsRunning(string ownerMutexName)
         {
             Attempts++;
-            return Task.FromException<IWorkerConnection>(new WorkerEndpointUnavailableException("absent"));
+            return false;
         }
     }
 
-    private sealed class ConnectedConnector : IWorkerConnector
+    private sealed class RunningPresence : IRunnerPresence
     {
-        public Task<IWorkerConnection> ConnectAsync(string endpointName, WorkerHandshakeRequest request,
-            TimeSpan timeout, CancellationToken cancellationToken) =>
-            Task.FromResult<IWorkerConnection>(new ConnectedConnection(
-                new WorkerHandshakeOffer("running", new ProtocolRange(1, 1), Array.Empty<string>(), "running")));
-    }
-
-    private sealed class IncompatibleConnector : IWorkerConnector
-    {
-        public Task<IWorkerConnection> ConnectAsync(string endpointName, WorkerHandshakeRequest request,
-            TimeSpan timeout, CancellationToken cancellationToken) =>
-            Task.FromException<IWorkerConnection>(new WorkerEndpointIncompatibleException("incompatible"));
+        public bool IsRunning(string ownerMutexName) => true;
     }
 
     private sealed class NoopStarter : IWorkerProcessStarter
@@ -280,36 +261,25 @@ public sealed class WorkerLauncherReviewTests
         }
     }
 
-    private sealed class ConvergingConnector : IWorkerConnector
+    /// Absent for both launchers' first probe, present afterwards: two racing starts converge on one runner.
+    private sealed class ConvergingPresence : IRunnerPresence
     {
         private int _attempts;
         private int _initialProbes;
-        private readonly TaskCompletionSource<bool> _bothInitialProbes =
-            new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly ManualResetEventSlim _bothProbed = new ManualResetEventSlim();
+
         public int Attempts => _attempts;
-        public async Task<IWorkerConnection> ConnectAsync(string endpointName, WorkerHandshakeRequest request,
-            TimeSpan timeout, CancellationToken cancellationToken)
+
+        public bool IsRunning(string ownerMutexName)
         {
             var attempt = Interlocked.Increment(ref _attempts);
-            if (attempt <= 2)
-            {
-                if (Interlocked.Increment(ref _initialProbes) == 2)
-                    _bothInitialProbes.TrySetResult(true);
-                await _bothInitialProbes.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
-                throw new WorkerEndpointUnavailableException("absent");
-            }
-            return new ConnectedConnection(
-                new WorkerHandshakeOffer("1.0", new ProtocolRange(1, 1), Array.Empty<string>(), "running"));
+            if (attempt > 2)
+                return true;
+            if (Interlocked.Increment(ref _initialProbes) == 2)
+                _bothProbed.Set();
+            _bothProbed.Wait(TimeSpan.FromSeconds(5));
+            return false;
         }
-    }
-
-    private sealed class ConnectedConnection : IWorkerConnection
-    {
-        public ConnectedConnection(WorkerHandshakeOffer offer) { Offer = offer; }
-
-        public WorkerHandshakeResult Negotiated { get; } = new WorkerHandshakeResult(1, Array.Empty<string>());
-        public WorkerHandshakeOffer Offer { get; }
-        public void Dispose() { }
     }
 
     private sealed class NoopProcess : IWorkerProcess
@@ -321,9 +291,10 @@ public sealed class WorkerLauncherReviewTests
         public void Dispose() { }
     }
 
+    /// Scripted to the launcher's own clock reads, so the last one lands exactly on the deadline.
     private sealed class ExactDeadlineClock : ILauncherClock
     {
-        private readonly Queue<long> _timestamps = new Queue<long>(new[] { 0L, 1L, 1L, 1L, 10L });
+        private readonly Queue<long> _timestamps = new Queue<long>(new[] { 0L, 1L, 1L, 10L });
 
         public long Timestamp => _timestamps.Count == 0 ? 10 : _timestamps.Dequeue();
         public long Frequency => 1;

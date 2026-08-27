@@ -1,11 +1,12 @@
 ﻿using System.Globalization;
+using SIL.Motif.Contract;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using SIL.Motif.Contract.Baselines;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Jobs;
 using SIL.Motif.Contract.Projects;
-using SIL.Motif.Contract.Worker;
+
 using SIL.Motif.Worker.Baselines;
 using SIL.Motif.Worker.Projects;
 using SIL.Motif.Worker.Scheduling;
@@ -142,7 +143,7 @@ public sealed class DryRunAssessmentPipeline
         var createdUtc = _utcNow().ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
         var inputJson = JsonSerializer.Serialize(
             new PipelineInput(request.ProposalId.Value, request.IntentDigest, request.Baseline, request.IncludeAssessment),
-            WorkerJson.CreateOptions());
+            MotifJson.CreateOptions());
         var job = _jobs.Create(Guid.NewGuid().ToString("N"), _workspaceKey, JobKind, inputJson, createdUtc);
         var jobId = job.JobId;
 
@@ -187,7 +188,7 @@ public sealed class DryRunAssessmentPipeline
         var beforePublish = _jobs.Get(jobId)!;
         var published = _jobs.PublishDryRun(jobId, DryRunJobHandler.BuildPublishedDryRunJson(dryRun!), beforePublish.Version);
         var completionJson = JsonSerializer.Serialize(
-            PipelineCompletion.Skipped(request.IntentDigest, baselineToken), WorkerJson.CreateOptions());
+            PipelineCompletion.Skipped(request.IntentDigest, baselineToken), MotifJson.CreateOptions());
         return _jobs.Transition(published, JobStatus.CompletedDryRunOnly, completionJson);
     }
 
@@ -231,7 +232,7 @@ public sealed class DryRunAssessmentPipeline
             var summary = await _runAssessment(exportDirectory, cancellationToken).ConfigureAwait(false);
             var current = _jobs.Get(jobId)!;
             var completionJson = JsonSerializer.Serialize(
-                PipelineCompletion.Completed(request.IntentDigest, baselineToken, summary), WorkerJson.CreateOptions());
+                PipelineCompletion.Completed(request.IntentDigest, baselineToken, summary), MotifJson.CreateOptions());
             return _jobs.Transition(current, JobStatus.Completed, completionJson);
         }
         catch (OperationCanceledException)
@@ -243,7 +244,7 @@ public sealed class DryRunAssessmentPipeline
             var current = _jobs.Get(jobId)!;
             var failureJson = JsonSerializer.Serialize(
                 PipelineCompletion.ToolFailure(request.IntentDigest, baselineToken, exception.GetType().Name),
-                WorkerJson.CreateOptions());
+                MotifJson.CreateOptions());
             return _jobs.Transition(current, JobStatus.CompletedWithAssessmentFailure, failureJson);
         }
         finally
@@ -259,7 +260,7 @@ public sealed class DryRunAssessmentPipeline
         if (JobStateMachine.IsTerminal(current.Status)) return current;
         if (exception is OperationCanceledException) return _jobs.Transition(current, JobStatus.Cancelled);
         var failureJson = JsonSerializer.Serialize(
-            new PipelineFailure(exception.GetType().Name), WorkerJson.CreateOptions());
+            new PipelineFailure(exception.GetType().Name), MotifJson.CreateOptions());
         var status = current.DryRunPublished ? JobStatus.CompletedWithAssessmentFailure : JobStatus.Failed;
         return _jobs.Transition(current, status, failureJson);
     }

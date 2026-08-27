@@ -1,7 +1,6 @@
 using System;
 using System.Text.Json.Serialization;
 using SIL.Motif.Contract.Canonicalization;
-using SIL.Motif.Contract.Worker;
 
 namespace SIL.Motif.Contract.Projects;
 
@@ -19,7 +18,7 @@ public sealed record LiveProjectObservation
             throw new ArgumentOutOfRangeException(nameof(editGeneration), "Edit generation cannot be negative.");
         Sha256Value.RequireCanonical(savedSemanticDigest, nameof(savedSemanticDigest));
 
-        HostSessionId = WorkerProtocolValidation.Identifier(hostSessionId, nameof(hostSessionId));
+        HostSessionId = BoundedIdentifier.Require(hostSessionId, nameof(hostSessionId));
         EditGeneration = editGeneration;
         HasUnsavedChanges = hasUnsavedChanges;
         SavedSemanticDigest = savedSemanticDigest;

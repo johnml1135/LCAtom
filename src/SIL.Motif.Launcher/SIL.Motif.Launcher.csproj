@@ -8,6 +8,5 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\SIL.Motif.Contract\SIL.Motif.Contract.csproj" />
-    <ProjectReference Include="..\SIL.Motif.Client\SIL.Motif.Client.csproj" />
   </ItemGroup>
 </Project>
