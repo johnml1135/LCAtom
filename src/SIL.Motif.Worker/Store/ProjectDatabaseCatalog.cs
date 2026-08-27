@@ -20,9 +20,6 @@ public sealed class ProjectDatabaseCatalog
         _workerVersion = workerVersion;
     }
 
-    /// <summary>Opens the paired database while retaining worker ownership for its lifetime.</summary>
-    public MotifDatabase Open(ProjectLocator project) => OpenOwned(project);
-
     /// <summary>Opens the project sibling database through the worker-owned host boundary.</summary>
     public MotifDatabase OpenOwned(ProjectLocator project)
     {

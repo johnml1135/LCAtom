@@ -1,11 +1,9 @@
 using System;
-using System.IO;
 using System.Text;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Jobs;
 using SIL.Motif.Contract.Projects;
 using SIL.Motif.Contract.Responses;
-using SIL.Motif.Host.Store;
 using SIL.Motif.Worker.Jobs;
 using SIL.Motif.Worker.Projects;
 using SIL.Motif.Worker.Store;
@@ -28,7 +26,7 @@ public static class JobCommands
     /// <summary>Queues a Baseline refresh for one project and prints the job id that names it.</summary>
     public static CommandResult EnqueueBaselineRefresh(string fwDataPath, string productVersion)
     {
-        return WithDatabase(fwDataPath, productVersion, (database, project) =>
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, project) =>
         {
             var jobs = new JobRepository(database);
             var jobId = CanonicalId.Mint("job/").Value;
@@ -42,13 +40,14 @@ public static class JobCommands
     public static CommandResult Show(string fwDataPath, string jobId, string productVersion, bool asJson)
     {
         if (string.IsNullOrWhiteSpace(jobId))
-            return Refuse(FailureReason.InvalidArgument, "A job id is required.");
+            return ProjectStoreCommand.Refuse(FailureReason.InvalidArgument, "A job id is required.");
 
-        return WithDatabase(fwDataPath, productVersion, (database, project) =>
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, project) =>
         {
             var job = new JobRepository(database).Get(jobId);
             if (job is null)
-                return Refuse(FailureReason.NotFound, "No job '" + jobId + "' is recorded for this project.");
+                return ProjectStoreCommand.Refuse(FailureReason.NotFound,
+                    "No job '" + jobId + "' is recorded for this project.");
 
             var response = new JobStatusResponse(job.JobId, job.ProjectKey, true, job.Kind, job.Status,
                 job.Attempt, job.UpdatedUtc, job.CancellationRequested, job.FailureCategory, job.Version);
@@ -56,36 +55,6 @@ public static class JobCommands
                 ? ProjectionJson.Serialize(response) + Environment.NewLine
                 : Render(response));
         });
-    }
-
-    private static CommandResult WithDatabase(string fwDataPath, string productVersion,
-        Func<MotifDatabase, ProjectLocator, CommandResult> act)
-    {
-        ProjectLocator project;
-        try
-        {
-            project = Locate(fwDataPath);
-        }
-        catch (Exception exception) when (exception is ArgumentException or IOException)
-        {
-            return Refuse(FailureReason.InvalidArgument, exception.Message);
-        }
-
-        var catalog = new ProjectDatabaseCatalog(MotifSchema.CurrentSchema, ParseVersion(productVersion));
-        try
-        {
-            using var database = catalog.OpenOwned(project);
-            return act(database, project);
-        }
-        catch (IOException exception)
-        {
-            // Another process holds the database; the caller may try again once it lets go.
-            return Refuse(FailureReason.Busy, exception.Message);
-        }
-        catch (Exception exception) when (exception is NotSupportedException or InvalidDataException)
-        {
-            return Refuse(FailureReason.Refused, exception.Message);
-        }
     }
 
     private static string Render(JobStatusResponse response)
@@ -97,22 +66,5 @@ public static class JobCommands
         text.AppendLine("  Attempt: " + response.Attempt);
         text.AppendLine("  Updated: " + response.UpdatedUtc);
         return text.ToString();
-    }
-
-    private static CommandResult Refuse(FailureReason reason, string message) =>
-        new CommandResult(FailureEnvelope.ExitCodeFor(reason),
-            "error: " + message + Environment.NewLine, reason);
-
-    /// A malformed product version must not stop a queue read; the floor it feeds is a lower bound.
-    private static Version ParseVersion(string productVersion) =>
-        Version.TryParse(productVersion, out var parsed) ? parsed : new Version(1, 0);
-
-    /// The file must exist: an unresolvable path would key a second, empty workspace instead of the real one.
-    private static ProjectLocator Locate(string fwDataPath)
-    {
-        var full = Path.GetFullPath(fwDataPath);
-        if (!File.Exists(full))
-            throw new FileNotFoundException("Project file not found: '" + full + "'.", full);
-        return new ProjectLocator(full, Path.GetFileNameWithoutExtension(full));
     }
 }

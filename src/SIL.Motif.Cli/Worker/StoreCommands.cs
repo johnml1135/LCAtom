@@ -1,12 +1,9 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Text;
 using SIL.Motif.Contract.Projects;
-using SIL.Motif.Contract.Responses;
 using SIL.Motif.Contract.Store;
-using SIL.Motif.Host.Store;
 using SIL.Motif.Worker.Projects;
 using SIL.Motif.Worker.Store;
 
@@ -26,37 +23,12 @@ public static class StoreCommands
     /// <summary>Cuts one store location over to the paired database and renders what moved.</summary>
     public static CommandResult Cutover(string storeDirectory, string fwDataPath, string productVersion)
     {
-        ProjectLocator project;
-        try
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, project) =>
         {
-            project = Locate(fwDataPath);
-        }
-        catch (Exception exception) when (exception is ArgumentException or IOException)
-        {
-            return Refuse(FailureReason.InvalidArgument, exception);
-        }
-
-        var catalog = new ProjectDatabaseCatalog(MotifSchema.CurrentSchema, ParseVersion(productVersion));
-        try
-        {
-            using var database = catalog.OpenOwned(project);
             var result = ProjectStoreCutover.Run(storeDirectory, database);
             return new CommandResult(0, Render(storeDirectory, Describe(project, result)));
-        }
-        catch (IOException exception)
-        {
-            // The owner lock is held elsewhere, or the database is unreadable; both are "try again".
-            return Refuse(FailureReason.Busy, exception);
-        }
-        catch (Exception exception) when (exception is NotSupportedException or InvalidDataException)
-        {
-            return Refuse(FailureReason.Refused, exception);
-        }
+        });
     }
-
-    private static CommandResult Refuse(FailureReason reason, Exception exception) =>
-        new CommandResult(FailureEnvelope.ExitCodeFor(reason),
-            "error: " + exception.Message + Environment.NewLine, reason);
 
     private static StoreCutoverResponse Describe(ProjectLocator project, ProjectStoreCutoverResult result) =>
         new StoreCutoverResponse(
@@ -66,19 +38,6 @@ public static class StoreCommands
             result.LegacyBulk?.RowCount ?? 0,
             result.ArchivedPaths,
             result.ArchiveFailures.Select(failure => failure.Path).ToList());
-
-    /// A malformed product version must not stop a cutover; the compatibility floor it feeds is a lower bound.
-    private static Version ParseVersion(string productVersion) =>
-        Version.TryParse(productVersion, out var parsed) ? parsed : new Version(1, 0);
-
-    /// The file must exist: an unresolvable path would key a second, empty workspace instead of the real one.
-    private static ProjectLocator Locate(string fwDataPath)
-    {
-        var full = System.IO.Path.GetFullPath(fwDataPath);
-        if (!System.IO.File.Exists(full))
-            throw new FileNotFoundException("Project file not found: '" + full + "'.", full);
-        return new ProjectLocator(full, System.IO.Path.GetFileNameWithoutExtension(full));
-    }
 
     private static string Render(string storeDirectory, StoreCutoverResponse response)
     {

@@ -35,7 +35,7 @@ public sealed class MotifDatabaseMigrationTests : IDisposable
         Assert.Equal(DatabasePath("catalog.fwdata"), ProjectDatabaseCatalog.DatabasePathFor(project));
 
         var catalog = new ProjectDatabaseCatalog(MotifSchema.CurrentSchema, new Version(1, 0));
-        using var database = catalog.Open(project);
+        using var database = catalog.OpenOwned(project);
         Assert.True(File.Exists(DatabasePath("catalog.fwdata")));
     }
 
