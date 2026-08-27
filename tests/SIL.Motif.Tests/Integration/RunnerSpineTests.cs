@@ -47,6 +47,43 @@ public sealed class RunnerSpineTests : IDisposable
         // The row moved because a different process moved it; nothing in this one touched the queue.
         Assert.NotEqual("queued", StatusOf(project, jobId));
         Assert.NotEqual("running", StatusOf(project, jobId));
+        // A completed refresh that published nothing is the failure a job status cannot show.
+        Assert.True(PublishedBaselineCount(project) == 1,
+            $"Expected one published Baseline, found {PublishedBaselineCount(project)}. " +
+            $"Job: {StatusOf(project, jobId)} — {ResultOf(project, jobId)}");
+    }
+
+    /// The job's own record of why it failed; no verb surfaces ResultJson yet.
+    private static string ResultOf(string project, string jobId) =>
+        Scalar(project, "SELECT ResultJson FROM Jobs WHERE JobId = '" + jobId + "';")?.ToString() ?? "(none)";
+
+    /// Reads the Baselines table directly: no verb reports it yet, and the job status cannot.
+    private static int PublishedBaselineCount(string project)
+    {
+        var database = Path.Combine(Path.GetDirectoryName(project)!,
+            Path.GetFileNameWithoutExtension(project) + ".motif.db");
+        if (!File.Exists(database)) return 0;
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+            new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
+            { DataSource = database, Pooling = false }.ToString());
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM Baselines;";
+        return Convert.ToInt32(command.ExecuteScalar());
+    }
+
+    private static object? Scalar(string project, string sql)
+    {
+        var database = Path.Combine(Path.GetDirectoryName(project)!,
+            Path.GetFileNameWithoutExtension(project) + ".motif.db");
+        if (!File.Exists(database)) return null;
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+            new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
+            { DataSource = database, Pooling = false }.ToString());
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        return command.ExecuteScalar();
     }
 
     [Fact]

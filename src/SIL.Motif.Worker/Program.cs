@@ -6,7 +6,6 @@ using SIL.LCModel;
 using SIL.Motif.Contract.Projects;
 using SIL.Motif.Host.LcmUtils;
 using SIL.Motif.Host.Store;
-using SIL.Motif.LiveHost.Baselines;
 using SIL.Motif.Worker.Baselines;
 using SIL.Motif.Worker.Jobs;
 using SIL.Motif.Worker.Store;
@@ -59,9 +58,10 @@ internal static class Program
         RunnerOptions options, string ownerId, CancellationToken cancellationToken)
     {
         var runtime = runtimes.GetOrOpen(project);
+        var publish = new BaselineRefresh(runtime.Baselines, options.Root);
         var refresh = new BaselineRefreshJobHandler(
             new BaselineRefreshBarrier(locator => new FwDataProjectLoader().LoadCache(locator.FullFwDataPath)),
-            (cache, token) => CaptureAsync(cache, options.Root, token));
+            (cache, token) => publish.RefreshAsync(cache, project, token));
         var loop = new JobRunnerLoop(runtime.Jobs, runtime.WorkspaceKey, ownerId: ownerId,
             lease: options.Lease, poll: TimeSpan.Zero,
             handlers: new Dictionary<string, JobRunnerLoop.Handler>(StringComparer.Ordinal)
@@ -71,16 +71,6 @@ internal static class Program
         await loop.RunUntilIdleAsync(cancellationToken).ConfigureAwait(false);
         // The runtime holds a work lease until asked to re-check; without this the process never idles.
         runtime.RefreshWorkLease();
-    }
-
-    private static async Task CaptureAsync(LcmCache cache, string root, CancellationToken cancellationToken)
-    {
-        var transfers = Path.Combine(root, "captures");
-        Directory.CreateDirectory(transfers);
-        var bundle = Path.Combine(transfers, Guid.NewGuid().ToString("N") + ".zip");
-        using var destination = File.Create(bundle);
-        await new BaselineBundleWriter().WriteAsync(cache, destination, cancellationToken)
-            .ConfigureAwait(false);
     }
 
     private static ProjectLocator? ProjectFrom(string[] args)
