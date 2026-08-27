@@ -1,5 +1,12 @@
 using System.Diagnostics;
+using Microsoft.Data.Sqlite;
+using SIL.Motif.Cli.Store;
+using SIL.Motif.Contract.Canonicalization;
+using SIL.Motif.Contract.Ids;
+using SIL.Motif.Contract.Parsing;
+using SIL.Motif.Contract.Projects;
 using SIL.Motif.Generator;
+using SIL.Motif.Host.Store;
 using Xunit;
 
 namespace SIL.Motif.Tests.Cli;
@@ -9,11 +16,10 @@ namespace SIL.Motif.Tests.Cli;
 /// </summary>
 /// <remarks>
 /// These drive the real <c>motif.exe</c>, so they cover what only the executable decides: verb routing, flag
-/// validation, exit codes, and that a worker failure is reported as an actionable message rather than a
-/// stack trace. They deliberately do not cover the successful round trip, because reaching a worker from a
-/// separate process would mean installing one into the machine-wide catalog the launcher reads. That path is
-/// proven instead by <c>WorkerCommandDispatchTests</c>, which drives the same client against a real server
-/// over a real named pipe.
+/// validation, exit codes, and that a failure is reported as an actionable message rather than a stack
+/// trace. <see cref="ACutoverRunsEndToEndInTheCliProcess"/> also covers the successful round trip: the
+/// executable takes a real store into a real sibling database and archives the sources, with no second
+/// process involved.
 /// </remarks>
 public sealed class StoreCutoverArgvTests : IDisposable
 {
@@ -54,6 +60,89 @@ public sealed class StoreCutoverArgvTests : IDisposable
         Assert.Contains(missing, result.Error, StringComparison.Ordinal);
         // A stack trace here would mean the CLI let an exception escape instead of reporting the refusal.
         Assert.DoesNotContain("   at ", result.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ACutoverRunsEndToEndInTheCliProcess()
+    {
+        var project = Path.Combine(_root, "project.fwdata");
+        File.WriteAllText(project, string.Empty);
+        var store = SeedStore();
+
+        var result = Run("store-cutover --project \"" + project + "\" --store \"" + store + "\"");
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(string.Empty, result.Error);
+        Assert.Contains("Proposals imported: 1", result.Output, StringComparison.Ordinal);
+        Assert.Contains("Legacy rows imported: 1", result.Output, StringComparison.Ordinal);
+        // The sibling database is the destination, and the legacy sources are moved aside once it holds them.
+        Assert.True(File.Exists(Path.Combine(_root, "project.motif.db")));
+        Assert.False(Directory.Exists(store));
+        Assert.True(Directory.Exists(store + ".migrated"));
+    }
+
+    [Fact]
+    public void ASecondCutoverOfTheSameStoreImportsNothingTwice()
+    {
+        var project = Path.Combine(_root, "project.fwdata");
+        File.WriteAllText(project, string.Empty);
+        var store = SeedStore();
+        Assert.Equal(0, Run("store-cutover --project \"" + project + "\" --store \"" + store + "\"").ExitCode);
+
+        var again = Run("store-cutover --project \"" + project + "\" --store \"" + store + "\"");
+
+        Assert.Equal(0, again.ExitCode);
+        Assert.Contains("already taken", again.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AnotherProcessHoldingTheDatabaseRefusesTheCutoverRatherThanWaiting()
+    {
+        var project = Path.Combine(_root, "project.fwdata");
+        File.WriteAllText(project, string.Empty);
+        var store = SeedStore();
+        var locator = new ProjectLocator(project, "project");
+        // Standing in for a second motif invocation or a job runner: it owns the database for the duration.
+        using var held = MotifDatabase.OpenOwned(Path.Combine(_root, "project.motif.db"), locator,
+            MotifSchema.CurrentSchema, new Version(1, 0));
+
+        var result = Run("store-cutover --project \"" + project + "\" --store \"" + store + "\"");
+
+        Assert.Equal(1, result.ExitCode);
+        Assert.Contains("error: ", result.Error, StringComparison.Ordinal);
+        Assert.DoesNotContain("   at ", result.Error, StringComparison.Ordinal);
+        // Refused, not partially applied: the store is untouched and still awaits a cutover.
+        Assert.True(Directory.Exists(store));
+        Assert.False(Directory.Exists(store + ".migrated"));
+    }
+
+    /// Mirrors the fixture shape <c>ProjectStoreCutoverTests</c> seeds: one file proposal and one legacy row.
+    private string SeedStore()
+    {
+        var store = Path.Combine(_root, "store");
+        var proposals = new ProposalStore(store);
+        proposals.EnsureDirectoriesExist();
+        var id = CanonicalId.Mint("proposal/").Value;
+        var json = "{\"contractVersions\":{},\"proposalId\":\"" + id + "\",\"requires\":[],\"operations\":[]}";
+        var digest = IntentDigest.Compute(ProposalJsonParser.Parse(json));
+        File.WriteAllText(proposals.ObjectPath(digest), json);
+        Directory.CreateDirectory(Path.GetDirectoryName(proposals.ManifestPath(id))!);
+        File.WriteAllText(proposals.ManifestPath(id),
+            "{\"proposalId\":\"" + id + "\",\"status\":\"proposed\",\"currentIntentDigest\":\"" + digest + "\"}");
+
+        var options = new SqliteConnectionStringBuilder
+        {
+            DataSource = Path.Combine(store, "motif.db"),
+            Pooling = false
+        };
+        using var legacy = new SqliteConnection(options.ToString());
+        legacy.Open();
+        MotifSchema.EnsureLegacyTables(legacy);
+        using var command = legacy.CreateCommand();
+        command.CommandText = "INSERT INTO Corpora VALUES ('c1','{\"source\":\"legacy\"}');";
+        command.ExecuteNonQuery();
+        SqliteConnection.ClearAllPools();
+        return store;
     }
 
     private static CliRun Run(string arguments)

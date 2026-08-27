@@ -350,8 +350,7 @@ try
         case "store-cutover":
             if (!flags.TryGetValue("project", out var cutoverProject))
                 return Usage("Usage: motif store-cutover --project <fwdata> [--store <dir>]");
-            result = StoreCommands.CutoverAsync(new LaunchedWorkerCommandSession(), storeDir, cutoverProject,
-                CliProductVersion(), CancellationToken.None).GetAwaiter().GetResult();
+            result = StoreCommands.Cutover(storeDir, cutoverProject, CliProductVersion());
             break;
 
         default:
