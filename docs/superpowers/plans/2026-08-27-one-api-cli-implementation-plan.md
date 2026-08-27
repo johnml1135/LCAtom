@@ -261,11 +261,13 @@ code means the classification was not really done.
 
 ### Task 6b: Design and rebuild the Baseline refresh barrier
 
-**Design settled** in
-[the refresh barrier design](../specs/2026-08-27-baseline-refresh-barrier-design.md): a refresh tries the
-`.fwdata` lock rather than negotiating, and a held project is refused as Busy. Rebuilding the barrier on
-that basis is not yet done, and it amends ADR 0039 decision 3's automatic-later-completion clause, so it
-wants the owner's agreement before code.
+**Designed and built.** [The refresh barrier design](../specs/2026-08-27-baseline-refresh-barrier-design.md)
+settles it: a refresh attempts the `.fwdata` lock rather than negotiating, and a held project is refused
+as Busy. `BaselineRefreshBarrier` implements that decision, and ADR 0039 decision 3 carries a dated
+amendment recording that a refused refresh is no longer completed later on its own.
+
+What remains is wiring the barrier to a real capture, which belongs with the job runner's first real work
+rather than here.
 
 Found while executing Task 2, and owed a design rather than an improvisation. The refresh barrier ran an
 accept/defer/decline conversation with the live host over the event pipe, so a refresh could ask FieldWorks

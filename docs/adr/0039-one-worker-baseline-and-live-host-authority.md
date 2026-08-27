@@ -160,6 +160,27 @@ audio, video, or other external bytes. Adding or replacing media is deferred unt
 retention contract exists. [The initial linked-media boundary](../media-boundary-spec.md) defines the current
 operation-family admission gate.
 
+## Amendments
+
+### 2026-08-27 — a refused refresh is not completed later
+
+Decision 3 ends: *"A requested refresh waits when FieldWorks owns the live model; if FieldWorks closes, the
+worker may acquire the released project on the next opportunity and complete it automatically."*
+
+That was the payoff of the deferred answer in the live-host exchange, and
+[ADR 0040](0040-one-api-the-cli.md) removes the channel that exchange ran over. Under
+[the refresh barrier design](../superpowers/specs/2026-08-27-baseline-refresh-barrier-design.md) a refresh
+attempts the project's own file lock instead of negotiating: free, it captures; held, it is **refused as
+busy** and not remembered. Nothing completes later on its own, and a caller that wants that retries.
+
+**Everything else in decision 3 stands.** The refresh is still a barrier, Dry Runs ordered before it still
+use the old Baseline and those after it the replacement, and PanGloss is still separately bounded — none
+of that depended on the conversation, only on the per-project lane, which outlived the wire.
+
+The reduction is deliberate and worth naming: a user with FieldWorks open used to be asked to release the
+project and could agree. Now they close it, or the refresh waits. Restoring that as a FieldWorks-side
+prompt that runs `motif` afterwards is a question for that surface rather than for this barrier.
+
 ## Consequences
 
 This design makes repeated evaluation cheap and concurrent while keeping live-project writes under the host

@@ -1422,7 +1422,9 @@ public static class Commands
         }
         catch (LcmFileLockedException)
         {
-            return (1, null, FailText(ProjectInUseMessage(fwDataPath, "dry-run")));
+            // A held project is retryable once it is let go, which is what Busy tells a caller.
+            return (FailureEnvelope.ExitCodeFor(FailureReason.Busy), null,
+                FailText(ProjectInUseMessage(fwDataPath, "dry-run")));
         }
         catch (Exception ex)
         {
@@ -1531,7 +1533,9 @@ public static class Commands
         }
         catch (LcmFileLockedException)
         {
-            return (1, null, FailText(ProjectInUseMessage(fwDataPath, "apply")));
+            // A held project is retryable once it is let go, which is what Busy tells a caller.
+            return (FailureEnvelope.ExitCodeFor(FailureReason.Busy), null,
+                FailText(ProjectInUseMessage(fwDataPath, "apply")));
         }
         catch (NeedsReconciliationException ex)
         {
