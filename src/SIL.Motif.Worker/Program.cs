@@ -62,7 +62,7 @@ internal static class Program
         var refresh = new BaselineRefreshJobHandler(
             new BaselineRefreshBarrier(locator => new FwDataProjectLoader().LoadCache(locator.FullFwDataPath)),
             (cache, token) => publish.RefreshAsync(cache, project, token));
-        var loop = new JobRunnerLoop(runtime.Jobs, runtime.WorkspaceKey, ownerId: ownerId,
+        var loop = new JobRunnerLoop(new JobClaims(runtime.Database), runtime.WorkspaceKey, ownerId: ownerId,
             lease: options.Lease, poll: TimeSpan.Zero,
             handlers: new Dictionary<string, JobRunnerLoop.Handler>(StringComparer.Ordinal)
             {

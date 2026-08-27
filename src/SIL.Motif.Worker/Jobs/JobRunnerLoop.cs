@@ -13,7 +13,7 @@ namespace SIL.Motif.Worker.Jobs;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The loop is the only thing that ever calls <see cref="JobRepository.ClaimNext"/>. It polls because
+/// The loop is the only thing that ever calls <see cref="JobClaims.Claim"/>. It polls because
 /// SQLite has no way to be told that a row appeared, and it jitters that poll so two runners started
 /// together do not contend on every tick.
 /// </para>
@@ -29,7 +29,7 @@ public sealed class JobRunnerLoop
     public delegate Task Handler(JobRecord job, CancellationToken cancellationToken);
 
     private static readonly TimeSpan HeartbeatShare = TimeSpan.FromSeconds(1);
-    private readonly JobRepository _jobs;
+    private readonly JobClaims _claims;
     private readonly string _projectKey;
     private readonly string _ownerId;
     private readonly TimeSpan _lease;
@@ -38,10 +38,10 @@ public sealed class JobRunnerLoop
     private readonly Random _jitter = new();
 
     /// <summary>Creates a loop bound to one project's queue and the kinds it can run.</summary>
-    public JobRunnerLoop(JobRepository jobs, string projectKey, string ownerId, TimeSpan lease,
+    public JobRunnerLoop(JobClaims claims, string projectKey, string ownerId, TimeSpan lease,
         TimeSpan poll, IReadOnlyDictionary<string, Handler> handlers)
     {
-        _jobs = jobs ?? throw new ArgumentNullException(nameof(jobs));
+        _claims = claims ?? throw new ArgumentNullException(nameof(claims));
         _projectKey = projectKey ?? throw new ArgumentNullException(nameof(projectKey));
         _ownerId = ownerId ?? throw new ArgumentNullException(nameof(ownerId));
         if (lease <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(lease));
@@ -57,7 +57,7 @@ public sealed class JobRunnerLoop
         var attempted = new HashSet<string>(StringComparer.Ordinal);
         while (true)
         {
-            var claimed = _jobs.ClaimNext(_projectKey, _ownerId, Now(), _lease);
+            var claimed = _claims.Claim(_projectKey, _ownerId, Now(), _lease);
             if (claimed is null) return;
             if (!attempted.Add(claimed.JobId)) return;
             await RunOneAsync(claimed, cancellationToken).ConfigureAwait(false);
@@ -105,19 +105,17 @@ public sealed class JobRunnerLoop
         {
             try { await Task.Delay(interval, stopping).ConfigureAwait(false); }
             catch (OperationCanceledException) { return; }
-            _jobs.Heartbeat(claimed.JobId, claimed.ClaimToken!, Now(), _lease);
+            _claims.Renew(claimed.JobId, claimed.ClaimToken!, Now(), _lease);
         }
     }
 
-    /// A terminal transition reads the row first, because the heartbeat has moved its version underneath.
     private void Finish(JobRecord claimed, JobStatus status, JobFailureCategory category, string? detail)
     {
-        var current = _jobs.Get(claimed.JobId);
-        if (current is null || current.Status != JobStatus.Running) return;
         try
         {
-            _jobs.Transition(claimed.JobId, status, current.Version, category,
-                detail is null ? null : JsonSerializer.Serialize(new { detail }));
+            if (!_claims.Finish(claimed.JobId, claimed.ClaimToken!, status, category,
+                    detail is null ? null : JsonSerializer.Serialize(new { detail })))
+                Console.Error.WriteLine(claimed.JobId + " is no longer this runner's to finish.");
         }
         catch (Exception exception)
         {

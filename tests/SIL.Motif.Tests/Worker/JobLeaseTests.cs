@@ -10,7 +10,7 @@ namespace SIL.Motif.Tests.Worker;
 /// Covers claiming a queued job when more than one process can reach the database.
 /// </summary>
 /// <remarks>
-/// These drive two <see cref="JobRepository"/> instances over one database file rather than two OS
+/// These drive two <see cref="JobClaims"/> instances over one database file rather than two OS
 /// processes. The claim's atomicity comes from SQLite's single write lock, which is a property of the
 /// file and not of the process, so two connections exercise the same contention two executables would;
 /// what they do not cover is a runner killed mid-claim, which needs the process-level harness.
@@ -36,8 +36,8 @@ public sealed class JobLeaseTests : IDisposable
         var jobs = new JobRepository(_database);
         jobs.Create("job-1", Project, "dry-run", "{}", Now());
 
-        var first = new JobRepository(_database).ClaimNext(Project, "runner-a", Now(), Lease());
-        var second = new JobRepository(_database).ClaimNext(Project, "runner-b", Now(), Lease());
+        var first = new JobClaims(_database).Claim(Project, "runner-a", Now(), Lease());
+        var second = new JobClaims(_database).Claim(Project, "runner-b", Now(), Lease());
 
         Assert.NotNull(first);
         Assert.Null(second);
@@ -50,12 +50,13 @@ public sealed class JobLeaseTests : IDisposable
     public void AClaimedJobIsInvisibleToOtherClaimantsUntilItsLeaseExpires()
     {
         var jobs = new JobRepository(_database);
+        var claims = new JobClaims(_database);
         jobs.Create("job-1", Project, "dry-run", "{}", Now());
-        var claimed = jobs.ClaimNext(Project, "runner-a", Now(), Lease())!;
+        var claimed = claims.Claim(Project, "runner-a", Now(), Lease())!;
 
-        Assert.Null(jobs.ClaimNext(Project, "runner-b", Now(), Lease()));
+        Assert.Null(claims.Claim(Project, "runner-b", Now(), Lease()));
 
-        var afterExpiry = jobs.ClaimNext(Project, "runner-b", Stamp(DateTimeOffset.UtcNow.AddMinutes(10)),
+        var afterExpiry = claims.Claim(Project, "runner-b", Stamp(DateTimeOffset.UtcNow.AddMinutes(10)),
             Lease());
         Assert.NotNull(afterExpiry);
         Assert.Equal("runner-b", afterExpiry!.OwnerId);
@@ -67,28 +68,38 @@ public sealed class JobLeaseTests : IDisposable
     public void AHeartbeatPushesTheLeaseForwardAndKeepsTheJobHeld()
     {
         var jobs = new JobRepository(_database);
+        var claims = new JobClaims(_database);
         jobs.Create("job-1", Project, "dry-run", "{}", Now());
-        var claimed = jobs.ClaimNext(Project, "runner-a", Now(), Lease())!;
+        var claimed = claims.Claim(Project, "runner-a", Now(), Lease())!;
         var later = DateTimeOffset.UtcNow.AddMinutes(10);
 
-        Assert.True(jobs.Heartbeat(claimed.JobId, claimed.ClaimToken!, Stamp(later), Lease()));
+        Assert.True(claims.Renew(claimed.JobId, claimed.ClaimToken!, Stamp(later), Lease()));
 
-        Assert.Null(jobs.ClaimNext(Project, "runner-b", Stamp(later.AddSeconds(1)), Lease()));
+        Assert.Null(claims.Claim(Project, "runner-b", Stamp(later.AddSeconds(1)), Lease()));
     }
 
     [Fact]
     public void AStaleOwnerCannotHeartbeatOrFinishAJobReassignedAwayFromIt()
     {
         var jobs = new JobRepository(_database);
+        var claims = new JobClaims(_database);
         jobs.Create("job-1", Project, "dry-run", "{}", Now());
-        var stale = jobs.ClaimNext(Project, "runner-a", Now(), Lease())!;
-        var reclaimed = jobs.ClaimNext(Project, "runner-a", Stamp(DateTimeOffset.UtcNow.AddMinutes(10)),
+        var stale = claims.Claim(Project, "runner-a", Now(), Lease())!;
+        var reclaimed = claims.Claim(Project, "runner-a", Stamp(DateTimeOffset.UtcNow.AddMinutes(10)),
             Lease())!;
 
         // Same process, same OwnerId — only the token distinguishes the life that lost the row.
-        Assert.False(jobs.Heartbeat(stale.JobId, stale.ClaimToken!, Now(), Lease()));
+        Assert.False(claims.Renew(stale.JobId, stale.ClaimToken!, Now(), Lease()));
         Assert.NotEqual(stale.ClaimToken, reclaimed.ClaimToken);
-        Assert.True(jobs.Heartbeat(reclaimed.JobId, reclaimed.ClaimToken!, Now(), Lease()));
+        Assert.True(claims.Renew(reclaimed.JobId, reclaimed.ClaimToken!, Now(), Lease()));
+
+        // The row the stale runner is about to report on is running for somebody else.
+        Assert.False(claims.Finish(stale.JobId, stale.ClaimToken!, JobStatus.Completed,
+            JobFailureCategory.None, null));
+        Assert.Equal(JobStatus.Running, jobs.Get(stale.JobId)!.Status);
+        Assert.True(claims.Finish(reclaimed.JobId, reclaimed.ClaimToken!, JobStatus.Completed,
+            JobFailureCategory.None, null));
+        Assert.Equal(JobStatus.Completed, jobs.Get(reclaimed.JobId)!.Status);
     }
 
     [Fact]
@@ -106,19 +117,21 @@ public sealed class JobLeaseTests : IDisposable
     public void ClaimingIgnoresQueuedWorkBelongingToAnotherProject()
     {
         var jobs = new JobRepository(_database);
+        var claims = new JobClaims(_database);
         jobs.Create("job-1", "another-project", "dry-run", "{}", Now());
 
-        Assert.Null(jobs.ClaimNext(Project, "runner-a", Now(), Lease()));
+        Assert.Null(claims.Claim(Project, "runner-a", Now(), Lease()));
     }
 
     [Fact]
     public void TheStartupSweepLeavesAnotherRunnersJobsAlone()
     {
         var jobs = new JobRepository(_database);
+        var claims = new JobClaims(_database);
         jobs.Create("mine", Project, "dry-run", "{}", Now());
-        var mine = jobs.ClaimNext(Project, "runner-a", Now(), Lease())!;
+        var mine = claims.Claim(Project, "runner-a", Now(), Lease())!;
         jobs.Create("theirs", Project, "dry-run", "{}", Now());
-        var theirs = jobs.ClaimNext(Project, "runner-b", Now(), Lease())!;
+        var theirs = claims.Claim(Project, "runner-b", Now(), Lease())!;
 
         var swept = jobs.MarkRunningInterrupted(DateTimeOffset.UtcNow, ownerId: "runner-a");
 

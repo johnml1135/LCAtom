@@ -33,7 +33,7 @@ public sealed class JobRunnerLoopTests : IDisposable
         jobs.Create("job-1", Project, "demo", "{}", Stamp());
         var seen = new List<string>();
 
-        await Loop(jobs, (job, _) => { seen.Add(job.JobId); return Task.CompletedTask; }).RunUntilIdleAsync(
+        await Loop((job, _) => { seen.Add(job.JobId); return Task.CompletedTask; }).RunUntilIdleAsync(
             CancellationToken.None);
 
         Assert.Equal(new[] { "job-1" }, seen);
@@ -46,7 +46,8 @@ public sealed class JobRunnerLoopTests : IDisposable
         var jobs = new JobRepository(_database);
         jobs.Create("job-1", Project, "nobody-handles-this", "{}", Stamp());
 
-        var loop = new JobRunnerLoop(jobs, Project, "runner-a", TimeSpan.FromMinutes(5),
+        var loop = new JobRunnerLoop(new JobClaims(_database), Project, "runner-a",
+            TimeSpan.FromMinutes(5),
             TimeSpan.Zero, new Dictionary<string, JobRunnerLoop.Handler>(StringComparer.Ordinal));
         await loop.RunUntilIdleAsync(CancellationToken.None);
 
@@ -62,7 +63,7 @@ public sealed class JobRunnerLoopTests : IDisposable
         var jobs = new JobRepository(_database);
         jobs.Create("job-1", Project, "demo", "{}", Stamp());
 
-        await Loop(jobs, (_, _) => throw new InvalidOperationException("the capture exploded"))
+        await Loop((_, _) => throw new InvalidOperationException("the capture exploded"))
             .RunUntilIdleAsync(CancellationToken.None);
 
         var job = jobs.Get("job-1")!;
@@ -77,7 +78,7 @@ public sealed class JobRunnerLoopTests : IDisposable
         jobs.Create("job-1", Project, "demo", "{}", Stamp());
         string? leaseDuringRun = null;
 
-        await Loop(jobs, async (job, _) =>
+        await Loop(async (job, _) =>
         {
             await Task.Delay(150);
             leaseDuringRun = jobs.Get(job.JobId)!.LeaseUntilUtc;
@@ -95,7 +96,7 @@ public sealed class JobRunnerLoopTests : IDisposable
         jobs.Create("job-1", Project, "demo", "{}", Stamp());
         using var stopping = new CancellationTokenSource();
 
-        await Loop(jobs, async (_, _) => { stopping.Cancel(); await Task.Delay(50); })
+        await Loop(async (_, _) => { stopping.Cancel(); await Task.Delay(50); })
             .RunUntilIdleAsync(stopping.Token);
 
         // Cancelled mid-handler, the row must still reach a terminal state rather than stay leased.
@@ -108,14 +109,13 @@ public sealed class JobRunnerLoopTests : IDisposable
     {
         var jobs = new JobRepository(_database);
 
-        await Loop(jobs, (_, _) => Task.CompletedTask).RunUntilIdleAsync(CancellationToken.None);
+        await Loop((_, _) => Task.CompletedTask).RunUntilIdleAsync(CancellationToken.None);
 
         Assert.Empty(jobs.ListActive(Project));
     }
 
-    private static JobRunnerLoop Loop(JobRepository jobs, JobRunnerLoop.Handler handler,
-        TimeSpan? lease = null) =>
-        new(jobs, Project, "runner-a", lease ?? TimeSpan.FromMinutes(5), TimeSpan.Zero,
+    private JobRunnerLoop Loop(JobRunnerLoop.Handler handler, TimeSpan? lease = null) =>
+        new(new JobClaims(_database), Project, "runner-a", lease ?? TimeSpan.FromMinutes(5), TimeSpan.Zero,
             new Dictionary<string, JobRunnerLoop.Handler>(StringComparer.Ordinal) { ["demo"] = handler });
 
     private static string Stamp() =>
