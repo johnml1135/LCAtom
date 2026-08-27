@@ -16,10 +16,10 @@ namespace SIL.Motif.Cli.Worker;
 /// The CLI verbs that take this machine's legacy store into the paired project database.
 /// </summary>
 /// <remarks>
-/// The cutover runs in this process, and exclusion is the paired database's own owner lock rather than a
-/// lease inside a server, so it spans processes: a second invocation is refused outright and leaves the
-/// store untouched, pinned by
-/// `AnotherProcessHoldingTheDatabaseRefusesTheCutoverRatherThanWaiting`.
+/// The cutover runs in this process. Exclusion is SQLite's own write lock held for the length of its one
+/// transaction, so a concurrent writer is serialised behind it rather than locked out of the database —
+/// which is what lets a runner keep working while a cutover runs, pinned by
+/// `ACutoverStillRunsWhileAnotherProcessHasTheDatabaseOpen`.
 /// </remarks>
 public static class StoreCommands
 {

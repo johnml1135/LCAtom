@@ -675,12 +675,16 @@ public sealed class MotifDatabaseMigrationTests : IDisposable
     }
 
     [Fact]
-    public void OnlyOneOwnerMayMigrateAndOpenAtATime()
+    public void OpeningAMigratedDatabaseTwiceIsAllowedAndLeavesNoLockBehind()
     {
         var path = DatabasePath("exclusive.fwdata");
         using var first = MotifDatabase.OpenOwned(path, Locator("exclusive.fwdata"), 2, new Version(1, 0));
 
-        Assert.Throws<IOException>(() => MotifDatabase.OpenOwned(path, Locator("exclusive.fwdata"), 2, new Version(1, 0)));
+        using var second = MotifDatabase.OpenOwned(path, Locator("exclusive.fwdata"), 2, new Version(1, 0));
+
+        Assert.NotSame(first, second);
+        // The lock guards migration only, so nothing holds it once the schema is current.
+        Assert.False(File.Exists(path + ".owner.lock"));
     }
 
     [Fact]

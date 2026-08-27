@@ -11,6 +11,7 @@ public sealed class WorkerRecovery
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<MotifDatabase, SemaphoreSlim>
         RecoveryGates = new();
     private readonly JobRepository _jobs;
+    private readonly string? _ownerId;
     private readonly IJobClock _clock;
     private readonly IWorkspaceOwnership? _panGlossOwnership;
 
@@ -20,8 +21,15 @@ public sealed class WorkerRecovery
     /// When supplied, every marked PanGloss workspace under its worker root is swept and removed before
     /// any job in this pass is requeued; omit to skip the sweep entirely.
     /// </param>
-    public WorkerRecovery(JobRepository jobs, IJobClock? clock = null, IWorkspaceOwnership? panGlossOwnership = null)
+    /// <param name="ownerId">
+    /// Limits the startup sweep to rows this runner itself abandoned. A row left by a different runner is
+    /// reclaimed by lease expiry, and sweeping it here instead would defer it behind a retry backoff that
+    /// nothing is waiting to serve.
+    /// </param>
+    public WorkerRecovery(JobRepository jobs, IJobClock? clock = null,
+        IWorkspaceOwnership? panGlossOwnership = null, string? ownerId = null)
     {
+        _ownerId = ownerId;
         _jobs = jobs ?? throw new ArgumentNullException(nameof(jobs));
         _clock = clock ?? new SystemJobClock();
         _panGlossOwnership = panGlossOwnership;
@@ -44,7 +52,7 @@ public sealed class WorkerRecovery
 
     private RecoveryResult RecoverInterruptedJobsCore(DateTimeOffset now)
     {
-        var interrupted = _jobs.MarkRunningInterrupted(now).ToList();
+        var interrupted = _jobs.MarkRunningInterrupted(now, _ownerId).ToList();
         foreach (var prior in _jobs.ListInterruptedInfrastructure())
         {
             if (interrupted.All(job => job.JobId != prior.JobId)) interrupted.Add(prior);

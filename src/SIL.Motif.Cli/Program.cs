@@ -348,6 +348,20 @@ try
                 : CorpusCommands.ShowCorpus(storeDir, positionals[0], usage);
             break;
 
+        case "baseline-refresh":
+            if (!flags.TryGetValue("project", out var refreshProject))
+                return Usage("Usage: motif baseline-refresh --project <fwdata>", asJson);
+            result = JobCommands.EnqueueBaselineRefresh(refreshProject, CliProductVersion());
+            break;
+
+        case "jobs":
+            if (positionals.Count != 2 || positionals[0] != "show")
+                return Usage("Usage: motif jobs show <jobId> --project <fwdata> [--json]", asJson);
+            if (!flags.TryGetValue("project", out var jobsProject))
+                return Usage("Usage: motif jobs show <jobId> --project <fwdata> [--json]", asJson);
+            result = JobCommands.Show(jobsProject, positionals[1], CliProductVersion(), asJson);
+            break;
+
         case "store-cutover":
             if (!flags.TryGetValue("project", out var cutoverProject))
                 return Usage("Usage: motif store-cutover --project <fwdata> [--store <dir>]", asJson);

@@ -1,22 +1,30 @@
+using System.Threading;
 using Microsoft.Data.Sqlite;
 using SIL.Motif.Contract.Projects;
 
 namespace SIL.Motif.Host.Store;
 
-/// <summary>Represents the one worker-owned connection boundary for a project's Motif database.</summary>
+/// <summary>Represents one process's connection boundary onto a project's Motif database.</summary>
+/// <remarks>
+/// <para>
+/// <b>Opening does not claim the database.</b> A lock is taken only while the schema is being migrated,
+/// because a migration is the one operation two processes must never interleave: everything else is
+/// ordinary concurrent SQLite, which WAL and the row versions already make safe.
+/// </para>
+/// <para>
+/// This is what lets a <c>motif</c> invocation and the job runner be open at the same time. A lock held
+/// for the object's whole lifetime would mean whichever started first excluded the other entirely, and
+/// coordinating through the database would be impossible rather than merely contended.
+/// </para>
+/// </remarks>
 public sealed class MotifDatabase : IDisposable
 {
     private readonly string _path;
-    private readonly FileStream _ownership;
     private readonly object _stateGate = new();
     private readonly HashSet<SqliteConnection> _connections = [];
     private bool _disposed;
 
-    private MotifDatabase(string path, FileStream ownership)
-    {
-        _path = path;
-        _ownership = ownership;
-    }
+    private MotifDatabase(string path) => _path = path;
 
     /// <summary>
     /// Opens and owns a project database, applying only migrations this worker understands.
@@ -71,7 +79,8 @@ public sealed class MotifDatabase : IDisposable
         FileStream? ownership = null;
         try
         {
-            ownership = AcquireOwnership(fullPath);
+            // Taken only when there is a migration to guard, so readers never contend.
+            if (NeedsMigration(fullPath, supportedSchema)) ownership = AcquireOwnership(fullPath);
             using var connection = OpenInspectionConnection(fullPath);
             var applicationId = PragmaInt(connection, "application_id");
             var schema = PragmaInt(connection, "user_version");
@@ -114,7 +123,9 @@ public sealed class MotifDatabase : IDisposable
             }
 
             MotifSchema.EnableWal(connection);
-            return new MotifDatabase(fullPath, ownership);
+            ownership?.Dispose();
+            ownership = null;
+            return new MotifDatabase(fullPath);
         }
         catch (SqliteException exception) when (MotifSchema.IsCorruption(exception))
         {
@@ -168,7 +179,7 @@ public sealed class MotifDatabase : IDisposable
         }
     }
 
-    /// <summary>Releases ownership so another worker can open the database.</summary>
+    /// <summary>Closes this process's connections. Nothing is released for anyone else.</summary>
     public void Dispose()
     {
         List<SqliteConnection> connections;
@@ -180,19 +191,12 @@ public sealed class MotifDatabase : IDisposable
             _connections.Clear();
         }
 
-        try
+        foreach (var connection in connections)
         {
-            foreach (var connection in connections)
-            {
-                if (connection is OwnedSqliteConnection owned)
-                    owned.DisposeFromOwner();
-                else
-                    connection.Dispose();
-            }
-        }
-        finally
-        {
-            _ownership.Dispose();
+            if (connection is OwnedSqliteConnection owned)
+                owned.DisposeFromOwner();
+            else
+                connection.Dispose();
         }
     }
 
@@ -272,7 +276,36 @@ public sealed class MotifDatabase : IDisposable
         }
     }
 
+    /// True when the file is absent or its schema generation is behind what this build applies.
+    private static bool NeedsMigration(string path, int supportedSchema)
+    {
+        if (!File.Exists(path)) return true;
+        try
+        {
+            using var connection = OpenInspectionConnection(path);
+            return PragmaInt(connection, "user_version") < supportedSchema;
+        }
+        catch (SqliteException)
+        {
+            return true;
+        }
+    }
+
+    // Waits rather than fails: two processes opening a database that needs migrating is ordinary.
     private static FileStream AcquireOwnership(string path)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        while (true)
+        {
+            try { return AcquireOwnershipCore(path); }
+            catch (IOException) when (DateTime.UtcNow < deadline)
+            {
+                Thread.Sleep(25);
+            }
+        }
+    }
+
+    private static FileStream AcquireOwnershipCore(string path)
     {
         var lockPath = path + ".owner.lock";
         try

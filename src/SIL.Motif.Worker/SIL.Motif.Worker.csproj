@@ -9,5 +9,7 @@
   <ItemGroup>
     <ProjectReference Include="..\SIL.Motif.Contract\SIL.Motif.Contract.csproj" />
     <ProjectReference Include="..\SIL.Motif.Host\SIL.Motif.Host.csproj" />
+    <!-- The Baseline capture the runner performs while it holds the project. -->
+    <ProjectReference Include="..\SIL.Motif.LiveHost\SIL.Motif.LiveHost.csproj" />
   </ItemGroup>
 </Project>

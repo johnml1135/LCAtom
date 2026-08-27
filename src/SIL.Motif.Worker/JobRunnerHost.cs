@@ -66,6 +66,18 @@ public sealed class JobRunnerHost : IDisposable, IWorkerWorkTracker
         _hostReleases = new ProjectHostReleaseCoordinator();
     }
 
+    /// <summary>Creates a runner whose owner mutex is isolated to the given namespace.</summary>
+    /// <remarks>
+    /// Only a test has a reason to call this. Two real installations are separated by where they work,
+    /// not by who may run, so an operator relocating a runner changes its root rather than its namespace.
+    /// </remarks>
+    public static JobRunnerHost ForNamespace(string ownerNamespace, IWorkerWorkTracker? workTracker = null)
+    {
+        if (string.IsNullOrWhiteSpace(ownerNamespace))
+            throw new ArgumentException("A runner namespace is required.", nameof(ownerNamespace));
+        return new JobRunnerHost(ownerNamespace, workTracker);
+    }
+
     /// <summary>Creates an isolated runner identity for tests only.</summary>
     internal static JobRunnerHost CreateForTests(string userNamespace, bool composeRuntime = true,
         string? workerRoot = null)

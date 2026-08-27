@@ -34,7 +34,7 @@ public sealed class ProjectRuntimeTests : IDisposable
     }
 
     [Fact]
-    public void ASecondRegistryCannotOwnAnOpenProjectDatabase()
+    public void ASecondRegistryMayOpenAProjectDatabaseAlreadyOpen()
     {
         var project = Project("C:/workspace/ownership.fwdata", "project");
         using var firstWork = new WorkerWorkTracker();
@@ -43,10 +43,12 @@ public sealed class ProjectRuntimeTests : IDisposable
         using var second = Registry(secondWork);
         var runtime = first.GetOrOpen(project);
 
-        Assert.Throws<IOException>(() => second.GetOrOpen(project));
+        // Both are open at once by design; excluding one would make the database unusable as a rendezvous.
+        var concurrent = second.GetOrOpen(project);
+
+        Assert.NotSame(runtime, concurrent);
         runtime.Dispose();
-        var reopened = second.GetOrOpen(project);
-        Assert.NotSame(runtime, reopened);
+        Assert.NotSame(runtime, second.GetOrOpen(project));
     }
 
     [Fact]

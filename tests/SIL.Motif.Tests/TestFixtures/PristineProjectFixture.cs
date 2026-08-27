@@ -109,6 +109,21 @@ public sealed class PristineProjectFixture : IDisposable
             Path.Combine(projectFolder, NewLangProjFixture.ProjectName + ".fwdata"));
     }
 
+    /// <summary>Copies the master project and returns its <c>.fwdata</c> path, opening nothing.</summary>
+    /// <remarks>
+    /// For a test that hands the project to another process. Loading a cache here would take the very
+    /// lock that process needs.
+    /// </remarks>
+    public string CopyProjectFile()
+    {
+        var scratchRoot = Path.Combine(_tempRoot, "handoff-" + Interlocked.Increment(ref _next));
+        var projectFolder = Path.Combine(scratchRoot, NewLangProjFixture.ProjectName);
+        Directory.CreateDirectory(projectFolder);
+        _scratchRoots.Add(scratchRoot);
+        CopyDirectory(_masterFolder, projectFolder);
+        return Path.Combine(projectFolder, NewLangProjFixture.ProjectName + ".fwdata");
+    }
+
     private static void CopyDirectory(string sourceDir, string destDir)
     {
         Directory.CreateDirectory(destDir);

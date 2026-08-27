@@ -96,7 +96,7 @@ public sealed class StoreCutoverArgvTests : IDisposable
     }
 
     [Fact]
-    public void AnotherProcessHoldingTheDatabaseRefusesTheCutoverRatherThanWaiting()
+    public void ACutoverStillRunsWhileAnotherProcessHasTheDatabaseOpen()
     {
         var project = Path.Combine(_root, "project.fwdata");
         File.WriteAllText(project, string.Empty);
@@ -108,13 +108,9 @@ public sealed class StoreCutoverArgvTests : IDisposable
 
         var result = Run("store-cutover --project \"" + project + "\" --store \"" + store + "\"");
 
-        // Busy, not malformed: the caller may retry once whoever holds the database lets go.
-        Assert.Equal(3, result.ExitCode);
-        Assert.Contains("error: ", result.Error, StringComparison.Ordinal);
-        Assert.DoesNotContain("   at ", result.Error, StringComparison.Ordinal);
-        // Refused, not partially applied: the store is untouched and still awaits a cutover.
-        Assert.True(Directory.Exists(store));
-        Assert.False(Directory.Exists(store + ".migrated"));
+        // Exclusion is SQLite's write lock, which serialises writers rather than locking them out.
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("Proposals imported: 1", result.Output, StringComparison.Ordinal);
     }
 
     /// Mirrors the fixture shape <c>ProjectStoreCutoverTests</c> seeds: one file proposal and one legacy row.
