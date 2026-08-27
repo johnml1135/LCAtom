@@ -44,17 +44,17 @@ that is never read.
 - Test: `tests/SIL.Motif.Tests/Worker/BaselineRefreshTests.cs`,
   `tests/SIL.Motif.Tests/Integration/RunnerSpineTests.cs`
 
-- [ ] **Step 1: Assert the stored outcome, not the job status**
+- [x] **Step 1: Assert the stored outcome, not the job status**
 
 The spine test currently asserts only that the job left `queued`/`running`. Extend it to assert a Baseline
 was actually published and recorded — this is the assertion the original plan called for and did not write,
 and it is what makes the bug visible.
 
-- [ ] **Step 2: Run red**
+- [x] **Step 2: Run red**
 
 Expect the new assertion to fail against a Completed job, proving the gap rather than assuming it.
 
-- [ ] **Step 3: Give the sequence one interface**
+- [x] **Step 3: Give the sequence one interface**
 
 `Task<BaselineToken> RefreshAsync(ProjectLocator project, CancellationToken ct)` owning capture → verify →
 publish → record, with `BaselineBundleWriter`, `VerifiedBinaryTransfer`, `BaselineBundleReceiver` and
@@ -65,7 +65,7 @@ decides *whether*, this module does *what*.
 Keep the barrier. It owns a genuinely separate decision — whether the project can be opened at all — and
 has its own tests.
 
-- [ ] **Step 4: Run green and commit**
+- [x] **Step 4: Run green and commit**
 
 Report how many of the six zero-production-construction modules this reached.
 
@@ -85,19 +85,19 @@ cannot help"* — and raw text on stderr under `--json`. It should be exit 2, `N
 - Modify: `src/SIL.Motif.Cli/Program.cs`
 - Test: `tests/SIL.Motif.Tests/Cli/FailureContractTests.cs`
 
-- [ ] **Step 1: Widen the failure-contract tests past one verb**
+- [x] **Step 1: Widen the failure-contract tests past one verb**
 
 Cover a verb from each group: an absent Proposal is `NotFound`/2; a malformed id is `InvalidArgument`/1; a
 missing project is `InvalidArgument`/1. Assert the envelope is present under `--json` in each.
 
-- [ ] **Step 2: Run red**
+- [x] **Step 2: Run red**
 
-- [ ] **Step 3: Carry the reason through the tuple**
+- [x] **Step 3: Carry the reason through the tuple**
 
 Replace the tuple's `int` with `FailureReason?` so the envelope at `Program.cs` becomes unconditional. The
 16 sites keep their existing message text exactly; only the classification is added.
 
-- [ ] **Step 4: Run green and commit**
+- [x] **Step 4: Run green and commit**
 
 State the distribution of reasons across the 16 sites, as the earlier failure-contract work did. A
 distribution collapsed onto one reason means the classification was not really done.
@@ -117,20 +117,20 @@ ADR 0021 says the verb set is expected to churn, which is exactly why this belon
 - Modify: `src/SIL.Motif.Cli/JobCommands.cs`, `src/SIL.Motif.Cli/Worker/StoreCommands.cs`
 - Test: `tests/SIL.Motif.Tests/Cli/`
 
-- [ ] **Step 1: Write the module's tests**
+- [x] **Step 1: Write the module's tests**
 
 The exception→`FailureReason` table is the interface's real content, so test it directly: a missing project
 file, a held database, an unsupported schema, and a successful act each produce the documented reason and
 exit code.
 
-- [ ] **Step 2: Run red**
+- [x] **Step 2: Run red**
 
-- [ ] **Step 3: Implement and adopt it in both callers**
+- [x] **Step 3: Implement and adopt it in both callers**
 
 `CommandResult RunAgainstProject(string fwDataPath, Func<MotifDatabase, ProjectLocator, CommandResult> act)`
 with `Locate`, `ParseVersion`, `MotifSchema.CurrentSchema` and the translation table behind it.
 
-- [ ] **Step 4: Run green and commit**
+- [x] **Step 4: Run green and commit**
 
 Name what was deleted: two `Locate`, two `ParseVersion`, two `Refuse`, two catch ladders.
 
@@ -154,20 +154,20 @@ queued for grilling rather than settled here.
 - Modify: `src/SIL.Motif.Worker/Jobs/JobRepository.cs`, `Jobs/JobRunnerLoop.cs`
 - Test: `tests/SIL.Motif.Tests/Worker/JobLeaseTests.cs`
 
-- [ ] **Step 1: Point the existing lease tests at the new interface**
+- [x] **Step 1: Point the existing lease tests at the new interface**
 
 `JobLeaseTests` already covers claiming, expiry, heartbeat and the stale-token case. Retarget it at the
 extracted module; the assertions do not change, which is the evidence the seam is in the right place.
 
-- [ ] **Step 2: Run red**
+- [x] **Step 2: Run red**
 
-- [ ] **Step 3: Extract**
+- [x] **Step 3: Extract**
 
 `JobClaims` over the same database: `Claim(projectKey, ownerId, nowUtc, lease)` and
 `Renew(jobId, claimToken, nowUtc, lease)`. `JobRunnerLoop` takes it instead of the whole repository, so the
 loop's interface shrinks from 30 members to two.
 
-- [ ] **Step 4: Run green and commit**
+- [x] **Step 4: Run green and commit**
 
 ---
 
@@ -188,3 +188,47 @@ These are decisions, not defects. Each needs an answer before any code moves.
   worker and connect to it, and the connecting half is gone. Its fate belongs with G2's answer.
 - **`ProjectDatabaseCatalog.Open`** — a verbatim alias of `OpenOwned` with one caller, in a test. Delete it
   opportunistically when touching that file; not worth a task.
+
+---
+
+## 2026-08-27 — delivered
+
+All four tasks are in `main`. What the plan did not anticipate is recorded here rather than edited above.
+
+| Task | Commit | Gate |
+| --- | --- | --- |
+| 1 — Baseline lifecycle | `93947bd` | 1216 passed |
+| 2 — failure contract | `96b489a` | 1220 passed |
+| 3 — `ProjectStoreCommand` | `45fdd66` | 1226 passed |
+| 4 — `JobClaims` | `2b38663` | 1226 passed |
+
+**Task 2 found four defects the plan did not name.** A success returned literal
+`0` into the reason slot, which C# converts silently to the enum's zero member —
+so every successful `Build*` carried `InvalidArgument`. Reasons serialised as
+ordinals rather than names. `ProjectionJson` had a writer and no reader, so every
+consumer reconstructed its options; adding `Deserialize` immediately caught that
+the generic enum converter had renamed `JobStatus` from `queued` to `Queued`. And
+an absent Proposal threw `InvalidOperationException`, whose type says nothing
+about a lookup miss. Reason distribution across the classified sites:
+`Refused` 8, `StoreInconsistent` 6, `NotFound` 5, `InvalidArgument` 3, `Busy` 2.
+
+**Task 3 changed one classification.** Both ladders folded `InvalidDataException`
+in with `NotSupportedException` and called the pair `Refused`. Out of `OpenOwned`
+the first means the file is not a Motif database, its schema generation is
+invalid, or it is registered to a different project — the store disagreeing with
+itself, which is what `StoreInconsistent` was defined for. Nothing pinned the old
+mapping. `ProjectDatabaseCatalog.Open` went with it, as the out-of-scope note
+allowed.
+
+**Task 4 exposed a defect in the loop.** `Finish` re-read the row and
+transitioned it if it was still running, justified by a comment saying the
+heartbeat had moved the version underneath. A heartbeat writes `LeaseUntilUtc`
+and `HeartbeatUtc` and never touches `Version`; the stated reason was not the
+real one, and the check it justified was the wrong check. What moves the row is
+another runner reclaiming it — the one case a status check cannot see, because
+the row is still running, for someone else. `Finish` now takes the claim token.
+`JobClaims` therefore has three members rather than the two the plan named:
+finishing is part of holding the row, not separate from it.
+
+**Scope kept.** `JobRepository`'s eight methods with no production caller were
+left alone, as the plan required; they are G3.
