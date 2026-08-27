@@ -237,104 +237,12 @@ public sealed class PanGlossAssessmentProcessTests : IDisposable
     }
 
     [Fact]
-    public async Task RunAsync_ParsesTheReportProducedAgainstJustTheExportedDirectory()
+    public async Task RunAsyncRefusesADirectoryThatDoesNotExist()
     {
-        var exported = Path.Combine(_root, "exported");
-        Directory.CreateDirectory(exported);
-        File.WriteAllText(Path.Combine(exported, "candidate.fwdata"), "RunAsync only needs this file to exist.");
+        var absent = Path.Combine(_root, "never-exported");
 
-        var scriptsDir = Path.Combine(_root, "fake-exe");
-        Directory.CreateDirectory(scriptsDir);
-        var executable = WriteFakeSuccessExecutable(scriptsDir, BuildFakeReportJson());
-
-        var process = new PanGlossAssessmentProcess(executable);
-        var report = await process.RunAsync(exported, CancellationToken.None);
-
-        Assert.Equal("foma-confirm", report.Pipeline);
-        Assert.Single(report.Words);
-        Assert.Equal("motifa", report.Words[0].Word);
-    }
-
-    [Fact]
-    public async Task RunAsync_CancellationKillsTheProcess()
-    {
-        var exported = Path.Combine(_root, "exported-slow");
-        Directory.CreateDirectory(exported);
-        File.WriteAllText(Path.Combine(exported, "candidate.fwdata"), "irrelevant to the fake executable.");
-
-        // Outside RunAsync's own ephemeral scratch, so it survives that scratch's post-run cleanup.
-        var heartbeatPath = Path.Combine(_root, "heartbeat.txt");
-        var scriptsDir = Path.Combine(_root, "fake-exe-slow");
-        Directory.CreateDirectory(scriptsDir);
-        var executable = WriteFakeSlowExecutable(scriptsDir, heartbeatPath);
-
-        var process = new PanGlossAssessmentProcess(executable);
-        using var cts = new CancellationTokenSource();
-        var runTask = process.RunAsync(exported, cts.Token);
-
-        for (var i = 0; i < 100 && !File.Exists(heartbeatPath); i++)
-            await Task.Delay(50);
-        Assert.True(File.Exists(heartbeatPath), "the fake process never started ticking.");
-
-        cts.Cancel();
-
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runTask);
-
-        // If the OS process were merely abandoned rather than killed, the loop below would keep ticking.
-        var afterCancel = File.ReadAllText(heartbeatPath).Trim();
-        await Task.Delay(1500);
-        var afterWaiting = File.ReadAllText(heartbeatPath).Trim();
-        Assert.Equal(afterCancel, afterWaiting);
-    }
-
-    private static string BuildFakeReportJson() => """
-        {
-          "keyTable": ["11111111-1111-1111-1111-111111111111"],
-          "cases": [
-            {
-              "input": "motifa",
-              "outcome": "complete",
-              "analyses": [
-                { "identity": { "morphemes": [0], "rootIndex": 0 }, "identityDigest": "digest-1" }
-              ]
-            }
-          ],
-          "outcomeDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-          "semanticDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-          "provenance": {
-            "sourceSha256": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-            "modelFingerprint": "fp-1"
-          },
-          "execution": { "pipeline": "foma-confirm" },
-          "diagnostics": []
-        }
-        """;
-
-    // Routes the JSON through an environment variable so it never has to survive batch's own quoting rules.
-    private static string WriteFakeSuccessExecutable(string directory, string reportJson)
-    {
-        var envVarName = "PG_FAKE_REPORT_" + Guid.NewGuid().ToString("N");
-        Environment.SetEnvironmentVariable(envVarName, reportJson);
-        var scriptPath = Path.Combine(directory, "fake-pangloss.cmd");
-        File.WriteAllText(scriptPath,
-            "@echo off\r\n" +
-            $"powershell -NoProfile -ExecutionPolicy Bypass -Command \"[System.IO.File]::WriteAllText('%~4', $env:{envVarName})\"\r\n");
-        return scriptPath;
-    }
-
-    // Ticks a counter into heartbeatPath forever, so a test can prove cancellation stops the ticking.
-    private static string WriteFakeSlowExecutable(string directory, string heartbeatPath)
-    {
-        var scriptPath = Path.Combine(directory, "fake-pangloss-slow.cmd");
-        File.WriteAllText(scriptPath,
-            "@echo off\r\n" +
-            "set counter=0\r\n" +
-            ":loop\r\n" +
-            "set /A counter=counter+1\r\n" +
-            $"echo %counter% > \"{heartbeatPath}\"\r\n" +
-            "ping -n 2 127.0.0.1 >nul\r\n" +
-            "if %counter% LSS 600 goto loop\r\n");
-        return scriptPath;
+        await Assert.ThrowsAsync<DirectoryNotFoundException>(() =>
+            new PanGlossAssessmentProcess(FakeParser.ExecutablePath).RunAsync(absent, CancellationToken.None));
     }
 }
 

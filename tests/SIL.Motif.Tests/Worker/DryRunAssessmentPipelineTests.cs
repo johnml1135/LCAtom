@@ -686,9 +686,6 @@ public sealed class DryRunAssessmentPipelineRealCandidateTests : IDisposable
         var proposal = ProposalJsonParser.Parse(
             BuildSetGlossProposalJson(seed.FirstSenseId, "assessed candidate gloss"));
 
-        var scriptsDir = Path.Combine(_root, "fake-pangloss");
-        Directory.CreateDirectory(scriptsDir);
-        var fakeExecutable = WriteFakeSuccessExecutable(scriptsDir, BuildFakeReportJson());
         var exportRoots = new List<string>();
 
         var pipeline = new DryRunAssessmentPipeline(jobs, baselines, lanes, project,
@@ -706,7 +703,7 @@ public sealed class DryRunAssessmentPipelineRealCandidateTests : IDisposable
             runAssessment: async (exportedDirectory, ct) =>
             {
                 exportRoots.Add(exportedDirectory);
-                var process = new PanGlossAssessmentProcess(fakeExecutable);
+                var process = new PanGlossAssessmentProcess(FakeParser.ExecutablePath);
                 var report = await process.RunAsync(exportedDirectory, ct);
                 return new AssessmentSummary(report.Pipeline, report.Words.Count,
                     report.Words.Sum(w => w.Analyses.Count), report.DiagnosticCount, report.OutcomeDigest,
@@ -767,40 +764,6 @@ public sealed class DryRunAssessmentPipelineRealCandidateTests : IDisposable
               ]
             }
             """;
-    }
-
-    private static string BuildFakeReportJson() => """
-        {
-          "keyTable": ["11111111-1111-1111-1111-111111111111"],
-          "cases": [
-            {
-              "input": "motifa",
-              "outcome": "complete",
-              "analyses": [
-                { "identity": { "morphemes": [0], "rootIndex": 0 }, "identityDigest": "digest-1" }
-              ]
-            }
-          ],
-          "outcomeDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-          "semanticDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-          "provenance": {
-            "sourceSha256": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-            "modelFingerprint": "fp-1"
-          },
-          "execution": { "pipeline": "foma-confirm" },
-          "diagnostics": []
-        }
-        """;
-
-    private static string WriteFakeSuccessExecutable(string directory, string reportJson)
-    {
-        var envVarName = "PG_FAKE_REPORT_" + Guid.NewGuid().ToString("N");
-        Environment.SetEnvironmentVariable(envVarName, reportJson);
-        var scriptPath = Path.Combine(directory, "fake-pangloss.cmd");
-        File.WriteAllText(scriptPath,
-            "@echo off\r\n" +
-            $"powershell -NoProfile -ExecutionPolicy Bypass -Command \"[System.IO.File]::WriteAllText('%~4', $env:{envVarName})\"\r\n");
-        return scriptPath;
     }
 
     private static string[] DirectoriesUnder(string root) =>

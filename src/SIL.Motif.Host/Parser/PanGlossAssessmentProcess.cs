@@ -18,7 +18,7 @@ namespace SIL.Motif.Host.Parser;
 /// name or layout.
 /// </para>
 /// </remarks>
-public sealed class PanGlossAssessmentProcess
+public sealed class PanGlossAssessmentProcess : IPanGlossAssessor
 {
     private readonly string _executable;
 
@@ -35,6 +35,7 @@ public sealed class PanGlossAssessmentProcess
     /// <summary>
     /// Assesses the grammar source found in <paramref name="exportedCandidate"/> and returns the report.
     /// </summary>
+    /// <inheritdoc />
     public async Task<AssessReport> RunAsync(string exportedCandidate, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(exportedCandidate))
