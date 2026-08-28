@@ -1,12 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
-using SIL.Motif.Cli;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Model;
 using SIL.Motif.Host.LcmUtils;
+using SIL.Motif.Runner.Apply;
 using SIL.Motif.Runner.AppliedLog;
 using SIL.Motif.Runner.Composers;
+using SIL.Motif.Runner.DryRun;
 using SIL.Motif.Tests.TestFixtures;
 using SIL.LCModel;
 using Xunit;
@@ -37,9 +38,10 @@ public sealed class AuthorFeatureStructureEndToEndTests
     [Fact]
     public void Authored_Lowered_DryRun_Applied_Saved_RoundTripsOnARealProject()
     {
-        using var session = CliSession.Open(_fwDataPath);
+        var loader = new FwDataProjectLoader();
+        using var cache = loader.LoadCache(_fwDataPath);
         var msaId = CanonicalId.FromGuid(
-            session.LiveCache.ServiceLocator.GetInstance<ILexSenseRepository>().GetObject(_seed.FirstSenseId)
+            cache.ServiceLocator.GetInstance<ILexSenseRepository>().GetObject(_seed.FirstSenseId)
                 .MorphoSyntaxAnalysisRA.Guid);
 
         // --- authored: an agent's JSON, through the construct's own closed-schema parser ---
@@ -48,14 +50,24 @@ public sealed class AuthorFeatureStructureEndToEndTests
         var intent = AuthorFeatureStructureIntentParser.Parse(authoredDocument.RootElement);
 
         // --- lowered: one construct becomes one correctly-targeted Layer-0 operation ---
-        var operations = AuthorFeatureStructureComposer.Build(session.LiveCache, intent);
+        var operations = AuthorFeatureStructureComposer.Build(cache, intent);
         var op = Assert.Single(operations);
         var newFeatStrucId = op.EntityId!.Value;
 
         var proposal = BuildProposal(operations);
 
         // --- dry-run and review: real before/after read back from LibLCM, nothing mutated yet ---
-        var dryRun = session.DryRun(proposal);
+        var scratchRoot = Path.Combine(
+            Path.GetTempPath(), "SIL.Motif.Tests.AuthorFeatureStructure", Guid.NewGuid().ToString("N"));
+        loader.Save(cache);
+        using var scratch = DryRunScratch.Adopt(
+            new ScratchCacheFactory(loader).CreateFromFileCopy(_fwDataPath, scratchRoot),
+            $"file copy of {_fwDataPath}",
+            onDisposed: () =>
+            {
+                if (Directory.Exists(scratchRoot)) Directory.Delete(scratchRoot, recursive: true);
+            });
+        var dryRun = ProposalDryRunner.Run(scratch, proposal);
         var effect = Assert.Single(dryRun.ExpectedEffects);
         Assert.Equal(msaId, effect.CanonicalId);
         Assert.Empty(effect.Before);
@@ -63,10 +75,12 @@ public sealed class AuthorFeatureStructureEndToEndTests
         AssertFeatStrucIsAbsent(newFeatStrucId.ToGuid());
 
         // --- applied and saved ---
-        var receipt = session.Apply(proposal, dryRun.Anchor, "motif-tests", "AuthorFeatureStructure end-to-end test");
+        var receipt = ProposalApplier.Apply(
+            cache, proposal, dryRun.Anchor, "motif-tests", "AuthorFeatureStructure end-to-end test");
         Assert.False(receipt.AlreadyApplied);
+        loader.Save(cache);
 
-        // Re-open from disk: proves Apply's Save, not just the in-memory mutation, actually happened.
+        // Re-open from disk: proves the Save above, not just the in-memory mutation, actually happened.
         using var reloaded = new FwDataProjectLoader().LoadScratchCache(_fwDataPath);
         var msa = (IMoStemMsa)reloaded.ServiceLocator.GetInstance<ICmObjectRepository>().GetObject(msaId.ToGuid());
         Assert.NotNull(msa.MsFeaturesOA);

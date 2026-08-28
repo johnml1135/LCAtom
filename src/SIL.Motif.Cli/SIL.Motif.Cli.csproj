@@ -13,7 +13,6 @@
     <ProjectReference Include="..\SIL.Motif.Runner\SIL.Motif.Runner.csproj" />
     <!-- The durable store the CLI now writes directly; the wire that used to stand between them is going. -->
     <ProjectReference Include="..\SIL.Motif.Worker\SIL.Motif.Worker.csproj" />
-    <ProjectReference Include="..\SIL.Motif.Launcher\SIL.Motif.Launcher.csproj" />
     <ProjectReference Include="..\SIL.Motif.Contract\SIL.Motif.Contract.csproj" />
     <ProjectReference Include="..\SIL.Motif.Model\SIL.Motif.Model.csproj" />
     <ProjectReference Include="..\SIL.Motif.Projection\SIL.Motif.Projection.csproj" />

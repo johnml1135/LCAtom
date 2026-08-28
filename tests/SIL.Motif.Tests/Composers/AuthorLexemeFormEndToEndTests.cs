@@ -2,24 +2,26 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
-using SIL.Motif.Cli;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Model;
 using SIL.Motif.Host.LcmUtils;
+using SIL.Motif.Runner.Apply;
 using SIL.Motif.Runner.AppliedLog;
 using SIL.Motif.Runner.Composers;
+using SIL.Motif.Runner.DryRun;
 using SIL.Motif.Tests.TestFixtures;
 using SIL.LCModel;
 using Xunit;
+using DryRunModel = SIL.Motif.Model.DryRun.DryRun;
 
 namespace SIL.Motif.Tests.Composers;
 
 /// <summary>
 /// The construct's full loop on a real project: authored (JSON through
 /// <see cref="AuthorLexemeFormIntentParser"/>), lowered (<see cref="AuthorLexemeFormComposer.Build"/>),
-/// dry-run and reviewed, applied, and saved — through <see cref="CliSession"/>, the same seam the CLI
-/// itself drives. Never attempts the Chorus Send/Receive leg: that needs an external system and is a
-/// standing, separately-tracked risk, not something this test can honestly simulate.
+/// dry-run and reviewed, applied, and saved — the same seam the CLI itself drives. Never attempts the
+/// Chorus Send/Receive leg: that needs an external system and is a standing, separately-tracked risk,
+/// not something this test can honestly simulate.
 /// </summary>
 /// <remarks>
 /// Split across two tests rather than one, and that split is itself a finding worth recording. The
@@ -60,13 +62,14 @@ public sealed class AuthorLexemeFormEndToEndTests
             entryId, CanonicalId.FromGuid(MoMorphTypeTags.kguidMorphStem), "fr", formText,
             IsAbstract: true, Sense: senseId, GlossWritingSystem: "en", GlossText: glossText);
 
-        using var session = CliSession.Open(_fwDataPath);
-        var operations = AuthorLexemeFormComposer.Build(session.LiveCache, intent);
+        var loader = new FwDataProjectLoader();
+        using var cache = loader.LoadCache(_fwDataPath);
+        var operations = AuthorLexemeFormComposer.Build(cache, intent);
         Assert.Equal(3, operations.Count);
         var newFormId = operations[0].EntityId!.Value;
 
         var proposal = BuildProposal(operations);
-        var dryRun = session.DryRun(proposal);
+        var dryRun = RunDryRun(loader, cache, proposal);
 
         Assert.Equal(3, dryRun.ExpectedEffects.Count);
         var abstractEffect = dryRun.ExpectedEffects.Single(e => e.CanonicalId == newFormId);
@@ -99,17 +102,18 @@ public sealed class AuthorLexemeFormEndToEndTests
         using var authoredDocument = JsonDocument.Parse(authoredJson);
         var intent = AuthorLexemeFormIntentParser.Parse(authoredDocument.RootElement);
 
-        using var session = CliSession.Open(_fwDataPath);
+        var loader = new FwDataProjectLoader();
+        using var cache = loader.LoadCache(_fwDataPath);
 
         // --- lowered: one construct becomes two correctly-ordered Layer-0 operations ---
-        var operations = AuthorLexemeFormComposer.Build(session.LiveCache, intent);
+        var operations = AuthorLexemeFormComposer.Build(cache, intent);
         Assert.Equal(2, operations.Count);
         var newFormId = operations[0].EntityId!.Value;
 
         var proposal = BuildProposal(operations);
 
         // --- dry-run and review: real before/after read back from LibLCM, nothing mutated yet ---
-        var dryRun = session.DryRun(proposal);
+        var dryRun = RunDryRun(loader, cache, proposal);
         Assert.Equal(2, dryRun.ExpectedEffects.Count);
         // Seeded entry already has a lexeme form; create-into-occupied replaces it, so Before names it.
         var createEffect = dryRun.ExpectedEffects.Single(e => e.CanonicalId == entryId);
@@ -122,10 +126,12 @@ public sealed class AuthorLexemeFormEndToEndTests
         AssertFormIsAbsent(newFormId.ToGuid());
 
         // --- applied and saved ---
-        var receipt = session.Apply(proposal, dryRun.Anchor, "motif-tests", "AuthorLexemeForm end-to-end test");
+        var receipt = ProposalApplier.Apply(
+            cache, proposal, dryRun.Anchor, "motif-tests", "AuthorLexemeForm end-to-end test");
         Assert.False(receipt.AlreadyApplied);
+        loader.Save(cache);
 
-        // Re-open from disk: proves Apply's Save, not just the in-memory mutation, actually happened.
+        // Re-open from disk: proves the Save above, not just the in-memory mutation, actually happened.
         using var reloaded = new FwDataProjectLoader().LoadScratchCache(_fwDataPath);
         var entry = reloaded.ServiceLocator.GetInstance<ILexEntryRepository>().GetObject(_seed.SecondEntryId);
         var form = entry.LexemeFormOA;
@@ -156,15 +162,17 @@ public sealed class AuthorLexemeFormEndToEndTests
         var intent = new AuthorLexemeFormIntent(
             entryId, CanonicalId.FromGuid(MoMorphTypeTags.kguidMorphStem), "fr", formText, IsAbstract: true);
 
-        using var session = CliSession.Open(_fwDataPath);
-        var operations = AuthorLexemeFormComposer.Build(session.LiveCache, intent);
+        var loader = new FwDataProjectLoader();
+        using var cache = loader.LoadCache(_fwDataPath);
+        var operations = AuthorLexemeFormComposer.Build(cache, intent);
         Assert.Equal(2, operations.Count);
         var newFormId = operations[0].EntityId!.Value;
 
         var proposal = BuildProposal(operations);
-        var dryRun = session.DryRun(proposal);
-        var receipt = session.Apply(proposal, dryRun.Anchor, "motif-tests", "chained construct");
+        var dryRun = RunDryRun(loader, cache, proposal);
+        var receipt = ProposalApplier.Apply(cache, proposal, dryRun.Anchor, "motif-tests", "chained construct");
         Assert.False(receipt.AlreadyApplied);
+        loader.Save(cache);
 
         using var reloaded = new FwDataProjectLoader().LoadScratchCache(_fwDataPath);
         var form = reloaded.ServiceLocator.GetInstance<IMoFormRepository>().GetObject(newFormId.ToGuid());
@@ -177,6 +185,22 @@ public sealed class AuthorLexemeFormEndToEndTests
         proposalId: CanonicalId.Mint(),
         requires: null,
         operations: operations);
+
+    /// <summary>Dry-runs against a throwaway file-copy scratch, never the live cache (ADR 0016).</summary>
+    private static DryRunModel RunDryRun(FwDataProjectLoader loader, LcmCache cache, Proposal proposal)
+    {
+        loader.Save(cache);
+        var scratchRoot = Path.Combine(
+            Path.GetTempPath(), "SIL.Motif.Tests.AuthorLexemeForm", Guid.NewGuid().ToString("N"));
+        using var scratch = DryRunScratch.Adopt(
+            new ScratchCacheFactory(loader).CreateFromFileCopy(cache.ProjectId.Path, scratchRoot),
+            $"file copy of {cache.ProjectId.Path}",
+            onDisposed: () =>
+            {
+                if (Directory.Exists(scratchRoot)) Directory.Delete(scratchRoot, recursive: true);
+            });
+        return ProposalDryRunner.Run(scratch, proposal);
+    }
 
     private void AssertFormIsAbsent(Guid formGuid)
     {

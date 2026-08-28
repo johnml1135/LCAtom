@@ -550,35 +550,10 @@ public sealed class CommandsRefusalsTests
         Assert.Contains("Discard it and reload the project.", result.Output);
     }
 
-    // --- DryRun / Apply (session overloads share TryLoadProposalForRun) ---
+    // --- DryRun (store-consistency checks LoadFinalizedProposal runs before the project is even opened) ---
 
     [Fact]
-    public void SessionDryRun_ProposalNotFound_Refuses()
-    {
-        using var session = CliSession.Open(_fwDataPath);
-
-        var result = Commands.DryRun(session, _storeDir, CanonicalId.Mint().Value);
-
-        Assert.NotEqual(0, result.ExitCode);
-        Assert.Contains("not found in store", result.Output);
-    }
-
-    [Fact]
-    public void SessionApply_StoreInconsistency_Refuses()
-    {
-        var proposalId = CommitOneOperationProposal("src");
-        var store = new ProposalStore(_storeDir);
-        DeleteTheCommittedObject(store, proposalId);
-        using var session = CliSession.Open(_fwDataPath);
-
-        var result = Commands.Apply(session, _storeDir, proposalId, "tester");
-
-        Assert.NotEqual(0, result.ExitCode);
-        Assert.Contains("store inconsistency", result.Output);
-    }
-
-    [Fact]
-    public void SessionDryRun_ManifestIdentityDoesNotMatchLookup_RefusesBeforeScratchCreation()
+    public void DryRun_ManifestIdentityDoesNotMatchLookup_Refuses()
     {
         var proposalId = CommitOneOperationProposal("manifest-identity-mismatch");
         var store = new ProposalStore(_storeDir);
@@ -587,18 +562,16 @@ public sealed class CommandsRefusalsTests
         var wrongId = CanonicalId.Mint().Value;
         manifest["proposalId"] = wrongId;
         File.WriteAllText(manifestPath, manifest.ToJsonString());
-        using var session = CliSession.Open(_fwDataPath);
 
-        var result = Commands.DryRun(session, _storeDir, proposalId);
+        var result = Commands.DryRun(_storeDir, proposalId, _fwDataPath);
 
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains(proposalId, result.Output, StringComparison.Ordinal);
         Assert.Contains(wrongId, result.Output, StringComparison.Ordinal);
-        Assert.Equal(0, session.PristineRebuildCount);
     }
 
     [Fact]
-    public void SessionDryRun_EnvelopeIdentityDoesNotMatchLookup_RefusesBeforeScratchCreation()
+    public void DryRun_EnvelopeIdentityDoesNotMatchLookup_Refuses()
     {
         var proposalId = CommitOneOperationProposal("envelope-identity-mismatch");
         var store = new ProposalStore(_storeDir);
@@ -608,18 +581,16 @@ public sealed class CommandsRefusalsTests
         var wrongId = CanonicalId.Mint().Value;
         envelope["proposalId"] = wrongId;
         File.WriteAllText(objectPath, envelope.ToJsonString());
-        using var session = CliSession.Open(_fwDataPath);
 
-        var result = Commands.DryRun(session, _storeDir, proposalId);
+        var result = Commands.DryRun(_storeDir, proposalId, _fwDataPath);
 
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains(proposalId, result.Output, StringComparison.Ordinal);
         Assert.Contains(wrongId, result.Output, StringComparison.Ordinal);
-        Assert.Equal(0, session.PristineRebuildCount);
     }
 
     [Fact]
-    public void SessionDryRun_ObjectContentDoesNotMatchManifestDigest_RefusesBeforeScratchCreation()
+    public void DryRun_ObjectContentDoesNotMatchManifestDigest_Refuses()
     {
         var proposalId = CommitOneOperationProposal("object-digest-mismatch");
         var store = new ProposalStore(_storeDir);
@@ -628,14 +599,12 @@ public sealed class CommandsRefusalsTests
         var envelope = JsonNode.Parse(File.ReadAllText(objectPath))!.AsObject();
         envelope["operations"]![0]!["after"]!["text"] = "content changed behind the digest";
         File.WriteAllText(objectPath, envelope.ToJsonString());
-        using var session = CliSession.Open(_fwDataPath);
 
-        var result = Commands.DryRun(session, _storeDir, proposalId);
+        var result = Commands.DryRun(_storeDir, proposalId, _fwDataPath);
 
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("intentDigest", result.Output, StringComparison.Ordinal);
         Assert.Contains("store inconsistency", result.Output, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(0, session.PristineRebuildCount);
     }
 
     // --- Helpers ---

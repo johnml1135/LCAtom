@@ -1,8 +1,9 @@
-using SIL.Motif.Cli;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Model;
+using SIL.Motif.Host.LcmUtils;
 using SIL.Motif.Runner.Apply;
 using SIL.Motif.Runner.Composers;
+using SIL.Motif.Runner.DryRun;
 using SIL.Motif.Runner.Operations;
 using SIL.Motif.Tests.TestFixtures;
 using SIL.LCModel;
@@ -39,50 +40,61 @@ public sealed class FootprintPlanAgreementTests
 
     [Fact]
     public void NoOperationTargetsAMintedEntity_TheDigestsAgree() =>
-        AssertDigestsAgree(session => Compose(session, isAbstract: false, withSense: true));
+        AssertDigestsAgree(cache => Compose(cache, isAbstract: false, withSense: true));
 
     [Fact]
     public void OneOperationTargetsAMintedEntity_TheDigestsAgree() =>
-        AssertDigestsAgree(session => Compose(session, isAbstract: true, withSense: false));
+        AssertDigestsAgree(cache => Compose(cache, isAbstract: true, withSense: false));
 
     [Fact]
     public void AChainedOperationAlongsideAnIndependentOne_TheDigestsAgree() =>
-        AssertDigestsAgree(session => Compose(session, isAbstract: true, withSense: true));
+        AssertDigestsAgree(cache => Compose(cache, isAbstract: true, withSense: true));
 
     [Fact]
     public void TwoChainsInOneProposal_TheDigestsAgree() =>
-        AssertDigestsAgree(session =>
+        AssertDigestsAgree(cache =>
         {
             // Different entries: LexemeForm is owning/atomic, so two creates on one entry would address one slot.
-            var first = Compose(session, isAbstract: true, withSense: false, entryId: _seed.SecondEntryId);
+            var first = Compose(cache, isAbstract: true, withSense: false, entryId: _seed.SecondEntryId);
             var second = Compose(
-                session, isAbstract: true, withSense: false, entryId: _seed.FirstEntryId, text: "zzMotifSecondForm");
+                cache, isAbstract: true, withSense: false, entryId: _seed.FirstEntryId, text: "zzMotifSecondForm");
             return first.Concat(second).ToList();
         });
 
     [Fact]
     public void AMintedTargetReachedTwoOperationsLater_TheDigestsAgree() =>
-        AssertDigestsAgree(session =>
+        AssertDigestsAgree(cache =>
         {
             // The gloss sits between the create and the operation targeting what the create minted.
-            var chained = Compose(session, isAbstract: true, withSense: true);
+            var chained = Compose(cache, isAbstract: true, withSense: true);
             return new List<OperationEnvelope> { chained[0], chained[2], chained[1] };
         });
 
-    private void AssertDigestsAgree(Func<CliSession, IReadOnlyList<OperationEnvelope>> compose)
+    private void AssertDigestsAgree(Func<LcmCache, IReadOnlyList<OperationEnvelope>> compose)
     {
-        using var session = CliSession.Open(_fwDataPath);
-        var proposal = BuildProposal(compose(session));
+        var loader = new FwDataProjectLoader();
+        using var cache = loader.LoadCache(_fwDataPath);
+        var proposal = BuildProposal(compose(cache));
 
         // The Dry Run mutates a throwaway copy, so the live project is still at the state Apply reads.
-        var dryRunDigest = session.DryRun(proposal).Anchor.FootprintDigest;
-        var applyDigest = FootprintProbe.ComputeCurrentFootprintDigest(session.LiveCache, proposal);
+        var scratchRoot = Path.Combine(Path.GetTempPath(), "SIL.Motif.Tests.FootprintAgreement", Guid.NewGuid().ToString("N"));
+        loader.Save(cache);
+        using var scratch = DryRunScratch.Adopt(
+            new ScratchCacheFactory(loader).CreateFromFileCopy(_fwDataPath, scratchRoot),
+            $"file copy of {_fwDataPath}",
+            onDisposed: () =>
+            {
+                if (Directory.Exists(scratchRoot)) Directory.Delete(scratchRoot, recursive: true);
+            });
+
+        var dryRunDigest = ProposalDryRunner.Run(scratch, proposal).Anchor.FootprintDigest;
+        var applyDigest = FootprintProbe.ComputeCurrentFootprintDigest(cache, proposal);
 
         Assert.Equal(dryRunDigest, applyDigest);
     }
 
     private IReadOnlyList<OperationEnvelope> Compose(
-        CliSession session, bool isAbstract, bool withSense,
+        LcmCache cache, bool isAbstract, bool withSense,
         Guid? entryId = null, string text = "zzMotifAgreementForm")
     {
         var intent = new AuthorLexemeFormIntent(
@@ -95,7 +107,7 @@ public sealed class FootprintPlanAgreementTests
             GlossWritingSystem: withSense ? "en" : null,
             GlossText: withSense ? "an agreement-test gloss" : null);
 
-        return AuthorLexemeFormComposer.Build(session.LiveCache, intent);
+        return AuthorLexemeFormComposer.Build(cache, intent);
     }
 
     private static Proposal BuildProposal(IReadOnlyList<OperationEnvelope> operations) =>

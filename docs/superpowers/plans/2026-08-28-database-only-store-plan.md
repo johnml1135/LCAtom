@@ -159,6 +159,12 @@ required `--project` and runs through `ProjectStoreCommand.Run`.
 
 Drafts appear in `list`, marked, per ADR 0041 decision 3.
 
+**Restore one property Task 2 could not keep.** Three `CommandsRefusalsTests` cases asserted
+`session.PristineRebuildCount == 0` to pin that a store-consistency refusal happens *before* the project
+is touched. The counter went with `CliSession`, and the tests kept their other assertions. The property is
+real and worth asserting again once these move onto `ProposalRepository`: a refusal reaching the caller
+without the project file's write time changing says the same thing, and says it about the live path.
+
 - [ ] **Step 4: Run green and commit**
 
 ---
