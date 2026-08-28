@@ -475,7 +475,7 @@ public sealed class CommandsRefusalsTests
     [Fact]
     public void DryRun_ProposalNotFound_Refuses()
     {
-        var result = Commands.DryRun(_fwDataPath, ProductVersion, CanonicalId.Mint().Value);
+        var result = JobCommands.EnqueueDryRun(_fwDataPath, ProductVersion, CanonicalId.Mint().Value);
 
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("not found in store", result.Output);
@@ -488,7 +488,7 @@ public sealed class CommandsRefusalsTests
         DeleteCommittedRevision(proposalId);
 
         var writeTimeBefore = File.GetLastWriteTimeUtc(_fwDataPath);
-        var result = Commands.DryRun(_fwDataPath, ProductVersion, proposalId);
+        var result = JobCommands.EnqueueDryRun(_fwDataPath, ProductVersion, proposalId);
 
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("store inconsistency", result.Output);
@@ -549,7 +549,7 @@ public sealed class CommandsRefusalsTests
         CorruptCommittedRevisionJson(proposalId, envelope => envelope["proposalId"] = wrongId);
 
         var writeTimeBefore = File.GetLastWriteTimeUtc(_fwDataPath);
-        var result = Commands.DryRun(_fwDataPath, ProductVersion, proposalId);
+        var result = JobCommands.EnqueueDryRun(_fwDataPath, ProductVersion, proposalId);
 
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains(proposalId, result.Output, StringComparison.Ordinal);
@@ -565,7 +565,7 @@ public sealed class CommandsRefusalsTests
             proposalId, envelope => envelope["operations"]![0]!["after"]!["text"] = "content changed behind the digest");
 
         var writeTimeBefore = File.GetLastWriteTimeUtc(_fwDataPath);
-        var result = Commands.DryRun(_fwDataPath, ProductVersion, proposalId);
+        var result = JobCommands.EnqueueDryRun(_fwDataPath, ProductVersion, proposalId);
 
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("intentDigest", result.Output, StringComparison.Ordinal);

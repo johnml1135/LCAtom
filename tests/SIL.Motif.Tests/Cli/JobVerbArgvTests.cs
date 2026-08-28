@@ -38,6 +38,59 @@ public sealed class JobVerbArgvTests : IDisposable
     }
 
     [Fact]
+    public void EnqueueingADryRunLoadsAndValidatesTheProposalFirstThenPrintsAJobIdAndSucceeds()
+    {
+        var proposalId = FinalizeOneOperationProposal();
+
+        var result = Run($"dry-run --project \"{Project}\" {proposalId}");
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(string.Empty, result.Error);
+        Assert.False(string.IsNullOrWhiteSpace(result.Output));
+    }
+
+    [Fact]
+    public void DryRunOfAnAbsentProposalRefusesBeforeQueueingAnything()
+    {
+        var result = Run($"dry-run --project \"{Project}\" agent_AAECAwQFBgcICQoLDA0ODw --json");
+
+        Assert.Equal(2, result.ExitCode);
+        Assert.Equal(FailureReason.NotFound, Envelope(result.Error).Reason);
+        Assert.Contains("not found in store", result.Error);
+    }
+
+    [Fact]
+    public void DryRunWaitTimesOutWithADistinctFailureWhenNothingClaimsTheJob()
+    {
+        var proposalId = FinalizeOneOperationProposal();
+
+        var result = Run($"dry-run --project \"{Project}\" {proposalId} --wait --wait-timeout-ms 300");
+
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains("Timed out after", result.Error);
+        Assert.Contains("jobs show", result.Error);
+    }
+
+    private string FinalizeOneOperationProposal()
+    {
+        Assert.Equal(0, Run($"new --project \"{Project}\" --draft d").ExitCode);
+        Assert.Equal(0, Run(
+            $"add-set-gloss --project \"{Project}\" --draft d --target agent_AAECAwQFBgcICQoLDA0ODw " +
+            "--ws en --text hello").ExitCode);
+        Assert.Equal(0, Run($"label --project \"{Project}\" --draft d \"a label\"").ExitCode);
+        Assert.Equal(0, Run($"comment --project \"{Project}\" --draft d \"a comment\"").ExitCode);
+        var finalized = Run($"finalize --project \"{Project}\" --draft d");
+        Assert.Equal(0, finalized.ExitCode);
+
+        const string marker = "-> Proposal ";
+        var start = finalized.Output.IndexOf(marker, StringComparison.Ordinal);
+        Assert.True(start >= 0, "Could not find '" + marker + "' in finalize output: " + finalized.Output);
+        start += marker.Length;
+        var end = finalized.Output.IndexOf(' ', start);
+        return finalized.Output.Substring(start, end - start);
+    }
+
+    [Fact]
     public void AQueuedJobIsReadableByIdAsJson()
     {
         var jobId = Enqueue();

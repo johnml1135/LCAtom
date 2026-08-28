@@ -108,6 +108,61 @@ public sealed class RunnerSpineTests : IDisposable
         Assert.True(final.Attempt > 1, $"Expected a reclaimed attempt, saw attempt {final.Attempt}.");
     }
 
+    /// <summary>
+    /// ADR 0041 decision 7's "must not simply fail" for a Dry Run job against a project with no
+    /// published Baseline, driven by the real runner rather than a direct handler call. Observed, not
+    /// assumed: <see cref="JobClaims.Claim"/> only ever reclaims a <c>queued</c> or lease-expired
+    /// <c>running</c> row, so a parked row is never picked up again — the runner is killed rather than
+    /// awaited to exit, because a project with a permanently parked row never goes idle on its own.
+    /// </summary>
+    [Fact]
+    public void ADryRunJobAgainstAProjectWithNoPublishedBaselineParksRatherThanFailing()
+    {
+        var project = _projects.CopyProjectFile();
+        var target = SIL.Motif.Contract.Ids.CanonicalId.FromGuid(_projects.Seed.FirstSenseId).Value;
+        Assert.Equal(0, Cli($"new --project \"{project}\" --draft d").ExitCode);
+        Assert.Equal(0, Cli(
+            $"add-set-gloss --project \"{project}\" --draft d --target {target} --ws en --text hello").ExitCode);
+        Assert.Equal(0, Cli($"label --project \"{project}\" --draft d \"a label\"").ExitCode);
+        Assert.Equal(0, Cli($"comment --project \"{project}\" --draft d \"a comment\"").ExitCode);
+        var finalized = Cli($"finalize --project \"{project}\" --draft d");
+        Assert.Equal(0, finalized.ExitCode);
+        var proposalId = ExtractProposalId(finalized.Output);
+
+        var jobId = Cli($"dry-run --project \"{project}\" {proposalId}").Output.Trim();
+        Assert.False(string.IsNullOrWhiteSpace(jobId));
+        Assert.Equal("queued", StatusOf(project, jobId));
+
+        var runner = StartRunner(project, leaseSeconds: 30);
+        try
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(30);
+            string status;
+            do
+            {
+                status = StatusOf(project, jobId);
+                if (status == "waiting-for-baseline") break;
+                Thread.Sleep(50);
+            } while (DateTime.UtcNow < deadline);
+
+            Assert.Equal("waiting-for-baseline", status);
+        }
+        finally
+        {
+            Kill(runner);
+        }
+    }
+
+    private static string ExtractProposalId(string finalizeOutput)
+    {
+        const string marker = "-> Proposal ";
+        var start = finalizeOutput.IndexOf(marker, StringComparison.Ordinal);
+        Assert.True(start >= 0, "Could not find '" + marker + "' in finalize output: " + finalizeOutput);
+        start += marker.Length;
+        var end = finalizeOutput.IndexOf(' ', start);
+        return finalizeOutput.Substring(start, end - start);
+    }
+
     private void RunRunnerToCompletion(string project)
     {
         var runner = StartRunner(project, leaseSeconds: 30);

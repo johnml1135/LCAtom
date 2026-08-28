@@ -264,9 +264,9 @@ public sealed class ReportProjectionIntegrationTests
         FigureAudit.AssertEveryTextFigureAppearsInJson(showText.Output, showJson.Output);
         Assert.Contains(canonicalId.Value, showJson.Output);
 
-        // dry-run: non-mutating, so both variants read the same unchanged baseline.
-        var dryRunText = Commands.DryRun(_fwDataPath, ProductVersion, proposalId, usage);
-        var dryRunJson = Commands.DryRunJson(_fwDataPath, ProductVersion, proposalId, usage);
+        // dry-run: a job now (ADR 0041 decision 7); DryRunJobRunner stands in for the real runner.
+        var dryRunText = DryRunJobRunner.Run(_fwDataPath, ProductVersion, proposalId, asJson: false, usage);
+        var dryRunJson = DryRunJobRunner.Run(_fwDataPath, ProductVersion, proposalId, asJson: true, usage);
         Assert.Equal(0, dryRunText.ExitCode);
         Assert.Equal(0, dryRunJson.ExitCode);
         Assert.Contains($"\"{originalGloss}\" -> \"{newGloss}\"", dryRunText.Output);

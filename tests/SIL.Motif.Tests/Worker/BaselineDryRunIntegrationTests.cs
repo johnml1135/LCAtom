@@ -11,12 +11,14 @@ using SIL.Motif.Host.LcmUtils;
 using SIL.Motif.Host.Store;
 using SIL.Motif.LiveHost.Baselines;
 using SIL.Motif.Model.Effects;
+using SIL.Motif.Runner.AppliedLog;
 using SIL.Motif.Runner.DryRun;
 using SIL.Motif.Tests.TestFixtures;
 using SIL.Motif.Worker.Baselines;
 using SIL.Motif.Worker.Jobs;
 using SIL.Motif.Worker.Projects;
 using SIL.Motif.Worker.Scheduling;
+using SIL.Motif.Worker.Store;
 using Xunit;
 using DryRunModel = SIL.Motif.Model.DryRun.DryRun;
 
@@ -99,13 +101,20 @@ public sealed class BaselineDryRunIntegrationTests : IDisposable
     [Fact]
     public void TwentyDryRunsFromOneCaptureAreIdenticalAndLeaveTheBaselineByteForByteUnchanged()
     {
+        var proposals = new ProposalRepository(_database);
         var lanes = new ProjectLaneRegistry(_ => _token);
         var factory = new BaselineScratchFactory(_loader);
-        var handler = new DryRunJobHandler(_jobs, _baselines, lanes, _ => null,
-            (fwDataPath, proposal, _) =>
+        var handler = new DryRunJobHandler(_jobs, _baselines, proposals, lanes, _ => null,
+            (fwDataPath, _) =>
+            {
+                using var peek = _loader.LoadScratchCache(fwDataPath);
+                return Task.FromResult<IReadOnlyCollection<Guid>>(
+                    ProjectAppliedLog.ReadAll(peek).Select(entry => entry.ProposalId).ToArray());
+            },
+            (fwDataPath, plan, _) =>
             {
                 using var scratch = factory.OpenSingleUse(fwDataPath);
-                return Task.FromResult(ProposalDryRunner.Run(scratch, proposal));
+                return Task.FromResult(ProposalDryRunner.Run(scratch, plan));
             });
 
         var directoriesBefore = DirectoriesUnder(_root);
@@ -117,10 +126,10 @@ public sealed class BaselineDryRunIntegrationTests : IDisposable
         {
             var job = _jobs.Create(Guid.NewGuid().ToString("N"), ProjectWorkspaceKey.Compute(_project),
                 "dry-run", _proposalJson, "2026-08-24T00:00:00Z");
+            DryRunJobTestHarness.Claim(_jobs, job.JobId);
 
-            handler.RunAsync(job.JobId, _project, CancellationToken.None).GetAwaiter().GetResult();
-
-            var completed = _jobs.Get(job.JobId)!;
+            var completed = DryRunJobTestHarness.RunAndFinishAsync(_jobs, handler, job.JobId, _project)
+                .GetAwaiter().GetResult();
             Assert.Equal(JobStatus.CompletedDryRunOnly, completed.Status);
             Assert.True(completed.DryRunPublished);
             Assert.NotNull(completed.DryRunJson);
@@ -173,6 +182,49 @@ public sealed class BaselineDryRunIntegrationTests : IDisposable
 }
 
 /// <summary>
+/// Stands in for <see cref="JobRunnerLoop"/> around a directly-constructed <see cref="DryRunJobHandler"/>:
+/// claims a job the way the loop's own claim does, then applies any <see cref="JobOutcome"/> the handler
+/// returns the way the loop's own <c>Finish</c> does. Every test in this file drives the handler directly
+/// rather than through a real loop, so this is what keeps their claim/finish halves honest.
+/// </summary>
+internal static class DryRunJobTestHarness
+{
+    public static void Claim(JobRepository jobs, string jobId) =>
+        jobs.Transition(jobs.Get(jobId)!, JobStatus.Running);
+
+    public static async Task<JobRecord> RunAndFinishAsync(JobRepository jobs, DryRunJobHandler handler,
+        string jobId, ProjectLocator project, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var outcome = await handler.RunAsync(jobId, project, cancellationToken).ConfigureAwait(false);
+            if (outcome is not null)
+            {
+                var current = jobs.Get(jobId)!;
+                jobs.Transition(jobId, outcome.Status, current.Version, outcome.Category, outcome.ResultJson);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            var current = jobs.Get(jobId)!;
+            if (!JobStateMachine.IsTerminal(current.Status))
+                jobs.Transition(jobId, JobStatus.Cancelled, current.Version, JobFailureCategory.Cancellation);
+        }
+        catch (Exception exception)
+        {
+            var current = jobs.Get(jobId)!;
+            if (!JobStateMachine.IsTerminal(current.Status))
+            {
+                // A plain message is not structured JSON; wrap it the way JobRunnerLoop's own detail does.
+                jobs.Transition(jobId, JobStatus.Failed, current.Version, JobFailureCategory.Unknown,
+                    JsonSerializer.Serialize(new { detail = exception.Message }));
+            }
+        }
+        return jobs.Get(jobId)!;
+    }
+}
+
+/// <summary>
 /// Deterministic, no-real-cache tests for scheduling, freshness reporting, and cancellation: everything
 /// <see cref="DryRunJobHandler"/> owns that does not require a live <c>LcmCache</c> to prove.
 /// </summary>
@@ -197,7 +249,9 @@ public sealed class BaselineDryRunSchedulingTests : IDisposable
         var secondStarted = false;
         var callCount = 0;
 
-        var handler = new DryRunJobHandler(context.Jobs, context.Baselines, lanes, _ => null,
+        var proposals = new ProposalRepository(context.Database);
+        var handler = new DryRunJobHandler(context.Jobs, context.Baselines, proposals, lanes, _ => null,
+            (_, _) => Task.FromResult<IReadOnlyCollection<Guid>>(Array.Empty<Guid>()),
             async (_, _, cancellationToken) =>
             {
                 if (Interlocked.Increment(ref callCount) == 1)
@@ -214,11 +268,13 @@ public sealed class BaselineDryRunSchedulingTests : IDisposable
 
         var firstJob = context.CreateJob("first");
         var secondJob = context.CreateJob("second");
+        DryRunJobTestHarness.Claim(context.Jobs, firstJob.JobId);
+        DryRunJobTestHarness.Claim(context.Jobs, secondJob.JobId);
 
-        var firstRun = handler.RunAsync(firstJob.JobId, context.Project, CancellationToken.None);
+        var firstRun = DryRunJobTestHarness.RunAndFinishAsync(context.Jobs, handler, firstJob.JobId, context.Project);
         await firstStarted.Task;
 
-        var secondRun = handler.RunAsync(secondJob.JobId, context.Project, CancellationToken.None);
+        var secondRun = DryRunJobTestHarness.RunAndFinishAsync(context.Jobs, handler, secondJob.JobId, context.Project);
         await Task.Delay(50);
         Assert.False(secondStarted);
 
@@ -274,7 +330,9 @@ public sealed class BaselineDryRunSchedulingTests : IDisposable
         using var context = Context("cancel");
         using var lanes = new ProjectLaneRegistry(_ => context.Token);
         using var cts = new CancellationTokenSource();
-        var handler = new DryRunJobHandler(context.Jobs, context.Baselines, lanes, _ => null,
+        var proposals = new ProposalRepository(context.Database);
+        var handler = new DryRunJobHandler(context.Jobs, context.Baselines, proposals, lanes, _ => null,
+            (_, _) => Task.FromResult<IReadOnlyCollection<Guid>>(Array.Empty<Guid>()),
             (_, _, _) =>
             {
                 var result = DryRunTestSupport.FakeDryRun();
@@ -282,10 +340,11 @@ public sealed class BaselineDryRunSchedulingTests : IDisposable
                 return Task.FromResult(result);
             });
         var job = context.CreateJob("cancel");
+        DryRunJobTestHarness.Claim(context.Jobs, job.JobId);
 
-        await handler.RunAsync(job.JobId, context.Project, cts.Token);
+        var completed = await DryRunJobTestHarness.RunAndFinishAsync(
+            context.Jobs, handler, job.JobId, context.Project, cts.Token);
 
-        var completed = context.Jobs.Get(job.JobId)!;
         Assert.Equal(JobStatus.Cancelled, completed.Status);
         Assert.False(completed.DryRunPublished);
         Assert.Null(completed.DryRunJson);
@@ -297,7 +356,9 @@ public sealed class BaselineDryRunSchedulingTests : IDisposable
         using var context = Context("closed-barrier");
         var lanes = new ProjectLaneRegistry(_ => context.Token);
         var lane = lanes.GetOrCreate(context.WorkspaceKey);
-        var handler = new DryRunJobHandler(context.Jobs, context.Baselines, lanes, _ => null,
+        var proposals = new ProposalRepository(context.Database);
+        var handler = new DryRunJobHandler(context.Jobs, context.Baselines, proposals, lanes, _ => null,
+            (_, _) => throw new Xunit.Sdk.XunitException("A parked Dry Run must never read applied ids."),
             (_, _, _) => throw new Xunit.Sdk.XunitException("A parked Dry Run must never run."));
 
         // Close the barrier exactly as ProjectLaneTests does: a refresh whose capture fails.
@@ -306,7 +367,8 @@ public sealed class BaselineDryRunSchedulingTests : IDisposable
             CancellationToken.None)).WaitAsync(TimeSpan.FromSeconds(5));
 
         var job = context.CreateJob("parked");
-        var runTask = handler.RunAsync(job.JobId, context.Project, CancellationToken.None);
+        DryRunJobTestHarness.Claim(context.Jobs, job.JobId);
+        var runTask = DryRunJobTestHarness.RunAndFinishAsync(context.Jobs, handler, job.JobId, context.Project);
 
         Assert.Equal(JobStatus.WaitingForBaseline, context.Jobs.Get(job.JobId)!.Status);
         Assert.False(runTask.IsCompleted);
@@ -322,7 +384,9 @@ public sealed class BaselineDryRunSchedulingTests : IDisposable
         using var context = Context("released-barrier");
         using var lanes = new ProjectLaneRegistry(_ => context.Token);
         var lane = lanes.GetOrCreate(context.WorkspaceKey);
-        var handler = new DryRunJobHandler(context.Jobs, context.Baselines, lanes, _ => null,
+        var proposals = new ProposalRepository(context.Database);
+        var handler = new DryRunJobHandler(context.Jobs, context.Baselines, proposals, lanes, _ => null,
+            (_, _) => Task.FromResult<IReadOnlyCollection<Guid>>(Array.Empty<Guid>()),
             (_, _, _) => Task.FromResult(DryRunTestSupport.FakeDryRun()));
 
         await Assert.ThrowsAsync<IOException>(() => lane.EnqueueAsync(ProjectWorkItem.Refresh(
@@ -330,7 +394,8 @@ public sealed class BaselineDryRunSchedulingTests : IDisposable
             CancellationToken.None)).WaitAsync(TimeSpan.FromSeconds(5));
 
         var job = context.CreateJob("parked");
-        var runTask = handler.RunAsync(job.JobId, context.Project, CancellationToken.None);
+        DryRunJobTestHarness.Claim(context.Jobs, job.JobId);
+        var runTask = DryRunJobTestHarness.RunAndFinishAsync(context.Jobs, handler, job.JobId, context.Project);
         Assert.Equal(JobStatus.WaitingForBaseline, context.Jobs.Get(job.JobId)!.Status);
 
         // Only a successful replacement opens the barrier; this releases the parked Dry Run above.
@@ -346,22 +411,31 @@ public sealed class BaselineDryRunSchedulingTests : IDisposable
     }
 
     [Fact]
-    public async Task RefusesAJobThatIsNotQueuedForThisProjectsDryRunKind()
+    public async Task RefusesAJobThatIsNotClaimedOrIsTheWrongKindForThisProjectsDryRun()
     {
         using var context = Context("wrong-identity");
         using var lanes = new ProjectLaneRegistry(_ => context.Token);
-        var handler = new DryRunJobHandler(context.Jobs, context.Baselines, lanes, _ => null,
+        var proposals = new ProposalRepository(context.Database);
+        var handler = new DryRunJobHandler(context.Jobs, context.Baselines, proposals, lanes, _ => null,
+            (_, _) => throw new Xunit.Sdk.XunitException("Applied ids must never be read."),
             (_, _, _) => throw new Xunit.Sdk.XunitException("The scratch must never open."));
         var wrongKind = context.Jobs.Create(Guid.NewGuid().ToString("N"), context.WorkspaceKey,
             "baseline-refresh", "{}", "2026-08-24T00:00:00Z");
 
+        // Unclaimed: the loop's own claim is what moves a job to Running before it ever reaches a handler.
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => handler.RunAsync(wrongKind.JobId, context.Project, CancellationToken.None));
         Assert.Equal(JobStatus.Queued, context.Jobs.Get(wrongKind.JobId)!.Status);
+
+        // Claimed, but the wrong kind: refused for the reason the name says, not a status mismatch.
+        DryRunJobTestHarness.Claim(context.Jobs, wrongKind.JobId);
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => handler.RunAsync(wrongKind.JobId, context.Project, CancellationToken.None));
+        Assert.Equal(JobStatus.Running, context.Jobs.Get(wrongKind.JobId)!.Status);
     }
 
     [Fact]
-    public async Task RefusesWhenNoBaselineHasBeenPublishedForTheProject()
+    public async Task ParksAtWaitingForBaselineRatherThanFailingWhenNoBaselineHasBeenPublishedForTheProject()
     {
         var project = new ProjectLocator(Path.Combine(_root, "no-baseline.fwdata"), "no-baseline");
         var database = MotifDatabase.OpenOwned(Path.Combine(_root, "no-baseline.motif.db"), project,
@@ -370,26 +444,33 @@ public sealed class BaselineDryRunSchedulingTests : IDisposable
         var jobs = new JobRepository(database);
         var baselines = new BaselineRepository(database);
         using var lanes = new ProjectLaneRegistry(_ => throw new Xunit.Sdk.XunitException("No lane should be created."));
-        var handler = new DryRunJobHandler(jobs, baselines, lanes, _ => null,
+        var proposals = new ProposalRepository(database);
+        var handler = new DryRunJobHandler(jobs, baselines, proposals, lanes, _ => null,
+            (_, _) => throw new Xunit.Sdk.XunitException("Applied ids must never be read."),
             (_, _, _) => throw new Xunit.Sdk.XunitException("The scratch must never open."));
         var job = jobs.Create(Guid.NewGuid().ToString("N"), ProjectWorkspaceKey.Compute(project),
             "dry-run", DryRunTestSupport.BuildSetGlossProposalJson(Guid.NewGuid(), "text"), "2026-08-24T00:00:00Z");
+        DryRunJobTestHarness.Claim(jobs, job.JobId);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            () => handler.RunAsync(job.JobId, project, CancellationToken.None));
+        var outcome = await handler.RunAsync(job.JobId, project, CancellationToken.None);
+
+        // Nothing here ever requeues a parked job, so this is where it actually stays: not failed.
+        Assert.Null(outcome);
+        Assert.Equal(JobStatus.WaitingForBaseline, jobs.Get(job.JobId)!.Status);
     }
 
     private static async Task<JobRecord> RunOnce(TestContext context, ProjectFreshnessTracker? tracker)
     {
         using var lanes = new ProjectLaneRegistry(_ => context.Token);
-        var handler = new DryRunJobHandler(context.Jobs, context.Baselines, lanes,
+        var proposals = new ProposalRepository(context.Database);
+        var handler = new DryRunJobHandler(context.Jobs, context.Baselines, proposals, lanes,
             key => key == context.WorkspaceKey ? tracker : null,
+            (_, _) => Task.FromResult<IReadOnlyCollection<Guid>>(Array.Empty<Guid>()),
             (_, _, _) => Task.FromResult(DryRunTestSupport.FakeDryRun()));
         var job = context.CreateJob("run");
+        DryRunJobTestHarness.Claim(context.Jobs, job.JobId);
 
-        await handler.RunAsync(job.JobId, context.Project, CancellationToken.None);
-
-        return context.Jobs.Get(job.JobId)!;
+        return await DryRunJobTestHarness.RunAndFinishAsync(context.Jobs, handler, job.JobId, context.Project);
     }
 
     private static void AssertPublishedAndReported(JobRecord completed, BaselineToken token, string expectedFreshness)

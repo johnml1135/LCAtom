@@ -17,7 +17,7 @@ public sealed class JobStateMachine
             [JobStatus.WaitingForProjectHost] = new HashSet<JobStatus>
                 { JobStatus.Queued, JobStatus.Running, JobStatus.Failed, JobStatus.Cancelled },
             [JobStatus.Running] = new HashSet<JobStatus>
-                { JobStatus.Completed, JobStatus.CompletedDryRunOnly,
+                { JobStatus.WaitingForBaseline, JobStatus.Completed, JobStatus.CompletedDryRunOnly,
                     JobStatus.CompletedWithAssessmentFailure, JobStatus.Failed, JobStatus.Cancelled, JobStatus.Interrupted },
             [JobStatus.Interrupted] = new HashSet<JobStatus>(),
             [JobStatus.Completed] = new HashSet<JobStatus>(),

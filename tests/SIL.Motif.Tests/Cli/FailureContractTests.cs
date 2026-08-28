@@ -62,7 +62,7 @@ public sealed class FailureContractTests : IDisposable
         Assert.Equal(1, result.ExitCode);
         Assert.Contains("Unknown command 'store-rollback'", result.Error, StringComparison.Ordinal);
         // The banner is what makes an unknown verb actionable rather than merely refused.
-        Assert.Contains("dry-run <proposalId> --project", result.Error, StringComparison.Ordinal);
+        Assert.Contains("dry-run --project <fwdata> <proposalId>", result.Error, StringComparison.Ordinal);
     }
 
     [Fact]

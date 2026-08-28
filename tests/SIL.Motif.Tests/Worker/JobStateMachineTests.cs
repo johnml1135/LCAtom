@@ -34,9 +34,9 @@ public sealed class JobStateMachineTests : IDisposable
         Assert.Throws<InvalidOperationException>(() => machine.Transition(job, waiting, "{\"tooSoon\":true}"));
         var parked = machine.Transition(job, waiting);
 
-        // A released wait may resume directly, but a running job cannot re-enter either wait.
+        // A released wait may resume directly, and a running job may re-park behind its own Baseline.
         var resumed = machine.Transition(parked, JobStatus.Running);
-        Assert.Throws<InvalidOperationException>(() => machine.Transition(resumed, JobStatus.WaitingForBaseline));
+        Assert.Equal(JobStatus.WaitingForBaseline, machine.Transition(resumed, JobStatus.WaitingForBaseline).Status);
         Assert.Throws<InvalidOperationException>(() => machine.Transition(resumed, JobStatus.WaitingForProjectHost));
 
         var requeued = machine.Transition(parked, JobStatus.Queued);

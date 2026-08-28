@@ -285,10 +285,21 @@ try
 
         case "dry-run":
             if (positionals.Count != 1 || !flags.TryGetValue("project", out var dryRunProject))
-                return Usage("Usage: motif dry-run <proposalId> --project <fwdata> [--json]", asJson);
-            result = asJson
-                ? Commands.DryRunJson(dryRunProject, CliProductVersion(), positionals[0], usage)
-                : Commands.DryRun(dryRunProject, CliProductVersion(), positionals[0], usage);
+            {
+                return Usage(
+                    "Usage: motif dry-run --project <fwdata> <proposalId> [--wait] [--json]", asJson);
+            }
+            result = JobCommands.EnqueueDryRun(dryRunProject, CliProductVersion(), positionals[0], usage);
+            if (result.ExitCode == 0 && flags.ContainsKey("wait"))
+            {
+                var dryRunJobId = result.Output.Trim();
+                var waitTimeout = flags.TryGetValue("wait-timeout-ms", out var waitTimeoutRaw) &&
+                    int.TryParse(waitTimeoutRaw, out var waitTimeoutMs)
+                    ? TimeSpan.FromMilliseconds(waitTimeoutMs)
+                    : JobCommands.DefaultWaitTimeout;
+                result = JobCommands.WaitForDryRun(
+                    dryRunProject, CliProductVersion(), positionals[0], dryRunJobId, asJson, waitTimeout);
+            }
             break;
 
         case "apply":
@@ -492,7 +503,7 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine("  supersede --project <fwdata> <proposalId> <supersededByProposalId>");
     writer.WriteLine("  list --project <fwdata> [--json]");
     writer.WriteLine("  show --project <fwdata> <proposalId> [--json]");
-    writer.WriteLine("  dry-run <proposalId> --project <fwdata> [--json]");
+    writer.WriteLine("  dry-run --project <fwdata> <proposalId> [--wait] [--json]");
     writer.WriteLine("  apply <proposalId> --project <fwdata> --user <name> [--json]");
     writer.WriteLine("  log --project <fwdata> [--json]");
     writer.WriteLine();

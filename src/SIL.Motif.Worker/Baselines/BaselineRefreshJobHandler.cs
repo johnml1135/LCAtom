@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using SIL.LCModel;
 using SIL.Motif.Contract.Projects;
+using SIL.Motif.Worker.Jobs;
 
 namespace SIL.Motif.Worker.Baselines;
 
@@ -27,11 +28,11 @@ public sealed class BaselineRefreshJobHandler
     }
 
     /// <summary>Refreshes the project's Baseline, throwing when the job should be recorded as failed.</summary>
-    public async Task RunAsync(ProjectLocator project, CancellationToken cancellationToken)
+    public async Task<JobOutcome?> RunAsync(ProjectLocator project, CancellationToken cancellationToken)
     {
         var result = await _barrier.RefreshAsync(project, _capture, cancellationToken).ConfigureAwait(false);
-        if (result.Succeeded) return;
-        throw new BaselineRefreshFailedException(result.Outcome, result.Message);
+        if (!result.Succeeded) throw new BaselineRefreshFailedException(result.Outcome, result.Message);
+        return JobOutcome.Completed;
     }
 }
 

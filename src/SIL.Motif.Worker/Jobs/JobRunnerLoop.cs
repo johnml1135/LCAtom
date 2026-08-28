@@ -25,8 +25,12 @@ namespace SIL.Motif.Worker.Jobs;
 /// </remarks>
 public sealed class JobRunnerLoop
 {
-    /// <summary>Runs one claimed job. Throwing fails it; returning completes it.</summary>
-    public delegate Task Handler(JobRecord job, CancellationToken cancellationToken);
+    /// <summary>
+    /// Runs one claimed job. Throwing fails it; returning a <see cref="JobOutcome"/> finishes it with
+    /// that terminal status. Returning <c>null</c> means the handler already left the row exactly where
+    /// it belongs — terminal or not — and the loop must not touch it again.
+    /// </summary>
+    public delegate Task<JobOutcome?> Handler(JobRecord job, CancellationToken cancellationToken);
 
     private static readonly TimeSpan HeartbeatShare = TimeSpan.FromSeconds(1);
     private readonly JobClaims _claims;
@@ -71,7 +75,7 @@ public sealed class JobRunnerLoop
     {
         if (!_handlers.TryGetValue(claimed.Kind, out var handler))
         {
-            Finish(claimed, JobStatus.Failed, JobFailureCategory.Unknown,
+            FinishWithDetail(claimed, JobStatus.Failed, JobFailureCategory.Unknown,
                 "No handler is registered for job kind '" + claimed.Kind + "'.");
             return;
         }
@@ -80,16 +84,16 @@ public sealed class JobRunnerLoop
         var heartbeat = HeartbeatAsync(claimed, beating.Token);
         try
         {
-            await handler(claimed, cancellationToken).ConfigureAwait(false);
-            Finish(claimed, JobStatus.Completed, JobFailureCategory.None, null);
+            var outcome = await handler(claimed, cancellationToken).ConfigureAwait(false);
+            if (outcome is not null) Finish(claimed, outcome.Status, outcome.Category, outcome.ResultJson);
         }
         catch (OperationCanceledException)
         {
-            Finish(claimed, JobStatus.Cancelled, JobFailureCategory.Cancellation, "The runner stopped.");
+            FinishWithDetail(claimed, JobStatus.Cancelled, JobFailureCategory.Cancellation, "The runner stopped.");
         }
         catch (Exception exception)
         {
-            Finish(claimed, JobStatus.Failed, JobFailureCategory.Unknown, exception.Message);
+            FinishWithDetail(claimed, JobStatus.Failed, JobFailureCategory.Unknown, exception.Message);
         }
         finally
         {
@@ -109,12 +113,12 @@ public sealed class JobRunnerLoop
         }
     }
 
-    private void Finish(JobRecord claimed, JobStatus status, JobFailureCategory category, string? detail)
+    /// A handler's own <see cref="JobOutcome.ResultJson"/> is already structured JSON; write it as-is.
+    private void Finish(JobRecord claimed, JobStatus status, JobFailureCategory category, string? resultJson)
     {
         try
         {
-            if (!_claims.Finish(claimed.JobId, claimed.ClaimToken!, status, category,
-                    detail is null ? null : JsonSerializer.Serialize(new { detail })))
+            if (!_claims.Finish(claimed.JobId, claimed.ClaimToken!, status, category, resultJson))
                 Console.Error.WriteLine(claimed.JobId + " is no longer this runner's to finish.");
         }
         catch (Exception exception)
@@ -124,9 +128,24 @@ public sealed class JobRunnerLoop
         }
     }
 
+    // The loop's own generic failure paths carry a plain message; wrap it the same way every one does.
+    private void FinishWithDetail(JobRecord claimed, JobStatus status, JobFailureCategory category, string detail) =>
+        Finish(claimed, status, category, JsonSerializer.Serialize(new { detail }));
+
     private TimeSpan Jittered(TimeSpan interval) =>
         interval + TimeSpan.FromMilliseconds(_jitter.Next(0, (int)interval.TotalMilliseconds + 1));
 
     private static string Now() =>
         DateTimeOffset.UtcNow.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture);
+}
+
+/// <summary>The terminal status a <see cref="JobRunnerLoop.Handler"/> asks the loop to finish a job with.</summary>
+/// <param name="Status">Must be one <see cref="JobStateMachine.IsTerminal"/> accepts from <c>running</c>.</param>
+/// <param name="Category">The failure category the terminal status requires; <c>none</c> for a success.</param>
+/// <param name="ResultJson">Already-structured JSON, written verbatim rather than wrapped.</param>
+public sealed record JobOutcome(JobStatus Status, JobFailureCategory Category = JobFailureCategory.None,
+    string? ResultJson = null)
+{
+    /// <summary>The ordinary successful outcome: no result payload, no failure category.</summary>
+    public static readonly JobOutcome Completed = new(JobStatus.Completed);
 }

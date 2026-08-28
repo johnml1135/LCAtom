@@ -3,9 +3,11 @@ using System.IO;
 using System.Text.Json.Nodes;
 using SIL.Motif.Cli;
 using SIL.Motif.Contract.Ids;
+using SIL.Motif.Contract.Responses;
 using SIL.Motif.Host.LcmUtils;
 using SIL.Motif.Runner.AppliedLog;
 using SIL.Motif.Tests.TestFixtures;
+using SIL.Motif.Worker.Jobs;
 using SIL.Motif.Worker.Store;
 using SIL.LCModel;
 using Xunit;
@@ -20,7 +22,11 @@ namespace SIL.Motif.Tests.Cli;
 /// </summary>
 /// <remarks>
 /// A workflow test, not an end-to-end one: no process boundary is crossed here. Whether the shipped
-/// executables do this is <c>RunnerSpineTests</c>' subject.
+/// executables do this is <c>RunnerSpineTests</c>' subject. <c>dry-run</c> is a job (ADR 0041 decision 7),
+/// so <see cref="RunDryRun"/> stands in for the real runner: it records a Baseline pointing at this
+/// project's own saved file (this suite never captures a separate Baseline bundle) and drains exactly
+/// the one queued job through the real <see cref="DryRunJobHandler"/> before rendering it exactly as
+/// <c>--wait</c> does.
 /// </remarks>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
 public sealed class ProposalWorkflowTests
@@ -93,7 +99,7 @@ public sealed class ProposalWorkflowTests
         Assert.Contains(extendedExplanation, showJsonResult.Output);
 
         // --- dry-run: real before/after from LibLCM, non-mutating ---
-        var dryRunResult = Commands.DryRun(_fwDataPath, ProductVersion, proposalId);
+        var dryRunResult = RunDryRun(proposalId);
         Assert.Equal(0, dryRunResult.ExitCode);
         Assert.Contains(canonicalId.Value, dryRunResult.Output);
         Assert.Contains($"\"{originalGloss}\" -> \"{newGloss}\"", dryRunResult.Output);
@@ -143,7 +149,7 @@ public sealed class ProposalWorkflowTests
         var dependentId = FinalizeSetGloss(
             "file-dependent", target.Value, finalGloss, prerequisiteId);
 
-        var result = Commands.DryRun(_fwDataPath, ProductVersion, dependentId);
+        var result = RunDryRun(dependentId);
 
         Assert.Equal(0, result.ExitCode);
         Assert.Contains($"\"{intermediateGloss}\" -> \"{finalGloss}\"", result.Output);
@@ -179,7 +185,7 @@ public sealed class ProposalWorkflowTests
         Assert.Equal(0, finalizeResult.ExitCode);
         var proposalId = ExtractProposalId(finalizeResult.Output);
 
-        Assert.Equal(0, Commands.DryRun(_fwDataPath, ProductVersion, proposalId).ExitCode);
+        Assert.Equal(0, RunDryRun(proposalId).ExitCode);
 
         var dbPath = PairedDatabasePath();
         File.SetAttributes(dbPath, FileAttributes.ReadOnly);
@@ -234,6 +240,10 @@ public sealed class ProposalWorkflowTests
         Assert.NotEqual(0, missingProject.ExitCode);
         Assert.Contains("not found", missingProject.Output, StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>Drives <c>dry-run</c>'s job through <see cref="DryRunJobRunner"/> — see the class remarks.</summary>
+    private CommandResult RunDryRun(string proposalId, bool asJson = false) =>
+        DryRunJobRunner.Run(_fwDataPath, ProductVersion, proposalId, asJson);
 
     private void AssertGlossOnDisk(Guid senseGuid, string wsTag, string expectedGloss)
     {

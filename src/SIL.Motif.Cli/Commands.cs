@@ -1335,100 +1335,6 @@ public static class Commands
         }
     }
 
-    public static CommandResult DryRun(
-        string fwDataPath, string productVersion, string proposalId, UsageLog? usage = null)
-    {
-        RecordDryRunUsage(usage, "fwDataPath", "proposalId");
-        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, project) =>
-        {
-            var (reason, projection, error) = BuildDryRunProjection(database, project, proposalId);
-            if (projection is null) return Refused(reason, error!);
-
-            var sb = new StringBuilder(CommandTextRenderer.Render(projection));
-            // State the side effect: a dry run reads as "nothing happens", but it saved the project first (ADR 0016).
-            sb.AppendLine("  (the project was saved before measuring, so the scratch copy matched it; " +
-                          "the project itself was not modified by this dry run)");
-            return Ok(sb);
-        });
-    }
-
-    /// <summary>The <c>dry-run</c> report as JSON — the same <see cref="DryRunProjection"/> <see cref="DryRun(string,string,string,UsageLog)"/> renders as text.</summary>
-    public static CommandResult DryRunJson(
-        string fwDataPath, string productVersion, string proposalId, UsageLog? usage = null)
-    {
-        RecordDryRunUsage(usage, "fwDataPath", "proposalId");
-        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, project) =>
-        {
-            var (reason, projection, error) = BuildDryRunProjection(database, project, proposalId);
-            return projection is not null
-                ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
-                : Refused(reason, error!);
-        });
-    }
-
-    private static (FailureReason? Reason, DryRunProjection? Projection, string? Error) BuildDryRunProjection(
-        MotifDatabase database, ProjectLocator project, string proposalId)
-    {
-        LcmCache? cache = null;
-        DryRunScratch? scratch = null;
-        try
-        {
-            var repository = new ProposalRepository(database);
-            var id = NormalizeId(proposalId);
-            var canonicalId = CanonicalId.Parse(id);
-            var (_, envelope) = repository.GetFinalized(canonicalId);
-
-            var loader = new FwDataProjectLoader();
-
-            // Hold the project open throughout: one writer at a time (ADR 0006 decision 4), or the anchor means nothing.
-            cache = loader.LoadCache(project.FullFwDataPath);
-
-            var appliedProposalIds = ProjectAppliedLog.ReadAll(cache)
-                .Select(entry => entry.ProposalId)
-                .ToArray();
-            var plan = repository.PlanPrerequisites(envelope, appliedProposalIds);
-
-            // Save before the copy: the scratch copies the FILE, so an uncommitted edit is invisible to it (ADR 0016).
-            loader.Save(cache);
-
-            // Mutate a throwaway copy and delete it: no rollback, so nothing leaves derived caches stale.
-            var scratchRoot = Path.Combine(
-                Path.GetTempPath(), "SIL.Motif.DryRun", Guid.NewGuid().ToString("N"));
-            scratch = DryRunScratch.Adopt(
-                new ScratchCacheFactory(loader).CreateFromFileCopy(project.FullFwDataPath, scratchRoot),
-                $"file copy of {project.FullFwDataPath}",
-                onDisposed: () => TryDeleteDirectory(scratchRoot));
-
-            var dryRun = ProposalDryRunner.Run(scratch, plan);
-
-            // Persist the bound-DryRun anchor (docs/adr/0004 decision 3): apply requires it present and unmoved.
-            repository.SetAnchor(canonicalId, JsonSerializer.Serialize(dryRun.Anchor));
-
-            return (null, DryRunProjectionBuilder.Build(id, dryRun), null);
-        }
-        catch (LcmFileLockedException)
-        {
-            // A held project is retryable once it is let go, which is what Busy tells a caller.
-            return (FailureReason.Busy, null,
-                FailText(ProjectInUseMessage(project.FullFwDataPath, "dry-run")));
-        }
-        catch (Exception ex)
-        {
-            return (ReasonFor(ex), null, FailText(ex.Message));
-        }
-        finally
-        {
-            // Discard, never revert: disposing the scratch is what undoes the dry run's mutations.
-            scratch?.Dispose();
-
-            // And release the project, so the linguist can have FieldWorks back.
-            if (cache is { IsDisposed: false }) cache.Dispose();
-        }
-    }
-
-    private static void RecordDryRunUsage(UsageLog? usage, params string[] names) =>
-        usage?.Record("dry-run", names.Select(UsageArgumentShape.Text).ToList());
-
     /// <remarks>
     /// A failed apply rolls back, and a rollback is not an Undo: LexEntry headword/homograph and
     /// MoStemAllomorph monomorphemic caches can be left stale, and ADR 0005's non-undoable schema
@@ -1594,19 +1500,6 @@ public static class Commands
         "Only one program may hold a FieldWorks project at a time, and Motif takes the same lock " +
         "FieldWorks does. Close the other program and try again.";
 
-    /// <summary>Best-effort delete of a scratch copy: a leaked temp dir beats a reported Dry Run failure.</summary>
-    private static void TryDeleteDirectory(string path)
-    {
-        try
-        {
-            if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
-        }
-        catch
-        {
-            // A still-locked native handle must not fail a dry run that already succeeded.
-        }
-    }
-
     private static string BuildProposalJson(DraftDocument draft)
     {
         var document = new
@@ -1649,7 +1542,8 @@ public static class Commands
         return full;
     }
 
-    private static string NormalizeId(string proposalId)
+    /// <summary>Normalizes a caller-supplied Proposal id; shared with <see cref="JobCommands"/>'s enqueue path.</summary>
+    internal static string NormalizeId(string proposalId)
     {
         if (!CanonicalId.TryParse(proposalId, out var id, out var error))
             throw new ArgumentException($"'{proposalId}' is not a valid canonical Proposal id: {error}");
@@ -1701,6 +1595,10 @@ public static class Commands
         FileNotFoundException or DirectoryNotFoundException => FailureReason.NotFound,
         _ => ReasonFor(exception),
     };
+
+    /// <summary>The refusal a failed <see cref="ProposalRepository.GetFinalized"/> load reports, shared with <see cref="JobCommands"/>.</summary>
+    internal static CommandResult RefuseProposalLoad(Exception exception) =>
+        Refused(ReasonForProposal(exception), FailText(exception.Message));
 
     /// A caught exception knows more than a broad catch does; anything else is refused, which does not retry.
     private static FailureReason ReasonFor(Exception exception) => exception switch

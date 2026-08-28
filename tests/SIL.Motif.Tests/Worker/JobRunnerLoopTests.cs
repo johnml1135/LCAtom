@@ -33,8 +33,8 @@ public sealed class JobRunnerLoopTests : IDisposable
         jobs.Create("job-1", Project, "demo", "{}", Stamp());
         var seen = new List<string>();
 
-        await Loop((job, _) => { seen.Add(job.JobId); return Task.CompletedTask; }).RunUntilIdleAsync(
-            CancellationToken.None);
+        await Loop((job, _) => { seen.Add(job.JobId); return Task.FromResult<JobOutcome?>(JobOutcome.Completed); })
+            .RunUntilIdleAsync(CancellationToken.None);
 
         Assert.Equal(new[] { "job-1" }, seen);
         Assert.Equal(JobStatus.Completed, jobs.Get("job-1")!.Status);
@@ -82,6 +82,7 @@ public sealed class JobRunnerLoopTests : IDisposable
         {
             await Task.Delay(150);
             leaseDuringRun = jobs.Get(job.JobId)!.LeaseUntilUtc;
+            return JobOutcome.Completed;
         }, lease: TimeSpan.FromSeconds(2)).RunUntilIdleAsync(CancellationToken.None);
 
         Assert.NotNull(leaseDuringRun);
@@ -96,7 +97,7 @@ public sealed class JobRunnerLoopTests : IDisposable
         jobs.Create("job-1", Project, "demo", "{}", Stamp());
         using var stopping = new CancellationTokenSource();
 
-        await Loop(async (_, _) => { stopping.Cancel(); await Task.Delay(50); })
+        await Loop(async (_, _) => { stopping.Cancel(); await Task.Delay(50); return JobOutcome.Completed; })
             .RunUntilIdleAsync(stopping.Token);
 
         // Cancelled mid-handler, the row must still reach a terminal state rather than stay leased.
@@ -109,7 +110,7 @@ public sealed class JobRunnerLoopTests : IDisposable
     {
         var jobs = new JobRepository(_database);
 
-        await Loop((_, _) => Task.CompletedTask).RunUntilIdleAsync(CancellationToken.None);
+        await Loop((_, _) => Task.FromResult<JobOutcome?>(JobOutcome.Completed)).RunUntilIdleAsync(CancellationToken.None);
 
         Assert.Empty(jobs.ListActive(Project));
     }

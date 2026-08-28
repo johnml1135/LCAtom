@@ -248,6 +248,21 @@ ADR 0041 decisions 5 and 6, and the answer to G4.
 - Modify: `src/SIL.Motif.Worker/Projects/ProjectRuntime.cs` — the cached lease and five refresh methods
 - Test: `tests/SIL.Motif.Tests/Integration/RunnerSpineTests.cs`
 
+**Two findings from Task 7 land here, because this task owns runner lifetime.** Both were observed, not
+predicted:
+
+1. **A parked job is never reclaimed.** `DryRunJobHandler` moves a job to `WaitingForBaseline` when the
+   project has no published Baseline, and `JobClaims.Claim` only takes `queued` rows and lease-expired
+   `running` ones. Nothing in the codebase picks a parked row up again, so `motif dry-run` on a project
+   without a Baseline queues work that waits forever. The sweep is where that is answered — either it
+   enqueues the `baseline-refresh` the row is waiting for, or a parked row is made claimable again on some
+   condition. Decide and say which.
+2. **A parked job stops the runner ever idling.** `JobRepository.ListActive` excludes only terminal
+   statuses, so `WaitingForBaseline` counts as active work. Since this task derives idleness from the
+   sweep, one permanently parked row means the pseudo-daemon never shuts down — the opposite of the
+   behaviour it is being built for. The spine test currently kills the runner rather than waiting for it
+   to exit, because waiting would hang.
+
 - [ ] **Step 1: Extend the spine test to two projects**
 
 One runner, two projects, one job in each; both reach terminal. This is the test that fails today and is
