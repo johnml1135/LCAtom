@@ -1,8 +1,6 @@
-using System;
-using System.Collections.Generic;
 using SIL.Motif.Contract.Model;
 
-namespace SIL.Motif.Cli.Store;
+namespace SIL.Motif.Worker.Store;
 
 internal static class PrerequisiteClosureResolver
 {

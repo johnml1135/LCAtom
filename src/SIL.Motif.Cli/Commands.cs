@@ -38,9 +38,9 @@ namespace SIL.Motif.Cli;
 public sealed record CommandResult(int ExitCode, string Output, FailureReason? Reason = null);
 
 /// <summary>
-/// Testable command handlers for every Motif CLI verb, driving the Stage E files store (see
-/// <see cref="SIL.Motif.Cli.Store.ProposalStore"/>) and the real Contract/Runner/Host APIs end to
-/// end. <c>Program.cs</c> is a thin argument dispatcher over these methods: every method here is a
+/// Testable command handlers for every Motif CLI verb, driving the project's paired database (see
+/// <see cref="SIL.Motif.Worker.Store.ProposalRepository"/>) and the real Contract/Runner/Host APIs end
+/// to end. <c>Program.cs</c> is a thin argument dispatcher over these methods: every method here is a
 /// plain function of explicit parameters returning a <see cref="CommandResult"/>, so tests call them
 /// directly rather than shelling out to the built executable.
 /// </summary>
@@ -230,102 +230,98 @@ public static class Commands
         }
     }
 
-    public static CommandResult New(string storeDir, string draftName, string? label)
+    public static CommandResult New(string fwDataPath, string productVersion, string draftName, string? label)
     {
-        try
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, _) =>
         {
-            var store = new ProposalStore(storeDir);
-            store.EnsureDirectoriesExist();
-            var draftPath = store.DraftPath(draftName);
-
-            if (File.Exists(draftPath))
+            try
             {
-                return Fail(
-                    $"Draft '{draftName}' already exists at '{draftPath}'. Finalize or delete it " +
-                    "before creating a new draft with this name.");
+                var repository = new ProposalRepository(database);
+                if (repository.DraftNameExists(draftName))
+                    return Fail(DraftNameCollisionMessage(draftName, "creating a new draft with this name"));
+
+                var proposalId = CanonicalId.Mint();
+                var draft = new DraftDocument
+                {
+                    ProposalId = proposalId.Value,
+                    // Empty: EnsureContractVersion populates this from whatever operations actually get authored.
+                    ContractVersions = new Dictionary<string, string>(),
+                    Requires = new List<string>(),
+                    Label = label,
+                    Comment = null,
+                    Operations = new List<DraftOperation>(),
+                };
+
+                repository.CreateDraft(draftName, proposalId, SerializeDraft(draft));
+
+                var sb = new StringBuilder();
+                sb.AppendLine($"Created draft '{draftName}'.");
+                sb.AppendLine($"  proposalId: {draft.ProposalId}");
+                if (label is not null)
+                    sb.AppendLine($"  label:       {label}");
+                return Ok(sb);
             }
-
-            var proposalId = CanonicalId.Mint();
-            var draft = new DraftDocument
+            catch (Exception ex)
             {
-                ProposalId = proposalId.Value,
-                // Empty: EnsureContractVersion populates this from whatever operations actually get authored.
-                ContractVersions = new Dictionary<string, string>(),
-                Requires = new List<string>(),
-                Label = label,
-                Comment = null,
-                Operations = new List<DraftOperation>(),
-            };
-
-            WriteDraft(draftPath, draft);
-
-            var sb = new StringBuilder();
-            sb.AppendLine($"Created draft '{draftName}' at '{draftPath}'.");
-            sb.AppendLine($"  proposalId: {draft.ProposalId}");
-            if (label is not null)
-                sb.AppendLine($"  label:       {label}");
-            return Ok(sb);
-        }
-        catch (Exception ex)
-        {
-            return Fail(ex.Message);
-        }
+                return Fail(ex.Message);
+            }
+        });
     }
 
     public static CommandResult AddSetGloss(
-        string storeDir, string draftName, string target, string ws, string text,
+        string fwDataPath, string productVersion, string draftName, string target, string ws, string text,
         IReadOnlyList<string>? dependsOn = null)
     {
-        try
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, _) =>
         {
-            var store = new ProposalStore(storeDir);
-            var draftPath = store.DraftPath(draftName);
-            if (!File.Exists(draftPath))
-                return Missing(DraftNotFoundMessage(store, draftName));
-
-            if (!CanonicalId.TryParse(target, out var targetId, out var idError))
-                return Invalid($"--target '{target}' is not a valid canonical id: {idError}");
-
-            if (string.IsNullOrEmpty(ws))
-                return Invalid("--ws must not be empty.");
-
-            var draft = ReadDraft(draftPath);
-
-            if (!TryResolveDependsOn(draft, dependsOn, out var resolvedDependsOn, out var dependsOnError))
-                return Fail(dependsOnError!);
-
-            var operationId = CanonicalId.Mint();
-
-            draft.Operations.Add(new DraftOperation
+            try
             {
-                OperationId = operationId.Value,
-                Kind = LexicalSenseOperationKinds.SetGloss,
-                Target = targetId.Value,
-                DependsOn = resolvedDependsOn,
-                After = new Dictionary<string, JsonElement>
+                var repository = new ProposalRepository(database);
+                if (!TryLoadDraft(repository, draftName, out var draft))
+                    return Missing(DraftNotFoundMessage(draftName));
+
+                if (!CanonicalId.TryParse(target, out var targetId, out var idError))
+                    return Invalid($"--target '{target}' is not a valid canonical id: {idError}");
+
+                if (string.IsNullOrEmpty(ws))
+                    return Invalid("--ws must not be empty.");
+
+                if (!TryResolveDependsOn(draft, dependsOn, out var resolvedDependsOn, out var dependsOnError))
+                    return Fail(dependsOnError!);
+
+                var operationId = CanonicalId.Mint();
+
+                draft.Operations.Add(new DraftOperation
                 {
-                    ["ws"] = JsonSerializer.SerializeToElement(ws),
-                    ["text"] = JsonSerializer.SerializeToElement(text),
-                },
-            });
-            EnsureContractVersion(draft, LexicalSenseOperationKinds.SetGloss);
+                    OperationId = operationId.Value,
+                    Kind = LexicalSenseOperationKinds.SetGloss,
+                    Target = targetId.Value,
+                    DependsOn = resolvedDependsOn,
+                    After = new Dictionary<string, JsonElement>
+                    {
+                        ["ws"] = JsonSerializer.SerializeToElement(ws),
+                        ["text"] = JsonSerializer.SerializeToElement(text),
+                    },
+                });
+                EnsureContractVersion(draft, LexicalSenseOperationKinds.SetGloss);
 
-            WriteDraft(draftPath, draft);
+                repository.SaveDraft(draftName, SerializeDraft(draft));
 
-            var sb = new StringBuilder();
-            sb.AppendLine(
-                $"Added operation '{operationId.Value}' ({LexicalSenseOperationKinds.SetGloss}) to draft '{draftName}'.");
-            sb.AppendLine($"  target: {targetId.Value}");
-            sb.AppendLine($"  after:  ws={ws} text=\"{text}\"");
-            if (resolvedDependsOn.Count > 0)
-                sb.AppendLine($"  dependsOn: {string.Join(", ", resolvedDependsOn)}");
-            sb.AppendLine($"Draft now has {draft.Operations.Count} operation(s).");
-            return Ok(sb);
-        }
-        catch (Exception ex)
-        {
-            return Fail(ex.Message);
-        }
+                var sb = new StringBuilder();
+                sb.AppendLine(
+                    $"Added operation '{operationId.Value}' ({LexicalSenseOperationKinds.SetGloss}) to draft '{draftName}'.");
+                sb.AppendLine($"  target: {targetId.Value}");
+                sb.AppendLine($"  after:  ws={ws} text=\"{text}\"");
+                if (resolvedDependsOn.Count > 0)
+                    sb.AppendLine($"  dependsOn: {string.Join(", ", resolvedDependsOn)}");
+                sb.AppendLine($"Draft now has {draft.Operations.Count} operation(s).");
+                return Ok(sb);
+            }
+            catch (Exception ex)
+            {
+                return Fail(ex.Message);
+            }
+        });
     }
 
     /// <summary>
@@ -335,44 +331,46 @@ public static class Commands
     /// against, not a synthetic one. Its <c>after</c> payload is the empty object — an entry has at
     /// most one lexeme form, so nothing is left to disambiguate once the target entry is known.
     /// </summary>
-    public static CommandResult AddDeleteLexemeForm(string storeDir, string draftName, string target)
+    public static CommandResult AddDeleteLexemeForm(
+        string fwDataPath, string productVersion, string draftName, string target)
     {
-        try
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, _) =>
         {
-            var store = new ProposalStore(storeDir);
-            var draftPath = store.DraftPath(draftName);
-            if (!File.Exists(draftPath))
-                return Missing(DraftNotFoundMessage(store, draftName));
-
-            if (!CanonicalId.TryParse(target, out var targetId, out var idError))
-                return Invalid($"--target '{target}' is not a valid canonical id: {idError}");
-
-            var draft = ReadDraft(draftPath);
-            var operationId = CanonicalId.Mint();
-
-            draft.Operations.Add(new DraftOperation
+            try
             {
-                OperationId = operationId.Value,
-                Kind = LexEntryLexemeFormOperationKinds.DeleteLexemeForm,
-                Target = targetId.Value,
-                After = new Dictionary<string, JsonElement>(),
-            });
-            EnsureContractVersion(draft, LexEntryLexemeFormOperationKinds.DeleteLexemeForm);
+                var repository = new ProposalRepository(database);
+                if (!TryLoadDraft(repository, draftName, out var draft))
+                    return Missing(DraftNotFoundMessage(draftName));
 
-            WriteDraft(draftPath, draft);
+                if (!CanonicalId.TryParse(target, out var targetId, out var idError))
+                    return Invalid($"--target '{target}' is not a valid canonical id: {idError}");
 
-            var sb = new StringBuilder();
-            sb.AppendLine(
-                $"Added operation '{operationId.Value}' ({LexEntryLexemeFormOperationKinds.DeleteLexemeForm}) " +
-                $"to draft '{draftName}'.");
-            sb.AppendLine($"  target: {targetId.Value}");
-            sb.AppendLine($"Draft now has {draft.Operations.Count} operation(s).");
-            return Ok(sb);
-        }
-        catch (Exception ex)
-        {
-            return Fail(ex.Message);
-        }
+                var operationId = CanonicalId.Mint();
+
+                draft.Operations.Add(new DraftOperation
+                {
+                    OperationId = operationId.Value,
+                    Kind = LexEntryLexemeFormOperationKinds.DeleteLexemeForm,
+                    Target = targetId.Value,
+                    After = new Dictionary<string, JsonElement>(),
+                });
+                EnsureContractVersion(draft, LexEntryLexemeFormOperationKinds.DeleteLexemeForm);
+
+                repository.SaveDraft(draftName, SerializeDraft(draft));
+
+                var sb = new StringBuilder();
+                sb.AppendLine(
+                    $"Added operation '{operationId.Value}' ({LexEntryLexemeFormOperationKinds.DeleteLexemeForm}) " +
+                    $"to draft '{draftName}'.");
+                sb.AppendLine($"  target: {targetId.Value}");
+                sb.AppendLine($"Draft now has {draft.Operations.Count} operation(s).");
+                return Ok(sb);
+            }
+            catch (Exception ex)
+            {
+                return Fail(ex.Message);
+            }
+        });
     }
 
     /// <summary>
@@ -388,50 +386,50 @@ public static class Commands
     /// <see cref="AuthorLexemeFormIntentParser"/> for the exact closed schema.
     /// </param>
     public static CommandResult ComposeAuthorLexemeForm(
-        string storeDir, string draftName, string fwDataPath, string intentJson)
+        string fwDataPath, string productVersion, string draftName, string intentJson)
     {
-        try
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, project) =>
         {
-            var store = new ProposalStore(storeDir);
-            var draftPath = store.DraftPath(draftName);
-            if (!File.Exists(draftPath))
-                return Missing(DraftNotFoundMessage(store, draftName));
-
-            using var intentDocument = JsonDocument.Parse(intentJson);
-            var intent = AuthorLexemeFormIntentParser.Parse(intentDocument.RootElement);
-
-            var fullPath = ResolveProjectPath(fwDataPath);
-            var loader = new FwDataProjectLoader();
-            IReadOnlyList<SIL.Motif.Contract.Model.OperationEnvelope> operations;
-            using (var cache = loader.LoadCache(fullPath))
-                operations = AuthorLexemeFormComposer.Build(cache, intent);
-
-            var draft = ReadDraft(draftPath);
-            foreach (var operation in operations)
+            try
             {
-                draft.Operations.Add(ToDraftOperation(operation));
-                EnsureContractVersion(draft, operation.Kind);
+                var repository = new ProposalRepository(database);
+                if (!TryLoadDraft(repository, draftName, out var draft))
+                    return Missing(DraftNotFoundMessage(draftName));
+
+                using var intentDocument = JsonDocument.Parse(intentJson);
+                var intent = AuthorLexemeFormIntentParser.Parse(intentDocument.RootElement);
+
+                var loader = new FwDataProjectLoader();
+                IReadOnlyList<SIL.Motif.Contract.Model.OperationEnvelope> operations;
+                using (var cache = loader.LoadCache(project.FullFwDataPath))
+                    operations = AuthorLexemeFormComposer.Build(cache, intent);
+
+                foreach (var operation in operations)
+                {
+                    draft.Operations.Add(ToDraftOperation(operation));
+                    EnsureContractVersion(draft, operation.Kind);
+                }
+
+                var provenanceJson = JsonSerializer.Serialize(
+                    new { composer = "AuthorLexemeForm", input = intentDocument.RootElement });
+                using var provenanceDocument = JsonDocument.Parse(provenanceJson);
+                draft.ComposerProvenance.Add(provenanceDocument.RootElement.Clone());
+
+                repository.SaveDraft(draftName, SerializeDraft(draft));
+
+                var sb = new StringBuilder();
+                sb.AppendLine(
+                    $"Composed 'AuthorLexemeForm' against draft '{draftName}': {operations.Count} operation(s) added.");
+                foreach (var operation in operations)
+                    sb.AppendLine($"  {operation.OperationId.Value}  ({operation.Kind})");
+                sb.AppendLine($"Draft now has {draft.Operations.Count} operation(s).");
+                return Ok(sb);
             }
-
-            var provenanceJson = JsonSerializer.Serialize(
-                new { composer = "AuthorLexemeForm", input = intentDocument.RootElement });
-            using var provenanceDocument = JsonDocument.Parse(provenanceJson);
-            draft.ComposerProvenance.Add(provenanceDocument.RootElement.Clone());
-
-            WriteDraft(draftPath, draft);
-
-            var sb = new StringBuilder();
-            sb.AppendLine(
-                $"Composed 'AuthorLexemeForm' against draft '{draftName}': {operations.Count} operation(s) added.");
-            foreach (var operation in operations)
-                sb.AppendLine($"  {operation.OperationId.Value}  ({operation.Kind})");
-            sb.AppendLine($"Draft now has {draft.Operations.Count} operation(s).");
-            return Ok(sb);
-        }
-        catch (Exception ex)
-        {
-            return Fail(ex.Message);
-        }
+            catch (Exception ex)
+            {
+                return Fail(ex.Message);
+            }
+        });
     }
 
     /// <summary>
@@ -441,50 +439,50 @@ public static class Commands
     /// </summary>
     /// <param name="intentJson"><c>{ "msa": "..." }</c> — see <see cref="AuthorFeatureStructureIntentParser"/>.</param>
     public static CommandResult ComposeAuthorFeatureStructure(
-        string storeDir, string draftName, string fwDataPath, string intentJson)
+        string fwDataPath, string productVersion, string draftName, string intentJson)
     {
-        try
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, project) =>
         {
-            var store = new ProposalStore(storeDir);
-            var draftPath = store.DraftPath(draftName);
-            if (!File.Exists(draftPath))
-                return Missing(DraftNotFoundMessage(store, draftName));
-
-            using var intentDocument = JsonDocument.Parse(intentJson);
-            var intent = AuthorFeatureStructureIntentParser.Parse(intentDocument.RootElement);
-
-            var fullPath = ResolveProjectPath(fwDataPath);
-            var loader = new FwDataProjectLoader();
-            IReadOnlyList<SIL.Motif.Contract.Model.OperationEnvelope> operations;
-            using (var cache = loader.LoadCache(fullPath))
-                operations = AuthorFeatureStructureComposer.Build(cache, intent);
-
-            var draft = ReadDraft(draftPath);
-            foreach (var operation in operations)
+            try
             {
-                draft.Operations.Add(ToDraftOperation(operation));
-                EnsureContractVersion(draft, operation.Kind);
+                var repository = new ProposalRepository(database);
+                if (!TryLoadDraft(repository, draftName, out var draft))
+                    return Missing(DraftNotFoundMessage(draftName));
+
+                using var intentDocument = JsonDocument.Parse(intentJson);
+                var intent = AuthorFeatureStructureIntentParser.Parse(intentDocument.RootElement);
+
+                var loader = new FwDataProjectLoader();
+                IReadOnlyList<SIL.Motif.Contract.Model.OperationEnvelope> operations;
+                using (var cache = loader.LoadCache(project.FullFwDataPath))
+                    operations = AuthorFeatureStructureComposer.Build(cache, intent);
+
+                foreach (var operation in operations)
+                {
+                    draft.Operations.Add(ToDraftOperation(operation));
+                    EnsureContractVersion(draft, operation.Kind);
+                }
+
+                var provenanceJson = JsonSerializer.Serialize(
+                    new { composer = "AuthorFeatureStructure", input = intentDocument.RootElement });
+                using var provenanceDocument = JsonDocument.Parse(provenanceJson);
+                draft.ComposerProvenance.Add(provenanceDocument.RootElement.Clone());
+
+                repository.SaveDraft(draftName, SerializeDraft(draft));
+
+                var sb = new StringBuilder();
+                sb.AppendLine(
+                    $"Composed 'AuthorFeatureStructure' against draft '{draftName}': {operations.Count} operation(s) added.");
+                foreach (var operation in operations)
+                    sb.AppendLine($"  {operation.OperationId.Value}  ({operation.Kind})");
+                sb.AppendLine($"Draft now has {draft.Operations.Count} operation(s).");
+                return Ok(sb);
             }
-
-            var provenanceJson = JsonSerializer.Serialize(
-                new { composer = "AuthorFeatureStructure", input = intentDocument.RootElement });
-            using var provenanceDocument = JsonDocument.Parse(provenanceJson);
-            draft.ComposerProvenance.Add(provenanceDocument.RootElement.Clone());
-
-            WriteDraft(draftPath, draft);
-
-            var sb = new StringBuilder();
-            sb.AppendLine(
-                $"Composed 'AuthorFeatureStructure' against draft '{draftName}': {operations.Count} operation(s) added.");
-            foreach (var operation in operations)
-                sb.AppendLine($"  {operation.OperationId.Value}  ({operation.Kind})");
-            sb.AppendLine($"Draft now has {draft.Operations.Count} operation(s).");
-            return Ok(sb);
-        }
-        catch (Exception ex)
-        {
-            return Fail(ex.Message);
-        }
+            catch (Exception ex)
+            {
+                return Fail(ex.Message);
+            }
+        });
     }
 
     /// <summary>
@@ -495,30 +493,26 @@ public static class Commands
     /// dictionary entry it justified.
     /// </summary>
     /// <remarks>
-    /// The draft lives in <paramref name="storeDir"/>; the corpus lives in the project's paired
-    /// database, opened through <see cref="ProjectStoreCommand.Run"/> from <paramref name="fwDataPath"/>
-    /// and <paramref name="productVersion"/> so the two never disagree about which project a corpus id
+    /// The draft and the corpus both live in the project's paired database, opened once through
+    /// <see cref="ProjectStoreCommand.Run"/> from <paramref name="fwDataPath"/> and
+    /// <paramref name="productVersion"/> so the two never disagree about which project a corpus id
     /// names.
     /// </remarks>
     public static CommandResult PromoteGloss(
-        string storeDir, string draftName, string target, string ws, string text,
-        string corpusId, string fwDataPath, string productVersion, string? documentId = null)
+        string fwDataPath, string productVersion, string draftName, string target, string ws, string text,
+        string corpusId, string? documentId = null)
     {
-        return ProjectStoreCommand.Run(fwDataPath, productVersion, (_, project) =>
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, project) =>
         {
             try
             {
-                var store = new ProposalStore(storeDir);
-                var draftPath = store.DraftPath(draftName);
-                if (!File.Exists(draftPath))
-                    return Missing(DraftNotFoundMessage(store, draftName));
+                var repository = new ProposalRepository(database);
+                if (!TryLoadDraft(repository, draftName, out var draft))
+                    return Missing(DraftNotFoundMessage(draftName));
 
                 var corpus = CorpusCommands.StoreFor(project).Load(corpusId);
                 if (corpus is null)
-                {
-                    return Fail(
-                        $"Corpus '{corpusId}' not found in store '{storeDir}'. Run 'corpora' to see what is there.");
-                }
+                    return Fail($"Corpus '{corpusId}' not found. Run 'corpora' to see what is there.");
 
                 if (documentId is not null && corpus.Documents.All(d => d.DocumentId != documentId))
                     return Missing($"Corpus '{corpusId}' has no document '{documentId}'.");
@@ -529,7 +523,6 @@ public static class Commands
                 if (string.IsNullOrEmpty(ws))
                     return Invalid("--ws must not be empty.");
 
-                var draft = ReadDraft(draftPath);
                 var operationId = CanonicalId.Mint();
 
                 draft.Operations.Add(new DraftOperation
@@ -558,7 +551,7 @@ public static class Commands
                 using var provenanceDocument = JsonDocument.Parse(provenanceJson);
                 draft.PromotionProvenance.Add(provenanceDocument.RootElement.Clone());
 
-                WriteDraft(draftPath, draft);
+                repository.SaveDraft(draftName, SerializeDraft(draft));
 
                 var sb = new StringBuilder();
                 sb.AppendLine(
@@ -610,191 +603,153 @@ public static class Commands
         return true;
     }
 
-    public static CommandResult Label(string storeDir, string draftName, string text) =>
-        SetDraftField(storeDir, draftName, "label", (draft) => draft.Label = text);
+    public static CommandResult Label(string fwDataPath, string productVersion, string draftName, string text) =>
+        SetDraftField(fwDataPath, productVersion, draftName, "label", (draft) => draft.Label = text);
 
-    public static CommandResult Comment(string storeDir, string draftName, string text) =>
-        SetDraftField(storeDir, draftName, "comment", (draft) => draft.Comment = text);
+    public static CommandResult Comment(string fwDataPath, string productVersion, string draftName, string text) =>
+        SetDraftField(fwDataPath, productVersion, draftName, "comment", (draft) => draft.Comment = text);
 
     private static CommandResult SetDraftField(
-        string storeDir, string draftName, string fieldName, Action<DraftDocument> setter)
+        string fwDataPath, string productVersion, string draftName, string fieldName, Action<DraftDocument> setter)
     {
-        try
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, _) =>
         {
-            var store = new ProposalStore(storeDir);
-            var draftPath = store.DraftPath(draftName);
-            if (!File.Exists(draftPath))
-                return Missing(DraftNotFoundMessage(store, draftName));
-
-            var draft = ReadDraft(draftPath);
-            setter(draft);
-            WriteDraft(draftPath, draft);
-
-            var sb = new StringBuilder();
-            sb.AppendLine($"Set {fieldName} on draft '{draftName}'.");
-            return Ok(sb);
-        }
-        catch (Exception ex)
-        {
-            return Fail(ex.Message);
-        }
-    }
-
-    public static CommandResult Finalize(string storeDir, string draftName)
-    {
-        try
-        {
-            var store = new ProposalStore(storeDir);
-            var draftPath = store.DraftPath(draftName);
-            if (!File.Exists(draftPath))
-                return Missing(DraftNotFoundMessage(store, draftName));
-
-            var draft = ReadDraft(draftPath);
-            if (string.IsNullOrWhiteSpace(draft.Label) || string.IsNullOrWhiteSpace(draft.Comment))
-            {
-                return Fail(
-                    $"Draft '{draftName}' cannot be finalized without both a short description (label) " +
-                    $"and an extended explanation (comment). Set them with 'label --draft {draftName} <text>' " +
-                    $"and 'comment --draft {draftName} <text>', then finalize again.");
-            }
-
-            if (draft.Operations.Count == 0)
-            {
-                return Fail(
-                    $"Draft '{draftName}' has no operations; add at least one (e.g. 'add-set-gloss') " +
-                    "before finalize.");
-            }
-
-            var proposalJson = BuildProposalJson(draft);
-
-            SIL.Motif.Contract.Model.Proposal envelope;
             try
             {
-                envelope = ProposalJsonParser.Parse(proposalJson);
+                var repository = new ProposalRepository(database);
+                if (!TryLoadDraft(repository, draftName, out var draft))
+                    return Missing(DraftNotFoundMessage(draftName));
+
+                setter(draft);
+                repository.SaveDraft(draftName, SerializeDraft(draft));
+
+                var sb = new StringBuilder();
+                sb.AppendLine($"Set {fieldName} on draft '{draftName}'.");
+                return Ok(sb);
             }
-            catch (ContractParseException ex)
+            catch (Exception ex)
             {
-                return Fail($"Draft '{draftName}' failed Proposal validation: {ex.Message}");
+                return Fail(ex.Message);
             }
-
-            var intentDigest = IntentDigest.Compute(envelope);
-
-            store.EnsureDirectoriesExist();
-            var objectPath = store.ObjectPath(intentDigest);
-            var manifestPath = store.ManifestPath(draft.ProposalId);
-
-            // Write-once: never overwrite an existing object; content-addressing makes revisiting one impossible anyway.
-            if (!File.Exists(objectPath))
-                File.WriteAllText(objectPath, proposalJson);
-
-            // A manifest already present under this id means this draft is from reopen: re-finalizing is an amend.
-            var isAmend = File.Exists(manifestPath);
-            ManifestDocument manifest;
-            if (isAmend)
-            {
-                manifest = ReadManifest(manifestPath);
-                manifest.CurrentIntentDigest = intentDigest;
-                // Approval is effect-digest-scoped: any content change invalidates it, so amend resets to proposed.
-                manifest.Status = ManifestStatus.Proposed;
-                manifest.Label = draft.Label ?? manifest.Label;
-                manifest.Comment = draft.Comment ?? manifest.Comment;
-                // The prior Anchor was bound to the previous content's digest; amend invalidates it too (ADR 0004 decision 3).
-                manifest.Anchor = null;
-                // Same reasoning as Anchor: a Decision is bound to content that no longer exists (ADR 0031 decision 3/4).
-                manifest.Decision = null;
-                manifest.SupersededBy = null;
-            }
-            else
-            {
-                manifest = new ManifestDocument
-                {
-                    ProposalId = draft.ProposalId,
-                    Status = ManifestStatus.Proposed,
-                    Label = draft.Label,
-                    Comment = draft.Comment,
-                    CurrentIntentDigest = intentDigest,
-                };
-            }
-            WriteManifest(manifestPath, manifest);
-
-            File.Delete(draftPath);
-
-            var sb = new StringBuilder();
-            if (isAmend)
-            {
-                sb.AppendLine($"Amended draft '{draftName}' -> Proposal {draft.ProposalId} (status: proposed).");
-                sb.AppendLine("  (id unchanged; intentDigest moved to a new object; prior object version retained)");
-            }
-            else
-            {
-                sb.AppendLine($"Finalized draft '{draftName}' -> Proposal {draft.ProposalId} (status: proposed).");
-            }
-            sb.AppendLine($"  operations:   {envelope.Operations.Count}");
-            sb.AppendLine($"  intentDigest: {intentDigest}");
-            sb.AppendLine($"  object:       {objectPath}");
-            sb.AppendLine($"  manifest:     {manifestPath}");
-            return Ok(sb);
-        }
-        catch (Exception ex)
-        {
-            return Fail(ex.Message);
-        }
+        });
     }
 
-    public static CommandResult Reopen(string storeDir, string draftName, string proposalId)
+    public static CommandResult Finalize(string fwDataPath, string productVersion, string draftName)
     {
-        try
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, _) =>
         {
-            var store = new ProposalStore(storeDir);
-            var draftPath = store.DraftPath(draftName);
-            if (File.Exists(draftPath))
+            try
             {
-                return Fail(
-                    $"Draft '{draftName}' already exists at '{draftPath}'. Finalize or delete it " +
-                    "before reopening a Proposal with this draft name.");
+                var repository = new ProposalRepository(database);
+                if (!TryLoadDraft(repository, draftName, out var draft))
+                    return Missing(DraftNotFoundMessage(draftName));
+
+                if (string.IsNullOrWhiteSpace(draft.Label) || string.IsNullOrWhiteSpace(draft.Comment))
+                {
+                    return Fail(
+                        $"Draft '{draftName}' cannot be finalized without both a short description (label) " +
+                        $"and an extended explanation (comment). Set them with 'label --draft {draftName} <text>' " +
+                        $"and 'comment --draft {draftName} <text>', then finalize again.");
+                }
+
+                if (draft.Operations.Count == 0)
+                {
+                    return Fail(
+                        $"Draft '{draftName}' has no operations; add at least one (e.g. 'add-set-gloss') " +
+                        "before finalize.");
+                }
+
+                var proposalJson = BuildProposalJson(draft);
+
+                SIL.Motif.Contract.Model.Proposal envelope;
+                try
+                {
+                    envelope = ProposalJsonParser.Parse(proposalJson);
+                }
+                catch (ContractParseException ex)
+                {
+                    return Fail($"Draft '{draftName}' failed Proposal validation: {ex.Message}");
+                }
+
+                var intentDigest = IntentDigest.Compute(envelope);
+
+                // Whether a committed revision already existed under this id decides "Finalized" vs "Amended".
+                var isAmend = repository.Finalize(draftName, intentDigest, proposalJson, draft.Label!, draft.Comment!);
+
+                var sb = new StringBuilder();
+                if (isAmend)
+                {
+                    sb.AppendLine($"Amended draft '{draftName}' -> Proposal {draft.ProposalId} (status: proposed).");
+                    sb.AppendLine("  (id unchanged; intentDigest moved to a new revision; prior revision retained)");
+                }
+                else
+                {
+                    sb.AppendLine($"Finalized draft '{draftName}' -> Proposal {draft.ProposalId} (status: proposed).");
+                }
+                sb.AppendLine($"  operations:   {envelope.Operations.Count}");
+                sb.AppendLine($"  intentDigest: {intentDigest}");
+                return Ok(sb);
             }
-
-            var id = NormalizeId(proposalId);
-            var manifestPath = store.ManifestPath(id);
-            if (!File.Exists(manifestPath))
-                return Missing(ProposalNotFoundMessage(store, id));
-
-            var manifest = ReadManifest(manifestPath);
-            var objectPath = store.ObjectPath(manifest.CurrentIntentDigest);
-            if (!File.Exists(objectPath))
-                return Fail(FailureReason.StoreInconsistent, StoreInconsistencyMessage(id, manifest.CurrentIntentDigest, objectPath));
-
-            var envelope = ProposalJsonParser.Parse(File.ReadAllText(objectPath));
-
-            // Loads the envelope's content into a new draft with the SAME proposalId; finalize then produces an amend.
-            var draft = new DraftDocument
+            catch (Exception ex)
             {
-                ProposalId = id,
-                ContractVersions = new Dictionary<string, string>(envelope.ContractVersions),
-                Requires = envelope.Requires.Select(r => r.Value).ToList(),
-                Label = manifest.Label,
-                Comment = manifest.Comment,
-                Operations = envelope.Operations.Select(ToDraftOperation).ToList(),
-                ComposerProvenance = ExtractComposerProvenance(envelope.Extensions),
-                PromotionProvenance = ExtractPromotionProvenance(envelope.Extensions),
-            };
+                return Fail(ex.Message);
+            }
+        });
+    }
 
-            store.EnsureDirectoriesExist();
-            WriteDraft(draftPath, draft);
-
-            var sb = new StringBuilder();
-            sb.AppendLine($"Reopened Proposal {id} for editing as draft '{draftName}'.");
-            sb.AppendLine($"  currentIntentDigest: {manifest.CurrentIntentDigest}");
-            sb.AppendLine($"  operations:          {draft.Operations.Count}");
-            sb.AppendLine(
-                "Finalizing this draft will amend the Proposal: same id, new intentDigest, " +
-                "status reset to proposed.");
-            return Ok(sb);
-        }
-        catch (Exception ex)
+    public static CommandResult Reopen(string fwDataPath, string productVersion, string draftName, string proposalId)
+    {
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, _) =>
         {
-            return Fail(ex.Message);
-        }
+            var id = proposalId;
+            try
+            {
+                var repository = new ProposalRepository(database);
+                if (repository.DraftNameExists(draftName))
+                    return Fail(DraftNameCollisionMessage(draftName, "reopening a Proposal with this draft name"));
+
+                id = NormalizeId(proposalId);
+                var canonicalId = CanonicalId.Parse(id);
+                var (record, envelope) = repository.GetFinalized(canonicalId);
+                var manifest = ProposalRecordMapping.ToManifest(record);
+
+                // Loads the envelope's content into a new draft with the SAME proposalId; finalize then produces an amend.
+                var draft = new DraftDocument
+                {
+                    ProposalId = id,
+                    ContractVersions = new Dictionary<string, string>(envelope.ContractVersions),
+                    Requires = envelope.Requires.Select(r => r.Value).ToList(),
+                    Label = manifest.Label,
+                    Comment = manifest.Comment,
+                    Operations = envelope.Operations.Select(ToDraftOperation).ToList(),
+                    ComposerProvenance = ExtractComposerProvenance(envelope.Extensions),
+                    PromotionProvenance = ExtractPromotionProvenance(envelope.Extensions),
+                };
+
+                repository.ReopenAsDraft(canonicalId, draftName, SerializeDraft(draft));
+
+                var sb = new StringBuilder();
+                sb.AppendLine($"Reopened Proposal {id} for editing as draft '{draftName}'.");
+                sb.AppendLine($"  currentIntentDigest: {manifest.CurrentIntentDigest}");
+                sb.AppendLine($"  operations:          {draft.Operations.Count}");
+                sb.AppendLine(
+                    "Finalizing this draft will amend the Proposal: same id, new intentDigest, " +
+                    "status reset to proposed.");
+                return Ok(sb);
+            }
+            catch (KeyNotFoundException)
+            {
+                return Missing(ProposalNotFoundMessage(id));
+            }
+            catch (InvalidDataException ex)
+            {
+                return Fail(FailureReason.StoreInconsistent, ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return Fail(ex.Message);
+            }
+        });
     }
 
     private static readonly string[] DeferrableFrom = { ManifestStatus.Proposed, ManifestStatus.Approved };
@@ -805,11 +760,9 @@ public static class Commands
         { ManifestStatus.Proposed, ManifestStatus.Deferred, ManifestStatus.Approved, ManifestStatus.Rejected };
 
     /// <summary>Moves a Proposal to <c>deferred</c>: still wanted, not currently applicable (ADR 0031 decision 4).</summary>
-    public static CommandResult Defer(string storeDir, string proposalId) =>
-        TransitionStatus(storeDir, proposalId, ManifestStatus.Deferred, DeferrableFrom, manifest =>
-        {
-            manifest.Decision = null;
-        });
+    public static CommandResult Defer(string fwDataPath, string productVersion, string proposalId) =>
+        TransitionStatus(fwDataPath, productVersion, proposalId, ManifestStatus.Deferred, DeferrableFrom,
+            (repository, id, _) => repository.SetStatus(id, ManifestStatus.Deferred, supersededBy: null, clearDecision: true));
 
     /// <summary>
     /// Records an <c>approved</c> Decision against a Proposal's exact current content. The actor type
@@ -817,18 +770,21 @@ public static class Commands
     /// AI made the call.
     /// </summary>
     public static CommandResult Approve(
-        string storeDir, string proposalId, string actorType, string actorId, string? comment = null) =>
-        Decide(storeDir, proposalId, DecisionOutcome.Approved, ManifestStatus.Approved, ApprovableFrom,
-            actorType, actorId, comment);
+        string fwDataPath, string productVersion, string proposalId, string actorType, string actorId,
+        string? comment = null) =>
+        Decide(fwDataPath, productVersion, proposalId, DecisionOutcome.Approved, ManifestStatus.Approved,
+            ApprovableFrom, actorType, actorId, comment);
 
     /// <summary>Records a <c>rejected</c> Decision against a Proposal's exact current content.</summary>
     public static CommandResult Reject(
-        string storeDir, string proposalId, string actorType, string actorId, string? comment = null) =>
-        Decide(storeDir, proposalId, DecisionOutcome.Rejected, ManifestStatus.Rejected, RejectableFrom,
-            actorType, actorId, comment);
+        string fwDataPath, string productVersion, string proposalId, string actorType, string actorId,
+        string? comment = null) =>
+        Decide(fwDataPath, productVersion, proposalId, DecisionOutcome.Rejected, ManifestStatus.Rejected,
+            RejectableFrom, actorType, actorId, comment);
 
     /// <summary>Marks a Proposal <c>superseded</c> by another, naming which one replaced it.</summary>
-    public static CommandResult Supersede(string storeDir, string proposalId, string supersededByProposalId)
+    public static CommandResult Supersede(
+        string fwDataPath, string productVersion, string proposalId, string supersededByProposalId)
     {
         string supersededById;
         try
@@ -840,16 +796,14 @@ public static class Commands
             return Invalid(ex.Message);
         }
 
-        return TransitionStatus(storeDir, proposalId, ManifestStatus.Superseded, SupersedableFrom, manifest =>
-        {
-            manifest.Decision = null;
-            manifest.SupersededBy = supersededById;
-        });
+        return TransitionStatus(fwDataPath, productVersion, proposalId, ManifestStatus.Superseded, SupersedableFrom,
+            (repository, id, _) =>
+                repository.SetStatus(id, ManifestStatus.Superseded, supersededById, clearDecision: true));
     }
 
     private static CommandResult Decide(
-        string storeDir, string proposalId, string outcome, string newStatus, string[] allowedFrom,
-        string actorType, string actorId, string? comment)
+        string fwDataPath, string productVersion, string proposalId, string outcome, string newStatus,
+        string[] allowedFrom, string actorType, string actorId, string? comment)
     {
         if (actorType != DecisionActorType.Human && actorType != DecisionActorType.Ai)
         {
@@ -861,51 +815,51 @@ public static class Commands
         if (string.IsNullOrWhiteSpace(actorId))
             return Invalid("actorId must not be empty — a Decision must name who made it.");
 
-        return TransitionStatus(storeDir, proposalId, newStatus, allowedFrom, manifest =>
-        {
-            manifest.Decision = new Decision
-            {
-                Outcome = outcome,
-                ActorType = actorType,
-                ActorId = actorId,
-                Comment = comment,
-                BoundIntentDigest = manifest.CurrentIntentDigest,
-                TimestampUtc = SIL.Motif.Model.AppliedLog.AppliedLogFormat.FormatTimestamp(DateTime.UtcNow),
-            };
-            manifest.SupersededBy = null;
-        });
+        return TransitionStatus(fwDataPath, productVersion, proposalId, newStatus, allowedFrom,
+            (repository, id, record) => repository.SaveDecision(new DecisionRecord(
+                id, record.IntentDigest!, outcome, actorType, actorId, comment,
+                SIL.Motif.Model.AppliedLog.AppliedLogFormat.FormatTimestamp(DateTime.UtcNow))));
     }
 
-    /// <summary>Moves a manifest to a new status, refusing if its current status is not an allowed origin.</summary>
+    /// <summary>Moves a Proposal to a new status, refusing if its current status is not an allowed origin.</summary>
     private static CommandResult TransitionStatus(
-        string storeDir, string proposalId, string newStatus, string[] allowedFrom, Action<ManifestDocument> mutate)
+        string fwDataPath, string productVersion, string proposalId, string newStatus, string[] allowedFrom,
+        Action<ProposalRepository, CanonicalId, ProposalRecord> persist)
     {
-        try
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, _) =>
         {
-            var store = new ProposalStore(storeDir);
-            var id = NormalizeId(proposalId);
-            var manifestPath = store.ManifestPath(id);
-            if (!File.Exists(manifestPath))
-                return Missing(ProposalNotFoundMessage(store, id));
-
-            var manifest = ReadManifest(manifestPath);
-            if (Array.IndexOf(allowedFrom, manifest.Status) < 0)
+            try
             {
-                return Fail(
-                    $"Proposal {id} is '{manifest.Status}'; cannot move to '{newStatus}' from there. " +
-                    $"Allowed from: {string.Join(", ", allowedFrom)}.");
+                var repository = new ProposalRepository(database);
+                var id = NormalizeId(proposalId);
+                var canonicalId = CanonicalId.Parse(id);
+
+                ProposalRecord record;
+                try
+                {
+                    record = repository.GetForTransition(canonicalId);
+                }
+                catch (KeyNotFoundException)
+                {
+                    return Missing(ProposalNotFoundMessage(id));
+                }
+
+                if (Array.IndexOf(allowedFrom, record.Status) < 0)
+                {
+                    return Fail(
+                        $"Proposal {id} is '{record.Status}'; cannot move to '{newStatus}' from there. " +
+                        $"Allowed from: {string.Join(", ", allowedFrom)}.");
+                }
+
+                persist(repository, canonicalId, record);
+
+                return Ok($"Proposal {id} is now '{newStatus}'.{Environment.NewLine}");
             }
-
-            mutate(manifest);
-            manifest.Status = newStatus;
-            WriteManifest(manifestPath, manifest);
-
-            return Ok($"Proposal {id} is now '{newStatus}'.{Environment.NewLine}");
-        }
-        catch (Exception ex)
-        {
-            return Fail(ex.Message);
-        }
+            catch (Exception ex)
+            {
+                return Fail(ex.Message);
+            }
+        });
     }
 
     /// <summary>Ensures a newly appended operation's contract group has a declared version.</summary>
@@ -970,58 +924,60 @@ public static class Commands
     /// minted <c>proposalId</c> — a distinct Proposal, not a revision of the source (contrast
     /// <see cref="Reopen"/>, which keeps the source id and produces an amend).
     /// </summary>
-    public static CommandResult Duplicate(string storeDir, string sourceProposalId, string newDraftName)
+    public static CommandResult Duplicate(
+        string fwDataPath, string productVersion, string sourceProposalId, string newDraftName)
     {
-        try
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, _) =>
         {
-            var store = new ProposalStore(storeDir);
-            var draftPath = store.DraftPath(newDraftName);
-            if (File.Exists(draftPath))
+            var sourceId = sourceProposalId;
+            try
             {
-                return Fail(
-                    $"Draft '{newDraftName}' already exists at '{draftPath}'. Finalize or delete it " +
-                    "before duplicating a Proposal into a draft with this name.");
+                var repository = new ProposalRepository(database);
+                if (repository.DraftNameExists(newDraftName))
+                {
+                    return Fail(DraftNameCollisionMessage(
+                        newDraftName, "duplicating a Proposal into a draft with this name"));
+                }
+
+                sourceId = NormalizeId(sourceProposalId);
+                var (record, envelope) = repository.GetFinalized(CanonicalId.Parse(sourceId));
+                var manifest = ProposalRecordMapping.ToManifest(record);
+
+                var newProposalId = CanonicalId.Mint();
+                var draft = new DraftDocument
+                {
+                    ProposalId = newProposalId.Value,
+                    ContractVersions = new Dictionary<string, string>(envelope.ContractVersions),
+                    Requires = envelope.Requires.Select(r => r.Value).ToList(),
+                    Label = manifest.Label,
+                    Comment = manifest.Comment,
+                    Operations = envelope.Operations.Select(ToDraftOperation).ToList(),
+                    ComposerProvenance = ExtractComposerProvenance(envelope.Extensions),
+                    PromotionProvenance = ExtractPromotionProvenance(envelope.Extensions),
+                };
+
+                repository.CreateDraft(newDraftName, newProposalId, SerializeDraft(draft));
+
+                var sb = new StringBuilder();
+                sb.AppendLine($"Duplicated Proposal {sourceId} into new draft '{newDraftName}'.");
+                sb.AppendLine($"  proposalId: {draft.ProposalId}  (a new Proposal; the source is untouched)");
+                sb.AppendLine($"  operations: {draft.Operations.Count}");
+                sb.AppendLine("Finalizing this draft will commit it as a brand-new Proposal.");
+                return Ok(sb);
             }
-
-            var sourceId = NormalizeId(sourceProposalId);
-            var manifestPath = store.ManifestPath(sourceId);
-            if (!File.Exists(manifestPath))
-                return Missing(ProposalNotFoundMessage(store, sourceId));
-
-            var manifest = ReadManifest(manifestPath);
-            var objectPath = store.ObjectPath(manifest.CurrentIntentDigest);
-            if (!File.Exists(objectPath))
-                return Fail(FailureReason.StoreInconsistent, StoreInconsistencyMessage(sourceId, manifest.CurrentIntentDigest, objectPath));
-
-            var envelope = ProposalJsonParser.Parse(File.ReadAllText(objectPath));
-
-            var newProposalId = CanonicalId.Mint();
-            var draft = new DraftDocument
+            catch (KeyNotFoundException)
             {
-                ProposalId = newProposalId.Value,
-                ContractVersions = new Dictionary<string, string>(envelope.ContractVersions),
-                Requires = envelope.Requires.Select(r => r.Value).ToList(),
-                Label = manifest.Label,
-                Comment = manifest.Comment,
-                Operations = envelope.Operations.Select(ToDraftOperation).ToList(),
-                ComposerProvenance = ExtractComposerProvenance(envelope.Extensions),
-                PromotionProvenance = ExtractPromotionProvenance(envelope.Extensions),
-            };
-
-            store.EnsureDirectoriesExist();
-            WriteDraft(draftPath, draft);
-
-            var sb = new StringBuilder();
-            sb.AppendLine($"Duplicated Proposal {sourceId} into new draft '{newDraftName}'.");
-            sb.AppendLine($"  proposalId: {draft.ProposalId}  (a new Proposal; the source is untouched)");
-            sb.AppendLine($"  operations: {draft.Operations.Count}");
-            sb.AppendLine("Finalizing this draft will commit it as a brand-new Proposal.");
-            return Ok(sb);
-        }
-        catch (Exception ex)
-        {
-            return Fail(ex.Message);
-        }
+                return Missing(ProposalNotFoundMessage(sourceId));
+            }
+            catch (InvalidDataException ex)
+            {
+                return Fail(FailureReason.StoreInconsistent, ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return Fail(ex.Message);
+            }
+        });
     }
 
     /// <summary>
@@ -1037,19 +993,18 @@ public static class Commands
     /// sets <c>manifest.Anchor = null</c> on any content change, and a removal is exactly that.
     /// </summary>
     public static CommandResult RemoveOperations(
-        string storeDir, string draftName, IReadOnlyList<string> operationIds, bool force)
+        string fwDataPath, string productVersion, string draftName, IReadOnlyList<string> operationIds, bool force)
     {
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, _) =>
+        {
         try
         {
-            var store = new ProposalStore(storeDir);
-            var draftPath = store.DraftPath(draftName);
-            if (!File.Exists(draftPath))
-                return Missing(DraftNotFoundMessage(store, draftName));
+            var repository = new ProposalRepository(database);
+            if (!TryLoadDraft(repository, draftName, out var draft))
+                return Missing(DraftNotFoundMessage(draftName));
 
             if (operationIds.Count == 0)
                 return Invalid("Specify at least one operation id to remove.");
-
-            var draft = ReadDraft(draftPath);
 
             var requestedIds = new List<string>();
             foreach (var raw in operationIds)
@@ -1107,7 +1062,7 @@ public static class Commands
                 toRemove.Add(edge.DependentOperationId);
 
             draft.Operations = draft.Operations.Where(o => !toRemove.Contains(o.OperationId)).ToList();
-            WriteDraft(draftPath, draft);
+            repository.SaveDraft(draftName, SerializeDraft(draft));
 
             var outSb = new StringBuilder();
             outSb.AppendLine($"Removed {DescribeOperationIds(requestedIds)} from draft '{draftName}'.");
@@ -1128,6 +1083,7 @@ public static class Commands
         {
             return Fail(ex.Message);
         }
+        });
     }
 
     /// <summary>One output group for <see cref="Split"/>: a new draft name and the operation ids
@@ -1150,36 +1106,28 @@ public static class Commands
     /// "superseded" status transition is a separate concern this method intentionally does not decide.
     /// </remarks>
     public static CommandResult Split(
-        string storeDir, string sourceProposalId, IReadOnlyList<SplitGroup> groups, bool force)
+        string fwDataPath, string productVersion, string sourceProposalId, IReadOnlyList<SplitGroup> groups,
+        bool force)
     {
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, _) =>
+        {
+        var sourceId = sourceProposalId;
         try
         {
             if (groups.Count == 0)
                 return Invalid("Specify at least one group to split into.");
 
-            var store = new ProposalStore(storeDir);
-            var sourceId = NormalizeId(sourceProposalId);
-            var manifestPath = store.ManifestPath(sourceId);
-            if (!File.Exists(manifestPath))
-                return Missing(ProposalNotFoundMessage(store, sourceId));
-
-            var manifest = ReadManifest(manifestPath);
-            var objectPath = store.ObjectPath(manifest.CurrentIntentDigest);
-            if (!File.Exists(objectPath))
-                return Fail(FailureReason.StoreInconsistent, StoreInconsistencyMessage(sourceId, manifest.CurrentIntentDigest, objectPath));
-
-            var envelope = ProposalJsonParser.Parse(File.ReadAllText(objectPath));
+            var repository = new ProposalRepository(database);
+            sourceId = NormalizeId(sourceProposalId);
+            var (record, envelope) = repository.GetFinalized(CanonicalId.Parse(sourceId));
+            var manifest = ProposalRecordMapping.ToManifest(record);
             var sourceOperations = envelope.Operations.Select(ToDraftOperation).ToList();
             var allIds = sourceOperations.Select(o => o.OperationId).ToList();
 
             foreach (var draftName in groups.Select(g => g.DraftName))
             {
-                if (File.Exists(store.DraftPath(draftName)))
-                {
-                    return Fail(
-                        $"Draft '{draftName}' already exists at '{store.DraftPath(draftName)}'. Finalize or " +
-                        "delete it before splitting into a draft with this name.");
-                }
+                if (repository.DraftNameExists(draftName))
+                    return Fail(DraftNameCollisionMessage(draftName, "splitting into a draft with this name"));
             }
             if (groups.Select(g => g.DraftName).Distinct(StringComparer.Ordinal).Count() != groups.Count)
                 return Invalid("Each split group must target a distinct draft name.");
@@ -1251,7 +1199,6 @@ public static class Commands
                 return new CommandResult(1, sb.ToString());
             }
 
-            store.EnsureDirectoriesExist();
             var sb2 = new StringBuilder();
             sb2.AppendLine($"Split Proposal {sourceId} into {groups.Count} new draft(s).");
             if (severed.Count > 0)
@@ -1279,7 +1226,7 @@ public static class Commands
                     Comment = manifest.Comment,
                     Operations = groupOperations,
                 };
-                WriteDraft(store.DraftPath(group.DraftName), draft);
+                repository.CreateDraft(group.DraftName, newProposalId, SerializeDraft(draft));
 
                 sb2.AppendLine($"  draft '{group.DraftName}': proposalId={draft.ProposalId} operations={draft.Operations.Count}");
             }
@@ -1288,44 +1235,56 @@ public static class Commands
             sb2.AppendLine("Finalize each draft to commit it as a brand-new Proposal.");
             return Ok(sb2);
         }
+        catch (KeyNotFoundException)
+        {
+            return Missing(ProposalNotFoundMessage(sourceId));
+        }
+        catch (InvalidDataException ex)
+        {
+            return Fail(FailureReason.StoreInconsistent, ex.Message);
+        }
         catch (Exception ex)
         {
             return Fail(ex.Message);
         }
+        });
     }
 
     private static string DescribeOperationIds(IReadOnlyList<string> ids) =>
         ids.Count == 1 ? $"operation '{ids[0]}'" : $"operations {string.Join(", ", ids.Select(i => $"'{i}'"))}";
 
-    public static CommandResult List(string storeDir, UsageLog? usage = null)
+    public static CommandResult List(string fwDataPath, string productVersion, UsageLog? usage = null)
     {
-        usage?.Record("list", new[] { UsageArgumentShape.Text("storeDir") });
-        var (reason, projection, error) = BuildProposalList(storeDir);
-        return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : Refused(reason, error!);
+        usage?.Record("list", new[] { UsageArgumentShape.Text("fwDataPath") });
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, _) =>
+        {
+            var (reason, projection, error) = BuildProposalList(database);
+            return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : Refused(reason, error!);
+        });
     }
 
     /// <summary>The <c>list</c> report as JSON — the same <see cref="ProposalListProjection"/> <see cref="List"/> renders as text.</summary>
-    public static CommandResult ListJson(string storeDir, UsageLog? usage = null)
+    public static CommandResult ListJson(string fwDataPath, string productVersion, UsageLog? usage = null)
     {
-        usage?.Record("list", new[] { UsageArgumentShape.Text("storeDir") });
-        var (reason, projection, error) = BuildProposalList(storeDir);
-        return projection is not null ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
-            : Refused(reason, error!);
+        usage?.Record("list", new[] { UsageArgumentShape.Text("fwDataPath") });
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, _) =>
+        {
+            var (reason, projection, error) = BuildProposalList(database);
+            return projection is not null
+                ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
+                : Refused(reason, error!);
+        });
     }
 
-    private static (FailureReason? Reason, ProposalListProjection? Projection, string? Error) BuildProposalList(string storeDir)
+    private static (FailureReason? Reason, ProposalListProjection? Projection, string? Error) BuildProposalList(
+        MotifDatabase database)
     {
         try
         {
-            var store = new ProposalStore(storeDir);
-            if (!Directory.Exists(store.ManifestsDirectory))
-                return (null, new ProposalListProjection(Array.Empty<ProposalListItem>()), null);
-
-            var manifests = Directory.GetFiles(store.ManifestsDirectory, "*.json")
-                .OrderBy(f => f, StringComparer.Ordinal)
-                .Select(ReadManifest)
+            var repository = new ProposalRepository(database);
+            var manifests = repository.List(new ProposalListFilter())
+                .Select(ProposalRecordMapping.ToManifest)
                 .ToList();
-
             return (null, ProposalListProjectionBuilder.Build(manifests), null);
         }
         catch (Exception ex)
@@ -1334,30 +1293,40 @@ public static class Commands
         }
     }
 
-    public static CommandResult Show(string storeDir, string proposalId, UsageLog? usage = null)
+    public static CommandResult Show(
+        string fwDataPath, string productVersion, string proposalId, UsageLog? usage = null)
     {
-        usage?.Record("show", new[] { UsageArgumentShape.Text("storeDir"), UsageArgumentShape.Text("proposalId") });
-        var (reason, projection, error) = BuildProposalDetail(storeDir, proposalId);
-        return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : Refused(reason, error!);
+        usage?.Record("show", new[] { UsageArgumentShape.Text("fwDataPath"), UsageArgumentShape.Text("proposalId") });
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, _) =>
+        {
+            var (reason, projection, error) = BuildProposalDetail(database, proposalId);
+            return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : Refused(reason, error!);
+        });
     }
 
     /// <summary>The <c>show</c> report as JSON — the same <see cref="ProposalDetailProjection"/> <see cref="Show"/> renders as text.</summary>
-    public static CommandResult ShowJson(string storeDir, string proposalId, UsageLog? usage = null)
+    public static CommandResult ShowJson(
+        string fwDataPath, string productVersion, string proposalId, UsageLog? usage = null)
     {
-        usage?.Record("show", new[] { UsageArgumentShape.Text("storeDir"), UsageArgumentShape.Text("proposalId") });
-        var (reason, projection, error) = BuildProposalDetail(storeDir, proposalId);
-        return projection is not null ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
-            : Refused(reason, error!);
+        usage?.Record("show", new[] { UsageArgumentShape.Text("fwDataPath"), UsageArgumentShape.Text("proposalId") });
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, _) =>
+        {
+            var (reason, projection, error) = BuildProposalDetail(database, proposalId);
+            return projection is not null
+                ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
+                : Refused(reason, error!);
+        });
     }
 
     private static (FailureReason? Reason, ProposalDetailProjection? Projection, string? Error) BuildProposalDetail(
-        string storeDir, string proposalId)
+        MotifDatabase database, string proposalId)
     {
         try
         {
-            var store = new ProposalStore(storeDir);
+            var repository = new ProposalRepository(database);
             var id = NormalizeId(proposalId);
-            var (manifest, _, envelope) = store.LoadFinalizedProposal(id);
+            var (record, envelope) = repository.GetFinalized(CanonicalId.Parse(id));
+            var manifest = ProposalRecordMapping.ToManifest(record);
             return (null, ProposalDetailProjectionBuilder.Build(id, manifest, envelope), null);
         }
         catch (Exception ex)
@@ -1366,49 +1335,58 @@ public static class Commands
         }
     }
 
-    public static CommandResult DryRun(string storeDir, string proposalId, string fwDataPath, UsageLog? usage = null)
+    public static CommandResult DryRun(
+        string fwDataPath, string productVersion, string proposalId, UsageLog? usage = null)
     {
-        RecordDryRunUsage(usage, "storeDir", "proposalId", "fwDataPath");
-        var (reason, projection, error) = BuildFileDryRunProjection(storeDir, proposalId, fwDataPath);
-        if (projection is null) return Refused(reason, error!);
+        RecordDryRunUsage(usage, "fwDataPath", "proposalId");
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, project) =>
+        {
+            var (reason, projection, error) = BuildDryRunProjection(database, project, proposalId);
+            if (projection is null) return Refused(reason, error!);
 
-        var sb = new StringBuilder(CommandTextRenderer.Render(projection));
-        // State the side effect: a dry run reads as "nothing happens", but it saved the project first (ADR 0016).
-        sb.AppendLine("  (the project was saved before measuring, so the scratch copy matched it; " +
-                      "the project itself was not modified by this dry run)");
-        return Ok(sb);
+            var sb = new StringBuilder(CommandTextRenderer.Render(projection));
+            // State the side effect: a dry run reads as "nothing happens", but it saved the project first (ADR 0016).
+            sb.AppendLine("  (the project was saved before measuring, so the scratch copy matched it; " +
+                          "the project itself was not modified by this dry run)");
+            return Ok(sb);
+        });
     }
 
     /// <summary>The <c>dry-run</c> report as JSON — the same <see cref="DryRunProjection"/> <see cref="DryRun(string,string,string,UsageLog)"/> renders as text.</summary>
-    public static CommandResult DryRunJson(string storeDir, string proposalId, string fwDataPath, UsageLog? usage = null)
+    public static CommandResult DryRunJson(
+        string fwDataPath, string productVersion, string proposalId, UsageLog? usage = null)
     {
-        RecordDryRunUsage(usage, "storeDir", "proposalId", "fwDataPath");
-        var (reason, projection, error) = BuildFileDryRunProjection(storeDir, proposalId, fwDataPath);
-        return projection is not null ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
-            : Refused(reason, error!);
+        RecordDryRunUsage(usage, "fwDataPath", "proposalId");
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, project) =>
+        {
+            var (reason, projection, error) = BuildDryRunProjection(database, project, proposalId);
+            return projection is not null
+                ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
+                : Refused(reason, error!);
+        });
     }
 
-    private static (FailureReason? Reason, DryRunProjection? Projection, string? Error) BuildFileDryRunProjection(
-        string storeDir, string proposalId, string fwDataPath)
+    private static (FailureReason? Reason, DryRunProjection? Projection, string? Error) BuildDryRunProjection(
+        MotifDatabase database, ProjectLocator project, string proposalId)
     {
         LcmCache? cache = null;
         DryRunScratch? scratch = null;
         try
         {
-            var store = new ProposalStore(storeDir);
+            var repository = new ProposalRepository(database);
             var id = NormalizeId(proposalId);
-            var (manifest, manifestPath, envelope) = store.LoadFinalizedProposal(id);
+            var canonicalId = CanonicalId.Parse(id);
+            var (_, envelope) = repository.GetFinalized(canonicalId);
 
-            var fullFwDataPath = ResolveProjectPath(fwDataPath);
             var loader = new FwDataProjectLoader();
 
             // Hold the project open throughout: one writer at a time (ADR 0006 decision 4), or the anchor means nothing.
-            cache = loader.LoadCache(fullFwDataPath);
+            cache = loader.LoadCache(project.FullFwDataPath);
 
             var appliedProposalIds = ProjectAppliedLog.ReadAll(cache)
                 .Select(entry => entry.ProposalId)
                 .ToArray();
-            var plan = store.PlanPrerequisites(envelope, appliedProposalIds);
+            var plan = repository.PlanPrerequisites(envelope, appliedProposalIds);
 
             // Save before the copy: the scratch copies the FILE, so an uncommitted edit is invisible to it (ADR 0016).
             loader.Save(cache);
@@ -1417,15 +1395,14 @@ public static class Commands
             var scratchRoot = Path.Combine(
                 Path.GetTempPath(), "SIL.Motif.DryRun", Guid.NewGuid().ToString("N"));
             scratch = DryRunScratch.Adopt(
-                new ScratchCacheFactory(loader).CreateFromFileCopy(fullFwDataPath, scratchRoot),
-                $"file copy of {fullFwDataPath}",
+                new ScratchCacheFactory(loader).CreateFromFileCopy(project.FullFwDataPath, scratchRoot),
+                $"file copy of {project.FullFwDataPath}",
                 onDisposed: () => TryDeleteDirectory(scratchRoot));
 
             var dryRun = ProposalDryRunner.Run(scratch, plan);
 
             // Persist the bound-DryRun anchor (docs/adr/0004 decision 3): apply requires it present and unmoved.
-            manifest.Anchor = dryRun.Anchor;
-            WriteManifest(manifestPath, manifest);
+            repository.SetAnchor(canonicalId, JsonSerializer.Serialize(dryRun.Anchor));
 
             return (null, DryRunProjectionBuilder.Build(id, dryRun), null);
         }
@@ -1433,7 +1410,7 @@ public static class Commands
         {
             // A held project is retryable once it is let go, which is what Busy tells a caller.
             return (FailureReason.Busy, null,
-                FailText(ProjectInUseMessage(fwDataPath, "dry-run")));
+                FailText(ProjectInUseMessage(project.FullFwDataPath, "dry-run")));
         }
         catch (Exception ex)
         {
@@ -1459,31 +1436,42 @@ public static class Commands
     /// the rule is unconditional (ADR 0016): a caller must discard this <see cref="LcmCache"/> and
     /// reload the project rather than reuse it after a failed apply.
     /// </remarks>
-    public static CommandResult Apply(string storeDir, string proposalId, string fwDataPath, string user, UsageLog? usage = null)
+    public static CommandResult Apply(
+        string fwDataPath, string productVersion, string proposalId, string user, UsageLog? usage = null)
     {
-        RecordApplyUsage(usage, "storeDir", "proposalId", "fwDataPath", "user");
-        var (reason, projection, error) = BuildFileApplyProjection(storeDir, proposalId, fwDataPath, user);
-        return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : Refused(reason, error!);
+        RecordApplyUsage(usage, "fwDataPath", "proposalId", "user");
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, project) =>
+        {
+            var (reason, projection, error) = BuildApplyProjection(database, project, proposalId, user);
+            return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : Refused(reason, error!);
+        });
     }
 
     /// <summary>The <c>apply</c> report as JSON — the same <see cref="ApplyProjection"/> <see cref="Apply(string,string,string,string,UsageLog)"/> renders as text.</summary>
-    public static CommandResult ApplyJson(string storeDir, string proposalId, string fwDataPath, string user, UsageLog? usage = null)
+    public static CommandResult ApplyJson(
+        string fwDataPath, string productVersion, string proposalId, string user, UsageLog? usage = null)
     {
-        RecordApplyUsage(usage, "storeDir", "proposalId", "fwDataPath", "user");
-        var (reason, projection, error) = BuildFileApplyProjection(storeDir, proposalId, fwDataPath, user);
-        return projection is not null ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
-            : Refused(reason, error!);
+        RecordApplyUsage(usage, "fwDataPath", "proposalId", "user");
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, project) =>
+        {
+            var (reason, projection, error) = BuildApplyProjection(database, project, proposalId, user);
+            return projection is not null
+                ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
+                : Refused(reason, error!);
+        });
     }
 
-    private static (FailureReason? Reason, ApplyProjection? Projection, string? Error) BuildFileApplyProjection(
-        string storeDir, string proposalId, string fwDataPath, string user)
+    private static (FailureReason? Reason, ApplyProjection? Projection, string? Error) BuildApplyProjection(
+        MotifDatabase database, ProjectLocator project, string proposalId, string user)
     {
         LcmCache? cache = null;
         try
         {
-            var store = new ProposalStore(storeDir);
+            var repository = new ProposalRepository(database);
             var id = NormalizeId(proposalId);
-            var (manifest, manifestPath, envelope) = store.LoadFinalizedProposal(id);
+            var canonicalId = CanonicalId.Parse(id);
+            var (record, envelope) = repository.GetFinalized(canonicalId);
+            var manifest = ProposalRecordMapping.ToManifest(record);
 
             // ADR 0004 decision 3: a bare apply with no bound DryRun is a hard error, checked before loading the project.
             if (manifest.Anchor is null)
@@ -1493,9 +1481,8 @@ public static class Commands
                     $"'dry-run {id} --project <fwdata>' first, then 'apply'."));
             }
 
-            var fullFwDataPath = ResolveProjectPath(fwDataPath);
             var loader = new FwDataProjectLoader();
-            cache = loader.LoadCache(fullFwDataPath);
+            cache = loader.LoadCache(project.FullFwDataPath);
             try
             {
                 var description = manifest.Label ?? "";
@@ -1519,17 +1506,16 @@ public static class Commands
 
                 try
                 {
-                    manifest.Status = ManifestStatus.Applied;
-                    WriteManifest(manifestPath, manifest);
+                    repository.MarkApplied(canonicalId);
                 }
                 catch (Exception ex)
                 {
                     throw new NeedsReconciliationException(
                         ReconciliationBoundary.ReceiptRecording,
                         $"Proposal {id} was applied and saved to the project, but recording that in the " +
-                        $"proposal store failed: manifest '{manifestPath}' was not updated. The project " +
-                        "and the store now disagree about whether this Proposal is applied. Do not retry " +
-                        "automatically -- inspect the manifest before doing anything else with it.",
+                        "proposal store failed. The project and the store now disagree about whether " +
+                        "this Proposal is applied. Do not retry automatically -- inspect the store before " +
+                        "doing anything else with it.",
                         ex);
                 }
 
@@ -1544,7 +1530,7 @@ public static class Commands
         {
             // A held project is retryable once it is let go, which is what Busy tells a caller.
             return (FailureReason.Busy, null,
-                FailText(ProjectInUseMessage(fwDataPath, "apply")));
+                FailText(ProjectInUseMessage(project.FullFwDataPath, "apply")));
         }
         catch (NeedsReconciliationException ex)
         {
@@ -1670,29 +1656,36 @@ public static class Commands
         return id.Value;
     }
 
-    private static string DraftNotFoundMessage(ProposalStore store, string draftName) =>
-        $"Draft '{draftName}' not found in store '{store.RootDirectory}'. Run 'new --draft {draftName}' first.";
+    private static string DraftNotFoundMessage(string draftName) =>
+        $"Draft '{draftName}' not found in store. Run 'new --draft {draftName}' first.";
 
-    private static string ProposalNotFoundMessage(ProposalStore store, string id) =>
-        $"Proposal '{id}' not found in store '{store.RootDirectory}'. Run 'list' to see committed proposals.";
+    private static string ProposalNotFoundMessage(string id) =>
+        $"Proposal '{id}' not found in store. Run 'list' to see committed proposals.";
 
-    private static string StoreInconsistencyMessage(string id, string currentIntentDigest, string objectPath) =>
-        $"Proposal '{id}' manifest points at intentDigest '{currentIntentDigest}', but no object " +
-        $"exists at '{objectPath}' (store inconsistency).";
+    private static string DraftNameCollisionMessage(string draftName, string trailingClause) =>
+        $"Draft '{draftName}' already exists. Finalize or delete it before {trailingClause}.";
 
-    private static DraftDocument ReadDraft(string path) =>
-        JsonSerializer.Deserialize<DraftDocument>(File.ReadAllText(path), DraftJsonOptions)
-        ?? throw new InvalidOperationException($"Draft file '{path}' is empty or invalid.");
+    /// <summary>Loads one Draft's in-progress content by name, or reports it is not there.</summary>
+    private static bool TryLoadDraft(ProposalRepository repository, string draftName, out DraftDocument draft)
+    {
+        try
+        {
+            draft = DeserializeDraft(repository.GetDraft(draftName).ProposalJson!);
+            return true;
+        }
+        catch (KeyNotFoundException)
+        {
+            draft = null!;
+            return false;
+        }
+    }
 
-    private static void WriteDraft(string path, DraftDocument draft) =>
-        File.WriteAllText(path, JsonSerializer.Serialize(draft, DraftJsonOptions));
+    private static DraftDocument DeserializeDraft(string json) =>
+        JsonSerializer.Deserialize<DraftDocument>(json, DraftJsonOptions)
+        ?? throw new InvalidOperationException("Draft content is empty or invalid.");
 
-    private static ManifestDocument ReadManifest(string path) =>
-        JsonSerializer.Deserialize<ManifestDocument>(File.ReadAllText(path), DraftJsonOptions)
-        ?? throw new InvalidOperationException($"Manifest file '{path}' is empty or invalid.");
-
-    private static void WriteManifest(string path, ManifestDocument manifest) =>
-        File.WriteAllText(path, JsonSerializer.Serialize(manifest, DraftJsonOptions));
+    private static string SerializeDraft(DraftDocument draft) =>
+        JsonSerializer.Serialize(draft, DraftJsonOptions);
 
     private static CommandResult Ok(StringBuilder sb) => new(0, sb.ToString());
 

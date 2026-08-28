@@ -1,35 +1,33 @@
 using System;
-using System.IO;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using SIL.Motif.Cli;
 using SIL.Motif.Cli.Store;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Tests.TestFixtures;
+using SIL.Motif.Worker.Store;
 using Xunit;
 
 namespace SIL.Motif.Tests.Cli;
 
 /// <summary>
-/// The store keys objects by <c>intentDigest</c> (write-once, never revisited) and
-/// manifests by the frozen <c>proposalId</c> (a movable <c>currentIntentDigest</c> pointer), exactly
-/// git's object/ref split — so <c>reopen</c> + re-<c>finalize</c> (an amend) can move that pointer to
-/// a new object without ever mutating the previous one
-/// (ADR 0004, decision 2).
+/// The store keys revisions by <c>intentDigest</c> (write-once, never revisited) and the Proposal by
+/// its frozen <c>proposalId</c> (a movable <c>currentIntentDigest</c> pointer), exactly git's
+/// object/ref split — so <c>reopen</c> + re-<c>finalize</c> (an amend) can move that pointer to a new
+/// revision without ever mutating the previous one (ADR 0004, decision 2).
 /// </summary>
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
 public sealed class ReopenAmendTests
 {
+    private const string ProductVersion = "1.0";
+
     private readonly SeededProject _seed;
     private readonly string _fwDataPath;
-    private readonly string _storeDir;
 
     public ReopenAmendTests(PristineProjectFixture pristine)
     {
         _seed = pristine.Seed;
         using var scratch = pristine.NewScratch();
         _fwDataPath = scratch.ProjectId.Path;
-        _storeDir = ProposalStore.ForProject(_fwDataPath).RootDirectory;
     }
 
     [Fact]
@@ -41,49 +39,45 @@ public sealed class ReopenAmendTests
         var canonicalId = CanonicalId.FromGuid(senseGuid);
 
         // --- commit v1 ---
-        Assert.Equal(0, Commands.New(_storeDir, "v1", "first label").ExitCode);
+        Assert.Equal(0, Commands.New(_fwDataPath, ProductVersion, "v1", "first label").ExitCode);
         Assert.Equal(
             0,
-            Commands.AddSetGloss(_storeDir, "v1", canonicalId.Value, wsTag, originalGloss + " v1").ExitCode);
+            Commands.AddSetGloss(_fwDataPath, ProductVersion, "v1", canonicalId.Value, wsTag, originalGloss + " v1").ExitCode);
         DraftRationale.Author(
-            _storeDir, "v1", "Clarify the first sense gloss", "Replace the ambiguous gloss with the intended analysis.");
-        var firstFinalize = Commands.Finalize(_storeDir, "v1");
+            _fwDataPath, "v1", "Clarify the first sense gloss", "Replace the ambiguous gloss with the intended analysis.");
+        var firstFinalize = Commands.Finalize(_fwDataPath, ProductVersion, "v1");
         Assert.Equal(0, firstFinalize.ExitCode);
         Assert.Contains("Finalized draft", firstFinalize.Output);
 
         var proposalId = ExtractProposalId(firstFinalize.Output);
         var firstDigest = ExtractIntentDigest(firstFinalize.Output);
 
-        var store = new ProposalStore(_storeDir);
-        var manifestPath = store.ManifestPath(proposalId);
-        Assert.Contains("\"status\": \"proposed\"", File.ReadAllText(manifestPath));
-        Assert.True(File.Exists(store.ObjectPath(firstDigest)));
+        Assert.Equal("proposed", GetRecord(proposalId).Status);
+        Assert.Equal(1, CountRevisions(proposalId));
 
         // Simulate a real prior "applied" status, so amend's reset to "proposed" is a real transition.
-        var manifestBeforeAmend = File.ReadAllText(manifestPath);
-        File.WriteAllText(manifestPath, manifestBeforeAmend.Replace("\"proposed\"", "\"applied\""));
-        Assert.Contains("\"status\": \"applied\"", File.ReadAllText(manifestPath));
+        SetStatusRaw(proposalId, "applied");
+        Assert.Equal("applied", GetRecord(proposalId).Status);
 
         // --- reopen: loads v1's content into a NEW draft carrying the SAME frozen proposalId ---
-        var reopenResult = Commands.Reopen(_storeDir, "v2", proposalId);
+        var reopenResult = Commands.Reopen(_fwDataPath, ProductVersion, "v2", proposalId);
         Assert.Equal(0, reopenResult.ExitCode);
         Assert.Contains(proposalId, reopenResult.Output);
-        var draftPath = Path.Combine(_storeDir, "drafts", "v2.json");
-        Assert.True(File.Exists(draftPath));
-        var reopenedDraft = ReadDraft(draftPath);
+        Assert.True(DraftExists("v2"));
+        var reopenedDraft = ReadDraft("v2");
         Assert.Equal("Clarify the first sense gloss", reopenedDraft.Label);
         Assert.Equal("Replace the ambiguous gloss with the intended analysis.", reopenedDraft.Comment);
 
         // Amend the content: add a second operation so the intent digest necessarily moves.
         Assert.Equal(
             0,
-            Commands.AddSetGloss(_storeDir, "v2", canonicalId.Value, wsTag, originalGloss + " v2 (amended)").ExitCode);
+            Commands.AddSetGloss(_fwDataPath, ProductVersion, "v2", canonicalId.Value, wsTag, originalGloss + " v2 (amended)").ExitCode);
 
         // --- finalize the reopened draft: an amend, not a fresh commit ---
-        var amendFinalize = Commands.Finalize(_storeDir, "v2");
+        var amendFinalize = Commands.Finalize(_fwDataPath, ProductVersion, "v2");
         Assert.Equal(0, amendFinalize.ExitCode);
         Assert.Contains("Amended draft", amendFinalize.Output);
-        Assert.False(File.Exists(draftPath)); // draft consumed, same as a normal finalize
+        Assert.False(DraftExists("v2")); // draft consumed, same as a normal finalize
 
         var amendedProposalId = ExtractProposalId(amendFinalize.Output);
         var secondDigest = ExtractIntentDigest(amendFinalize.Output);
@@ -94,58 +88,116 @@ public sealed class ReopenAmendTests
         // (2) The digest changed (different content: two operations, not one).
         Assert.NotEqual(firstDigest, secondDigest);
 
-        // (3) BOTH object versions exist on disk — the amend never touched the original write-once object.
-        var firstObjectPath = store.ObjectPath(firstDigest);
-        var secondObjectPath = store.ObjectPath(secondDigest);
-        Assert.True(File.Exists(firstObjectPath));
-        Assert.True(File.Exists(secondObjectPath));
-        Assert.NotEqual(firstObjectPath, secondObjectPath);
-        Assert.Contains(originalGloss + " v1", File.ReadAllText(firstObjectPath));
-        Assert.Contains(originalGloss + " v2 (amended)", File.ReadAllText(secondObjectPath));
+        // (3) BOTH revision versions exist — the amend never touched the original write-once revision.
+        Assert.Equal(2, CountRevisions(proposalId));
+        Assert.Contains(originalGloss + " v1", GetRevisionJson(proposalId, firstDigest));
+        Assert.Contains(originalGloss + " v2 (amended)", GetRevisionJson(proposalId, secondDigest));
 
         // (4) Status reset to proposed: approval/anchors are effect-digest-scoped, so content changes invalidate them.
-        var manifestAfterAmend = File.ReadAllText(manifestPath);
-        Assert.Contains("\"status\": \"proposed\"", manifestAfterAmend);
-        Assert.Contains(secondDigest, manifestAfterAmend);
-        Assert.Contains("Clarify the first sense gloss", manifestAfterAmend);
-        Assert.Contains("Replace the ambiguous gloss with the intended analysis.", manifestAfterAmend);
-        Assert.DoesNotContain("\"status\": \"applied\"", manifestAfterAmend);
+        var afterAmend = GetRecord(proposalId);
+        Assert.Equal("proposed", afterAmend.Status);
+        Assert.Equal(secondDigest, afterAmend.IntentDigest);
+        Assert.Equal("Clarify the first sense gloss", afterAmend.Label);
+        Assert.Equal("Replace the ambiguous gloss with the intended analysis.", afterAmend.Comment);
 
-        // Only one manifest file exists for this id: it's the movable pointer, updated in place, never re-created.
-        Assert.True(File.Exists(manifestPath));
-        Assert.Single(Directory.GetFiles(store.ManifestsDirectory, "*.json"));
-
-        // Exactly two objects exist in the store (one per committed version).
-        Assert.Equal(2, Directory.GetFiles(store.ObjectsDirectory, "*.json").Length);
+        // Only one Proposals row exists for this id: it's the movable pointer, updated in place, never re-created.
+        Assert.Equal(1, CountProposalRows(proposalId));
     }
 
     [Fact]
     public void Show_OlderManifestWithoutRationale_RemainsReadable()
     {
         var target = CanonicalId.FromGuid(_seed.FirstSenseId).Value;
-        Assert.Equal(0, Commands.New(_storeDir, "legacy", null).ExitCode);
-        Assert.Equal(0, Commands.AddSetGloss(_storeDir, "legacy", target, "en", "a legacy gloss").ExitCode);
+        Assert.Equal(0, Commands.New(_fwDataPath, ProductVersion, "legacy", null).ExitCode);
+        Assert.Equal(0, Commands.AddSetGloss(_fwDataPath, ProductVersion, "legacy", target, "en", "a legacy gloss").ExitCode);
         DraftRationale.Author(
-            _storeDir, "legacy", "Clarify a legacy gloss", "Create a manifest that can model an older stored record.");
-        var finalized = Commands.Finalize(_storeDir, "legacy");
+            _fwDataPath, "legacy", "Clarify a legacy gloss", "Create a manifest that can model an older stored record.");
+        var finalized = Commands.Finalize(_fwDataPath, ProductVersion, "legacy");
         var proposalId = ExtractProposalId(finalized.Output);
-        var manifestPath = new ProposalStore(_storeDir).ManifestPath(proposalId);
-        var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))!.AsObject();
-        manifest.Remove("label");
-        manifest.Remove("comment");
-        File.WriteAllText(manifestPath, manifest.ToJsonString());
+        ClearLabelAndComment(proposalId);
 
-        Assert.Equal(0, Commands.Show(_storeDir, proposalId).ExitCode);
-        Assert.Equal(0, Commands.ShowJson(_storeDir, proposalId).ExitCode);
+        Assert.Equal(0, Commands.Show(_fwDataPath, ProductVersion, proposalId).ExitCode);
+        Assert.Equal(0, Commands.ShowJson(_fwDataPath, ProductVersion, proposalId).ExitCode);
     }
 
     [Fact]
     public void Reopen_UnknownProposalId_Fails()
     {
         var bogusId = CanonicalId.Mint().Value;
-        var result = Commands.Reopen(_storeDir, "some-draft", bogusId);
+        var result = Commands.Reopen(_fwDataPath, ProductVersion, "some-draft", bogusId);
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("not found", result.Output, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private ProposalRecord GetRecord(string proposalId)
+    {
+        using var database = ProjectMotifDatabase.Open(_fwDataPath);
+        return new ProposalRepository(database).Get(CanonicalId.Parse(proposalId));
+    }
+
+    private bool DraftExists(string draftName)
+    {
+        using var database = ProjectMotifDatabase.Open(_fwDataPath);
+        return new ProposalRepository(database).DraftNameExists(draftName);
+    }
+
+    private DraftDocument ReadDraft(string draftName)
+    {
+        using var database = ProjectMotifDatabase.Open(_fwDataPath);
+        var json = new ProposalRepository(database).GetDraft(draftName).ProposalJson!;
+        return JsonSerializer.Deserialize<DraftDocument>(
+            json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+    }
+
+    /// <summary>Sets a Proposal's status directly, bypassing the transition rules.</summary>
+    private void SetStatusRaw(string proposalId, string status)
+    {
+        using var database = ProjectMotifDatabase.Open(_fwDataPath);
+        new ProposalRepository(database).SetStatus(
+            CanonicalId.Parse(proposalId), status, supersededBy: null, clearDecision: false);
+    }
+
+    private void ClearLabelAndComment(string proposalId)
+    {
+        using var database = ProjectMotifDatabase.Open(_fwDataPath);
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE Proposals SET Label = NULL, Comment = NULL WHERE ProposalId = $id;";
+        command.Parameters.AddWithValue("$id", proposalId);
+        command.ExecuteNonQuery();
+    }
+
+    private string GetRevisionJson(string proposalId, string intentDigest)
+    {
+        using var database = ProjectMotifDatabase.Open(_fwDataPath);
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT ProposalJson FROM ProposalRevisions WHERE ProposalId = $id AND IntentDigest = $digest;";
+        command.Parameters.AddWithValue("$id", proposalId);
+        command.Parameters.AddWithValue("$digest", intentDigest);
+        var bytes = (byte[])command.ExecuteScalar()!;
+        return System.Text.Encoding.UTF8.GetString(bytes);
+    }
+
+    private int CountRevisions(string proposalId)
+    {
+        using var database = ProjectMotifDatabase.Open(_fwDataPath);
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM ProposalRevisions WHERE ProposalId = $id;";
+        command.Parameters.AddWithValue("$id", proposalId);
+        return Convert.ToInt32(command.ExecuteScalar());
+    }
+
+    private int CountProposalRows(string proposalId)
+    {
+        using var database = ProjectMotifDatabase.Open(_fwDataPath);
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM Proposals WHERE ProposalId = $id;";
+        command.Parameters.AddWithValue("$id", proposalId);
+        return Convert.ToInt32(command.ExecuteScalar());
     }
 
     private static string ExtractProposalId(string output)
@@ -169,11 +221,4 @@ public sealed class ReopenAmendTests
         Assert.True(end > start, $"Could not parse intentDigest from output: {output}");
         return output.Substring(start, end - start).Trim();
     }
-
-    private static readonly JsonSerializerOptions StoreJsonOptions =
-        new() { PropertyNameCaseInsensitive = true };
-
-    private static DraftDocument ReadDraft(string path) =>
-        JsonSerializer.Deserialize<DraftDocument>(File.ReadAllText(path), StoreJsonOptions)!;
-
 }

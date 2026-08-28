@@ -29,18 +29,16 @@ public sealed class ReportProjectionIntegrationTests
 {
     private static string Hash(char digit) => "sha256:" + new string(digit, 64);
 
+    private const string ProductVersion = "1.0";
+
     private readonly SeededProject _seed;
     private readonly string _fwDataPath;
-    private readonly string _storeDir;
 
     public ReportProjectionIntegrationTests(PristineProjectFixture pristine)
     {
         _seed = pristine.Seed;
         using var scratch = pristine.NewScratch();
         _fwDataPath = scratch.ProjectId.Path;
-
-        var scratchRoot = Path.GetDirectoryName(Path.GetDirectoryName(_fwDataPath))!;
-        _storeDir = Path.Combine(scratchRoot, ".motif-store");
     }
 
     /// <summary>The paired project database <c>analyses --assessment</c> now reads Assessments from.</summary>
@@ -128,7 +126,7 @@ public sealed class ReportProjectionIntegrationTests
             },
             entry.ArgumentShape));
         var usageText = string.Join(" ", usage.Entries.SelectMany(entry => entry.ArgumentShape));
-        Assert.DoesNotContain(_storeDir, usageText, StringComparison.Ordinal);
+        Assert.DoesNotContain(_fwDataPath, usageText, StringComparison.Ordinal);
         Assert.DoesNotContain(assessmentId, usageText, StringComparison.Ordinal);
         Assert.DoesNotContain(assessment.Corpus.Sha256, usageText, StringComparison.Ordinal);
     }
@@ -247,28 +245,28 @@ public sealed class ReportProjectionIntegrationTests
 
         var usage = new UsageLog();
 
-        Assert.Equal(0, Commands.New(_storeDir, draftName, label).ExitCode);
-        Assert.Equal(0, Commands.AddSetGloss(_storeDir, draftName, canonicalId.Value, wsTag, newGloss).ExitCode);
+        Assert.Equal(0, Commands.New(_fwDataPath, ProductVersion, draftName, label).ExitCode);
+        Assert.Equal(0, Commands.AddSetGloss(_fwDataPath, ProductVersion, draftName, canonicalId.Value, wsTag, newGloss).ExitCode);
         DraftRationale.Author(
-            _storeDir, draftName, label, "Explain why this lexical gloss should replace the current analysis.");
-        var finalize = Commands.Finalize(_storeDir, draftName);
+            _fwDataPath, draftName, label, "Explain why this lexical gloss should replace the current analysis.");
+        var finalize = Commands.Finalize(_fwDataPath, ProductVersion, draftName);
         Assert.Equal(0, finalize.ExitCode);
         var proposalId = ExtractProposalId(finalize.Output);
 
         // list
-        var listText = Commands.List(_storeDir, usage);
-        var listJson = Commands.ListJson(_storeDir, usage);
+        var listText = Commands.List(_fwDataPath, ProductVersion, usage);
+        var listJson = Commands.ListJson(_fwDataPath, ProductVersion, usage);
         FigureAudit.AssertEveryTextFigureAppearsInJson(listText.Output, listJson.Output);
 
         // show
-        var showText = Commands.Show(_storeDir, proposalId, usage);
-        var showJson = Commands.ShowJson(_storeDir, proposalId, usage);
+        var showText = Commands.Show(_fwDataPath, ProductVersion, proposalId, usage);
+        var showJson = Commands.ShowJson(_fwDataPath, ProductVersion, proposalId, usage);
         FigureAudit.AssertEveryTextFigureAppearsInJson(showText.Output, showJson.Output);
         Assert.Contains(canonicalId.Value, showJson.Output);
 
         // dry-run: non-mutating, so both variants read the same unchanged baseline.
-        var dryRunText = Commands.DryRun(_storeDir, proposalId, _fwDataPath, usage);
-        var dryRunJson = Commands.DryRunJson(_storeDir, proposalId, _fwDataPath, usage);
+        var dryRunText = Commands.DryRun(_fwDataPath, ProductVersion, proposalId, usage);
+        var dryRunJson = Commands.DryRunJson(_fwDataPath, ProductVersion, proposalId, usage);
         Assert.Equal(0, dryRunText.ExitCode);
         Assert.Equal(0, dryRunJson.ExitCode);
         Assert.Contains($"\"{originalGloss}\" -> \"{newGloss}\"", dryRunText.Output);
@@ -277,7 +275,7 @@ public sealed class ReportProjectionIntegrationTests
         FigureAudit.AssertEveryTextFigureAppearsInJson(dryRunText.Output, dryRunJson.Output);
 
         // apply: mutating (one shot), so the JSON report is checked directly against ground truth.
-        var applyJson = Commands.ApplyJson(_storeDir, proposalId, _fwDataPath, applier, usage);
+        var applyJson = Commands.ApplyJson(_fwDataPath, ProductVersion, proposalId, applier, usage);
         Assert.Equal(0, applyJson.ExitCode);
         Assert.Contains(originalGloss, applyJson.Output);
         Assert.Contains(newGloss, applyJson.Output);
@@ -296,9 +294,9 @@ public sealed class ReportProjectionIntegrationTests
         Assert.Equal(9, usage.Entries.Count);
         foreach (var entry in usage.Entries)
         {
-            AssertNever(entry.Command, originalGloss, newGloss, canonicalId.Value, proposalId, applier, _fwDataPath, _storeDir);
+            AssertNever(entry.Command, originalGloss, newGloss, canonicalId.Value, proposalId, applier, _fwDataPath);
             foreach (var token in entry.ArgumentShape)
-                AssertNever(token, originalGloss, newGloss, canonicalId.Value, proposalId, applier, _fwDataPath, _storeDir);
+                AssertNever(token, originalGloss, newGloss, canonicalId.Value, proposalId, applier, _fwDataPath);
         }
 
         var summary = usage.Summarize();

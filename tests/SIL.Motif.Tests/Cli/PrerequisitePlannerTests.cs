@@ -1,11 +1,11 @@
 using System.Text.Json;
-using SIL.Motif.Cli.Store;
 using SIL.Motif.Contract.Canonicalization;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Model;
-using SIL.Motif.Projection.Store;
+using SIL.Motif.Host.Store;
 using SIL.Motif.Runner.Operations;
 using SIL.Motif.Tests.TestFixtures;
+using SIL.Motif.Worker.Store;
 using Xunit;
 
 namespace SIL.Motif.Tests.Cli;
@@ -13,24 +13,25 @@ namespace SIL.Motif.Tests.Cli;
 public sealed class PrerequisitePlannerTests : IDisposable
 {
     private readonly string _fwDataPath = PlaceholderProject.Create("SIL.Motif.Tests.PrerequisitePlanner");
-    private readonly string _storeDir;
 
-    public PrerequisitePlannerTests()
+    public void Dispose()
     {
-        _storeDir = ProposalStore.ForProject(_fwDataPath).RootDirectory;
+        var projectDir = Path.GetDirectoryName(_fwDataPath)!;
+        if (Directory.Exists(projectDir)) Directory.Delete(projectDir, recursive: true);
     }
 
     [Fact]
     public void Plan_MissingTransitiveProposal_NamesTheMissingId()
     {
-        var store = new ProposalStore(_storeDir);
+        using var database = ProjectMotifDatabase.Open(_fwDataPath);
+        var repository = new ProposalRepository(database);
         var missing = CanonicalId.Mint();
         var prerequisite = Proposal(requires: new[] { missing });
         var requested = Proposal(requires: new[] { prerequisite.ProposalId });
-        Store(store, prerequisite);
-        Store(store, requested);
+        Store(repository, prerequisite);
+        Store(repository, requested);
 
-        var ex = Assert.ThrowsAny<Exception>(() => Plan(store, requested));
+        var ex = Assert.ThrowsAny<Exception>(() => Plan(repository, requested));
 
         Assert.Contains(missing.Value, ex.Message, StringComparison.Ordinal);
     }
@@ -38,15 +39,16 @@ public sealed class PrerequisitePlannerTests : IDisposable
     [Fact]
     public void Plan_DirectCycle_ReportsTheCompleteCyclePath()
     {
-        var store = new ProposalStore(_storeDir);
+        using var database = ProjectMotifDatabase.Open(_fwDataPath);
+        var repository = new ProposalRepository(database);
         var firstId = CanonicalId.Mint();
         var secondId = CanonicalId.Mint();
         var first = Proposal(firstId, secondId);
         var second = Proposal(secondId, firstId);
-        Store(store, first);
-        Store(store, second);
+        Store(repository, first);
+        Store(repository, second);
 
-        var ex = Assert.ThrowsAny<Exception>(() => Plan(store, first));
+        var ex = Assert.ThrowsAny<Exception>(() => Plan(repository, first));
 
         Assert.Contains(
             $"{firstId.Value} -> {secondId.Value} -> {firstId.Value}", ex.Message, StringComparison.Ordinal);
@@ -55,17 +57,18 @@ public sealed class PrerequisitePlannerTests : IDisposable
     [Fact]
     public void Plan_TransitiveCycle_ReportsOnlyTheReachableCycleAsACompletePath()
     {
-        var store = new ProposalStore(_storeDir);
+        using var database = ProjectMotifDatabase.Open(_fwDataPath);
+        var repository = new ProposalRepository(database);
         var cycleFirstId = CanonicalId.Mint();
         var cycleSecondId = CanonicalId.Mint();
         var cycleFirst = Proposal(cycleFirstId, cycleSecondId);
         var cycleSecond = Proposal(cycleSecondId, cycleFirstId);
         var requested = Proposal(requires: new[] { cycleFirstId });
-        Store(store, cycleFirst);
-        Store(store, cycleSecond);
-        Store(store, requested);
+        Store(repository, cycleFirst);
+        Store(repository, cycleSecond);
+        Store(repository, requested);
 
-        var ex = Assert.ThrowsAny<Exception>(() => Plan(store, requested));
+        var ex = Assert.ThrowsAny<Exception>(() => Plan(repository, requested));
 
         Assert.Contains(
             $"{cycleFirstId.Value} -> {cycleSecondId.Value} -> {cycleFirstId.Value}",
@@ -76,15 +79,16 @@ public sealed class PrerequisitePlannerTests : IDisposable
     [Fact]
     public void Plan_IndependentPrerequisites_UsesByteOrdinalProposalIdOrder()
     {
-        var store = new ProposalStore(_storeDir);
+        using var database = ProjectMotifDatabase.Open(_fwDataPath);
+        var repository = new ProposalRepository(database);
         var first = Proposal();
         var second = Proposal();
         var requested = Proposal(requires: new[] { second.ProposalId, first.ProposalId });
-        Store(store, first);
-        Store(store, second);
-        Store(store, requested);
+        Store(repository, first);
+        Store(repository, second);
+        Store(repository, requested);
 
-        var plan = Plan(store, requested);
+        var plan = Plan(repository, requested);
 
         Assert.Equal(
             new[] { first.ProposalId.Value, second.ProposalId.Value }.OrderBy(id => id, StringComparer.Ordinal),
@@ -94,17 +98,18 @@ public sealed class PrerequisitePlannerTests : IDisposable
     [Fact]
     public void Plan_Diamond_IncludesTheSharedAncestorExactlyOnce()
     {
-        var store = new ProposalStore(_storeDir);
+        using var database = ProjectMotifDatabase.Open(_fwDataPath);
+        var repository = new ProposalRepository(database);
         var ancestor = Proposal();
         var left = Proposal(requires: new[] { ancestor.ProposalId });
         var right = Proposal(requires: new[] { ancestor.ProposalId });
         var requested = Proposal(requires: new[] { left.ProposalId, right.ProposalId });
-        Store(store, ancestor);
-        Store(store, left);
-        Store(store, right);
-        Store(store, requested);
+        Store(repository, ancestor);
+        Store(repository, left);
+        Store(repository, right);
+        Store(repository, requested);
 
-        var plan = Plan(store, requested);
+        var plan = Plan(repository, requested);
 
         Assert.Equal(3, plan.Count);
         Assert.Equal(ancestor.ProposalId, plan[0].ProposalId);
@@ -114,15 +119,16 @@ public sealed class PrerequisitePlannerTests : IDisposable
     [Fact]
     public void Plan_AppliedPrerequisite_SatisfiesItsAncestryForScratchPreparation()
     {
-        var store = new ProposalStore(_storeDir);
+        using var database = ProjectMotifDatabase.Open(_fwDataPath);
+        var repository = new ProposalRepository(database);
         var ancestor = Proposal();
         var prerequisite = Proposal(requires: new[] { ancestor.ProposalId });
         var requested = Proposal(requires: new[] { prerequisite.ProposalId });
-        Store(store, ancestor);
-        Store(store, prerequisite);
-        Store(store, requested);
+        Store(repository, ancestor);
+        Store(repository, prerequisite);
+        Store(repository, requested);
 
-        var plan = Plan(store, requested, prerequisite.ProposalId.ToGuid());
+        var plan = Plan(repository, requested, prerequisite.ProposalId.ToGuid());
 
         Assert.Empty(plan);
     }
@@ -130,11 +136,12 @@ public sealed class PrerequisitePlannerTests : IDisposable
     [Fact]
     public void Plan_AppliedPrerequisite_DoesNotRequireAStoredManifest()
     {
-        var store = new ProposalStore(_storeDir);
+        using var database = ProjectMotifDatabase.Open(_fwDataPath);
+        var repository = new ProposalRepository(database);
         var applied = CanonicalId.Mint();
         var requested = Proposal(requires: new[] { applied });
 
-        var plan = Plan(store, requested, applied.ToGuid());
+        var plan = Plan(repository, requested, applied.ToGuid());
 
         Assert.Empty(plan);
     }
@@ -142,13 +149,13 @@ public sealed class PrerequisitePlannerTests : IDisposable
     [Fact]
     public void Plan_AppliedPrerequisite_DoesNotReadItsCorruptManifest()
     {
-        var store = new ProposalStore(_storeDir);
+        using var database = ProjectMotifDatabase.Open(_fwDataPath);
+        var repository = new ProposalRepository(database);
         var applied = CanonicalId.Mint();
         var requested = Proposal(requires: new[] { applied });
-        store.EnsureDirectoriesExist();
-        File.WriteAllText(store.ManifestPath(applied.Value), "not json");
+        StoreCorruptCommittedRow(database, applied);
 
-        var plan = Plan(store, requested, applied.ToGuid());
+        var plan = Plan(repository, requested, applied.ToGuid());
 
         Assert.Empty(plan);
     }
@@ -156,14 +163,15 @@ public sealed class PrerequisitePlannerTests : IDisposable
     [Fact]
     public void Plan_AppliedPrerequisite_CutsOffItsCorruptAncestor()
     {
-        var store = new ProposalStore(_storeDir);
+        using var database = ProjectMotifDatabase.Open(_fwDataPath);
+        var repository = new ProposalRepository(database);
         var ancestor = CanonicalId.Mint();
         var applied = Proposal(requires: new[] { ancestor });
         var requested = Proposal(requires: new[] { applied.ProposalId });
-        Store(store, applied);
-        File.WriteAllText(store.ManifestPath(ancestor.Value), "not json");
+        Store(repository, applied);
+        StoreCorruptCommittedRow(database, ancestor);
 
-        var plan = Plan(store, requested, applied.ProposalId.ToGuid());
+        var plan = Plan(repository, requested, applied.ProposalId.ToGuid());
 
         Assert.Empty(plan);
     }
@@ -171,12 +179,13 @@ public sealed class PrerequisitePlannerTests : IDisposable
     [Fact]
     public void Plan_AppliedCutoff_DoesNotHideAMissingUnappliedBranch()
     {
-        var store = new ProposalStore(_storeDir);
+        using var database = ProjectMotifDatabase.Open(_fwDataPath);
+        var repository = new ProposalRepository(database);
         var applied = CanonicalId.Mint();
         var missing = CanonicalId.Mint();
         var requested = Proposal(requires: new[] { applied, missing });
 
-        var ex = Assert.ThrowsAny<Exception>(() => Plan(store, requested, applied.ToGuid()));
+        var ex = Assert.ThrowsAny<Exception>(() => Plan(repository, requested, applied.ToGuid()));
 
         Assert.Contains(missing.Value, ex.Message, StringComparison.Ordinal);
     }
@@ -184,26 +193,21 @@ public sealed class PrerequisitePlannerTests : IDisposable
     [Fact]
     public void Plan_AppliedCutoff_StillExecutesASeparatelyDeclaredUnappliedBranch()
     {
-        var store = new ProposalStore(_storeDir);
+        using var database = ProjectMotifDatabase.Open(_fwDataPath);
+        var repository = new ProposalRepository(database);
         var applied = CanonicalId.Mint();
         var unapplied = Proposal();
         var requested = Proposal(requires: new[] { applied, unapplied.ProposalId });
-        Store(store, unapplied);
+        Store(repository, unapplied);
 
-        var plan = Plan(store, requested, applied.ToGuid());
+        var plan = Plan(repository, requested, applied.ToGuid());
 
         Assert.Equal(unapplied.ProposalId, Assert.Single(plan).ProposalId);
     }
 
-    public void Dispose()
-    {
-        var projectDir = Path.GetDirectoryName(_fwDataPath)!;
-        if (Directory.Exists(projectDir)) Directory.Delete(projectDir, recursive: true);
-    }
-
     private static IReadOnlyList<Proposal> Plan(
-        ProposalStore store, Proposal requested, params Guid[] appliedProposalIds) =>
-        store.PlanPrerequisites(requested, appliedProposalIds).Prerequisites;
+        ProposalRepository repository, Proposal requested, params Guid[] appliedProposalIds) =>
+        repository.PlanPrerequisites(requested, appliedProposalIds).Prerequisites;
 
     private static Proposal Proposal(CanonicalId? proposalId = null, params CanonicalId[] requires)
     {
@@ -220,9 +224,8 @@ public sealed class PrerequisitePlannerTests : IDisposable
             new[] { operation });
     }
 
-    private static void Store(ProposalStore store, Proposal proposal)
+    private static void Store(ProposalRepository repository, Proposal proposal)
     {
-        store.EnsureDirectoriesExist();
         var json = JsonSerializer.Serialize(
             new
             {
@@ -239,13 +242,18 @@ public sealed class PrerequisitePlannerTests : IDisposable
             },
             new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
         var digest = IntentDigest.Compute(proposal);
-        File.WriteAllText(store.ObjectPath(digest), json);
-        File.WriteAllText(
-            store.ManifestPath(proposal.ProposalId.Value),
-            JsonSerializer.Serialize(new ManifestDocument
-            {
-                ProposalId = proposal.ProposalId.Value,
-                CurrentIntentDigest = digest,
-            }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
+        repository.SaveRevision(new ProposalRevisionRecord(
+            proposal.ProposalId, digest, json, "proposed", null, null, null));
+    }
+
+    /// <summary>A committed row whose revision cannot be read, proving an applied/cut-off id is unread.</summary>
+    private static void StoreCorruptCommittedRow(MotifDatabase database, CanonicalId proposalId)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            "INSERT INTO Proposals (ProposalId, CurrentIntentDigest, Status) VALUES ($id, 'sha256:corrupt', 'proposed');";
+        command.Parameters.AddWithValue("$id", proposalId.Value);
+        command.ExecuteNonQuery();
     }
 }

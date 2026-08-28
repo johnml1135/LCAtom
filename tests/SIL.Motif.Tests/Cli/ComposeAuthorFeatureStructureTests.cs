@@ -1,14 +1,13 @@
 using System;
-using System.IO;
 using System.Text.Json;
 using SIL.Motif.Cli;
-using SIL.Motif.Cli.Store;
 using SIL.Motif.Contract.Canonicalization;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Model;
 using SIL.Motif.Contract.Parsing;
 using SIL.Motif.Runner.Operations;
 using SIL.Motif.Tests.TestFixtures;
+using SIL.Motif.Worker.Store;
 using SIL.LCModel;
 using Xunit;
 
@@ -23,16 +22,16 @@ namespace SIL.Motif.Tests.Cli;
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
 public sealed class ComposeAuthorFeatureStructureTests
 {
+    private const string ProductVersion = "1.0";
+
     private readonly SeededProject _seed;
     private readonly string _fwDataPath;
-    private readonly string _storeDir;
 
     public ComposeAuthorFeatureStructureTests(PristineProjectFixture pristine)
     {
         _seed = pristine.Seed;
         using var scratch = pristine.NewScratch();
         _fwDataPath = scratch.ProjectId.Path;
-        _storeDir = ProposalStore.ForProject(_fwDataPath).RootDirectory;
     }
 
     private string FirstMsaId()
@@ -69,21 +68,21 @@ public sealed class ComposeAuthorFeatureStructureTests
     public void ComposeAuthorFeatureStructure_AppendsTheResolvedOperation_NotOneTheAgentEnumerated()
     {
         var msaId = FirstMsaId();
-        Assert.Equal(0, Commands.New(_storeDir, "d", null).ExitCode);
+        Assert.Equal(0, Commands.New(_fwDataPath, ProductVersion, "d", null).ExitCode);
 
         var intentJson = JsonSerializer.Serialize(new { msa = msaId });
-        var result = Commands.ComposeAuthorFeatureStructure(_storeDir, "d", _fwDataPath, intentJson);
+        var result = Commands.ComposeAuthorFeatureStructure(_fwDataPath, ProductVersion, "d", intentJson);
 
         Assert.Equal(0, result.ExitCode);
         Assert.Contains("1 operation(s) added", result.Output);
         DraftRationale.Author(
-            _storeDir, "d", "Author a feature structure", "Represent the selected grammatical analysis on the target MSA.");
+            _fwDataPath, "d", "Author a feature structure", "Represent the selected grammatical analysis on the target MSA.");
 
-        var finalize = Commands.Finalize(_storeDir, "d");
+        var finalize = Commands.Finalize(_fwDataPath, ProductVersion, "d");
         Assert.Equal(0, finalize.ExitCode);
         var proposalId = ExtractProposalId(finalize.Output);
 
-        var showJson = Commands.ShowJson(_storeDir, proposalId);
+        var showJson = Commands.ShowJson(_fwDataPath, ProductVersion, proposalId);
         Assert.Equal(0, showJson.ExitCode);
         Assert.Contains(MoStemMsaMsFeaturesOperationKinds.CreateMsFeatures, showJson.Output);
     }
@@ -92,18 +91,21 @@ public sealed class ComposeAuthorFeatureStructureTests
     public void ComposeAuthorFeatureStructure_RecordsTheIntentAsNonHashedProvenance_NeverInTheDigest()
     {
         var msaId = FirstMsaId();
-        Assert.Equal(0, Commands.New(_storeDir, "d", null).ExitCode);
+        Assert.Equal(0, Commands.New(_fwDataPath, ProductVersion, "d", null).ExitCode);
         var intentJson = JsonSerializer.Serialize(new { msa = msaId });
-        Assert.Equal(0, Commands.ComposeAuthorFeatureStructure(_storeDir, "d", _fwDataPath, intentJson).ExitCode);
+        Assert.Equal(0, Commands.ComposeAuthorFeatureStructure(_fwDataPath, ProductVersion, "d", intentJson).ExitCode);
         DraftRationale.Author(
-            _storeDir, "d", "Author a feature structure", "Preserve the composer provenance in the finalized intent.");
+            _fwDataPath, "d", "Author a feature structure", "Preserve the composer provenance in the finalized intent.");
 
-        var finalize = Commands.Finalize(_storeDir, "d");
+        var finalize = Commands.Finalize(_fwDataPath, ProductVersion, "d");
         Assert.Equal(0, finalize.ExitCode);
         var digest = ExtractIntentDigest(finalize.Output);
+        var proposalId = ExtractProposalId(finalize.Output);
 
-        var objectPath = new ProposalStore(_storeDir).ObjectPath(digest);
-        var objectJson = File.ReadAllText(objectPath);
+        using var database = ProjectMotifDatabase.Open(_fwDataPath);
+        var record = new ProposalRepository(database).Get(CanonicalId.Parse(proposalId));
+        Assert.Equal(digest, record.IntentDigest);
+        var objectJson = record.ProposalJson!;
         Assert.Contains("\"AuthorFeatureStructure\"", objectJson);
 
         var envelope = ProposalJsonParser.Parse(objectJson);

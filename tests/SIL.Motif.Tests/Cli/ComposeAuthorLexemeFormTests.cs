@@ -1,14 +1,13 @@
 using System;
-using System.IO;
 using System.Text.Json;
 using SIL.Motif.Cli;
-using SIL.Motif.Cli.Store;
 using SIL.Motif.Contract.Canonicalization;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Model;
 using SIL.Motif.Contract.Parsing;
 using SIL.Motif.Runner.Operations;
 using SIL.Motif.Tests.TestFixtures;
+using SIL.Motif.Worker.Store;
 using SIL.LCModel;
 using Xunit;
 
@@ -23,16 +22,16 @@ namespace SIL.Motif.Tests.Cli;
 [Collection(TestFixtures.LcmCacheTestCollection.Name)]
 public sealed class ComposeAuthorLexemeFormTests
 {
+    private const string ProductVersion = "1.0";
+
     private readonly SeededProject _seed;
     private readonly string _fwDataPath;
-    private readonly string _storeDir;
 
     public ComposeAuthorLexemeFormTests(PristineProjectFixture pristine)
     {
         _seed = pristine.Seed;
         using var scratch = pristine.NewScratch();
         _fwDataPath = scratch.ProjectId.Path;
-        _storeDir = ProposalStore.ForProject(_fwDataPath).RootDirectory;
     }
 
     private string IntentJson(string entry, bool includeGloss) =>
@@ -59,21 +58,21 @@ public sealed class ComposeAuthorLexemeFormTests
     public void ComposeAuthorLexemeForm_AppendsTheResolvedOperations_NotOneTheAgentEnumerated()
     {
         var entryId = CanonicalId.FromGuid(_seed.FirstEntryId).Value;
-        Assert.Equal(0, Commands.New(_storeDir, "d", null).ExitCode);
+        Assert.Equal(0, Commands.New(_fwDataPath, ProductVersion, "d", null).ExitCode);
 
         var result = Commands.ComposeAuthorLexemeForm(
-            _storeDir, "d", _fwDataPath, IntentJson(entryId, includeGloss: true));
+            _fwDataPath, ProductVersion, "d", IntentJson(entryId, includeGloss: true));
 
         Assert.Equal(0, result.ExitCode);
         Assert.Contains("2 operation(s) added", result.Output);
         DraftRationale.Author(
-            _storeDir, "d", "Author a lexeme form", "Create the missing lexeme analysis and its attested gloss.");
+            _fwDataPath, "d", "Author a lexeme form", "Create the missing lexeme analysis and its attested gloss.");
 
-        var finalize = Commands.Finalize(_storeDir, "d");
+        var finalize = Commands.Finalize(_fwDataPath, ProductVersion, "d");
         Assert.Equal(0, finalize.ExitCode);
         var proposalId = ExtractProposalId(finalize.Output);
 
-        var showJson = Commands.ShowJson(_storeDir, proposalId);
+        var showJson = Commands.ShowJson(_fwDataPath, ProductVersion, proposalId);
         Assert.Equal(0, showJson.ExitCode);
         Assert.Contains(LexEntryLexemeFormOperationKinds.CreateLexemeForm, showJson.Output);
         Assert.Contains(LexicalSenseOperationKinds.SetGloss, showJson.Output);
@@ -83,21 +82,20 @@ public sealed class ComposeAuthorLexemeFormTests
     public void ComposeAuthorLexemeForm_RecordsTheIntentAsNonHashedProvenance_NeverInTheDigest()
     {
         var entryId = CanonicalId.FromGuid(_seed.FirstEntryId).Value;
-        Assert.Equal(0, Commands.New(_storeDir, "d", null).ExitCode);
+        Assert.Equal(0, Commands.New(_fwDataPath, ProductVersion, "d", null).ExitCode);
         Assert.Equal(
             0,
-            Commands.ComposeAuthorLexemeForm(_storeDir, "d", _fwDataPath, IntentJson(entryId, includeGloss: false))
+            Commands.ComposeAuthorLexemeForm(_fwDataPath, ProductVersion, "d", IntentJson(entryId, includeGloss: false))
                 .ExitCode);
         DraftRationale.Author(
-            _storeDir, "d", "Author a lexeme form", "Preserve the composer provenance in the finalized intent.");
+            _fwDataPath, "d", "Author a lexeme form", "Preserve the composer provenance in the finalized intent.");
 
-        var finalize = Commands.Finalize(_storeDir, "d");
+        var finalize = Commands.Finalize(_fwDataPath, ProductVersion, "d");
         Assert.Equal(0, finalize.ExitCode);
         var proposalId = ExtractProposalId(finalize.Output);
         var digest = ExtractIntentDigest(finalize.Output);
 
-        var objectPath = new ProposalStore(_storeDir).ObjectPath(digest);
-        var objectJson = File.ReadAllText(objectPath);
+        var objectJson = GetRevisionJson(proposalId, digest);
         Assert.Contains("\"composers\"", objectJson);
         Assert.Contains("\"AuthorLexemeForm\"", objectJson);
 
@@ -112,27 +110,35 @@ public sealed class ComposeAuthorLexemeFormTests
     public void Reopen_CarriesTheComposerProvenanceForward_RatherThanSilentlyDroppingIt()
     {
         var entryId = CanonicalId.FromGuid(_seed.FirstEntryId).Value;
-        Assert.Equal(0, Commands.New(_storeDir, "d", null).ExitCode);
+        Assert.Equal(0, Commands.New(_fwDataPath, ProductVersion, "d", null).ExitCode);
         Assert.Equal(
             0,
-            Commands.ComposeAuthorLexemeForm(_storeDir, "d", _fwDataPath, IntentJson(entryId, includeGloss: false))
+            Commands.ComposeAuthorLexemeForm(_fwDataPath, ProductVersion, "d", IntentJson(entryId, includeGloss: false))
                 .ExitCode);
         DraftRationale.Author(
-            _storeDir, "d", "Author a lexeme form", "Create the lexical analysis before adding the related manual edit.");
-        var firstFinalize = Commands.Finalize(_storeDir, "d");
+            _fwDataPath, "d", "Author a lexeme form", "Create the lexical analysis before adding the related manual edit.");
+        var firstFinalize = Commands.Finalize(_fwDataPath, ProductVersion, "d");
         var proposalId = ExtractProposalId(firstFinalize.Output);
 
-        Assert.Equal(0, Commands.Reopen(_storeDir, "amend", proposalId).ExitCode);
+        Assert.Equal(0, Commands.Reopen(_fwDataPath, ProductVersion, "amend", proposalId).ExitCode);
         // Amend with an ordinary hand-authored operation too, so the draft mixes composed and manual content.
         var secondTarget = CanonicalId.FromGuid(_seed.SecondSenseId).Value;
-        Assert.Equal(0, Commands.AddSetGloss(_storeDir, "amend", secondTarget, "en", "manually added").ExitCode);
-        var amendFinalize = Commands.Finalize(_storeDir, "amend");
+        Assert.Equal(0, Commands.AddSetGloss(_fwDataPath, ProductVersion, "amend", secondTarget, "en", "manually added").ExitCode);
+        var amendFinalize = Commands.Finalize(_fwDataPath, ProductVersion, "amend");
         Assert.Equal(0, amendFinalize.ExitCode);
 
         var amendedDigest = ExtractIntentDigest(amendFinalize.Output);
-        var objectJson = File.ReadAllText(new ProposalStore(_storeDir).ObjectPath(amendedDigest));
+        var objectJson = GetRevisionJson(proposalId, amendedDigest);
         Assert.Contains("\"composers\"", objectJson);
         Assert.Contains("\"AuthorLexemeForm\"", objectJson);
+    }
+
+    private string GetRevisionJson(string proposalId, string intentDigest)
+    {
+        using var database = ProjectMotifDatabase.Open(_fwDataPath);
+        var record = new ProposalRepository(database).Get(CanonicalId.Parse(proposalId));
+        Assert.Equal(intentDigest, record.IntentDigest);
+        return record.ProposalJson!;
     }
 
     private static string ExtractProposalId(string output)

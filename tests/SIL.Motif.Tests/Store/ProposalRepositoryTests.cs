@@ -135,11 +135,13 @@ public sealed class ProposalRepositoryTests : IDisposable
         var id = CanonicalId.Mint("proposal/");
         repository.CreateDraft("working", id, "{\"draft\":true}");
 
-        repository.Finalize("working", "sha256:first", "{\"proposalId\":\"" + id.Value + "\"}");
+        repository.Finalize("working", "sha256:first", "{\"proposalId\":\"" + id.Value + "\"}", "a label", "a comment");
 
         var committed = repository.Get(id);
         Assert.Equal("sha256:first", committed.IntentDigest);
         Assert.Equal("proposed", committed.Status);
+        Assert.Equal("a label", committed.Label);
+        Assert.Equal("a comment", committed.Comment);
         Assert.Null(committed.DraftName);
         Assert.Throws<KeyNotFoundException>(() => repository.GetDraft("working"));
     }
@@ -166,7 +168,7 @@ public sealed class ProposalRepositoryTests : IDisposable
         }
 
         Assert.ThrowsAny<SqliteException>(
-            () => repository.Finalize("working", "sha256:collide", "{\"different\":true}"));
+            () => repository.Finalize("working", "sha256:collide", "{\"different\":true}", "a label", "a comment"));
 
         var draft = repository.GetDraft("working");
         Assert.Equal("{\"draft\":true}", draft.ProposalJson);

@@ -4,9 +4,10 @@ using System.Text.Json;
 namespace SIL.Motif.Cli.Store;
 
 /// <summary>
-/// The on-disk shape of <c>drafts/&lt;draftName&gt;.json</c>: a mutable local draft the CLI builds
-/// incrementally across invocations (<c>new -&gt; add-set-gloss -&gt; label -&gt; comment -&gt;
-/// finalize</c>). Never synced; deleted by <c>finalize</c>.
+/// The rendering and serialisation shape of a Draft's in-progress content (the paired project
+/// database's <c>Proposals.DraftJson</c> column): a mutable local draft the CLI builds incrementally
+/// across invocations (<c>new -&gt; add-set-gloss -&gt; label -&gt; comment -&gt; finalize</c>). Never
+/// synced to another project; cleared by <c>finalize</c>.
 /// </summary>
 public sealed class DraftDocument
 {

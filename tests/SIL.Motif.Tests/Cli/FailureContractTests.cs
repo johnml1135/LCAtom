@@ -17,6 +17,8 @@ public sealed class FailureContractTests : IDisposable
     {
         Directory.CreateDirectory(_root);
         _fwDataPath = Path.Combine(_root, "Project.fwdata");
+        // A verb resolves its paired database from this path, so it must exist for tests below it.
+        File.WriteAllText(_fwDataPath, string.Empty);
     }
 
     [Fact]

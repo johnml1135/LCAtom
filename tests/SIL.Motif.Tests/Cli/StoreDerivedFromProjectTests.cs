@@ -1,9 +1,10 @@
 using System;
 using System.Diagnostics;
 using System.IO;
-using SIL.Motif.Cli.Store;
 using SIL.Motif.Contract.Ids;
+using SIL.Motif.Contract.Projects;
 using SIL.Motif.Generator;
+using SIL.Motif.Worker.Store;
 using Xunit;
 
 namespace SIL.Motif.Tests.Cli;
@@ -11,7 +12,7 @@ namespace SIL.Motif.Tests.Cli;
 /// <summary>
 /// The defect ADR 0041 decision 2 exists to close: <c>--store</c> defaulted to <c>./.motif</c>, so a
 /// Proposal's address was the working directory a command happened to run from rather than the
-/// project it was about. These pin that the store is derived from <c>--project</c> alone.
+/// project it was about. These pin that the paired database is derived from <c>--project</c> alone.
 /// </summary>
 public sealed class StoreDerivedFromProjectTests : IDisposable
 {
@@ -40,19 +41,19 @@ public sealed class StoreDerivedFromProjectTests : IDisposable
     }
 
     [Fact]
-    public void ForProject_ResolvesTheSameStore_RegardlessOfTheCallersWorkingDirectory()
+    public void DatabasePathFor_ResolvesTheSamePath_RegardlessOfTheCallersWorkingDirectory()
     {
         var originalCwd = Directory.GetCurrentDirectory();
         try
         {
             Directory.SetCurrentDirectory(_cwdA);
-            var fromCwdA = ProposalStore.ForProject(_fwDataPath).RootDirectory;
+            var fromCwdA = ProjectDatabaseCatalog.DatabasePathFor(new ProjectLocator(_fwDataPath, "Project"));
 
             Directory.SetCurrentDirectory(_cwdB);
-            var fromCwdB = ProposalStore.ForProject(_fwDataPath).RootDirectory;
+            var fromCwdB = ProjectDatabaseCatalog.DatabasePathFor(new ProjectLocator(_fwDataPath, "Project"));
 
             Assert.Equal(fromCwdA, fromCwdB);
-            Assert.Equal(Path.Combine(_projectDir, ".motif"), fromCwdA);
+            Assert.Equal(Path.Combine(_projectDir, "Project.motif.db"), fromCwdA);
         }
         finally
         {
@@ -94,8 +95,8 @@ public sealed class StoreDerivedFromProjectTests : IDisposable
         Assert.Contains(proposalId, showFromB.Output);
 
         // The Proposal lives beside the project, not in either working directory a command ran from.
-        var manifestPath = Path.Combine(_projectDir, ".motif", "manifests", proposalId + ".json");
-        Assert.True(File.Exists(manifestPath));
+        var databasePath = ProjectDatabaseCatalog.DatabasePathFor(new ProjectLocator(_fwDataPath, "Project"));
+        Assert.True(File.Exists(databasePath));
     }
 
     /// <summary>

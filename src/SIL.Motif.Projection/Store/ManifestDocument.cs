@@ -3,19 +3,19 @@ using SIL.Motif.Model.DryRun;
 namespace SIL.Motif.Projection.Store;
 
 /// <summary>
-/// The on-disk shape of <c>manifests/&lt;proposalId&gt;.json</c>: the mutable review state for a
-/// committed Proposal, and a movable pointer at whichever <c>objects/&lt;intentDigest&gt;.json</c>
-/// is current for this id — exactly a git ref pointing at a commit hash. The object itself is
-/// content-addressed and write-once, never revisited once written; this manifest is the one mutable
-/// file in the store, keyed by the frozen <see cref="ProposalId"/> rather than by digest, so
-/// <c>finalize</c> (including an amend) writes a new object and moves this manifest's pointer rather
-/// than renaming or rewriting the object.
+/// The review-state rendering shape for one Proposal: the mutable review state for a committed
+/// Proposal, and a movable pointer at whichever <c>ProposalRevisions</c> row is current for this id —
+/// exactly a git ref pointing at a commit hash. A revision is content-addressed and write-once, never
+/// revisited once written; this document is built from the one mutable <c>Proposals</c> row, keyed by
+/// the frozen <see cref="ProposalId"/> rather than by digest, so <c>finalize</c> (including an amend)
+/// writes a new revision and moves this pointer rather than rewriting the revision.
 /// </summary>
 /// <remarks>
-/// Lives here rather than beside <c>SIL.Motif.Cli.Store.ProposalStore</c> so a projection (List,
-/// Show, the anchor a DryRun binds, the status an Apply writes) can be built from a manifest without
-/// the projection layer depending on the CLI project — the dependency runs the other way, from CLI
-/// to here, so a future Avalonia consumer can read the same store shape without pulling in the CLI.
+/// Lives here rather than beside <c>SIL.Motif.Worker.Store.ProposalRepository</c> so a projection
+/// (List, Show, the anchor a DryRun binds, the status an Apply writes) can be built from it without
+/// the projection layer depending on the Worker project — the dependency runs the other way, from
+/// Worker to here, so a future Avalonia consumer can read the same rendering shape without pulling in
+/// the Worker.
 /// </remarks>
 public sealed class ManifestDocument
 {

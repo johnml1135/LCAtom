@@ -1,13 +1,13 @@
 using System;
 using System.IO;
 using SIL.Motif.Cli;
-using SIL.Motif.Cli.Store;
 using SIL.Motif.Contract.Canonicalization;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Model;
 using SIL.Motif.Contract.Parsing;
 using SIL.Motif.Host.Corpus;
 using SIL.Motif.Tests.TestFixtures;
+using SIL.Motif.Worker.Store;
 using Xunit;
 
 namespace SIL.Motif.Tests.Cli;
@@ -26,14 +26,12 @@ public sealed class PromoteGlossTests : IDisposable
     private readonly string _root =
         Path.Combine(Path.GetTempPath(), "motif-promote-gloss-tests", Guid.NewGuid().ToString("N"));
     private readonly string _fwDataPath;
-    private readonly string _storeDir;
 
     public PromoteGlossTests()
     {
         Directory.CreateDirectory(_root);
         _fwDataPath = Path.Combine(_root, "Project.fwdata");
         File.WriteAllText(_fwDataPath, string.Empty);
-        _storeDir = ProposalStore.ForProject(_fwDataPath).RootDirectory;
     }
 
     public void Dispose()
@@ -77,21 +75,26 @@ public sealed class PromoteGlossTests : IDisposable
     {
         SeedCorpus();
         var target = CanonicalId.Mint().Value;
-        Assert.Equal(0, Commands.New(_storeDir, "d", null).ExitCode);
+        Assert.Equal(0, Commands.New(_fwDataPath, ProductVersion, "d", null).ExitCode);
 
         var result = Commands.PromoteGloss(
-            _storeDir, "d", target, "en", "a promoted gloss", "wiki-testlang", _fwDataPath, ProductVersion);
+            _fwDataPath, ProductVersion, "d", target, "en", "a promoted gloss", "wiki-testlang");
 
         Assert.Equal(0, result.ExitCode);
         Assert.Contains("promoted from corpus 'wiki-testlang'", result.Output);
         Assert.Contains("CC-BY-SA-4.0", result.Output);
         DraftRationale.Author(
-            _storeDir, "d", "Promote a reviewed corpus gloss", "Use the attested corpus analysis in the language project.");
+            _fwDataPath, "d", "Promote a reviewed corpus gloss", "Use the attested corpus analysis in the language project.");
 
-        var finalize = Commands.Finalize(_storeDir, "d");
+        var finalize = Commands.Finalize(_fwDataPath, ProductVersion, "d");
         Assert.Equal(0, finalize.ExitCode);
+        var proposalId = ExtractProposalId(finalize.Output);
         var digest = ExtractIntentDigest(finalize.Output);
-        var objectJson = File.ReadAllText(new ProposalStore(_storeDir).ObjectPath(digest));
+
+        using var database = ProjectMotifDatabase.Open(_fwDataPath);
+        var record = new ProposalRepository(database).Get(CanonicalId.Parse(proposalId));
+        Assert.Equal(digest, record.IntentDigest);
+        var objectJson = record.ProposalJson!;
         Assert.Contains("\"promotions\"", objectJson);
         Assert.Contains("wiki-testlang", objectJson);
         Assert.Contains("CC-BY-SA-4.0", objectJson);
@@ -107,19 +110,18 @@ public sealed class PromoteGlossTests : IDisposable
     {
         SeedCorpus();
         var target = CanonicalId.Mint().Value;
-        Assert.Equal(0, Commands.New(_storeDir, "d", null).ExitCode);
+        Assert.Equal(0, Commands.New(_fwDataPath, ProductVersion, "d", null).ExitCode);
         Assert.Equal(
             0,
-            Commands.PromoteGloss(
-                _storeDir, "d", target, "en", "a promoted gloss", "wiki-testlang", _fwDataPath, ProductVersion)
+            Commands.PromoteGloss(_fwDataPath, ProductVersion, "d", target, "en", "a promoted gloss", "wiki-testlang")
                 .ExitCode);
         DraftRationale.Author(
-            _storeDir, "d", "Promote an attested gloss", "Carry the corpus provenance into the finalized proposal.");
-        var finalize = Commands.Finalize(_storeDir, "d");
+            _fwDataPath, "d", "Promote an attested gloss", "Carry the corpus provenance into the finalized proposal.");
+        var finalize = Commands.Finalize(_fwDataPath, ProductVersion, "d");
         var proposalId = ExtractProposalId(finalize.Output);
 
-        var showText = Commands.Show(_storeDir, proposalId);
-        var showJson = Commands.ShowJson(_storeDir, proposalId);
+        var showText = Commands.Show(_fwDataPath, ProductVersion, proposalId);
+        var showJson = Commands.ShowJson(_fwDataPath, ProductVersion, proposalId);
 
         Assert.Contains("wiki-testlang", showText.Output);
         Assert.Contains("wiki-testlang", showJson.Output);
@@ -128,16 +130,15 @@ public sealed class PromoteGlossTests : IDisposable
     [Fact]
     public void PromoteGloss_UnknownCorpus_Refuses_AndAddsNoOperation()
     {
-        Assert.Equal(0, Commands.New(_storeDir, "d", null).ExitCode);
-        var draftPath = new ProposalStore(_storeDir).DraftPath("d");
-        var before = File.ReadAllText(draftPath);
+        Assert.Equal(0, Commands.New(_fwDataPath, ProductVersion, "d", null).ExitCode);
+        var before = ReadDraftJson("d");
 
         var result = Commands.PromoteGloss(
-            _storeDir, "d", CanonicalId.Mint().Value, "en", "text", "no-such-corpus", _fwDataPath, ProductVersion);
+            _fwDataPath, ProductVersion, "d", CanonicalId.Mint().Value, "en", "text", "no-such-corpus");
 
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("not found", result.Output, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(before, File.ReadAllText(draftPath));
+        Assert.Equal(before, ReadDraftJson("d"));
     }
 
     [Fact]
@@ -145,12 +146,18 @@ public sealed class PromoteGlossTests : IDisposable
     {
         SeedCorpus();
 
-        Assert.Equal(0, Commands.New(_storeDir, "d", null).ExitCode);
+        Assert.Equal(0, Commands.New(_fwDataPath, ProductVersion, "d", null).ExitCode);
         var result = Commands.PromoteGloss(
-            _storeDir, "d", CanonicalId.Mint().Value, "en", "text", "wiki-testlang", _fwDataPath, ProductVersion,
+            _fwDataPath, ProductVersion, "d", CanonicalId.Mint().Value, "en", "text", "wiki-testlang",
             "no-such-document");
 
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("no document", result.Output, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private string ReadDraftJson(string draftName)
+    {
+        using var database = ProjectMotifDatabase.Open(_fwDataPath);
+        return new ProposalRepository(database).GetDraft(draftName).ProposalJson!;
     }
 }
