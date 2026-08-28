@@ -17,8 +17,7 @@ public sealed class FailureContractTests : IDisposable
     [Fact]
     public void AJsonFailureIsOneEnvelopeOnStderrAndNothingOnStdout()
     {
-        var result = Run("store-cutover --project \"" + Path.Combine(_root, "absent.fwdata") +
-            "\" --store \"" + _root + "\" --json");
+        var result = Run("baseline-refresh --project \"" + Path.Combine(_root, "absent.fwdata") + "\" --json");
 
         Assert.Equal(string.Empty, result.Output);
         var envelope = ProjectionJson.Deserialize<FailureEnvelope>(result.Error);
@@ -30,8 +29,7 @@ public sealed class FailureContractTests : IDisposable
     [Fact]
     public void TheHumanRenderingIsUnchangedWithoutJson()
     {
-        var result = Run("store-cutover --project \"" + Path.Combine(_root, "absent.fwdata") +
-            "\" --store \"" + _root + "\"");
+        var result = Run("baseline-refresh --project \"" + Path.Combine(_root, "absent.fwdata") + "\"");
 
         Assert.StartsWith("error: ", result.Error, StringComparison.Ordinal);
         Assert.DoesNotContain("{", result.Error, StringComparison.Ordinal);
@@ -40,12 +38,12 @@ public sealed class FailureContractTests : IDisposable
     [Fact]
     public void AMalformedInvocationIsCodeOneWhetherOrNotJsonWasAsked()
     {
-        var text = Run("store-cutover");
-        var json = Run("store-cutover --json");
+        var text = Run("baseline-refresh");
+        var json = Run("baseline-refresh --json");
 
         Assert.Equal(1, text.ExitCode);
         Assert.Equal(1, json.ExitCode);
-        Assert.Contains("Usage: motif store-cutover", text.Error, StringComparison.Ordinal);
+        Assert.Contains("Usage: motif baseline-refresh", text.Error, StringComparison.Ordinal);
         Assert.Equal(FailureReason.InvalidArgument, Envelope(json.Error).Reason);
     }
 
@@ -57,7 +55,7 @@ public sealed class FailureContractTests : IDisposable
         Assert.Equal(1, result.ExitCode);
         Assert.Contains("Unknown command 'store-rollback'", result.Error, StringComparison.Ordinal);
         // The banner is what makes an unknown verb actionable rather than merely refused.
-        Assert.Contains("store-cutover --project", result.Error, StringComparison.Ordinal);
+        Assert.Contains("dry-run <proposalId> --project", result.Error, StringComparison.Ordinal);
     }
 
     [Fact]

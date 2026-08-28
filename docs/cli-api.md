@@ -27,7 +27,7 @@ Thirty verbs exist today, in five groups:
 | Proposal authoring | `new`, `add-set-gloss`, `add-delete-lexeme-form`, `compose-author-lexeme-form`, `compose-author-feature-structure`, `promote-gloss`, `remove-operations`, `split`, `duplicate` |
 | Proposal lifecycle | `label`, `comment`, `finalize`, `reopen`, `defer`, `approve`, `reject`, `supersede` |
 | Inspection | `list`, `show`, `dry-run`, `apply` |
-| Corpus and store | `add-corpus`, `add-document`, `add-corpus-bundle`, `corpora`, `show-corpus`, `store-cutover` |
+| Corpus | `add-corpus`, `add-document`, `add-corpus-bundle`, `corpora`, `show-corpus` |
 
 The verb set is expected to churn. [ADR 0021](adr/0021-cli-is-the-full-surface-layer-1-churns.md) settles
 that churn is welcome in this surface and forbidden in the hashed operation vocabulary and canonical JSON
@@ -130,8 +130,22 @@ negotiation in the deleted protocol existed to manage. It is managed here instea
 - **No verb that mutates a project another process currently holds open.** ADR 0040 decisions 6 and 7:
   FieldWorks releases the project, the verb runs, FieldWorks reloads.
 
+## Amendments
+
+### 2026-08-28 — `store-cutover` is gone
+
+[ADR 0041](adr/0041-the-database-is-the-only-store.md) decision 1 deletes the file store rather than
+migrating it, so the verb that migrated it is deleted with it. It had never worked: it refused every
+Proposal the CLI can author, because the operation kinds it validates against are registered by
+`SIL.Motif.Runner`'s module initializers and only the `Commands` static constructor forces them to load.
+
+The rest of ADR 0041 changes this contract further — every remaining verb gains a required `--project`,
+`dry-run` becomes a job, and a set of cross-project job verbs joins the set. Those land with the tasks
+that implement them; this note records only what has already been removed.
+
 ## Related
 
+- [ADR 0041 — The database is the only store](adr/0041-the-database-is-the-only-store.md)
 - [ADR 0040 — There is one API, and it is the CLI](adr/0040-one-api-the-cli.md)
 - [ADR 0021 — The CLI is the full product surface](adr/0021-cli-is-the-full-surface-layer-1-churns.md)
 - [ADR 0039 — Baseline and live-host authority](adr/0039-one-worker-baseline-and-live-host-authority.md),

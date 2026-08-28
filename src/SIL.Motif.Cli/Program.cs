@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using SIL.Motif.Cli;
-using SIL.Motif.Cli.Worker;
 using SIL.Motif.Contract.Canonicalization;
 using SIL.Motif.Projection.Usage;
 
@@ -362,12 +361,6 @@ try
             result = JobCommands.Show(jobsProject, positionals[1], CliProductVersion(), asJson);
             break;
 
-        case "store-cutover":
-            if (!flags.TryGetValue("project", out var cutoverProject))
-                return Usage("Usage: motif store-cutover --project <fwdata> [--store <dir>]", asJson);
-            result = StoreCommands.Cutover(storeDir, cutoverProject, CliProductVersion());
-            break;
-
         default:
             return Usage($"Unknown command '{verb}'.", asJson, withUsageBanner: true);
     }
@@ -418,7 +411,6 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine();
     writer.WriteLine("Commands:");
     writer.WriteLine("  open <fwdata> [--json]");
-    writer.WriteLine("  store-cutover --project <fwdata> [--store <dir>]");
     writer.WriteLine("  analyses --project <fwdata> [--json]");
     writer.WriteLine(
         "  analyses --project <fwdata> --assessment <assessmentId> --current-corpus-sha256 <sha256> " +
