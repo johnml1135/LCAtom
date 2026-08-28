@@ -208,6 +208,66 @@ public sealed class ProposalRepositoryTests : IDisposable
         Assert.Equal(draftId, onlyDrafts[0].ProposalId);
     }
 
+    [Fact]
+    public void DiscardDraftRemovesANeverFinalizedDraftAndFreesItsNameImmediately()
+    {
+        var project = new ProjectLocator(Path.Combine(_root, "discard.fwdata"), "discard");
+        using var database = MotifDatabase.OpenOwned(Path.Combine(_root, "discard.motif.db"), project,
+            MotifSchema.CurrentSchema, new Version(1, 0));
+        var repository = new ProposalRepository(database);
+        var id = CanonicalId.Mint("proposal/");
+        repository.CreateDraft("working", id, "{\"draft\":true}");
+
+        repository.DiscardDraft("working");
+
+        Assert.Throws<KeyNotFoundException>(() => repository.GetDraft("working"));
+        Assert.False(repository.DraftNameExists("working"));
+        // The name is free again, not merely absent from a listing: a fresh CreateDraft must succeed.
+        repository.CreateDraft("working", CanonicalId.Mint("proposal/"), "{\"draft\":true}");
+        Assert.True(repository.DraftNameExists("working"));
+    }
+
+    [Fact]
+    public void DiscardDraftRevertsADraftReopenedFromAFinalizedProposalAndKeepsItsHistoryIntact()
+    {
+        var project = new ProjectLocator(Path.Combine(_root, "discard-reopened.fwdata"), "discard-reopened");
+        using var database = MotifDatabase.OpenOwned(Path.Combine(_root, "discard-reopened.motif.db"), project,
+            MotifSchema.CurrentSchema, new Version(1, 0));
+        var repository = new ProposalRepository(database);
+        var id = CanonicalId.Mint("proposal/");
+        repository.SaveRevision(new ProposalRevisionRecord(
+            id, "sha256:committed", "{\"proposalId\":\"" + id.Value + "\"}", "proposed", null, null, null));
+        repository.SaveDecision(new DecisionRecord(
+            id, "sha256:committed", "approved", "human", "linguist", null, "2026-08-27T00:00:00Z"));
+        repository.ReopenAsDraft(id, "reopened", "{\"draft\":true}");
+
+        var wasReopened = repository.DiscardDraft("reopened");
+
+        Assert.True(wasReopened);
+        // The draft name is gone, and everything committed behind the Proposal is exactly as it was.
+        Assert.False(repository.DraftNameExists("reopened"));
+        var record = repository.Get(id);
+        Assert.Equal("sha256:committed", record.IntentDigest);
+        Assert.Equal("{\"proposalId\":\"" + id.Value + "\"}", record.ProposalJson);
+        Assert.Null(record.DraftName);
+        Assert.NotNull(record.Decision);
+        Assert.Equal("approved", record.Decision!.Outcome);
+        // The name is free again, not merely absent from a listing: a fresh CreateDraft must succeed.
+        repository.CreateDraft("reopened", CanonicalId.Mint("proposal/"), "{\"draft\":true}");
+        Assert.True(repository.DraftNameExists("reopened"));
+    }
+
+    [Fact]
+    public void DiscardDraftOfAnUnknownNameThrowsKeyNotFound()
+    {
+        var project = new ProjectLocator(Path.Combine(_root, "discard-missing.fwdata"), "discard-missing");
+        using var database = MotifDatabase.OpenOwned(Path.Combine(_root, "discard-missing.motif.db"), project,
+            MotifSchema.CurrentSchema, new Version(1, 0));
+        var repository = new ProposalRepository(database);
+
+        Assert.Throws<KeyNotFoundException>(() => repository.DiscardDraft("nope"));
+    }
+
     public void Dispose()
     {
         try { Directory.Delete(_root, true); }

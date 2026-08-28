@@ -697,6 +697,38 @@ public static class Commands
         });
     }
 
+    /// <summary>
+    /// Discards a Draft. A never-finalized Draft (from <see cref="New"/> or <see cref="Duplicate"/>) has
+    /// its row deleted outright. A Draft <see cref="Reopen"/> produced is reverted instead — only
+    /// <c>DraftName</c>/<c>DraftJson</c> are cleared, in one transaction — leaving the Proposal it was
+    /// reopened from exactly at its prior committed revision (<see cref="ProposalRepository.DiscardDraft"/>).
+    /// </summary>
+    public static CommandResult DiscardDraft(string fwDataPath, string productVersion, string draftName)
+    {
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, _) =>
+        {
+            try
+            {
+                var repository = new ProposalRepository(database);
+                var wasReopened = repository.DiscardDraft(draftName);
+
+                var sb = new StringBuilder();
+                sb.AppendLine($"Discarded draft '{draftName}'.");
+                if (wasReopened)
+                    sb.AppendLine("  (it was reopened from a finalized Proposal, which remains at its prior committed revision)");
+                return Ok(sb);
+            }
+            catch (KeyNotFoundException)
+            {
+                return Missing(DraftNotFoundMessage(draftName));
+            }
+            catch (Exception ex)
+            {
+                return Fail(ex.Message);
+            }
+        });
+    }
+
     public static CommandResult Reopen(string fwDataPath, string productVersion, string draftName, string proposalId)
     {
         return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, _) =>
@@ -1556,7 +1588,7 @@ public static class Commands
     private static string ProposalNotFoundMessage(string id) =>
         $"Proposal '{id}' not found in store. Run 'list' to see committed proposals.";
 
-    /// Names only what a caller can do: no verb discards a draft, so telling them to delete it is a dead end.
+    /// Discarding the colliding draft frees a different name than the one this call is trying to use.
     private static string DraftNameCollisionMessage(string draftName, string trailingClause) =>
         $"Draft '{draftName}' already exists. Finalize it, or use another name, before {trailingClause}.";
 

@@ -171,7 +171,7 @@ public static class JobCommands
         return text.ToString();
     }
 
-    /// Reconstructs the Dry Run <see cref="DryRunJobHandler"/> published, the reverse of its own writer.
+    // Reads a published Dry Run's JSON back into the model the renderer takes.
     private static DryRunModel ParsePublishedDryRun(string dryRunJson)
     {
         using var document = JsonDocument.Parse(dryRunJson);

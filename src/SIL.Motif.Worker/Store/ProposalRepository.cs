@@ -86,6 +86,21 @@ public interface IProposalRepository
     /// <exception cref="InvalidOperationException">A draft already exists under <paramref name="draftName"/>.</exception>
     /// <exception cref="KeyNotFoundException">No finalized Proposal is recorded under this id.</exception>
     void ReopenAsDraft(CanonicalId proposalId, string draftName, string draftJson);
+    /// <summary>
+    /// Discards a Draft, in one transaction, decided by whether it carries a committed revision.
+    /// A never-finalized Draft (<c>CurrentIntentDigest IS NULL</c>) has no <c>ProposalRevisions</c> row
+    /// yet, so its whole <c>Proposals</c> row is deleted and <paramref name="draftName"/> is free for
+    /// immediate reuse. A Draft <see cref="ReopenAsDraft"/> produced keeps its source Proposal's
+    /// <c>CurrentIntentDigest</c>, so only <c>DraftName</c> and <c>DraftJson</c> are cleared — the exact
+    /// inverse of what <see cref="ReopenAsDraft"/> set — leaving the Proposal exactly as committed, with
+    /// its <c>ProposalRevisions</c> and <c>Decisions</c> untouched.
+    /// </summary>
+    /// <returns>
+    /// <c>true</c> when the discarded Draft had been reopened from a finalized Proposal, which is left
+    /// exactly at its prior committed revision; <c>false</c> when its whole row was deleted instead.
+    /// </returns>
+    /// <exception cref="KeyNotFoundException">No Draft is registered under this name.</exception>
+    bool DiscardDraft(string draftName);
 }
 
 /// <summary>
@@ -604,7 +619,7 @@ public sealed class ProposalRepository : IProposalRepository
         check.CommandText = "SELECT 1 FROM Proposals WHERE DraftName = $name;";
         check.Parameters.AddWithValue("$name", draftName);
         if (check.ExecuteScalar() is null) return;
-        // Names the two things a caller can actually do: there is no verb that discards a draft.
+        // Deliberately silent on discard-draft: it removes the colliding draft, not this call's caller.
         throw new InvalidOperationException($"Draft '{draftName}' already exists. Finalize it, or use " +
             "another name.");
     }
@@ -643,6 +658,34 @@ public sealed class ProposalRepository : IProposalRepository
                 "committed proposals.");
         }
         transaction.Commit();
+    }
+
+    /// <inheritdoc />
+    public bool DiscardDraft(string draftName)
+    {
+        if (string.IsNullOrWhiteSpace(draftName)) throw new ArgumentException("A draft name is required.", nameof(draftName));
+        using var connection = _database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+        bool wasReopened;
+        using (var find = connection.CreateCommand())
+        {
+            find.Transaction = transaction;
+            find.CommandText = "SELECT CurrentIntentDigest FROM Proposals WHERE DraftName = $name;";
+            find.Parameters.AddWithValue("$name", draftName);
+            using var reader = find.ExecuteReader();
+            if (!reader.Read()) throw new KeyNotFoundException($"Draft '{draftName}' was not found.");
+            wasReopened = !reader.IsDBNull(0);
+        }
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        // A reopened draft only ever had DraftName/DraftJson set; clearing just those undoes exactly that.
+        command.CommandText = wasReopened
+            ? "UPDATE Proposals SET DraftName = NULL, DraftJson = NULL WHERE DraftName = $name;"
+            : "DELETE FROM Proposals WHERE DraftName = $name;";
+        command.Parameters.AddWithValue("$name", draftName);
+        command.ExecuteNonQuery();
+        transaction.Commit();
+        return wasReopened;
     }
 
     private const string DraftSelectSql =

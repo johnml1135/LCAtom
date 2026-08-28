@@ -25,7 +25,7 @@ Thirty verbs exist today, in five groups:
 | --- | --- |
 | Project and evidence | `open`, `analyses`, `log` |
 | Proposal authoring | `new`, `add-set-gloss`, `add-delete-lexeme-form`, `compose-author-lexeme-form`, `compose-author-feature-structure`, `promote-gloss`, `remove-operations`, `split`, `duplicate` |
-| Proposal lifecycle | `label`, `comment`, `finalize`, `reopen`, `defer`, `approve`, `reject`, `supersede` |
+| Proposal lifecycle | `label`, `comment`, `finalize`, `discard-draft`, `reopen`, `defer`, `approve`, `reject`, `supersede` |
 | Inspection | `list`, `show`, `dry-run`, `apply` |
 | Corpus | `add-corpus`, `add-document`, `add-corpus-bundle`, `corpora`, `show-corpus` |
 
@@ -131,6 +131,19 @@ negotiation in the deleted protocol existed to manage. It is managed here instea
   FieldWorks releases the project, the verb runs, FieldWorks reloads.
 
 ## Amendments
+
+### 2026-08-28 — `discard-draft` closes the abandon-a-draft gap
+
+[ADR 0041](adr/0041-the-database-is-the-only-store.md) decision 3 made a Draft a `Proposals` row rather
+than a file a caller could delete by hand, and no verb replaced that escape hatch: a caller who wanted to
+abandon a half-written Draft had no way to. `discard-draft --project <fwdata> --draft <name>` is that verb.
+
+What it does is decided by whether the Draft carries a committed revision. A never-finalized Draft
+(`CurrentIntentDigest` still null, no `ProposalRevisions` row yet) has its whole row deleted. A Draft
+`reopen` produced keeps its source Proposal's `CurrentIntentDigest`, so `discard-draft` only clears
+`DraftName`/`DraftJson` instead — the exact inverse of what `reopen` set — leaving that Proposal exactly at
+its prior committed revision, `ProposalRevisions` and `Decisions` untouched. Either way the operation is
+one transaction, and the draft name is free for reuse immediately afterward.
 
 ### 2026-08-28 — `store-cutover` is gone
 

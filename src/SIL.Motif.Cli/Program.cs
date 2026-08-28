@@ -173,6 +173,13 @@ try
             result = Commands.Finalize(finalizeProject, CliProductVersion(), finalizeDraftName);
             break;
 
+        case "discard-draft":
+            if (!flags.TryGetValue("project", out var discardProject) ||
+                !flags.TryGetValue("draft", out var discardDraftName))
+                return Usage("Usage: motif discard-draft --project <fwdata> --draft <name>", asJson);
+            result = Commands.DiscardDraft(discardProject, CliProductVersion(), discardDraftName);
+            break;
+
         case "reopen":
             if (!flags.TryGetValue("project", out var reopenProject) ||
                 !flags.TryGetValue("draft", out var reopenDraftName) || positionals.Count != 1)
@@ -488,6 +495,7 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine("  label --project <fwdata> --draft <name> <text>");
     writer.WriteLine("  comment --project <fwdata> --draft <name> <text>");
     writer.WriteLine("  finalize --project <fwdata> --draft <name>");
+    writer.WriteLine("  discard-draft --project <fwdata> --draft <name>");
     writer.WriteLine("  reopen --project <fwdata> --draft <name> <proposalId>");
     writer.WriteLine("  duplicate --project <fwdata> --draft <newName> <proposalId>");
     writer.WriteLine(

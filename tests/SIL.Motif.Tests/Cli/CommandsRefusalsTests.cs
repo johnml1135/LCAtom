@@ -48,7 +48,7 @@ public sealed class CommandsRefusalsTests
 
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("already exists", result.Output);
-        // The CLI has no verb that discards a draft, so the refusal must not tell the caller to delete one.
+        // Discarding the existing "dup" draft would not free the name for this call either.
         Assert.Contains("Finalize it, or use another name", result.Output);
         Assert.DoesNotContain("delete it", result.Output, StringComparison.Ordinal);
         Assert.Equal(before, ReadDraftJson("dup"));
