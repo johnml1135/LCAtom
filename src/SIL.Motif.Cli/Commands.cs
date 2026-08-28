@@ -1556,8 +1556,9 @@ public static class Commands
     private static string ProposalNotFoundMessage(string id) =>
         $"Proposal '{id}' not found in store. Run 'list' to see committed proposals.";
 
+    /// Names only what a caller can do: no verb discards a draft, so telling them to delete it is a dead end.
     private static string DraftNameCollisionMessage(string draftName, string trailingClause) =>
-        $"Draft '{draftName}' already exists. Finalize or delete it before {trailingClause}.";
+        $"Draft '{draftName}' already exists. Finalize it, or use another name, before {trailingClause}.";
 
     /// <summary>Loads one Draft's in-progress content by name, or reports it is not there.</summary>
     private static bool TryLoadDraft(ProposalRepository repository, string draftName, out DraftDocument draft)

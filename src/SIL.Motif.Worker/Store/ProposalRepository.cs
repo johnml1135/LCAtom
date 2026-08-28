@@ -340,15 +340,7 @@ public sealed class ProposalRepository : IProposalRepository
         if (string.IsNullOrWhiteSpace(draftJson)) throw new ArgumentException("Draft content is required.", nameof(draftJson));
         using var connection = _database.OpenConnection();
         using var transaction = connection.BeginTransaction();
-        using (var check = connection.CreateCommand())
-        {
-            check.Transaction = transaction;
-            check.CommandText = "SELECT 1 FROM Proposals WHERE DraftName = $name;";
-            check.Parameters.AddWithValue("$name", draftName);
-            if (check.ExecuteScalar() is not null)
-                throw new InvalidOperationException(
-                    $"Draft '{draftName}' already exists. Finalize or discard it before creating a new draft with this name.");
-        }
+        RequireDraftNameFree(connection, transaction, draftName);
         using var insert = connection.CreateCommand();
         insert.Transaction = transaction;
         insert.CommandText = """
@@ -603,6 +595,20 @@ public sealed class ProposalRepository : IProposalRepository
         command.ExecuteNonQuery();
     }
 
+    // On the caller's own transaction: a second connection cannot see uncommitted rows, leaving a window.
+    private static void RequireDraftNameFree(SqliteConnection connection, SqliteTransaction transaction,
+        string draftName)
+    {
+        using var check = connection.CreateCommand();
+        check.Transaction = transaction;
+        check.CommandText = "SELECT 1 FROM Proposals WHERE DraftName = $name;";
+        check.Parameters.AddWithValue("$name", draftName);
+        if (check.ExecuteScalar() is null) return;
+        // Names the two things a caller can actually do: there is no verb that discards a draft.
+        throw new InvalidOperationException($"Draft '{draftName}' already exists. Finalize it, or use " +
+            "another name.");
+    }
+
     /// <inheritdoc />
     public bool DraftNameExists(string draftName)
     {
@@ -620,15 +626,7 @@ public sealed class ProposalRepository : IProposalRepository
         if (string.IsNullOrWhiteSpace(draftJson)) throw new ArgumentException("Draft content is required.", nameof(draftJson));
         using var connection = _database.OpenConnection();
         using var transaction = connection.BeginTransaction();
-        using (var check = connection.CreateCommand())
-        {
-            check.Transaction = transaction;
-            check.CommandText = "SELECT 1 FROM Proposals WHERE DraftName = $name;";
-            check.Parameters.AddWithValue("$name", draftName);
-            if (check.ExecuteScalar() is not null)
-                throw new InvalidOperationException(
-                    $"Draft '{draftName}' already exists. Finalize or delete it before creating a new draft with this name.");
-        }
+        RequireDraftNameFree(connection, transaction, draftName);
         using var update = connection.CreateCommand();
         update.Transaction = transaction;
         update.CommandText = """
