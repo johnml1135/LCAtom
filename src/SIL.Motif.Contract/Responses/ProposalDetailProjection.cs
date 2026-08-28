@@ -16,13 +16,16 @@ public sealed record ProposalOperationView(
 public sealed record DecisionView(
     string Outcome, string ActorType, string ActorId, string? Comment, string TimestampUtc);
 
-/// <summary>The <c>show</c> report: a committed Proposal's review state and its full operation list.</summary>
+/// <summary>The <c>show</c> report: a Proposal's review state and its full operation list.</summary>
+/// <param name="CurrentIntentDigest">
+/// <c>null</c> for a Draft: it has no committed revision yet, so it has no digest.
+/// </param>
 public sealed record ProposalDetailProjection(
     string ProposalId,
     string Status,
     string? Label,
     string? Comment,
-    string CurrentIntentDigest,
+    string? CurrentIntentDigest,
     IReadOnlyList<ProposalOperationView> Operations,
     DecisionView? Decision = null,
     string? SupersededBy = null,

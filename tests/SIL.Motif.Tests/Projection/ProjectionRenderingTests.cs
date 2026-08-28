@@ -68,6 +68,89 @@ public sealed class ProjectionRenderingTests
     }
 
     [Fact]
+    public void ProposalDetail_CommittedProposal_TextAndJsonArePinned()
+    {
+        var projection = new ProposalDetailProjection(
+            ProposalId: "agent_AAECAwQFBgcICQoLDA0ODw",
+            Status: "proposed",
+            Label: "Revise gloss",
+            Comment: "because the old one was wrong",
+            CurrentIntentDigest: "sha256:" + new string('a', 64),
+            Operations: new[]
+            {
+                new ProposalOperationView(
+                    OperationId: "agent_AQIDBAUGBwgJCgsMDQ4PEA",
+                    Kind: "lexical/lexSense/setGloss",
+                    Target: "agent_AgMEBQYHCAkKCwwNDg8QEQ",
+                    EntityId: null,
+                    DependsOn: new[] { "agent_AwQFBgcICQoLDA0ODxAREg" },
+                    AfterJson: "{\"ws\":\"en\",\"text\":\"move quickly\"}"),
+            });
+
+        var text = CommandTextRenderer.Render(projection);
+        var json = ProjectionJson.Serialize(projection);
+
+        var digest = "sha256:" + new string('a', 64);
+        var expectedText = string.Join(System.Environment.NewLine, new[]
+        {
+            "Proposal agent_AAECAwQFBgcICQoLDA0ODw",
+            "  status:              proposed",
+            "  label:               Revise gloss",
+            "  comment:             because the old one was wrong",
+            "  currentIntentDigest: " + digest,
+            "  operations (1):",
+            "    agent_AQIDBAUGBwgJCgsMDQ4PEA  (lexical/lexSense/setGloss)",
+            "      target:    agent_AgMEBQYHCAkKCwwNDg8QEQ",
+            "      dependsOn: agent_AwQFBgcICQoLDA0ODxAREg",
+            "      after:     {\"ws\":\"en\",\"text\":\"move quickly\"}",
+        }) + System.Environment.NewLine;
+
+        var expectedJson = string.Join(System.Environment.NewLine, new[]
+        {
+            "{",
+            "  \"proposalId\": \"agent_AAECAwQFBgcICQoLDA0ODw\",",
+            "  \"status\": \"proposed\",",
+            "  \"label\": \"Revise gloss\",",
+            "  \"comment\": \"because the old one was wrong\",",
+            "  \"currentIntentDigest\": \"" + digest + "\",",
+            "  \"operations\": [",
+            "    {",
+            "      \"operationId\": \"agent_AQIDBAUGBwgJCgsMDQ4PEA\",",
+            "      \"kind\": \"lexical/lexSense/setGloss\",",
+            "      \"target\": \"agent_AgMEBQYHCAkKCwwNDg8QEQ\",",
+            "      \"dependsOn\": [",
+            "        \"agent_AwQFBgcICQoLDA0ODxAREg\"",
+            "      ],",
+            "      \"afterJson\": \"{\\u0022ws\\u0022:\\u0022en\\u0022,\\u0022text\\u0022:\\u0022move quickly\\u0022}\"",
+            "    }",
+            "  ]",
+            "}",
+        });
+
+        // A non-null digest is unaffected by JsonIgnoreCondition.WhenWritingNull either way.
+        Assert.Equal(expectedText, text);
+        Assert.Equal(expectedJson, json);
+    }
+
+    [Fact]
+    public void ProposalDetail_Draft_HasNoCurrentIntentDigest()
+    {
+        var projection = new ProposalDetailProjection(
+            ProposalId: "agent_AAECAwQFBgcICQoLDA0ODw",
+            Status: "draft",
+            Label: "Revise gloss",
+            Comment: null,
+            CurrentIntentDigest: null,
+            Operations: System.Array.Empty<ProposalOperationView>());
+
+        var text = CommandTextRenderer.Render(projection);
+        var json = ProjectionJson.Serialize(projection);
+
+        Assert.DoesNotContain("currentIntentDigest", text);
+        Assert.DoesNotContain("currentIntentDigest", json);
+    }
+
+    [Fact]
     public void ProposalDetail_WithADecision_TextFiguresAllAppearInJson()
     {
         var projection = new ProposalDetailProjection(

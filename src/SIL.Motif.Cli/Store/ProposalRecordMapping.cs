@@ -21,7 +21,7 @@ public static class ProposalRecordMapping
         Status = record.Status,
         Label = record.Label,
         Comment = record.Comment,
-        CurrentIntentDigest = record.IntentDigest ?? "",
+        CurrentIntentDigest = record.IntentDigest,
         SupersededBy = record.SupersededBy,
         Anchor = record.AnchorJson is null
             ? null

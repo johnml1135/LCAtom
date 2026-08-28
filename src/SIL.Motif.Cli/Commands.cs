@@ -762,7 +762,8 @@ public static class Commands
 
                 var sb = new StringBuilder();
                 sb.AppendLine($"Reopened Proposal {id} for editing as draft '{draftName}'.");
-                sb.AppendLine($"  currentIntentDigest: {manifest.CurrentIntentDigest}");
+                if (manifest.CurrentIntentDigest is not null)
+                    sb.AppendLine($"  currentIntentDigest: {manifest.CurrentIntentDigest}");
                 sb.AppendLine($"  operations:          {draft.Operations.Count}");
                 sb.AppendLine(
                     "Finalizing this draft will amend the Proposal: same id, new intentDigest, " +

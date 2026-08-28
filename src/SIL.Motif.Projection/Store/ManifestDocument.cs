@@ -35,9 +35,10 @@ public sealed class ManifestDocument
     /// The full <c>sha256:</c>-prefixed intent digest this manifest currently points at — a movable
     /// pointer, exactly like a git ref moving to point at a new commit. <c>finalize</c> sets this to
     /// the newly committed object's digest on both a first commit and an amend; the id
-    /// (<see cref="ProposalId"/>) never changes, only this pointer does.
+    /// (<see cref="ProposalId"/>) never changes, only this pointer does. <c>null</c> for a Draft: it
+    /// has no committed revision yet, so there is nothing for this pointer to name (ADR 0041 decision 3).
     /// </summary>
-    public string CurrentIntentDigest { get; set; } = "";
+    public string? CurrentIntentDigest { get; set; }
 
     /// <summary>
     /// The <see cref="BoundDryRunAnchor"/> recorded by the most recent <c>dry-run</c> against

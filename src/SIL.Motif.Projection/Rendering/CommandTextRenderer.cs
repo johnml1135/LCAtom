@@ -42,7 +42,8 @@ public static class CommandTextRenderer
         sb.AppendLine($"  status:              {projection.Status}");
         sb.AppendLine($"  label:               {projection.Label}");
         sb.AppendLine($"  comment:             {projection.Comment}");
-        sb.AppendLine($"  currentIntentDigest: {projection.CurrentIntentDigest}");
+        if (projection.CurrentIntentDigest is not null)
+            sb.AppendLine($"  currentIntentDigest: {projection.CurrentIntentDigest}");
         if (projection.Decision is { } decision)
         {
             sb.AppendLine($"  decision:            {decision.Outcome}");
