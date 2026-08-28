@@ -259,6 +259,14 @@ next; `jobs cancel` stops a running handler; `jobs requeue` inserts a fresh atte
 in the loop's existing `OperationCanceledException` → `Cancelled` path. `jobs move` writes one row, giving
 it a `QueueOrder` between its new neighbours. `jobs requeue` calls the existing `JobRepository.Retry`.
 
+**`QueueOrder` ties are real, so the order must break them.** The default is `julianday('now')` in epoch
+milliseconds, and two jobs enqueued inside one millisecond get the same value. Measured through the real
+`JobRepository.Create`: 200 inserts spanning 1,389 ms produced **199 distinct values — one tie** — and a
+caller enqueueing in bulk would collide far more often. Every ordering must therefore be
+`ORDER BY QueueOrder, JobId`, in the claim and in `jobs list --all` alike, or two jobs can be claimed in an
+order that changes between runs. `jobs move --before <id>` also has no midpoint to pick when the two
+neighbours are tied: it must renumber the tie rather than write a duplicate.
+
 - [ ] **Step 4: Run green and commit**
 
 ---

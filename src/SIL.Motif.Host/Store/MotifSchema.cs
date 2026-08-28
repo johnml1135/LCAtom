@@ -11,11 +11,11 @@ public static class MotifSchema
     public const int ApplicationId = 0x4D4F5446;
 
     /// <summary>The newest ordered schema generation implemented by this assembly.</summary>
-    public const int CurrentSchema = 8;
+    public const int CurrentSchema = 9;
 
     internal static Version MinimumWorkerVersion(int schema) => schema switch
     {
-        1 or 2 or 3 or 4 or 5 or 6 or 7 or 8 => new Version(1, 0),
+        1 or 2 or 3 or 4 or 5 or 6 or 7 or 8 or 9 => new Version(1, 0),
         _ => throw new NotSupportedException($"Motif schema {schema} is not known to this worker.")
     };
 
@@ -54,6 +54,9 @@ public static class MotifSchema
                     break;
                 case 8:
                     AddJobLeaseColumns(connection, transaction);
+                    break;
+                case 9:
+                    MigrateToGenerationNine(connection, transaction);
                     break;
                 default:
                     throw new NotSupportedException($"Motif schema {schema} is not known to this worker.");
@@ -110,6 +113,12 @@ public static class MotifSchema
                 "ParsedAnalyses", "AssessmentPins", "Proposals", "ProposalRevisions", "Drafts",
                 "Decisions", "Receipts", "Reports", "AppliedIndex", "MigrationLedger", "Jobs", "Baselines"
             },
+            9 => new HashSet<string>(StringComparer.Ordinal)
+            {
+                "MotifMetadata", "Corpora", "CorpusDocuments", "Assessments", "AssessedWords",
+                "ParsedAnalyses", "AssessmentPins", "Proposals", "ProposalRevisions",
+                "Decisions", "Receipts", "Reports", "AppliedIndex", "Jobs", "Baselines"
+            },
             _ => throw new NotSupportedException($"Motif schema {schema} is not known to this worker.")
         };
         var expectedIndexes = schema >= 2
@@ -124,6 +133,11 @@ public static class MotifSchema
             expectedIndexes.Add("IX_Jobs_Status_Updated");
         }
         if (schema >= 8) expectedIndexes.Add("IX_Jobs_Lease");
+        if (schema >= 9)
+        {
+            expectedIndexes.Add("IX_Jobs_QueueOrder");
+            expectedIndexes.Add("IX_Proposals_DraftName");
+        }
 
         using (var objects = connection.CreateCommand())
         {
@@ -291,6 +305,118 @@ public static class MotifSchema
             "ALTER TABLE Jobs ADD COLUMN HeartbeatUtc TEXT NULL; " +
             "CREATE INDEX IF NOT EXISTS IX_Jobs_Lease ON Jobs(Status, LeaseUntilUtc);";
         command.ExecuteNonQuery();
+    }
+
+    private static void MigrateToGenerationNine(SqliteConnection connection, SqliteTransaction? transaction)
+    {
+        using (var drop = connection.CreateCommand())
+        {
+            drop.Transaction = transaction;
+            drop.CommandText = "DROP TABLE Drafts; DROP TABLE MigrationLedger;";
+            drop.ExecuteNonQuery();
+        }
+        RebuildProposalsForGenerationNine(connection, transaction);
+        RebuildJobsForGenerationNine(connection, transaction);
+    }
+
+    /// A referenced table can't be dropped, so its four FK-bearing children are rebuilt onto the new one first.
+    private static void RebuildProposalsForGenerationNine(SqliteConnection connection, SqliteTransaction? transaction)
+    {
+        using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = """
+                ALTER TABLE Proposals RENAME TO Proposals_GenerationEight;
+                CREATE TABLE Proposals (
+                    ProposalId TEXT PRIMARY KEY,
+                    CurrentIntentDigest TEXT NULL,
+                    Status TEXT NOT NULL,
+                    Label TEXT NULL,
+                    Comment TEXT NULL,
+                    SupersededBy TEXT NULL,
+                    AnchorJson TEXT NULL,
+                    ArchivedUtc TEXT NULL,
+                    DraftName TEXT NULL,
+                    DraftJson TEXT NULL
+                );
+                CREATE UNIQUE INDEX IX_Proposals_DraftName ON Proposals(DraftName);
+                INSERT INTO Proposals
+                    (ProposalId, CurrentIntentDigest, Status, Label, Comment, SupersededBy, AnchorJson, ArchivedUtc)
+                SELECT ProposalId, CurrentIntentDigest, Status, Label, Comment, SupersededBy, AnchorJson, ArchivedUtc
+                    FROM Proposals_GenerationEight;
+                """;
+            command.ExecuteNonQuery();
+        }
+
+        RebuildProposalChildForGenerationNine(connection, transaction, "ProposalRevisions",
+            "ProposalId TEXT NOT NULL REFERENCES Proposals(ProposalId), IntentDigest TEXT NOT NULL, " +
+            "ProposalJson BLOB NOT NULL, CreatedUtc TEXT NOT NULL, PRIMARY KEY (ProposalId, IntentDigest)");
+        RebuildProposalChildForGenerationNine(connection, transaction, "Decisions",
+            "ProposalId TEXT NOT NULL REFERENCES Proposals(ProposalId), IntentDigest TEXT NOT NULL, " +
+            "Outcome TEXT NOT NULL, ActorType TEXT NOT NULL, ActorId TEXT NOT NULL, Comment TEXT NULL, " +
+            "TimestampUtc TEXT NOT NULL, PRIMARY KEY (ProposalId, IntentDigest)");
+        RebuildProposalChildForGenerationNine(connection, transaction, "Receipts",
+            "ReceiptId TEXT PRIMARY KEY, ProposalId TEXT NOT NULL REFERENCES Proposals(ProposalId), " +
+            "IntentDigest TEXT NOT NULL, ReceiptJson TEXT NOT NULL, RecordedUtc TEXT NOT NULL");
+        RebuildProposalChildForGenerationNine(connection, transaction, "Reports",
+            "ReportId TEXT PRIMARY KEY, ProposalId TEXT NULL REFERENCES Proposals(ProposalId), " +
+            "AssessmentId TEXT NULL REFERENCES Assessments(AssessmentId), ReportJson TEXT NOT NULL, " +
+            "EvidenceJson TEXT NULL, CreatedUtc TEXT NOT NULL");
+
+        using var dropOld = connection.CreateCommand();
+        dropOld.Transaction = transaction;
+        dropOld.CommandText = "DROP TABLE Proposals_GenerationEight;";
+        dropOld.ExecuteNonQuery();
+    }
+
+    /// One rename-recreate-copy-drop cycle, so the child ends up referencing the rebuilt Proposals by name.
+    private static void RebuildProposalChildForGenerationNine(
+        SqliteConnection connection, SqliteTransaction? transaction, string table, string columnDefinitions)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            $"ALTER TABLE {table} RENAME TO {table}_GenerationEight; " +
+            $"CREATE TABLE {table} ({columnDefinitions}); " +
+            $"INSERT INTO {table} SELECT * FROM {table}_GenerationEight; " +
+            $"DROP TABLE {table}_GenerationEight;";
+        command.ExecuteNonQuery();
+    }
+
+    /// Backfills QueueOrder from UpdatedUtc as epoch milliseconds, preserving the claim order rows already had.
+    private static void RebuildJobsForGenerationNine(SqliteConnection connection, SqliteTransaction? transaction)
+    {
+        using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = "DROP INDEX IF EXISTS IX_Jobs_Lineage_Attempt; " +
+                "DROP INDEX IF EXISTS IX_Jobs_Status_Updated; " +
+                "DROP INDEX IF EXISTS IX_Jobs_Lease; " +
+                "ALTER TABLE Jobs RENAME TO Jobs_GenerationEight; " + CanonicalJobDdlGenerationNine;
+            command.ExecuteNonQuery();
+        }
+
+        using (var copy = connection.CreateCommand())
+        {
+            copy.Transaction = transaction;
+            copy.CommandText = """
+                INSERT INTO Jobs (JobId, ProjectKey, Kind, Status, Attempt, LineageId, InputJson, ResultJson,
+                    ProgressJson, CancellationRequested, CreatedUtc, UpdatedUtc, Version, DryRunPublished,
+                    DryRunJson, FailureCategory, NotBeforeUtc, ArchivedUtc, OwnerId, ClaimToken, LeaseUntilUtc,
+                    HeartbeatUtc, QueueOrder)
+                SELECT JobId, ProjectKey, Kind, Status, Attempt, LineageId, InputJson, ResultJson,
+                    ProgressJson, CancellationRequested, CreatedUtc, UpdatedUtc, Version, DryRunPublished,
+                    DryRunJson, FailureCategory, NotBeforeUtc, ArchivedUtc, OwnerId, ClaimToken, LeaseUntilUtc,
+                    HeartbeatUtc, (julianday(UpdatedUtc) - 2440587.5) * 86400000.0
+                FROM Jobs_GenerationEight;
+                """;
+            copy.ExecuteNonQuery();
+        }
+
+        using var drop = connection.CreateCommand();
+        drop.Transaction = transaction;
+        drop.CommandText = "DROP TABLE Jobs_GenerationEight;";
+        drop.ExecuteNonQuery();
     }
 
     private static void AddRecoveryAndArchiveFacts(SqliteConnection connection, SqliteTransaction? transaction)
@@ -474,11 +600,12 @@ public static class MotifSchema
     {
         "IX_AssessedWords_Assessment" or "IX_AssessedWords_Word" => "AssessedWords",
         "IX_ParsedAnalyses_Word" => "ParsedAnalyses",
-        "IX_Jobs_Lineage_Attempt" or "IX_Jobs_Status_Updated" or "IX_Jobs_Lease" => "Jobs",
+        "IX_Jobs_Lineage_Attempt" or "IX_Jobs_Status_Updated" or "IX_Jobs_Lease" or "IX_Jobs_QueueOrder" => "Jobs",
+        "IX_Proposals_DraftName" => "Proposals",
         _ => throw new InvalidDataException($"Motif index {index} is not registered.")
     };
 
-    private static bool IsUniqueIndex(string index) => index == "IX_Jobs_Lineage_Attempt";
+    private static bool IsUniqueIndex(string index) => index is "IX_Jobs_Lineage_Attempt" or "IX_Proposals_DraftName";
 
     private static IReadOnlyList<string> IndexColumnsFor(string index) => index switch
     {
@@ -488,6 +615,8 @@ public static class MotifSchema
         "IX_Jobs_Lineage_Attempt" => ["LineageId", "Attempt"],
         "IX_Jobs_Status_Updated" => ["Status", "UpdatedUtc"],
         "IX_Jobs_Lease" => ["Status", "LeaseUntilUtc"],
+        "IX_Jobs_QueueOrder" => ["QueueOrder"],
+        "IX_Proposals_DraftName" => ["DraftName"],
         _ => throw new InvalidDataException($"Motif index {index} is not registered.")
     };
 
@@ -574,11 +703,19 @@ public static class MotifSchema
         _ => throw new InvalidDataException($"Motif table {table} is not registered.")
     };
 
-    private static IReadOnlyList<ColumnShape> ProposalColumns(int schema) => schema >= 6
-        ? [C("ProposalId", "TEXT", false, 1), C("CurrentIntentDigest", "TEXT", true), C("Status", "TEXT", true),
-            C("Label", "TEXT"), C("Comment", "TEXT"), C("SupersededBy", "TEXT"), C("AnchorJson", "TEXT"), C("ArchivedUtc", "TEXT")]
-        : [C("ProposalId", "TEXT", false, 1), C("CurrentIntentDigest", "TEXT", true), C("Status", "TEXT", true),
-            C("Label", "TEXT"), C("Comment", "TEXT"), C("SupersededBy", "TEXT"), C("AnchorJson", "TEXT")];
+    private static IReadOnlyList<ColumnShape> ProposalColumns(int schema) => schema switch
+    {
+        >= 9 =>
+        [C("ProposalId", "TEXT", false, 1), C("CurrentIntentDigest", "TEXT"), C("Status", "TEXT", true),
+            C("Label", "TEXT"), C("Comment", "TEXT"), C("SupersededBy", "TEXT"), C("AnchorJson", "TEXT"),
+            C("ArchivedUtc", "TEXT"), C("DraftName", "TEXT"), C("DraftJson", "TEXT")],
+        >= 6 =>
+        [C("ProposalId", "TEXT", false, 1), C("CurrentIntentDigest", "TEXT", true), C("Status", "TEXT", true),
+            C("Label", "TEXT"), C("Comment", "TEXT"), C("SupersededBy", "TEXT"), C("AnchorJson", "TEXT"), C("ArchivedUtc", "TEXT")],
+        _ =>
+        [C("ProposalId", "TEXT", false, 1), C("CurrentIntentDigest", "TEXT", true), C("Status", "TEXT", true),
+            C("Label", "TEXT"), C("Comment", "TEXT"), C("SupersededBy", "TEXT"), C("AnchorJson", "TEXT")]
+    };
 
     private static IReadOnlyList<ColumnShape> JobsColumns(int schema) => schema >= 6
         ? [C("JobId", "TEXT", false, 1), C("ProjectKey", "TEXT", true), C("Kind", "TEXT", true), C("Status", "TEXT", true),
@@ -590,6 +727,10 @@ public static class MotifSchema
             .. schema >= 8
                 ? new[] { C("OwnerId", "TEXT"), C("ClaimToken", "TEXT"), C("LeaseUntilUtc", "TEXT"),
                     C("HeartbeatUtc", "TEXT") }
+                : [],
+            .. schema >= 9
+                ? new[] { C("QueueOrder", "REAL", true,
+                    defaultValue: "CAST((julianday('now') - 2440587.5) * 86400000.0 AS REAL)") }
                 : []]
         : [C("JobId", "TEXT", false, 1), C("ProjectKey", "TEXT", true), C("Kind", "TEXT", true), C("Status", "TEXT", true),
             C("Attempt", "INTEGER", true, defaultValue: "1"), C("LineageId", "TEXT", true), C("InputJson", "TEXT", true),
@@ -832,6 +973,38 @@ public static class MotifSchema
         );
         CREATE UNIQUE INDEX IX_Jobs_Lineage_Attempt ON Jobs(LineageId, Attempt);
         CREATE INDEX IX_Jobs_Status_Updated ON Jobs(Status, UpdatedUtc);
+        """;
+
+    private const string CanonicalJobDdlGenerationNine = """
+        CREATE TABLE Jobs (
+            JobId TEXT PRIMARY KEY,
+            ProjectKey TEXT NOT NULL,
+            Kind TEXT NOT NULL,
+            Status TEXT NOT NULL,
+            Attempt INTEGER NOT NULL DEFAULT 1 CHECK (Attempt > 0),
+            LineageId TEXT NOT NULL,
+            InputJson TEXT NOT NULL,
+            ResultJson TEXT NULL,
+            ProgressJson TEXT NULL,
+            CancellationRequested INTEGER NOT NULL DEFAULT 0 CHECK (CancellationRequested IN (0, 1)),
+            CreatedUtc TEXT NOT NULL,
+            UpdatedUtc TEXT NOT NULL,
+            Version INTEGER NOT NULL DEFAULT 0 CHECK (Version >= 0),
+            DryRunPublished INTEGER NOT NULL DEFAULT 0 CHECK (DryRunPublished IN (0, 1)),
+            DryRunJson TEXT NULL,
+            FailureCategory TEXT NOT NULL DEFAULT 'none',
+            NotBeforeUtc TEXT NULL,
+            ArchivedUtc TEXT NULL,
+            OwnerId TEXT NULL,
+            ClaimToken TEXT NULL,
+            LeaseUntilUtc TEXT NULL,
+            HeartbeatUtc TEXT NULL,
+            QueueOrder REAL NOT NULL DEFAULT (CAST((julianday('now') - 2440587.5) * 86400000.0 AS REAL))
+        );
+        CREATE UNIQUE INDEX IX_Jobs_Lineage_Attempt ON Jobs(LineageId, Attempt);
+        CREATE INDEX IX_Jobs_Status_Updated ON Jobs(Status, UpdatedUtc);
+        CREATE INDEX IX_Jobs_Lease ON Jobs(Status, LeaseUntilUtc);
+        CREATE INDEX IX_Jobs_QueueOrder ON Jobs(QueueOrder);
         """;
 
     private const string BaselineDdl = """

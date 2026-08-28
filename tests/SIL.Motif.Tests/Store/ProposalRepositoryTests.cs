@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Projects;
 using SIL.Motif.Host.Store;
@@ -101,6 +102,108 @@ public sealed class ProposalRepositoryTests : IDisposable
         }
 
         Assert.Throws<InvalidDataException>(() => repository.Get(id));
+    }
+
+    [Fact]
+    public void CreateDraftThenGetDraftRoundTripsAndRejectsADuplicateName()
+    {
+        var project = new ProjectLocator(Path.Combine(_root, "draft.fwdata"), "draft");
+        using var database = MotifDatabase.OpenOwned(Path.Combine(_root, "draft.motif.db"), project,
+            MotifSchema.CurrentSchema, new Version(1, 0));
+        var repository = new ProposalRepository(database);
+        var id = CanonicalId.Mint("proposal/");
+        repository.CreateDraft("working", id, "{\"label\":\"in progress\"}");
+
+        var draft = repository.GetDraft("working");
+        Assert.Equal(id, draft.ProposalId);
+        Assert.Equal("working", draft.DraftName);
+        Assert.Null(draft.IntentDigest);
+        Assert.Equal("{\"label\":\"in progress\"}", draft.ProposalJson);
+        Assert.Equal("draft", draft.Status);
+
+        Assert.Throws<InvalidOperationException>(
+            () => repository.CreateDraft("working", CanonicalId.Mint("proposal/"), "{}"));
+    }
+
+    [Fact]
+    public void FinalizeIsAtomicSettingRevisionDigestAndClearingTheDraftNameTogether()
+    {
+        var project = new ProjectLocator(Path.Combine(_root, "finalize.fwdata"), "finalize");
+        using var database = MotifDatabase.OpenOwned(Path.Combine(_root, "finalize.motif.db"), project,
+            MotifSchema.CurrentSchema, new Version(1, 0));
+        var repository = new ProposalRepository(database);
+        var id = CanonicalId.Mint("proposal/");
+        repository.CreateDraft("working", id, "{\"draft\":true}");
+
+        repository.Finalize("working", "sha256:first", "{\"proposalId\":\"" + id.Value + "\"}");
+
+        var committed = repository.Get(id);
+        Assert.Equal("sha256:first", committed.IntentDigest);
+        Assert.Equal("proposed", committed.Status);
+        Assert.Null(committed.DraftName);
+        Assert.Throws<KeyNotFoundException>(() => repository.GetDraft("working"));
+    }
+
+    [Fact]
+    public void FinalizeRollsBackEverythingWhenTheRevisionInsertHitsAGenuinePrimaryKeyCollision()
+    {
+        var project = new ProjectLocator(Path.Combine(_root, "finalize-rollback.fwdata"), "finalize-rollback");
+        using var database = MotifDatabase.OpenOwned(Path.Combine(_root, "finalize-rollback.motif.db"), project,
+            MotifSchema.CurrentSchema, new Version(1, 0));
+        var repository = new ProposalRepository(database);
+        var id = CanonicalId.Mint("proposal/");
+        repository.CreateDraft("working", id, "{\"draft\":true}");
+
+        // Pre-seeds Finalize's own (ProposalId, IntentDigest) with different content: a real PK collision.
+        using (var connection = database.OpenConnection())
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "INSERT INTO ProposalRevisions (ProposalId, IntentDigest, ProposalJson, CreatedUtc) " +
+                "VALUES ($id, $digest, X'7B7D', '2026-08-27T00:00:00Z');";
+            command.Parameters.AddWithValue("$id", id.Value);
+            command.Parameters.AddWithValue("$digest", "sha256:collide");
+            command.ExecuteNonQuery();
+        }
+
+        Assert.ThrowsAny<SqliteException>(
+            () => repository.Finalize("working", "sha256:collide", "{\"different\":true}"));
+
+        var draft = repository.GetDraft("working");
+        Assert.Equal("{\"draft\":true}", draft.ProposalJson);
+        Assert.Null(draft.IntentDigest);
+        Assert.Equal("draft", draft.Status);
+        using var check = database.OpenConnection();
+        using var count = check.CreateCommand();
+        count.CommandText = "SELECT COUNT(*) FROM ProposalRevisions WHERE ProposalId = $id;";
+        count.Parameters.AddWithValue("$id", id.Value);
+        Assert.Equal(1L, count.ExecuteScalar());
+    }
+
+    [Fact]
+    public void ListIncludesDraftsMarkedByDraftNameAlongsideCommittedProposals()
+    {
+        var project = new ProjectLocator(Path.Combine(_root, "list.fwdata"), "list");
+        using var database = MotifDatabase.OpenOwned(Path.Combine(_root, "list.motif.db"), project,
+            MotifSchema.CurrentSchema, new Version(1, 0));
+        var repository = new ProposalRepository(database);
+        var committedId = CanonicalId.Mint("proposal/");
+        repository.SaveRevision(new ProposalRevisionRecord(
+            committedId, "sha256:committed", "{\"proposalId\":\"" + committedId.Value + "\"}", "proposed", null, null, null));
+        var draftId = CanonicalId.Mint("proposal/");
+        repository.CreateDraft("working", draftId, "{\"draft\":true}");
+
+        var all = repository.List(new ProposalListFilter());
+        Assert.Equal(2, all.Count);
+        var draftRecord = Assert.Single(all, p => p.ProposalId == draftId);
+        Assert.Equal("working", draftRecord.DraftName);
+        Assert.Null(draftRecord.IntentDigest);
+        var committedRecord = Assert.Single(all, p => p.ProposalId == committedId);
+        Assert.Null(committedRecord.DraftName);
+        Assert.Equal("sha256:committed", committedRecord.IntentDigest);
+
+        var onlyDrafts = repository.ListDrafts();
+        Assert.Single(onlyDrafts);
+        Assert.Equal(draftId, onlyDrafts[0].ProposalId);
     }
 
     public void Dispose()

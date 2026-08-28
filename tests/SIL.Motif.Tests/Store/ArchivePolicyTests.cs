@@ -54,23 +54,12 @@ public sealed class ArchivePolicyTests
                 command.Parameters.AddWithValue("$utc", "2026-08-23T12:00:00Z");
                 command.ExecuteNonQuery();
             }
-            using (var draft = database.OpenConnection())
-            using (var command = draft.CreateCommand())
-            {
-                command.CommandText = "INSERT INTO Drafts (DraftName, ProposalId, DraftJson) VALUES ('working', $id, '{}');";
-                command.Parameters.AddWithValue("$id", id.Value);
-                command.ExecuteNonQuery();
-            }
             repository.DeleteArchived(id);
             using var reopened = database.OpenConnection();
             using var count = reopened.CreateCommand();
             count.CommandText = "SELECT COUNT(*) FROM AppliedIndex WHERE ProposalId = $id;";
             count.Parameters.AddWithValue("$id", id.Value);
             Assert.Equal(1L, count.ExecuteScalar());
-            using var drafts = reopened.CreateCommand();
-            drafts.CommandText = "SELECT COUNT(*) FROM Drafts WHERE ProposalId = $id;";
-            drafts.Parameters.AddWithValue("$id", id.Value);
-            Assert.Equal(0L, drafts.ExecuteScalar());
         }
         finally
         {

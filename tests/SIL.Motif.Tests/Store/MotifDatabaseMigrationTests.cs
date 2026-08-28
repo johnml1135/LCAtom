@@ -628,6 +628,64 @@ public sealed class MotifDatabaseMigrationTests : IDisposable
     }
 
     [Fact]
+    public void MigrationToGenerationNinePreservesProposalsAndJobsWithQueueOrderMatchingUpdatedUtcOrder()
+    {
+        var path = DatabasePath("generation-nine.fwdata");
+        const string proposalId = "proposal-nine";
+        using (Open("generation-nine.fwdata", supportedSchema: 8)) { }
+        using (var connection = NewConnection(path))
+        {
+            Execute(connection, "INSERT INTO Proposals (ProposalId, CurrentIntentDigest, Status) " +
+                $"VALUES ('{proposalId}', 'digest-nine', 'proposed');");
+            Execute(connection, "INSERT INTO ProposalRevisions (ProposalId, IntentDigest, ProposalJson, CreatedUtc) " +
+                $"VALUES ('{proposalId}', 'digest-nine', X'7B7D', '2026-08-01T00:00:00Z');");
+            foreach (var row in new[]
+            {
+                (Id: "job-middle", Updated: "2026-08-02T00:00:00Z"),
+                (Id: "job-earliest", Updated: "2026-08-01T00:00:00Z"),
+                (Id: "job-latest", Updated: "2026-08-03T00:00:00Z")
+            })
+                Execute(connection, $"INSERT INTO Jobs (JobId, ProjectKey, Kind, Status, Attempt, LineageId, InputJson, " +
+                    $"CancellationRequested, CreatedUtc, UpdatedUtc, Version, DryRunPublished) VALUES " +
+                    $"('{row.Id}', 'project', 'dry-run', 'queued', 1, '{row.Id}', '{{}}', 0, " +
+                    $"'{row.Updated}', '{row.Updated}', 0, 0);");
+        }
+
+        using var upgraded = Open("generation-nine.fwdata", supportedSchema: MotifSchema.CurrentSchema);
+        using var check = upgraded.OpenConnection();
+        MotifSchema.ValidateSchema(check, MotifSchema.CurrentSchema);
+
+        Assert.Equal(1L, Scalar(check, "SELECT COUNT(*) FROM Proposals;"));
+        Assert.Equal("digest-nine", Scalar(check, $"SELECT CurrentIntentDigest FROM Proposals WHERE ProposalId = '{proposalId}';"));
+        Assert.Equal("proposed", Scalar(check, $"SELECT Status FROM Proposals WHERE ProposalId = '{proposalId}';"));
+        Assert.Same(DBNull.Value, Scalar(check, $"SELECT DraftName FROM Proposals WHERE ProposalId = '{proposalId}';"));
+
+        Assert.Equal(3L, Scalar(check, "SELECT COUNT(*) FROM Jobs;"));
+        var byQueueOrder = ReadJobIds(check, "SELECT JobId FROM Jobs ORDER BY QueueOrder;");
+        var byUpdatedUtc = ReadJobIds(check, "SELECT JobId FROM Jobs ORDER BY UpdatedUtc;");
+        Assert.Equal(byUpdatedUtc, byQueueOrder);
+        Assert.Equal(new[] { "job-earliest", "job-middle", "job-latest" }, byQueueOrder);
+    }
+
+    [Fact]
+    public void MigrationWithRowsInDraftsStillMigratesTheDraftsRowsAreNotCarried()
+    {
+        var path = DatabasePath("drafts-not-carried.fwdata");
+        using (Open("drafts-not-carried.fwdata", supportedSchema: 3)) { }
+        using (var connection = NewConnection(path))
+        {
+            Execute(connection,
+                "INSERT INTO Drafts (DraftName, ProposalId, DraftJson) VALUES ('stale', 'proposal-stale', '{}');");
+        }
+
+        using var upgraded = Open("drafts-not-carried.fwdata", supportedSchema: MotifSchema.CurrentSchema);
+        using var check = upgraded.OpenConnection();
+        MotifSchema.ValidateSchema(check, MotifSchema.CurrentSchema);
+        Assert.Null(Scalar(check, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'Drafts';"));
+        Assert.Null(Scalar(check, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'MigrationLedger';"));
+    }
+
+    [Fact]
     public void GenerationSixBoundaryFailureRollsBackAndCanBeRetried()
     {
         var path = DatabasePath("recovery-rollback.fwdata");
@@ -713,6 +771,16 @@ public sealed class MotifDatabaseMigrationTests : IDisposable
         var connection = new SqliteConnection($"Data Source={path};Pooling=False");
         connection.Open();
         return connection;
+    }
+
+    private static List<string> ReadJobIds(SqliteConnection connection, string sql)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        using var reader = command.ExecuteReader();
+        var ids = new List<string>();
+        while (reader.Read()) ids.Add(reader.GetString(0));
+        return ids;
     }
 
     private static object? Scalar(SqliteConnection connection, string sql)

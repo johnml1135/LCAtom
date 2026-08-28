@@ -140,6 +140,37 @@ public sealed class JobLeaseTests : IDisposable
         Assert.Equal(JobStatus.Running, jobs.Get(theirs.JobId)!.Status);
     }
 
+    [Fact]
+    public void EveryCreatedJobCarriesAQueueOrderThatNeverInvertsCreationOrder()
+    {
+        var jobs = new JobRepository(_database);
+        var created = new List<string>();
+        for (var i = 0; i < 20; i++)
+        {
+            var id = "job-" + i;
+            jobs.Create(id, Project, "dry-run", "{}", Now());
+            created.Add(id);
+        }
+
+        var orders = QueueOrders();
+        // A tie is possible and harmless; an inversion is not, because the claim reads this column.
+        Assert.All(orders.Values, order => Assert.True(order > 0, "QueueOrder was not populated."));
+        for (var i = 1; i < created.Count; i++)
+            Assert.True(orders[created[i]] >= orders[created[i - 1]],
+                $"{created[i]} sorts before {created[i - 1]} despite being created after it.");
+    }
+
+    private Dictionary<string, double> QueueOrders()
+    {
+        var orders = new Dictionary<string, double>(StringComparer.Ordinal);
+        using var connection = _database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT JobId, QueueOrder FROM Jobs;";
+        using var reader = command.ExecuteReader();
+        while (reader.Read()) orders[reader.GetString(0)] = reader.GetDouble(1);
+        return orders;
+    }
+
     private static TimeSpan Lease() => TimeSpan.FromMinutes(5);
 
     private static string Now() => Stamp(DateTimeOffset.UtcNow);

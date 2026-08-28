@@ -12,19 +12,43 @@ public interface IProposalRepository
 {
     /// <summary>Gets the current revision and review state for one Proposal.</summary>
     ProposalRecord Get(CanonicalId proposalId);
-    /// <summary>Lists current Proposals, optionally restricted to one workflow status.</summary>
+    /// <summary>Lists current Proposals, optionally restricted to one workflow status; drafts are included, marked by <see cref="ProposalRecord.DraftName"/>.</summary>
     IReadOnlyList<ProposalRecord> List(ProposalListFilter filter);
     /// <summary>Stores one immutable revision and moves its Proposal pointer to that revision.</summary>
     void SaveRevision(ProposalRevisionRecord revision);
     /// <summary>Stores a Decision bound to one exact Proposal revision.</summary>
     void SaveDecision(DecisionRecord decision);
+    /// <summary>
+    /// Creates a Draft: a Proposal identified by <paramref name="proposalId"/> with <c>DraftName</c> set and
+    /// no committed revision yet — <c>CurrentIntentDigest</c> stays <c>NULL</c> until <see cref="Finalize"/>.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">A draft already exists under <paramref name="draftName"/>.</exception>
+    void CreateDraft(string draftName, CanonicalId proposalId, string draftJson);
+    /// <summary>Replaces a Draft's in-progress content. The Draft keeps its identity and name.</summary>
+    void SaveDraft(string draftName, string draftJson);
+    /// <summary>Gets one Draft by name.</summary>
+    ProposalRecord GetDraft(string draftName);
+    /// <summary>Lists every Draft, ordered by name.</summary>
+    IReadOnlyList<ProposalRecord> ListDrafts();
+    /// <summary>
+    /// Commits a Draft: in one transaction, writes its first <c>ProposalRevisions</c> row, sets
+    /// <c>CurrentIntentDigest</c>, clears <c>DraftName</c>/<c>DraftJson</c>, and moves the Proposal to
+    /// <c>proposed</c>. A failure (for example a digest collision with different content already recorded
+    /// under this Proposal) leaves the Draft exactly as it was — none of the four effects is observable
+    /// without all of them.
+    /// </summary>
+    void Finalize(string draftName, string intentDigest, string proposalJson);
 }
 
-/// <summary>The current pointer and review state of a Proposal.</summary>
+/// <summary>
+/// The current pointer and review state of a Proposal. <see cref="DraftName"/> non-null marks a Draft: it has
+/// no committed revision, so <see cref="IntentDigest"/> is null and <see cref="ProposalJson"/> is its
+/// in-progress content rather than an immutable revision's bytes.
+/// </summary>
 public sealed record ProposalRecord(
-    CanonicalId ProposalId, string IntentDigest, string ProposalJson, string Status, string? Label,
+    CanonicalId ProposalId, string? IntentDigest, string? ProposalJson, string Status, string? Label,
     string? Comment, string? SupersededBy, DecisionRecord? Decision = null, byte[]? ProposalJsonBytes = null,
-    string? AnchorJson = null, string? ArchivedUtc = null);
+    string? AnchorJson = null, string? ArchivedUtc = null, string? DraftName = null);
 
 /// <summary>An immutable Proposal revision, retaining the exact source JSON bytes.</summary>
 public sealed record ProposalRevisionRecord(
@@ -60,7 +84,8 @@ public sealed class ProposalRepository : IProposalRepository
         command.CommandText = """
             SELECT p.ProposalId, p.CurrentIntentDigest, r.ProposalJson,
                    p.Status, p.Label, p.Comment, p.SupersededBy,
-                   d.Outcome, d.ActorType, d.ActorId, d.Comment, d.TimestampUtc, d.IntentDigest, p.AnchorJson, p.ArchivedUtc
+                   d.Outcome, d.ActorType, d.ActorId, d.Comment, d.TimestampUtc, d.IntentDigest, p.AnchorJson, p.ArchivedUtc,
+                   p.DraftName, p.DraftJson
             FROM Proposals p JOIN ProposalRevisions r ON r.ProposalId = p.ProposalId
                 AND r.IntentDigest = p.CurrentIntentDigest
             LEFT JOIN Decisions d ON d.ProposalId = p.ProposalId AND d.IntentDigest = p.CurrentIntentDigest
@@ -84,8 +109,9 @@ public sealed class ProposalRepository : IProposalRepository
         command.CommandText = """
             SELECT p.ProposalId, p.CurrentIntentDigest, r.ProposalJson,
                    p.Status, p.Label, p.Comment, p.SupersededBy,
-                   d.Outcome, d.ActorType, d.ActorId, d.Comment, d.TimestampUtc, d.IntentDigest, p.AnchorJson, p.ArchivedUtc
-            FROM Proposals p JOIN ProposalRevisions r ON r.ProposalId = p.ProposalId
+                   d.Outcome, d.ActorType, d.ActorId, d.Comment, d.TimestampUtc, d.IntentDigest, p.AnchorJson, p.ArchivedUtc,
+                   p.DraftName, p.DraftJson
+            FROM Proposals p LEFT JOIN ProposalRevisions r ON r.ProposalId = p.ProposalId
                 AND r.IntentDigest = p.CurrentIntentDigest
             LEFT JOIN Decisions d ON d.ProposalId = p.ProposalId AND d.IntentDigest = p.CurrentIntentDigest
             WHERE ($status IS NULL OR p.Status = $status)
@@ -232,8 +258,7 @@ public sealed class ProposalRepository : IProposalRepository
             if (status is null || !IsTerminal(status)) throw new InvalidOperationException("Only terminal Proposals may be archived.");
         }
         foreach (var sql in new[] { "DELETE FROM Decisions WHERE ProposalId = $id;", "DELETE FROM Receipts WHERE ProposalId = $id;",
-            "DELETE FROM Reports WHERE ProposalId = $id;", "DELETE FROM Drafts WHERE ProposalId = $id;",
-            "DELETE FROM ProposalRevisions WHERE ProposalId = $id;" })
+            "DELETE FROM Reports WHERE ProposalId = $id;", "DELETE FROM ProposalRevisions WHERE ProposalId = $id;" })
         {
             using var command = connection.CreateCommand();
             command.Transaction = transaction;
@@ -260,6 +285,128 @@ public sealed class ProposalRepository : IProposalRepository
         command.Parameters.AddWithValue("$comment", (object?)revision.Comment ?? DBNull.Value);
     }
 
+    /// <inheritdoc />
+    public void CreateDraft(string draftName, CanonicalId proposalId, string draftJson)
+    {
+        if (string.IsNullOrWhiteSpace(draftName)) throw new ArgumentException("A draft name is required.", nameof(draftName));
+        if (string.IsNullOrWhiteSpace(draftJson)) throw new ArgumentException("Draft content is required.", nameof(draftJson));
+        using var connection = _database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+        using (var check = connection.CreateCommand())
+        {
+            check.Transaction = transaction;
+            check.CommandText = "SELECT 1 FROM Proposals WHERE DraftName = $name;";
+            check.Parameters.AddWithValue("$name", draftName);
+            if (check.ExecuteScalar() is not null)
+                throw new InvalidOperationException(
+                    $"Draft '{draftName}' already exists. Finalize or discard it before creating a new draft with this name.");
+        }
+        using var insert = connection.CreateCommand();
+        insert.Transaction = transaction;
+        insert.CommandText = """
+            INSERT INTO Proposals (ProposalId, CurrentIntentDigest, Status, DraftName, DraftJson)
+            VALUES ($id, NULL, $status, $name, $json);
+            """;
+        insert.Parameters.AddWithValue("$id", proposalId.Value);
+        insert.Parameters.AddWithValue("$status", DraftStatus);
+        insert.Parameters.AddWithValue("$name", draftName);
+        insert.Parameters.AddWithValue("$json", draftJson);
+        insert.ExecuteNonQuery();
+        transaction.Commit();
+    }
+
+    /// <inheritdoc />
+    public void SaveDraft(string draftName, string draftJson)
+    {
+        if (string.IsNullOrWhiteSpace(draftJson)) throw new ArgumentException("Draft content is required.", nameof(draftJson));
+        using var connection = _database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE Proposals SET DraftJson = $json WHERE DraftName = $name;";
+        command.Parameters.AddWithValue("$json", draftJson);
+        command.Parameters.AddWithValue("$name", draftName);
+        if (command.ExecuteNonQuery() != 1) throw new KeyNotFoundException($"Draft '{draftName}' was not found.");
+    }
+
+    /// <inheritdoc />
+    public ProposalRecord GetDraft(string draftName)
+    {
+        using var connection = _database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = DraftSelectSql + " WHERE DraftName = $name;";
+        command.Parameters.AddWithValue("$name", draftName);
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? ReadDraftRecord(reader) : throw new KeyNotFoundException($"Draft '{draftName}' was not found.");
+    }
+
+    /// <inheritdoc />
+    public IReadOnlyList<ProposalRecord> ListDrafts()
+    {
+        using var connection = _database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = DraftSelectSql + " WHERE DraftName IS NOT NULL ORDER BY DraftName;";
+        using var reader = command.ExecuteReader();
+        var records = new List<ProposalRecord>();
+        while (reader.Read()) records.Add(ReadDraftRecord(reader));
+        return records;
+    }
+
+    /// <inheritdoc />
+    public void Finalize(string draftName, string intentDigest, string proposalJson)
+    {
+        if (string.IsNullOrWhiteSpace(intentDigest) || string.IsNullOrWhiteSpace(proposalJson))
+            throw new ArgumentException("Finalize requires an intent digest and Proposal content.", nameof(intentDigest));
+        using var connection = _database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+        string proposalId;
+        using (var find = connection.CreateCommand())
+        {
+            find.Transaction = transaction;
+            find.CommandText = "SELECT ProposalId FROM Proposals WHERE DraftName = $name;";
+            find.Parameters.AddWithValue("$name", draftName);
+            proposalId = find.ExecuteScalar() as string ?? throw new KeyNotFoundException($"Draft '{draftName}' was not found.");
+        }
+        using (var revision = connection.CreateCommand())
+        {
+            revision.Transaction = transaction;
+            revision.CommandText = """
+                INSERT INTO ProposalRevisions (ProposalId, IntentDigest, ProposalJson, CreatedUtc)
+                VALUES ($id, $digest, $bytes, $created);
+                """;
+            revision.Parameters.AddWithValue("$id", proposalId);
+            revision.Parameters.AddWithValue("$digest", intentDigest);
+            revision.Parameters.AddWithValue("$bytes", Encoding.UTF8.GetBytes(proposalJson));
+            revision.Parameters.AddWithValue(
+                "$created", _clock.UtcNow.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
+            revision.ExecuteNonQuery();
+        }
+        using (var commit = connection.CreateCommand())
+        {
+            commit.Transaction = transaction;
+            commit.CommandText = """
+                UPDATE Proposals SET CurrentIntentDigest = $digest, Status = $status, DraftName = NULL, DraftJson = NULL
+                WHERE DraftName = $name;
+                """;
+            commit.Parameters.AddWithValue("$digest", intentDigest);
+            commit.Parameters.AddWithValue("$status", "proposed");
+            commit.Parameters.AddWithValue("$name", draftName);
+            commit.ExecuteNonQuery();
+        }
+        transaction.Commit();
+    }
+
+    private const string DraftSelectSql =
+        "SELECT ProposalId, Status, Label, Comment, SupersededBy, AnchorJson, ArchivedUtc, DraftName, DraftJson FROM Proposals";
+
+    private static ProposalRecord ReadDraftRecord(SqliteDataReader reader)
+    {
+        var proposalId = CanonicalId.Parse(reader.GetString(0));
+        return new ProposalRecord(proposalId, null, reader.IsDBNull(8) ? null : reader.GetString(8), reader.GetString(1),
+            reader.IsDBNull(2) ? null : reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetString(3),
+            reader.IsDBNull(4) ? null : reader.GetString(4), null, null,
+            reader.IsDBNull(5) ? null : reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetString(6),
+            reader.IsDBNull(7) ? null : reader.GetString(7));
+    }
+
     private static ProposalRecord ReadRecord(SqliteDataReader reader)
     {
         var proposalId = CanonicalId.Parse(reader.GetString(0));
@@ -267,22 +414,37 @@ public sealed class ProposalRepository : IProposalRepository
             ? null
             : new DecisionRecord(proposalId, reader.GetString(12), reader.GetString(7), reader.GetString(8),
                 reader.GetString(9), reader.IsDBNull(10) ? null : reader.GetString(10), reader.GetString(11));
-        if (reader.IsDBNull(2) || reader[2] is not byte[] bytes)
-            throw new InvalidDataException("Stored Proposal JSON must be a non-null BLOB.");
-        string json;
-        try
+        var draftName = reader.IsDBNull(15) ? null : reader.GetString(15);
+        var intentDigest = reader.IsDBNull(1) ? null : reader.GetString(1);
+        string? json;
+        byte[]? bytes = null;
+        if (draftName is not null)
         {
-            json = new UTF8Encoding(false, true).GetString(bytes).TrimStart('\uFEFF');
+            // A draft has no committed revision yet; its content is the working DraftJson, not a BLOB.
+            json = reader.IsDBNull(16) ? null : reader.GetString(16);
         }
-        catch (DecoderFallbackException exception)
+        else
         {
-            throw new InvalidDataException("The stored Proposal JSON is not valid UTF-8.", exception);
+            if (reader.IsDBNull(2) || reader[2] is not byte[] committedBytes)
+                throw new InvalidDataException("Stored Proposal JSON must be a non-null BLOB.");
+            bytes = committedBytes;
+            try
+            {
+                json = new UTF8Encoding(false, true).GetString(bytes).TrimStart('\uFEFF');
+            }
+            catch (DecoderFallbackException exception)
+            {
+                throw new InvalidDataException("The stored Proposal JSON is not valid UTF-8.", exception);
+            }
         }
-        return new ProposalRecord(proposalId, reader.GetString(1), json, reader.GetString(3),
+        return new ProposalRecord(proposalId, intentDigest, json, reader.GetString(3),
             reader.IsDBNull(4) ? null : reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5),
             reader.IsDBNull(6) ? null : reader.GetString(6), decision, bytes,
-            reader.IsDBNull(13) ? null : reader.GetString(13), reader.IsDBNull(14) ? null : reader.GetString(14));
+            reader.IsDBNull(13) ? null : reader.GetString(13), reader.IsDBNull(14) ? null : reader.GetString(14),
+            draftName);
     }
+
+    private const string DraftStatus = "draft";
 
     private static bool IsTerminal(string status) => status is "applied" or "rejected" or "superseded" or "withdrawn";
 
