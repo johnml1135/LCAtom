@@ -28,7 +28,7 @@ public sealed record RunnerOptions
     /// </remarks>
     public const string NamespaceVariable = "MOTIF_RUNNER_NAMESPACE";
 
-    public string Root { get; init; } = DefaultRoot();
+    public string Root { get; init; } = ResolveRoot();
 
     public TimeSpan Lease { get; init; } = TimeSpan.FromMinutes(5);
 
@@ -39,11 +39,14 @@ public sealed record RunnerOptions
     /// <summary>Reads the environment and the one argument the runner still takes.</summary>
     public static RunnerOptions Read(string[] args) => new()
     {
-        Root = Value(RootVariable) ?? DefaultRoot(),
+        Root = ResolveRoot(),
         Lease = Seconds(Value(LeaseVariable)) ?? TimeSpan.FromMinutes(5),
         OwnerNamespace = Value(NamespaceVariable),
         IdleTimeout = IdleFrom(args) ?? TimeSpan.FromMinutes(5),
     };
+
+    /// <summary>The worker root any process (runner or CLI) uses: <see cref="RootVariable"/>, or the per-user default.</summary>
+    public static string ResolveRoot() => Value(RootVariable) ?? DefaultRoot();
 
     private static string DefaultRoot() => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SIL", "Motif");

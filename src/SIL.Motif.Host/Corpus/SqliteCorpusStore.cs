@@ -10,26 +10,20 @@ using SIL.Motif.Host.Store;
 namespace SIL.Motif.Host.Corpus;
 
 /// <summary>
-/// Stores Corpora in the embedded database ADR 0036 decision 6 assigns them to.
+/// Stores Corpora in a project's paired Motif database, alongside its Proposals and Jobs.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>What moved here from <see cref="FileCorpusStore"/> and why.</b> A corpus is bulk (tens to hundreds of
-/// megabytes once several documents accumulate) and is queried in aggregate — "how many documents", "which
-/// corpora exist" — where a filesystem gives no aggregate query and no pruning. <see cref="List"/> and
-/// <see cref="Exists"/> read only the <c>Corpora</c> table, which carries no document text at all, so listing
-/// what is in the store never touches a byte of any document.
+/// A corpus is bulk (tens to hundreds of megabytes once several documents accumulate) and is queried in
+/// aggregate — "how many documents", "which corpora exist". <see cref="List"/> and <see cref="Exists"/>
+/// read only the <c>Corpora</c> table, which carries no document text at all, so listing what is in the
+/// store never touches a byte of any document.
 /// </para>
 /// <para>
 /// <b><see cref="Load"/> still returns everything</b>, text included, because that is what the interface
-/// promises callers today and what ingestion needs when it appends a document (<c>CorpusIngestion</c> loads,
-/// appends, and saves the whole corpus back). The property this type adds over the file store is that the
-/// operations that do not need the text — listing, existence — no longer pay for it either.
-/// </para>
-/// <para>
-/// <b>Migration.</b> Nothing here reads a <c>corpus.json</c> file; a store already on disk stays exactly as
-/// readable as it always was through <see cref="FileCorpusStore"/>, and <see cref="CorpusStoreMigration"/> is
-/// the supported one-time path from one into the other.
+/// promises callers and what ingestion needs when it appends a document (<c>CorpusIngestion</c> loads,
+/// appends, and saves the whole corpus back). Listing and existence checks are the operations that do not
+/// need the text, and do not pay for it.
 /// </para>
 /// </remarks>
 public sealed class SqliteCorpusStore : ICorpusStore

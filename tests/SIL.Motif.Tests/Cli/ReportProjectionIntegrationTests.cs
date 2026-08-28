@@ -2,10 +2,12 @@ using System;
 using System.IO;
 using System.Text.Json;
 using SIL.Motif.Cli;
+using SIL.Motif.Contract.Projects;
 using SIL.Motif.Host.Analysis;
 using SIL.Motif.Host.Corpus;
 using SIL.Motif.Host.Parser;
 using SIL.Motif.Host.Store;
+using SIL.Motif.Worker.Store;
 using SIL.LCModel;
 using SIL.LCModel.Core.Text;
 using SIL.LCModel.Infrastructure;
@@ -40,6 +42,10 @@ public sealed class ReportProjectionIntegrationTests
         var scratchRoot = Path.GetDirectoryName(Path.GetDirectoryName(_fwDataPath))!;
         _storeDir = Path.Combine(scratchRoot, ".motif-store");
     }
+
+    /// <summary>The paired project database <c>analyses --assessment</c> now reads Assessments from.</summary>
+    private string AssessmentDatabasePath() => ProjectDatabaseCatalog.DatabasePathFor(
+        new ProjectLocator(_fwDataPath, Path.GetFileNameWithoutExtension(_fwDataPath)));
 
     [Fact]
     public void OpenJson_CarriesTheSameFiguresAsTheTextReport()
@@ -90,18 +96,16 @@ public sealed class ReportProjectionIntegrationTests
                 "pipeline",
                 0),
             CorpusDescriptor.Create("corpus-one", Array.Empty<string>()));
-        var assessmentId = new SqliteAssessmentStore(Path.Combine(_storeDir, "motif.db")).Save(assessment);
+        var assessmentId = new SqliteAssessmentStore(AssessmentDatabasePath()).Save(assessment);
         var usage = new UsageLog();
 
         var text = Commands.Analyses(
-            _storeDir,
             _fwDataPath,
             assessmentId,
             assessment.Corpus.Sha256,
             assessment.Report.GrammarSourceSha256,
             usage);
         var json = Commands.AnalysesJson(
-            _storeDir,
             _fwDataPath,
             assessmentId,
             Hash('b'),
@@ -132,18 +136,12 @@ public sealed class ReportProjectionIntegrationTests
     [Fact]
     public void AnalysesReturnsClearErrorWhenNamedAssessmentDoesNotExist()
     {
-        var missingStore = Path.Combine(_storeDir, "missing-store");
-        var result = Commands.Analyses(
-            missingStore,
-            _fwDataPath,
-            Hash('0'),
-            Hash('1'),
-            Hash('2'));
+        // No corpus or proposal verb has touched this scratch project, so its paired database does not exist.
+        var result = Commands.Analyses(_fwDataPath, Hash('0'), Hash('1'), Hash('2'));
 
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains(Hash('0'), result.Output);
         Assert.Contains("not found", result.Output, StringComparison.OrdinalIgnoreCase);
-        Assert.False(Directory.Exists(missingStore));
     }
 
     [Theory]
@@ -157,7 +155,6 @@ public sealed class ReportProjectionIntegrationTests
         string currentGrammarSha256)
     {
         var result = Commands.Analyses(
-            _storeDir,
             _fwDataPath,
             assessmentId,
             currentCorpusSha256,
@@ -200,10 +197,9 @@ public sealed class ReportProjectionIntegrationTests
             CorpusDescriptor.Create(
                 "real-join",
                 new[] { "zzAssessmentParsed", "zzAssessmentEmpty" }));
-        var assessmentId = new SqliteAssessmentStore(Path.Combine(_storeDir, "motif.db")).Save(assessment);
+        var assessmentId = new SqliteAssessmentStore(AssessmentDatabasePath()).Save(assessment);
 
         var result = Commands.AnalysesJson(
-            _storeDir,
             _fwDataPath,
             assessmentId,
             assessment.Corpus.Sha256,

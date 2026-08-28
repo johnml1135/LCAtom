@@ -21,7 +21,6 @@ namespace SIL.Motif.Tests.Corpus;
 /// with No-Derivatives, and "may I build an n-gram model from this" has different answers within one corpus.</item>
 /// <item>Order and repetition survive ingestion. Deduplicating on the way in is irreversible and destroys both
 /// the frequency ranking and the n-gram sequence.</item>
-/// <item>Ids that came from outside cannot escape the store directory.</item>
 /// </list>
 /// </remarks>
 public class CorpusIngestionTests : IDisposable
@@ -35,7 +34,7 @@ public class CorpusIngestionTests : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    private FileCorpusStore Store() => new(Path.Combine(_root, "corpora"));
+    private SqliteCorpusStore Store() => new(Path.Combine(_root, "motif.db"));
 
     private static CorpusProvenance Provenance(LicenceCapabilities? capabilities = null) => new(
         new CorpusOrigin(
@@ -313,25 +312,6 @@ public class CorpusIngestionTests : IDisposable
 
         // Unattested, so still no accuracy figures — storage must not quietly upgrade that.
         Assert.False(corpus.Provenance.SupportsAccuracyClaims);
-    }
-
-    [Fact]
-    public async Task AnIdFromOutsideCannotEscapeTheStoreDirectory()
-    {
-        var path = WriteFile("a.txt", "mbali\n");
-        var ingestion = new CorpusIngestion(Store(), new FakeFetcher());
-
-        ingestion.AddCorpus("../../escaped", Provenance());
-        await ingestion.AddDocumentAsync("../../escaped", new DocumentSource.File(path),
-            new DocumentMetadata("../../also-escaped", "D"));
-
-        // Ids come from other programs' bundles; writes stay under the store root, but ids are preserved, not mangled.
-        var written = Directory.GetFiles(_root, "*", SearchOption.AllDirectories);
-        Assert.All(written, f => Assert.StartsWith(Path.GetFullPath(_root), Path.GetFullPath(f), StringComparison.Ordinal));
-
-        var corpus = Store().Load("../../escaped")!;
-        Assert.Equal("../../escaped", corpus.CorpusId);
-        Assert.Equal("../../also-escaped", corpus.Documents[0].DocumentId);
     }
 
     [Fact]

@@ -4,11 +4,10 @@ using SIL.Motif.Projection.Usage;
 namespace SIL.Motif.Host.Store;
 
 /// <summary>
-/// Writes <see cref="UsageLogEntry"/> rows to the machine store's <c>Usage</c> table, the database home
-/// ADR 0021 decision 4's usage log moves to once <c>--store</c> is deleted. It is a database rather than
-/// the file <see cref="UsageLogFile"/> still writes because several <c>motif</c> invocations may run at
-/// once, and two processes appending to one file interleave where two connections into one SQLite
-/// database do not.
+/// Writes <see cref="UsageLogEntry"/> rows to the machine store's <c>Usage</c> table — the home ADR 0021
+/// decision 4's usage log requires. It is a database rather than a file because several <c>motif</c>
+/// invocations may run at once, and two processes appending to one file interleave where two connections
+/// into one SQLite database do not.
 /// </summary>
 public sealed class MachineUsageLog
 {

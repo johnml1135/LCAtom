@@ -21,12 +21,24 @@ namespace SIL.Motif.Tests.Cli;
 /// </summary>
 public sealed class PromoteGlossTests : IDisposable
 {
-    private readonly string _storeDir =
+    private const string ProductVersion = "1.0";
+
+    private readonly string _root =
         Path.Combine(Path.GetTempPath(), "motif-promote-gloss-tests", Guid.NewGuid().ToString("N"));
+    private readonly string _fwDataPath;
+    private readonly string _storeDir;
+
+    public PromoteGlossTests()
+    {
+        Directory.CreateDirectory(_root);
+        _fwDataPath = Path.Combine(_root, "Project.fwdata");
+        File.WriteAllText(_fwDataPath, string.Empty);
+        _storeDir = ProposalStore.ForProject(_fwDataPath).RootDirectory;
+    }
 
     public void Dispose()
     {
-        if (Directory.Exists(_storeDir)) Directory.Delete(_storeDir, recursive: true);
+        if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
         GC.SuppressFinalize(this);
     }
 
@@ -34,8 +46,8 @@ public sealed class PromoteGlossTests : IDisposable
         Assert.Equal(
             0,
             CorpusCommands.AddCorpus(
-                _storeDir, corpusId, "Testlang Wikipedia dump", uri: "https://example.invalid/dump",
-                licence: licence, capabilities: LicenceCapabilities.Unknown(),
+                _fwDataPath, ProductVersion, corpusId, "Testlang Wikipedia dump",
+                uri: "https://example.invalid/dump", licence: licence, capabilities: LicenceCapabilities.Unknown(),
                 tokeniser: "whitespace-and-punctuation", tokeniserVersion: "1", tokeniserNotes: null).ExitCode);
 
     private static string ExtractProposalId(string output)
@@ -67,7 +79,8 @@ public sealed class PromoteGlossTests : IDisposable
         var target = CanonicalId.Mint().Value;
         Assert.Equal(0, Commands.New(_storeDir, "d", null).ExitCode);
 
-        var result = Commands.PromoteGloss(_storeDir, "d", target, "en", "a promoted gloss", "wiki-testlang");
+        var result = Commands.PromoteGloss(
+            _storeDir, "d", target, "en", "a promoted gloss", "wiki-testlang", _fwDataPath, ProductVersion);
 
         Assert.Equal(0, result.ExitCode);
         Assert.Contains("promoted from corpus 'wiki-testlang'", result.Output);
@@ -95,7 +108,11 @@ public sealed class PromoteGlossTests : IDisposable
         SeedCorpus();
         var target = CanonicalId.Mint().Value;
         Assert.Equal(0, Commands.New(_storeDir, "d", null).ExitCode);
-        Assert.Equal(0, Commands.PromoteGloss(_storeDir, "d", target, "en", "a promoted gloss", "wiki-testlang").ExitCode);
+        Assert.Equal(
+            0,
+            Commands.PromoteGloss(
+                _storeDir, "d", target, "en", "a promoted gloss", "wiki-testlang", _fwDataPath, ProductVersion)
+                .ExitCode);
         DraftRationale.Author(
             _storeDir, "d", "Promote an attested gloss", "Carry the corpus provenance into the finalized proposal.");
         var finalize = Commands.Finalize(_storeDir, "d");
@@ -116,7 +133,7 @@ public sealed class PromoteGlossTests : IDisposable
         var before = File.ReadAllText(draftPath);
 
         var result = Commands.PromoteGloss(
-            _storeDir, "d", CanonicalId.Mint().Value, "en", "text", "no-such-corpus");
+            _storeDir, "d", CanonicalId.Mint().Value, "en", "text", "no-such-corpus", _fwDataPath, ProductVersion);
 
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("not found", result.Output, StringComparison.OrdinalIgnoreCase);
@@ -130,7 +147,8 @@ public sealed class PromoteGlossTests : IDisposable
 
         Assert.Equal(0, Commands.New(_storeDir, "d", null).ExitCode);
         var result = Commands.PromoteGloss(
-            _storeDir, "d", CanonicalId.Mint().Value, "en", "text", "wiki-testlang", "no-such-document");
+            _storeDir, "d", CanonicalId.Mint().Value, "en", "text", "wiki-testlang", _fwDataPath, ProductVersion,
+            "no-such-document");
 
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("no document", result.Output, StringComparison.OrdinalIgnoreCase);

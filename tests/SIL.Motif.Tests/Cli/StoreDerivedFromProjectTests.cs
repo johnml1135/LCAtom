@@ -98,6 +98,34 @@ public sealed class StoreDerivedFromProjectTests : IDisposable
         Assert.True(File.Exists(manifestPath));
     }
 
+    /// <summary>
+    /// The break the ADR 0041 amendment records: <c>add-corpus</c> writing a corpus keyed by the
+    /// working directory while <c>promote-gloss</c> reads the corpus keyed by the project would make a
+    /// corpus invisible the moment the two commands run from different directories. Both are keyed by
+    /// <c>--project</c> alone, so the corpus is visible from anywhere.
+    /// </summary>
+    [Fact]
+    public void ACorpusAddedFromOneWorkingDirectory_IsVisibleToPromoteGlossFromAnother()
+    {
+        var target = CanonicalId.Mint().Value;
+
+        var addCorpus = RunCli(
+            _cwdA,
+            $"add-corpus --project \"{_fwDataPath}\" --id wiki-testlang --description \"Testlang dump\" " +
+            "--tokeniser whitespace-and-punctuation --tokeniser-version 1");
+        Assert.Equal(0, addCorpus.ExitCode);
+
+        Assert.Equal(0, RunCli(_cwdB, $"new --project \"{_fwDataPath}\" --draft d").ExitCode);
+
+        var promote = RunCli(
+            _cwdB,
+            $"promote-gloss --project \"{_fwDataPath}\" --draft d --target {target} --ws en --text hello " +
+            "--corpus wiki-testlang");
+
+        Assert.Equal(0, promote.ExitCode);
+        Assert.Contains("promoted from corpus 'wiki-testlang'", promote.Output);
+    }
+
     private static string ExtractProposalId(string output)
     {
         const string marker = "-> Proposal ";

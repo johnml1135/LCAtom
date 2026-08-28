@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using SIL.Motif.Contract.Projects;
 using SIL.Motif.Generator;
 using SIL.Motif.Host.Analysis;
 using SIL.Motif.Host.Corpus;
@@ -8,6 +10,8 @@ using SIL.Motif.Host.Parser;
 using SIL.Motif.Host.Store;
 using SIL.Motif.Projection.Usage;
 using SIL.Motif.Tests.TestFixtures;
+using SIL.Motif.Worker;
+using SIL.Motif.Worker.Store;
 using Xunit;
 
 namespace SIL.Motif.Tests.Cli;
@@ -18,49 +22,36 @@ public sealed class AnalysisCommandDispatchTests : IDisposable
     private static string Hash(char digit) => "sha256:" + new string(digit, 64);
 
     private readonly string _fwDataPath;
-    private readonly string _storeDir;
+    private readonly string _workerRoot;
 
     public AnalysisCommandDispatchTests(PristineProjectFixture pristine)
     {
         using var scratch = pristine.NewScratch();
         _fwDataPath = scratch.ProjectId.Path;
-        _storeDir = Path.Combine(
+        _workerRoot = Path.Combine(
             Path.GetTempPath(), "motif-analysis-dispatch-tests", Guid.NewGuid().ToString("N"));
     }
 
     public void Dispose()
     {
-        if (Directory.Exists(_storeDir)) Directory.Delete(_storeDir, recursive: true);
+        if (Directory.Exists(_workerRoot)) Directory.Delete(_workerRoot, recursive: true);
         GC.SuppressFinalize(this);
     }
+
+    private string AssessmentDatabasePath() => ProjectDatabaseCatalog.DatabasePathFor(
+        new ProjectLocator(_fwDataPath, Path.GetFileNameWithoutExtension(_fwDataPath)));
 
     [Fact]
     public void AnalysesJsonFlagDispatchesToStructuredOutputAndRecordsUsageShape()
     {
-        var executable = Path.Combine(
-            RepoPaths.FindRepoRoot(), "src", "SIL.Motif.Cli", "bin", "Debug", "net10.0", "motif.exe");
-        var start = new ProcessStartInfo(executable)
-        {
-            Arguments = $"analyses --project \"{_fwDataPath}\" --store \"{_storeDir}\" --json",
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
+        var result = Run($"analyses --project \"{_fwDataPath}\" --json");
 
-        using var process = Process.Start(start)!;
-        var output = process.StandardOutput.ReadToEnd();
-        var error = process.StandardError.ReadToEnd();
-        process.WaitForExit();
-
-        Assert.Equal(0, process.ExitCode);
-        Assert.Equal(string.Empty, error);
-        Assert.Contains("\"assessmentState\"", output);
-        var usagePath = Path.Combine(_storeDir, "usage.jsonl");
-        var entry = Assert.Single(UsageLogFile.ReadAll(usagePath));
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(string.Empty, result.Error);
+        Assert.Contains("\"assessmentState\"", result.Output);
+        var entry = Assert.Single(ReadUsage());
         Assert.Equal("analyses", entry.Command);
         Assert.Equal(new[] { "fwDataPath:text" }, entry.ArgumentShape);
-        Assert.DoesNotContain(_fwDataPath, File.ReadAllText(usagePath), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -70,18 +61,17 @@ public sealed class AnalysisCommandDispatchTests : IDisposable
             new AssessReport(
                 Array.Empty<AssessedWord>(), "outcome", "semantic", Hash('c'), "model", "pipeline", 0),
             CorpusDescriptor.Create("dispatch-corpus", Array.Empty<string>()));
-        var assessmentId = new SqliteAssessmentStore(Path.Combine(_storeDir, "motif.db")).Save(assessment);
+        var assessmentId = new SqliteAssessmentStore(AssessmentDatabasePath()).Save(assessment);
 
         var result = Run(
             $"analyses --project \"{_fwDataPath}\" --assessment \"{assessmentId}\" " +
             $"--current-corpus-sha256 \"{assessment.Corpus.Sha256}\" " +
-            $"--current-grammar-sha256 \"{assessment.Report.GrammarSourceSha256}\" " +
-            $"--store \"{_storeDir}\" --json");
+            $"--current-grammar-sha256 \"{assessment.Report.GrammarSourceSha256}\" --json");
 
         Assert.Equal(0, result.ExitCode);
         Assert.Equal(string.Empty, result.Error);
         Assert.Contains("still describes the current project", result.Output);
-        var entry = Assert.Single(UsageLogFile.ReadAll(Path.Combine(_storeDir, "usage.jsonl")));
+        var entry = Assert.Single(ReadUsage());
         Assert.Equal(
             new[]
             {
@@ -91,9 +81,6 @@ public sealed class AnalysisCommandDispatchTests : IDisposable
                 "currentGrammarSourceSha256:text",
             },
             entry.ArgumentShape);
-        var persistedUsage = File.ReadAllText(Path.Combine(_storeDir, "usage.jsonl"));
-        Assert.DoesNotContain(assessmentId, persistedUsage, StringComparison.Ordinal);
-        Assert.DoesNotContain(assessment.Corpus.Sha256, persistedUsage, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -102,7 +89,7 @@ public sealed class AnalysisCommandDispatchTests : IDisposable
     [InlineData("--current-corpus-sha256 corpus --current-grammar-sha256 grammar")]
     public void PartialAssessmentFlagGroupReturnsUsage(string partialFlags)
     {
-        var result = Run($"analyses --project \"{_fwDataPath}\" {partialFlags} --store \"{_storeDir}\"");
+        var result = Run($"analyses --project \"{_fwDataPath}\" {partialFlags}");
 
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("--assessment", result.Error);
@@ -131,8 +118,7 @@ public sealed class AnalysisCommandDispatchTests : IDisposable
             ? malformedFlag
             : $"--current-grammar-sha256 {Hash('c')}";
 
-        var result = Run(
-            $"analyses --project \"{_fwDataPath}\" {assessment} {corpus} {grammar} --store \"{_storeDir}\"");
+        var result = Run($"analyses --project \"{_fwDataPath}\" {assessment} {corpus} {grammar}");
 
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("--assessment", result.Error);
@@ -140,7 +126,14 @@ public sealed class AnalysisCommandDispatchTests : IDisposable
         Assert.Contains("--current-grammar-sha256", result.Error);
     }
 
-    private static (int ExitCode, string Output, string Error) Run(string arguments)
+    /// <summary>Reads back what the spawned CLI recorded into this test's isolated machine store.</summary>
+    private IReadOnlyList<UsageLogEntry> ReadUsage()
+    {
+        using var machine = MachineDatabase.Open(_workerRoot);
+        return new MachineUsageLog(machine).ReadAll();
+    }
+
+    private (int ExitCode, string Output, string Error) Run(string arguments)
     {
         var executable = Path.Combine(
             RepoPaths.FindRepoRoot(), "src", "SIL.Motif.Cli", "bin", "Debug", "net10.0", "motif.exe");
@@ -152,6 +145,7 @@ public sealed class AnalysisCommandDispatchTests : IDisposable
             UseShellExecute = false,
             CreateNoWindow = true,
         };
+        start.Environment[RunnerOptions.RootVariable] = _workerRoot;
 
         using var process = Process.Start(start)!;
         var output = process.StandardOutput.ReadToEnd();

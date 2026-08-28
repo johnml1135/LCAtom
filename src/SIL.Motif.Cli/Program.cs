@@ -6,7 +6,11 @@ using System.Threading;
 using SIL.Motif.Cli;
 using SIL.Motif.Cli.Store;
 using SIL.Motif.Contract.Canonicalization;
+using SIL.Motif.Contract.Projects;
+using SIL.Motif.Host.Store;
 using SIL.Motif.Projection.Usage;
+using SIL.Motif.Worker;
+using SIL.Motif.Worker.Projects;
 
 // Thin dispatcher: verbs call straight into Commands, so tests exercise the same handlers without shelling out.
 
@@ -22,9 +26,10 @@ var rest = args[1..];
 try
 {
     var (flags, positionals) = ParseArgs(rest);
-    var storeDir = flags.TryGetValue("store", out var storeOverride)
-        ? Path.GetFullPath(storeOverride)
-        : Path.Combine(Directory.GetCurrentDirectory(), ".motif");
+
+    // Every invocation naming a project upserts it into the machine store (ADR 0041 decision 4).
+    if (flags.TryGetValue("project", out var projectForRegistry))
+        RecordKnownProject(projectForRegistry);
 
     // Every migrated read surface renders both ways from one projection (ADR 0021 decision 2).
     var asJson = flags.ContainsKey("json");
@@ -61,9 +66,9 @@ try
             result = hasAssessment
                 ? asJson
                     ? Commands.AnalysesJson(
-                        storeDir, analysesProject, assessmentId!, currentCorpusSha256!, currentGrammarSha256!, usage)
+                        analysesProject, assessmentId!, currentCorpusSha256!, currentGrammarSha256!, usage)
                     : Commands.Analyses(
-                        storeDir, analysesProject, assessmentId!, currentCorpusSha256!, currentGrammarSha256!, usage)
+                        analysesProject, assessmentId!, currentCorpusSha256!, currentGrammarSha256!, usage)
                 : asJson
                     ? Commands.AnalysesJson(analysesProject, usage)
                     : Commands.Analyses(analysesProject, usage);
@@ -144,7 +149,7 @@ try
             }
             result = Commands.PromoteGloss(
                 StoreDirFor(promoteProject), promoteDraftName, promoteTarget, promoteWs, promoteText, promoteCorpus,
-                flags.GetValueOrDefault("document"));
+                promoteProject, CliProductVersion(), flags.GetValueOrDefault("document"));
             break;
 
         case "label":
@@ -304,13 +309,14 @@ try
             break;
 
         case "add-corpus":
-            if (!flags.TryGetValue("id", out var corpusId) ||
+            if (!flags.TryGetValue("project", out var addCorpusProject) ||
+                !flags.TryGetValue("id", out var corpusId) ||
                 !flags.TryGetValue("description", out var corpusDescription) ||
                 !flags.TryGetValue("tokeniser", out var corpusTokeniser) ||
                 !flags.TryGetValue("tokeniser-version", out var corpusTokeniserVersion))
             {
                 return Usage(
-                    "Usage: motif add-corpus --id <id> --description <text> --tokeniser <name> " +
+                    "Usage: motif add-corpus --project <fwdata> --id <id> --description <text> --tokeniser <name> " +
                     "--tokeniser-version <v> [--uri <url>] [--licence <text>] [--tokeniser-notes <text>] " +
                     "[--may-derive true|false] [--may-redistribute true|false] " +
                     "[--may-use-commercially true|false] [--requires-attribution true|false] " +
@@ -318,7 +324,8 @@ try
             }
 
             result = CorpusCommands.AddCorpus(
-                storeDir,
+                addCorpusProject,
+                CliProductVersion(),
                 corpusId,
                 corpusDescription,
                 flags.GetValueOrDefault("uri"),
@@ -330,13 +337,15 @@ try
             break;
 
         case "add-document":
-            if (!flags.TryGetValue("corpus", out var documentCorpus) ||
+            if (!flags.TryGetValue("project", out var addDocumentProject) ||
+                !flags.TryGetValue("corpus", out var documentCorpus) ||
                 !flags.TryGetValue("doc", out var documentId) ||
                 !flags.TryGetValue("source", out var documentPathOrUrl))
             {
                 return Usage(
-                    "Usage: motif add-document --corpus <id> --doc <id> --source <file-or-url> " +
-                    "[--title <text>] [--licence <text>] [--may-derive true|false] [--licence-basis <text>]", asJson);
+                    "Usage: motif add-document --project <fwdata> --corpus <id> --doc <id> " +
+                    "--source <file-or-url> [--title <text>] [--licence <text>] [--may-derive true|false] " +
+                    "[--licence-basis <text>]", asJson);
             }
 
             // No flags means "same as corpus", not "nothing established": pass null, not Unknown, or it overrides one.
@@ -345,7 +354,8 @@ try
                 : null;
 
             result = CorpusCommands.AddDocument(
-                storeDir,
+                addDocumentProject,
+                CliProductVersion(),
                 documentCorpus,
                 documentId,
                 documentPathOrUrl,
@@ -355,23 +365,26 @@ try
             break;
 
         case "add-corpus-bundle":
-            if (!flags.TryGetValue("bundle", out var bundlePath))
-                return Usage("Usage: motif add-corpus-bundle --bundle <path-to-bundle.json>", asJson);
-            result = CorpusCommands.AddBundle(storeDir, bundlePath);
+            if (!flags.TryGetValue("project", out var addBundleProject) ||
+                !flags.TryGetValue("bundle", out var bundlePath))
+                return Usage("Usage: motif add-corpus-bundle --project <fwdata> --bundle <path-to-bundle.json>", asJson);
+            result = CorpusCommands.AddBundle(addBundleProject, CliProductVersion(), bundlePath);
             break;
 
         case "corpora":
+            if (!flags.TryGetValue("project", out var corporaProject))
+                return Usage("Usage: motif corpora --project <fwdata> [--json]", asJson);
             result = asJson
-                ? CorpusCommands.ListCorporaJson(storeDir, usage)
-                : CorpusCommands.ListCorpora(storeDir, usage);
+                ? CorpusCommands.ListCorporaJson(corporaProject, CliProductVersion(), usage)
+                : CorpusCommands.ListCorpora(corporaProject, CliProductVersion(), usage);
             break;
 
         case "show-corpus":
-            if (positionals.Count != 1)
-                return Usage("Usage: motif show-corpus <corpusId>", asJson);
+            if (!flags.TryGetValue("project", out var showCorpusProject) || positionals.Count != 1)
+                return Usage("Usage: motif show-corpus --project <fwdata> <corpusId> [--json]", asJson);
             result = asJson
-                ? CorpusCommands.ShowCorpusJson(storeDir, positionals[0], usage)
-                : CorpusCommands.ShowCorpus(storeDir, positionals[0], usage);
+                ? CorpusCommands.ShowCorpusJson(showCorpusProject, CliProductVersion(), positionals[0], usage)
+                : CorpusCommands.ShowCorpus(showCorpusProject, CliProductVersion(), positionals[0], usage);
             break;
 
         case "baseline-refresh":
@@ -392,9 +405,14 @@ try
             return Usage($"Unknown command '{verb}'.", asJson, withUsageBanner: true);
     }
 
-    // One process is one call; appending to a local file is what accumulates a session (ADR 0021 decision 4).
-    foreach (var entry in usage.Entries)
-        UsageLogFile.Append(Path.Combine(storeDir, "usage.jsonl"), entry);
+    // One process is one call; the machine store is what accumulates a session (ADR 0021 decision 4).
+    if (usage.Entries.Count > 0)
+    {
+        using var machine = MachineDatabase.Open(RunnerOptions.ResolveRoot());
+        var machineUsage = new MachineUsageLog(machine);
+        foreach (var entry in usage.Entries)
+            machineUsage.Append(entry);
+    }
 
     if (result.ExitCode == 0)
     {
@@ -430,7 +448,7 @@ static int Usage(string message, bool asJson = false, bool withUsageBanner = fal
 static string AnalysesUsage() =>
     "Usage: motif analyses --project <fwdata> [--json] OR motif analyses --project <fwdata> " +
     "--assessment <assessmentId> --current-corpus-sha256 <sha256> " +
-    "--current-grammar-sha256 <sha256> [--store <dir>] [--json]";
+    "--current-grammar-sha256 <sha256> [--json]";
 
 static void PrintUsage(TextWriter writer)
 {
@@ -441,7 +459,7 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine("  analyses --project <fwdata> [--json]");
     writer.WriteLine(
         "  analyses --project <fwdata> --assessment <assessmentId> --current-corpus-sha256 <sha256> " +
-        "--current-grammar-sha256 <sha256> [--store <dir>] [--json]");
+        "--current-grammar-sha256 <sha256> [--json]");
     writer.WriteLine("  new --project <fwdata> --draft <name> [--label <text>]");
     writer.WriteLine(
         "  add-set-gloss --project <fwdata> --draft <name> --target <canonicalId> --ws <wsTag> --text <text> " +
@@ -479,19 +497,20 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine();
     writer.WriteLine("Corpus (text Motif measures against; never part of the FieldWorks project):");
     writer.WriteLine(
-        "  add-corpus --id <id> --description <text> --tokeniser <name> --tokeniser-version <v> " +
-        "[--uri <url>] [--licence <text>] [--tokeniser-notes <text>] [--may-derive true|false] " +
-        "[--may-redistribute true|false] [--may-use-commercially true|false] [--licence-basis <text>]");
+        "  add-corpus --project <fwdata> --id <id> --description <text> --tokeniser <name> " +
+        "--tokeniser-version <v> [--uri <url>] [--licence <text>] [--tokeniser-notes <text>] " +
+        "[--may-derive true|false] [--may-redistribute true|false] [--may-use-commercially true|false] " +
+        "[--licence-basis <text>]");
     writer.WriteLine(
-        "  add-document --corpus <id> --doc <id> --source <file-or-url> [--title <text>] " +
-        "[--licence <text>] [--may-derive true|false] [--licence-basis <text>]");
-    writer.WriteLine("  add-corpus-bundle --bundle <path>   (the handoff a fetching tool writes)");
-    writer.WriteLine("  corpora [--json]");
-    writer.WriteLine("  show-corpus <corpusId> [--json]");
+        "  add-document --project <fwdata> --corpus <id> --doc <id> --source <file-or-url> " +
+        "[--title <text>] [--licence <text>] [--may-derive true|false] [--licence-basis <text>]");
+    writer.WriteLine(
+        "  add-corpus-bundle --project <fwdata> --bundle <path>   (the handoff a fetching tool writes)");
+    writer.WriteLine("  corpora --project <fwdata> [--json]");
+    writer.WriteLine("  show-corpus --project <fwdata> <corpusId> [--json]");
     writer.WriteLine();
     writer.WriteLine("Global options: --json  (structured output; supported by " +
         "open/analyses/list/show/dry-run/apply/log/corpora/show-corpus)");
-    writer.WriteLine("Corpus commands also accept: --store <dir>  (default: ./.motif)");
 }
 
 /// <summary>Whether the caller said anything at all about what a licence permits.</summary>
@@ -536,3 +555,25 @@ static string CliProductVersion() =>
     typeof(Commands).Assembly.GetName().Version?.ToString(3) ?? "1.0.0";
 
 static bool IsTruthyFlag(string value) => !string.Equals(value, "false", StringComparison.OrdinalIgnoreCase);
+
+/// <summary>Upserts a named project into the machine store's <c>KnownProjects</c>.</summary>
+static void RecordKnownProject(string fwDataPath)
+{
+    try
+    {
+        var fullPath = Path.GetFullPath(fwDataPath);
+        if (!File.Exists(fullPath)) return;
+
+        var project = new ProjectLocator(fullPath, Path.GetFileNameWithoutExtension(fullPath));
+        using var machine = MachineDatabase.Open(RunnerOptions.ResolveRoot());
+        new KnownProjectRegistry(machine).Record(
+            ProjectWorkspaceKey.Compute(project), project.FullFwDataPath, DateTimeOffset.UtcNow);
+    }
+    catch (Exception exception) when (
+        exception is ArgumentException or IOException or InvalidDataException or NotSupportedException)
+    {
+        // Reported, not thrown: an unregistered project is never swept, so silence would hide lost work.
+        Console.Error.WriteLine("warning: this project could not be recorded for background work (" +
+            exception.Message + "). Queued jobs will not run until it is.");
+    }
+}

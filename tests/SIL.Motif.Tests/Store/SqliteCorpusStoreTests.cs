@@ -66,7 +66,7 @@ public sealed class SqliteCorpusStoreTests : IDisposable
         Assert.Equal(2, loaded.Documents.Count);
         Assert.Equal(new[] { "d1", "d2" }, loaded.Documents.Select(d => d.DocumentId));
 
-        // Order and repetition of the running text must survive storage, exactly as FileCorpusStore preserves them.
+        // Order and repetition of the running text must survive storage: deduplicating would destroy both.
         Assert.Equal("mbali mbali nyumba\nmbali\n", loaded.Documents[0].Text);
         Assert.Equal(3, loaded.Documents[0].Text.Split(new[] { ' ', '\n' }, StringSplitOptions.RemoveEmptyEntries).Count(w => w == "mbali"));
 

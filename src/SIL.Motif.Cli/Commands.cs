@@ -10,6 +10,7 @@ using SIL.Motif.Cli.Store;
 using SIL.Motif.Contract.Canonicalization;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Parsing;
+using SIL.Motif.Contract.Projects;
 using SIL.Motif.Host.Analysis;
 using SIL.Motif.Host.Corpus;
 using SIL.Motif.Host.LcmUtils;
@@ -23,6 +24,7 @@ using SIL.Motif.Runner.AppliedLog;
 using SIL.Motif.Runner.Composers;
 using SIL.Motif.Runner.DryRun;
 using SIL.Motif.Runner.Operations;
+using SIL.Motif.Worker.Store;
 using SIL.LCModel;
 
 namespace SIL.Motif.Cli;
@@ -135,7 +137,6 @@ public static class Commands
     }
 
     public static CommandResult Analyses(
-        string storeDir,
         string fwDataPath,
         string assessmentId,
         string currentCorpusSha256,
@@ -144,13 +145,12 @@ public static class Commands
     {
         RecordAssessmentAnalysisUsage(usage);
         var (reason, projection, error) = BuildAssessmentAnalysisProjection(
-            storeDir, fwDataPath, assessmentId, currentCorpusSha256, currentGrammarSourceSha256);
+            fwDataPath, assessmentId, currentCorpusSha256, currentGrammarSourceSha256);
         return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : Refused(reason, error!);
     }
 
     /// <summary>The Assessment-backed <c>analyses</c> report as JSON.</summary>
     public static CommandResult AnalysesJson(
-        string storeDir,
         string fwDataPath,
         string assessmentId,
         string currentCorpusSha256,
@@ -159,7 +159,7 @@ public static class Commands
     {
         RecordAssessmentAnalysisUsage(usage);
         var (reason, projection, error) = BuildAssessmentAnalysisProjection(
-            storeDir, fwDataPath, assessmentId, currentCorpusSha256, currentGrammarSourceSha256);
+            fwDataPath, assessmentId, currentCorpusSha256, currentGrammarSourceSha256);
         return projection is not null
             ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
             : Refused(reason, error!);
@@ -178,7 +178,6 @@ public static class Commands
 
     private static (FailureReason? Reason, AnalysisAggregateProjection? Projection, string? Error)
         BuildAssessmentAnalysisProjection(
-            string storeDir,
             string fwDataPath,
             string assessmentId,
             string currentCorpusSha256,
@@ -190,7 +189,9 @@ public static class Commands
             Sha256Value.RequireCanonical(currentCorpusSha256, nameof(currentCorpusSha256));
             Sha256Value.RequireCanonical(currentGrammarSourceSha256, nameof(currentGrammarSourceSha256));
 
-            var databasePath = Path.Combine(storeDir, "motif.db");
+            var fullPath = ResolveProjectPath(fwDataPath);
+            var databasePath = ProjectDatabaseCatalog.DatabasePathFor(
+                new ProjectLocator(fullPath, Path.GetFileNameWithoutExtension(fullPath)));
             if (!File.Exists(databasePath))
                 return (FailureReason.NotFound, null, FailText($"Assessment '{assessmentId}' was not found in the Motif store."));
 
@@ -199,7 +200,6 @@ public static class Commands
             if (assessment is null)
                 return (FailureReason.NotFound, null, FailText($"Assessment '{assessmentId}' was not found in the Motif store."));
 
-            var fullPath = ResolveProjectPath(fwDataPath);
             var loader = new FwDataProjectLoader();
             using var cache = loader.LoadScratchCache(fullPath);
             return (
@@ -494,79 +494,88 @@ public static class Commands
     /// promoted value carries (e.g. CC-BY-SA attribution) is never lost between the evidence and the
     /// dictionary entry it justified.
     /// </summary>
+    /// <remarks>
+    /// The draft lives in <paramref name="storeDir"/>; the corpus lives in the project's paired
+    /// database, opened through <see cref="ProjectStoreCommand.Run"/> from <paramref name="fwDataPath"/>
+    /// and <paramref name="productVersion"/> so the two never disagree about which project a corpus id
+    /// names.
+    /// </remarks>
     public static CommandResult PromoteGloss(
         string storeDir, string draftName, string target, string ws, string text,
-        string corpusId, string? documentId = null)
+        string corpusId, string fwDataPath, string productVersion, string? documentId = null)
     {
-        try
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (_, project) =>
         {
-            var store = new ProposalStore(storeDir);
-            var draftPath = store.DraftPath(draftName);
-            if (!File.Exists(draftPath))
-                return Missing(DraftNotFoundMessage(store, draftName));
-
-            var corpus = CorpusCommands.StoreFor(storeDir).Load(corpusId);
-            if (corpus is null)
+            try
             {
-                return Fail(
-                    $"Corpus '{corpusId}' not found in store '{storeDir}'. Run 'corpora' to see what is there.");
-            }
+                var store = new ProposalStore(storeDir);
+                var draftPath = store.DraftPath(draftName);
+                if (!File.Exists(draftPath))
+                    return Missing(DraftNotFoundMessage(store, draftName));
 
-            if (documentId is not null && corpus.Documents.All(d => d.DocumentId != documentId))
-                return Missing($"Corpus '{corpusId}' has no document '{documentId}'.");
-
-            if (!CanonicalId.TryParse(target, out var targetId, out var idError))
-                return Invalid($"--target '{target}' is not a valid canonical id: {idError}");
-
-            if (string.IsNullOrEmpty(ws))
-                return Invalid("--ws must not be empty.");
-
-            var draft = ReadDraft(draftPath);
-            var operationId = CanonicalId.Mint();
-
-            draft.Operations.Add(new DraftOperation
-            {
-                OperationId = operationId.Value,
-                Kind = LexicalSenseOperationKinds.SetGloss,
-                Target = targetId.Value,
-                After = new Dictionary<string, JsonElement>
+                var corpus = CorpusCommands.StoreFor(project).Load(corpusId);
+                if (corpus is null)
                 {
-                    ["ws"] = JsonSerializer.SerializeToElement(ws),
-                    ["text"] = JsonSerializer.SerializeToElement(text),
-                },
-            });
-            EnsureContractVersion(draft, LexicalSenseOperationKinds.SetGloss);
+                    return Fail(
+                        $"Corpus '{corpusId}' not found in store '{storeDir}'. Run 'corpora' to see what is there.");
+                }
 
-            var origin = corpus.Provenance.Origin;
-            var provenanceJson = JsonSerializer.Serialize(new
+                if (documentId is not null && corpus.Documents.All(d => d.DocumentId != documentId))
+                    return Missing($"Corpus '{corpusId}' has no document '{documentId}'.");
+
+                if (!CanonicalId.TryParse(target, out var targetId, out var idError))
+                    return Invalid($"--target '{target}' is not a valid canonical id: {idError}");
+
+                if (string.IsNullOrEmpty(ws))
+                    return Invalid("--ws must not be empty.");
+
+                var draft = ReadDraft(draftPath);
+                var operationId = CanonicalId.Mint();
+
+                draft.Operations.Add(new DraftOperation
+                {
+                    OperationId = operationId.Value,
+                    Kind = LexicalSenseOperationKinds.SetGloss,
+                    Target = targetId.Value,
+                    After = new Dictionary<string, JsonElement>
+                    {
+                        ["ws"] = JsonSerializer.SerializeToElement(ws),
+                        ["text"] = JsonSerializer.SerializeToElement(text),
+                    },
+                });
+                EnsureContractVersion(draft, LexicalSenseOperationKinds.SetGloss);
+
+                var origin = corpus.Provenance.Origin;
+                var provenanceJson = JsonSerializer.Serialize(new
+                {
+                    operationId = operationId.Value,
+                    corpusId,
+                    documentId,
+                    description = origin.Description,
+                    licence = origin.Licence,
+                    retrievedUtc = origin.RetrievedUtc,
+                });
+                using var provenanceDocument = JsonDocument.Parse(provenanceJson);
+                draft.PromotionProvenance.Add(provenanceDocument.RootElement.Clone());
+
+                WriteDraft(draftPath, draft);
+
+                var sb = new StringBuilder();
+                sb.AppendLine(
+                    $"Added operation '{operationId.Value}' ({LexicalSenseOperationKinds.SetGloss}) to draft " +
+                    $"'{draftName}', promoted from corpus '{corpusId}'.");
+                sb.AppendLine($"  target: {targetId.Value}");
+                sb.AppendLine($"  after:  ws={ws} text=\"{text}\"");
+                if (origin.Licence is not null)
+                    sb.AppendLine($"  licence: {origin.Licence}");
+                sb.AppendLine($"Draft now has {draft.Operations.Count} operation(s).");
+                return Ok(sb);
+            }
+            catch (Exception ex)
             {
-                operationId = operationId.Value,
-                corpusId,
-                documentId,
-                description = origin.Description,
-                licence = origin.Licence,
-                retrievedUtc = origin.RetrievedUtc,
-            });
-            using var provenanceDocument = JsonDocument.Parse(provenanceJson);
-            draft.PromotionProvenance.Add(provenanceDocument.RootElement.Clone());
-
-            WriteDraft(draftPath, draft);
-
-            var sb = new StringBuilder();
-            sb.AppendLine(
-                $"Added operation '{operationId.Value}' ({LexicalSenseOperationKinds.SetGloss}) to draft " +
-                $"'{draftName}', promoted from corpus '{corpusId}'.");
-            sb.AppendLine($"  target: {targetId.Value}");
-            sb.AppendLine($"  after:  ws={ws} text=\"{text}\"");
-            if (origin.Licence is not null)
-                sb.AppendLine($"  licence: {origin.Licence}");
-            sb.AppendLine($"Draft now has {draft.Operations.Count} operation(s).");
-            return Ok(sb);
-        }
-        catch (Exception ex)
-        {
-            return Fail(ex.Message);
-        }
+                return Fail(ex.Message);
+            }
+        });
     }
 
     /// <summary>Validates each dependsOn id is already a canonical operation id present in draft.</summary>

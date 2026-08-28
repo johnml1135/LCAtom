@@ -3,10 +3,12 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using SIL.Motif.Contract.Projects;
 using SIL.Motif.Host.Corpus;
 using SIL.Motif.Projection;
 using SIL.Motif.Projection.Rendering;
 using SIL.Motif.Projection.Usage;
+using SIL.Motif.Worker.Store;
 
 namespace SIL.Motif.Cli;
 
@@ -27,18 +29,14 @@ namespace SIL.Motif.Cli;
 /// </remarks>
 public static class CorpusCommands
 {
-    /// <summary>
-    /// Corpora live beside the proposals, under the same store root — in the embedded database ADR 0036
-    /// decision 6 assigns them to. A corpus already on disk under the older <see cref="FileCorpusStore"/>
-    /// layout (<c>corpora/</c>) is untouched by this and stays readable there; <see cref="CorpusStoreMigration"/>
-    /// is the one-time path to bring it into the database this method now points at.
-    /// </summary>
-    public static ICorpusStore StoreFor(string storeDir) =>
-        new SqliteCorpusStore(Path.Combine(storeDir, "motif.db"));
+    /// <summary>The Corpus store for one project — the paired database <c>--project</c> resolves to.</summary>
+    public static ICorpusStore StoreFor(ProjectLocator project) =>
+        new SqliteCorpusStore(ProjectDatabaseCatalog.DatabasePathFor(project));
 
     /// <summary>Create an empty Corpus with its origin and tokenisation recorded.</summary>
     public static CommandResult AddCorpus(
-        string storeDir,
+        string fwDataPath,
+        string productVersion,
         string corpusId,
         string description,
         string? uri,
@@ -49,36 +47,40 @@ public static class CorpusCommands
         string? tokeniserNotes,
         DateTimeOffset? retrievedUtc = null)
     {
-        try
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (_, project) =>
         {
-            var ingestion = new CorpusIngestion(StoreFor(storeDir));
+            try
+            {
+                var ingestion = new CorpusIngestion(StoreFor(project));
 
-            var provenance = new CorpusProvenance(
-                new CorpusOrigin(description, uri, retrievedUtc ?? DateTimeOffset.UtcNow, licence, capabilities),
-                new TokenisationRecord(tokeniser, tokeniserVersion, tokeniserNotes ?? ""));
+                var provenance = new CorpusProvenance(
+                    new CorpusOrigin(description, uri, retrievedUtc ?? DateTimeOffset.UtcNow, licence, capabilities),
+                    new TokenisationRecord(tokeniser, tokeniserVersion, tokeniserNotes ?? ""));
 
-            ingestion.AddCorpus(corpusId, provenance);
+                ingestion.AddCorpus(corpusId, provenance);
 
-            var sb = new StringBuilder();
-            sb.AppendLine($"Created corpus '{corpusId}'.");
-            sb.AppendLine($"  Origin:       {description}");
-            if (!string.IsNullOrWhiteSpace(uri)) sb.AppendLine($"  Location:     {uri}");
-            sb.AppendLine($"  Licence:      {licence ?? "(none recorded)"}");
-            sb.AppendLine($"  Tokenisation: {tokeniser} {tokeniserVersion}");
-            sb.AppendLine();
-            AppendDerivationNote(sb, capabilities, description);
-            sb.AppendLine("Add documents with: motif add-document --corpus " + corpusId + " --doc <id> --source <file-or-url>");
-            return new CommandResult(0, sb.ToString());
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
-        {
-            return new CommandResult(1, ex.Message + Environment.NewLine);
-        }
+                var sb = new StringBuilder();
+                sb.AppendLine($"Created corpus '{corpusId}'.");
+                sb.AppendLine($"  Origin:       {description}");
+                if (!string.IsNullOrWhiteSpace(uri)) sb.AppendLine($"  Location:     {uri}");
+                sb.AppendLine($"  Licence:      {licence ?? "(none recorded)"}");
+                sb.AppendLine($"  Tokenisation: {tokeniser} {tokeniserVersion}");
+                sb.AppendLine();
+                AppendDerivationNote(sb, capabilities, description);
+                sb.AppendLine("Add documents with: motif add-document --corpus " + corpusId + " --doc <id> --source <file-or-url>");
+                return new CommandResult(0, sb.ToString());
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+            {
+                return new CommandResult(1, ex.Message + Environment.NewLine);
+            }
+        });
     }
 
     /// <summary>Add one Document to a Corpus, from a file on disk or a URL to retrieve.</summary>
     public static CommandResult AddDocument(
-        string storeDir,
+        string fwDataPath,
+        string productVersion,
         string corpusId,
         string documentId,
         string fileOrUrl,
@@ -86,106 +88,120 @@ public static class CorpusCommands
         string? licence,
         LicenceCapabilities? capabilities)
     {
-        try
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (_, project) =>
         {
-            var ingestion = new CorpusIngestion(StoreFor(storeDir));
-            var source = DocumentSource.Parse(fileOrUrl);
+            try
+            {
+                var ingestion = new CorpusIngestion(StoreFor(project));
+                var source = DocumentSource.Parse(fileOrUrl);
 
-            var document = ingestion.AddDocumentAsync(
-                corpusId,
-                source,
-                new DocumentMetadata(documentId, title ?? documentId, licence, capabilities)).GetAwaiter().GetResult();
+                var document = ingestion.AddDocumentAsync(
+                    corpusId,
+                    source,
+                    new DocumentMetadata(documentId, title ?? documentId, licence, capabilities)).GetAwaiter().GetResult();
 
-            var sb = new StringBuilder();
-            sb.AppendLine($"Added document '{document.DocumentId}' to corpus '{corpusId}'.");
-            sb.AppendLine($"  Title:      {document.Title}");
-            sb.AppendLine($"  Source:     {source.Describe()}");
-            sb.AppendLine($"  Characters: {document.Text.Length:N0}");
-            sb.AppendLine($"  SHA-256:    {document.ContentSha256}");
-            if (!string.IsNullOrWhiteSpace(document.Licence)) sb.AppendLine($"  Licence:    {document.Licence}");
-            return new CommandResult(0, sb.ToString());
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or IOException)
-        {
-            return new CommandResult(1, ex.Message + Environment.NewLine);
-        }
+                var sb = new StringBuilder();
+                sb.AppendLine($"Added document '{document.DocumentId}' to corpus '{corpusId}'.");
+                sb.AppendLine($"  Title:      {document.Title}");
+                sb.AppendLine($"  Source:     {source.Describe()}");
+                sb.AppendLine($"  Characters: {document.Text.Length:N0}");
+                sb.AppendLine($"  SHA-256:    {document.ContentSha256}");
+                if (!string.IsNullOrWhiteSpace(document.Licence)) sb.AppendLine($"  Licence:    {document.Licence}");
+                return new CommandResult(0, sb.ToString());
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or IOException)
+            {
+                return new CommandResult(1, ex.Message + Environment.NewLine);
+            }
+        });
     }
 
     /// <summary>Take in a whole handoff bundle written by a fetching tool.</summary>
-    public static CommandResult AddBundle(string storeDir, string bundlePath)
+    public static CommandResult AddBundle(string fwDataPath, string productVersion, string bundlePath)
     {
-        try
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (_, project) =>
         {
-            var bundle = CorpusBundle.ReadFile(bundlePath);
-            var ingestion = new CorpusIngestion(StoreFor(storeDir));
-            var corpus = ingestion.AddBundleAsync(bundle).GetAwaiter().GetResult();
+            try
+            {
+                var bundle = CorpusBundle.ReadFile(bundlePath);
+                var ingestion = new CorpusIngestion(StoreFor(project));
+                var corpus = ingestion.AddBundleAsync(bundle).GetAwaiter().GetResult();
 
-            var sb = new StringBuilder();
-            sb.AppendLine($"Ingested corpus '{corpus.CorpusId}' from bundle: {corpus.Documents.Count} document(s).");
-            sb.AppendLine($"  Origin:  {corpus.Provenance.Origin.Description}");
-            sb.AppendLine($"  Licence: {corpus.Provenance.Origin.Licence ?? "(none recorded)"}");
-            sb.AppendLine();
-            sb.AppendLine(corpus.DescribeDerivationRestrictions());
-            sb.AppendLine();
-            sb.AppendLine(corpus.Provenance.SupportsAccuracyClaims
-                ? "This corpus is attested, so accuracy figures may be computed over it."
-                : corpus.Provenance.WhyAccuracyIsNotComputable());
-            return new CommandResult(0, sb.ToString());
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException
-                                      or ArgumentException or IOException)
-        {
-            return new CommandResult(1, ex.Message + Environment.NewLine);
-        }
+                var sb = new StringBuilder();
+                sb.AppendLine($"Ingested corpus '{corpus.CorpusId}' from bundle: {corpus.Documents.Count} document(s).");
+                sb.AppendLine($"  Origin:  {corpus.Provenance.Origin.Description}");
+                sb.AppendLine($"  Licence: {corpus.Provenance.Origin.Licence ?? "(none recorded)"}");
+                sb.AppendLine();
+                sb.AppendLine(corpus.DescribeDerivationRestrictions());
+                sb.AppendLine();
+                sb.AppendLine(corpus.Provenance.SupportsAccuracyClaims
+                    ? "This corpus is attested, so accuracy figures may be computed over it."
+                    : corpus.Provenance.WhyAccuracyIsNotComputable());
+                return new CommandResult(0, sb.ToString());
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException
+                                          or ArgumentException or IOException)
+            {
+                return new CommandResult(1, ex.Message + Environment.NewLine);
+            }
+        });
     }
 
     /// <summary>Every stored Corpus, with its size and what may be done with it.</summary>
-    public static CommandResult ListCorpora(string storeDir, UsageLog? usage = null)
+    public static CommandResult ListCorpora(string fwDataPath, string productVersion, UsageLog? usage = null)
     {
-        usage?.Record("corpora", new[] { UsageArgumentShape.Text("storeDir") });
-        var projection = BuildCorpusList(storeDir);
-        return new CommandResult(0, CommandTextRenderer.Render(projection));
+        usage?.Record("corpora", new[] { UsageArgumentShape.Text("fwDataPath") });
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (_, project) =>
+            new CommandResult(0, CommandTextRenderer.Render(BuildCorpusList(project))));
     }
 
     /// <summary>The <c>corpora</c> report as JSON, rendered from the same projection as text.</summary>
-    public static CommandResult ListCorporaJson(string storeDir, UsageLog? usage = null)
+    public static CommandResult ListCorporaJson(string fwDataPath, string productVersion, UsageLog? usage = null)
     {
-        usage?.Record("corpora", new[] { UsageArgumentShape.Text("storeDir") });
-        var projection = BuildCorpusList(storeDir);
-        return new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine);
+        usage?.Record("corpora", new[] { UsageArgumentShape.Text("fwDataPath") });
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (_, project) =>
+            new CommandResult(0, ProjectionJson.Serialize(BuildCorpusList(project)) + Environment.NewLine));
     }
 
-    private static CorpusListProjection BuildCorpusList(string storeDir)
-        => CorpusProjectionQuery.List(StoreFor(storeDir));
+    private static CorpusListProjection BuildCorpusList(ProjectLocator project)
+        => CorpusProjectionQuery.List(StoreFor(project));
 
     /// <summary>One Corpus in full: provenance, every Document, and what each is licensed for.</summary>
-    public static CommandResult ShowCorpus(string storeDir, string corpusId, UsageLog? usage = null)
+    public static CommandResult ShowCorpus(
+        string fwDataPath, string productVersion, string corpusId, UsageLog? usage = null)
     {
         usage?.Record(
             "show-corpus",
-            new[] { UsageArgumentShape.Text("storeDir"), UsageArgumentShape.Text("corpusId") });
-        var (projection, error) = BuildCorpusDetail(storeDir, corpusId);
-        return projection is not null
-            ? new CommandResult(0, CommandTextRenderer.Render(projection))
-            : new CommandResult(1, error!);
+            new[] { UsageArgumentShape.Text("fwDataPath"), UsageArgumentShape.Text("corpusId") });
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (_, project) =>
+        {
+            var (projection, error) = BuildCorpusDetail(project, corpusId);
+            return projection is not null
+                ? new CommandResult(0, CommandTextRenderer.Render(projection))
+                : new CommandResult(1, error!);
+        });
     }
 
     /// <summary>The <c>show-corpus</c> report as JSON, rendered from the same projection as text.</summary>
-    public static CommandResult ShowCorpusJson(string storeDir, string corpusId, UsageLog? usage = null)
+    public static CommandResult ShowCorpusJson(
+        string fwDataPath, string productVersion, string corpusId, UsageLog? usage = null)
     {
         usage?.Record(
             "show-corpus",
-            new[] { UsageArgumentShape.Text("storeDir"), UsageArgumentShape.Text("corpusId") });
-        var (projection, error) = BuildCorpusDetail(storeDir, corpusId);
-        return projection is not null
-            ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
-            : new CommandResult(1, error!);
+            new[] { UsageArgumentShape.Text("fwDataPath"), UsageArgumentShape.Text("corpusId") });
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (_, project) =>
+        {
+            var (projection, error) = BuildCorpusDetail(project, corpusId);
+            return projection is not null
+                ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
+                : new CommandResult(1, error!);
+        });
     }
 
     private static (CorpusDetailProjection? Projection, string? Error) BuildCorpusDetail(
-        string storeDir, string corpusId)
+        ProjectLocator project, string corpusId)
     {
-        var projection = CorpusProjectionQuery.Detail(StoreFor(storeDir), corpusId);
+        var projection = CorpusProjectionQuery.Detail(StoreFor(project), corpusId);
         return projection is null
             ? (null, $"No corpus '{corpusId}' in store." + Environment.NewLine)
             : (projection, null);

@@ -86,7 +86,7 @@ public class CorpusBundleTests : IDisposable
         WriteText("tstPD.txt", "Nyumba ikulu.\n");
         var bundlePath = WriteBundle(EBibleBundle);
 
-        var store = new FileCorpusStore(Path.Combine(_root, "corpora"));
+        var store = new SqliteCorpusStore(Path.Combine(_root, "motif.db"));
         var corpus = await new CorpusIngestion(store).AddBundleAsync(CorpusBundle.ReadFile(bundlePath));
 
         Assert.Equal("ebible-tst", corpus.CorpusId);
@@ -218,7 +218,7 @@ public class CorpusBundleTests : IDisposable
         WriteText("tstNT.txt", "x\n");     // tstPD.txt deliberately absent
         var bundlePath = WriteBundle(EBibleBundle);
 
-        var store = new FileCorpusStore(Path.Combine(_root, "corpora"));
+        var store = new SqliteCorpusStore(Path.Combine(_root, "motif.db"));
         var ingestion = new CorpusIngestion(store);
 
         var ex = await Assert.ThrowsAsync<FileNotFoundException>(() =>
