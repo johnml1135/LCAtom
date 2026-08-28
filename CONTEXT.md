@@ -22,6 +22,13 @@ Assessments, has a lifecycle, and can be applied to a language project or discar
 not combine unrelated changes.
 _Avoid_: PR, change set, change group, patch, branch
 
+**Draft**:
+A Proposal that is still being authored: it has an id and a name, and no committed revision yet.
+Finalizing does not move it anywhere — it commits the first immutable revision and changes the
+Proposal's state. A Draft is therefore a phase of a Proposal's life, never a separate thing kept
+somewhere else ([ADR 0041](docs/adr/0041-the-database-is-the-only-store.md) decision 3).
+_Avoid_: working copy, staging area, scratch proposal, uncommitted proposal
+
 **Construct**:
 One of the ~30 grammar things a Proposal can be about — a stratum, a natural class, an affix template,
 a phonological rule. **The unit in which grammar support is staged and delivered**, and hand-authored
@@ -120,11 +127,31 @@ FieldWorks adapter or the `net10.0` Host owns loading, saving, locking, and disp
 _Avoid_: cache, session, connection
 
 **Motif store**:
-Everything Motif keeps outside the language project in its paired sibling database: Proposals, Decisions,
-jobs, Assessments, Reports, Receipts, Corpora, and the applied index. Content digests still identify
-immutable intent and evidence, but the storage container is not itself content-addressed. There is no
-merge engine and no replication.
+Everything Motif keeps about **one language project**, in that project's paired sibling database:
+Proposals, Drafts, Decisions, jobs, Assessments, Reports, Receipts, Corpora, and the applied index.
+Content digests still identify immutable intent and evidence, but the storage container is not itself
+content-addressed. There is no merge engine and no replication. Nothing about a project lives anywhere
+else, and nothing that is not about a project lives here — that is the Machine store.
 _Avoid_: proposal store, change store, database, repository, queue
+
+**Machine store**:
+The single database for one logged-in user, holding what belongs to the installation rather than to any
+project: the Known projects, and the usage log of the Motif API's own calls. It is deliberately small.
+Machine-wide exclusion — PanGloss capacity and the single-runner guarantee — is not kept here but in
+named operating-system mutexes, because the kernel releases those when a process dies.
+_Avoid_: global store, config, registry, settings, central database
+
+**Known project**:
+A language project this installation has been pointed at, recorded in the Machine store when a command
+names it. The list is what lets the Motif job runner find work in a project it was not launched with. A
+Known project whose file has gone is forgotten rather than reported.
+_Avoid_: registered project, workspace, recent project, project list
+
+**Queue order**:
+The position a job holds in the single ordered run of work across every Known project. It is stored,
+not derived from when a row last changed, so moving a job changes what runs next rather than only what a
+list displays ([ADR 0041](docs/adr/0041-the-database-is-the-only-store.md) decision 6).
+_Avoid_: priority, rank, position, sort order
 
 **Motif job runner**:
 The one on-demand process for a logged-in Windows user that takes work which must outlive a command —
