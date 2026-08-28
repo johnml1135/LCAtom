@@ -248,6 +248,18 @@ ADR 0041 decisions 5 and 6, and the answer to G4.
 - Modify: `src/SIL.Motif.Worker/Projects/ProjectRuntime.cs` — the cached lease and five refresh methods
 - Test: `tests/SIL.Motif.Tests/Integration/RunnerSpineTests.cs`
 
+**Split in two.** `WorkerWorkTracker` turned out to be threaded through `JobRunnerHost`,
+`ProjectRuntimeRegistry` and `ProjectRuntime`, not confined to `ProjectRuntime` as this task assumed, so
+removing the cached lease in the same pass as the sweep would swamp the change.
+
+- **8a — the sweep.** The runner reads `KnownProjects` and claims the globally first job across every one
+  of them, ordered `QueueOrder, JobId`. Both Task 7 findings below are answered here, because a parked row
+  that can never progress is what would make derived idleness hang.
+- **8b — lifetime.** Idleness becomes derived from the sweep, `WorkerWorkTracker` and the five refresh
+  entry points go, and the CLI gains the "kick" that spawns a runner after enqueueing. **No kick exists
+  today** — `src/SIL.Motif.Cli/` contains no `Process.Start` at all — so the pseudo-daemon currently only
+  runs if a runner happens to be started by hand.
+
 **Two findings from Task 7 land here, because this task owns runner lifetime.** Both were observed, not
 predicted:
 

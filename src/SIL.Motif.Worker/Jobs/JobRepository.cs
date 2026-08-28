@@ -105,6 +105,20 @@ public sealed class JobRepository
         return records;
     }
 
+    /// <summary>Lists every attempt of one kind recorded for one project, oldest first, any status.</summary>
+    public IReadOnlyList<JobRecord> ListByProjectAndKind(string projectKey, string kind)
+    {
+        using var connection = _database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = SelectSql + " WHERE ProjectKey = $project AND Kind = $kind ORDER BY CreatedUtc;";
+        command.Parameters.AddWithValue("$project", projectKey);
+        command.Parameters.AddWithValue("$kind", kind);
+        using var reader = command.ExecuteReader();
+        var records = new List<JobRecord>();
+        while (reader.Read()) records.Add(Read(reader));
+        return records;
+    }
+
     public IReadOnlyList<JobRecord> ListAttemptsReady(DateTimeOffset now)
     {
         using var connection = _database.OpenConnection();

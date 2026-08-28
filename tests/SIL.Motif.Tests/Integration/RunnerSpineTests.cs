@@ -42,7 +42,7 @@ public sealed class RunnerSpineTests : IDisposable
         Assert.False(string.IsNullOrWhiteSpace(jobId));
         Assert.Equal("queued", StatusOf(project, jobId));
 
-        RunRunnerToCompletion(project);
+        RunRunnerToCompletion();
 
         // The row moved because a different process moved it; nothing in this one touched the queue.
         Assert.NotEqual("queued", StatusOf(project, jobId));
@@ -51,6 +51,37 @@ public sealed class RunnerSpineTests : IDisposable
         Assert.True(PublishedBaselineCount(project) == 1,
             $"Expected one published Baseline, found {PublishedBaselineCount(project)}. " +
             $"Job: {StatusOf(project, jobId)} — {ResultOf(project, jobId)}");
+    }
+
+    /// <summary>
+    /// The reason Task 8 exists: one runner started with no project of its own must sweep every project
+    /// the CLI has pointed it at, not just the first one asked about. Two Known projects, one job queued
+    /// in each, one runner — both must reach terminal.
+    /// </summary>
+    [Fact]
+    public void TwoQueuedJobsInTwoDifferentProjectsBothReachTerminalThroughOneRunnerSweep()
+    {
+        var first = _projects.CopyProjectFile();
+        var second = _projects.CopyProjectFile();
+
+        // Registered in this order, but nothing here says the sweep must visit them in this order.
+        var secondJobId = Cli($"baseline-refresh --project \"{second}\"").Output.Trim();
+        var firstJobId = Cli($"baseline-refresh --project \"{first}\"").Output.Trim();
+        Assert.False(string.IsNullOrWhiteSpace(firstJobId));
+        Assert.False(string.IsNullOrWhiteSpace(secondJobId));
+
+        RunRunnerToCompletion();
+
+        Assert.NotEqual("queued", StatusOf(first, firstJobId));
+        Assert.NotEqual("running", StatusOf(first, firstJobId));
+        Assert.NotEqual("queued", StatusOf(second, secondJobId));
+        Assert.NotEqual("running", StatusOf(second, secondJobId));
+        Assert.True(PublishedBaselineCount(first) == 1,
+            $"Project 1 expected one published Baseline, found {PublishedBaselineCount(first)}. " +
+            $"Job: {StatusOf(first, firstJobId)} — {ResultOf(first, firstJobId)}");
+        Assert.True(PublishedBaselineCount(second) == 1,
+            $"Project 2 expected one published Baseline, found {PublishedBaselineCount(second)}. " +
+            $"Job: {StatusOf(second, secondJobId)} — {ResultOf(second, secondJobId)}");
     }
 
     /// The job's own record of why it failed; no verb surfaces ResultJson yet.
@@ -93,13 +124,13 @@ public sealed class RunnerSpineTests : IDisposable
         var jobId = Cli($"baseline-refresh --project \"{project}\"").Output.Trim();
 
         // Killing before it claims would prove nothing, so wait until the row is genuinely held.
-        var killed = StartRunner(project, leaseSeconds: 1);
+        var killed = StartRunner(leaseSeconds: 1);
         Assert.True(WaitUntilRunning(project, jobId),
             "The runner never claimed the job. Runner said: " + string.Join(" | ", _log));
         Kill(killed);
         Thread.Sleep(1500);
 
-        RunRunnerToCompletion(project);
+        RunRunnerToCompletion();
 
         var final = Show(project, jobId);
         Assert.NotEqual("queued", final.Status);
@@ -110,13 +141,14 @@ public sealed class RunnerSpineTests : IDisposable
 
     /// <summary>
     /// ADR 0041 decision 7's "must not simply fail" for a Dry Run job against a project with no
-    /// published Baseline, driven by the real runner rather than a direct handler call. Observed, not
-    /// assumed: <see cref="JobClaims.Claim"/> only ever reclaims a <c>queued</c> or lease-expired
-    /// <c>running</c> row, so a parked row is never picked up again — the runner is killed rather than
-    /// awaited to exit, because a project with a permanently parked row never goes idle on its own.
+    /// published Baseline, driven by the real runner rather than a direct handler call — and Task 8's
+    /// two inherited findings closed together: parking asks for the Baseline it needs (a
+    /// <c>baseline-refresh</c> the sweep enqueues on its own), and once that publishes, the parked row
+    /// is claimable again and runs to completion. The runner is awaited to exit rather than killed,
+    /// because a project with a permanently parked row would be the one thing that never lets it.
     /// </summary>
     [Fact]
-    public void ADryRunJobAgainstAProjectWithNoPublishedBaselineParksRatherThanFailing()
+    public void ADryRunJobAgainstAProjectWithNoPublishedBaselineParksThenRunsOnceTheSweepRefreshesTheBaseline()
     {
         var project = _projects.CopyProjectFile();
         var target = SIL.Motif.Contract.Ids.CanonicalId.FromGuid(_projects.Seed.FirstSenseId).Value;
@@ -133,24 +165,24 @@ public sealed class RunnerSpineTests : IDisposable
         Assert.False(string.IsNullOrWhiteSpace(jobId));
         Assert.Equal("queued", StatusOf(project, jobId));
 
-        var runner = StartRunner(project, leaseSeconds: 30);
-        try
+        var runner = StartRunner(leaseSeconds: 30);
+        var sawWaitingForBaseline = false;
+        var deadline = DateTime.UtcNow.AddSeconds(60);
+        string status;
+        do
         {
-            var deadline = DateTime.UtcNow.AddSeconds(30);
-            string status;
-            do
-            {
-                status = StatusOf(project, jobId);
-                if (status == "waiting-for-baseline") break;
-                Thread.Sleep(50);
-            } while (DateTime.UtcNow < deadline);
+            status = StatusOf(project, jobId);
+            if (status == "waiting-for-baseline") sawWaitingForBaseline = true;
+            if (status is "completed-dry-run-only" or "failed" or "cancelled") break;
+            Thread.Sleep(50);
+        } while (DateTime.UtcNow < deadline);
 
-            Assert.Equal("waiting-for-baseline", status);
-        }
-        finally
-        {
-            Kill(runner);
-        }
+        Assert.True(sawWaitingForBaseline, "The job never parked at waiting-for-baseline.");
+        Assert.Equal("completed-dry-run-only", status);
+
+        // No permanently parked row remains, so the runner idles out and exits on its own — never killed.
+        Assert.True(runner.WaitForExit(30000),
+            "The runner did not exit on its own. Runner said: " + string.Join(" | ", _log));
     }
 
     private static string ExtractProposalId(string finalizeOutput)
@@ -163,9 +195,9 @@ public sealed class RunnerSpineTests : IDisposable
         return finalizeOutput.Substring(start, end - start);
     }
 
-    private void RunRunnerToCompletion(string project)
+    private void RunRunnerToCompletion()
     {
-        var runner = StartRunner(project, leaseSeconds: 30);
+        var runner = StartRunner(leaseSeconds: 30);
         if (!runner.WaitForExit(30000))
         {
             try { runner.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
@@ -173,7 +205,8 @@ public sealed class RunnerSpineTests : IDisposable
         }
     }
 
-    private Process StartRunner(string project, int leaseSeconds)
+    /// Starts the runner with no project of its own; it sweeps whatever the CLI has already made Known.
+    private Process StartRunner(int leaseSeconds)
     {
         var executable = Path.Combine(RepoPaths.FindRepoRoot(), "src", "SIL.Motif.Worker", "bin", "Debug",
             "net10.0", "SIL.Motif.Worker.exe");
@@ -185,8 +218,6 @@ public sealed class RunnerSpineTests : IDisposable
             UseShellExecute = false,
             CreateNoWindow = true,
         };
-        start.ArgumentList.Add("--project");
-        start.ArgumentList.Add(project);
         start.ArgumentList.Add("--idle-ms");
         start.ArgumentList.Add("500");
         start.Environment[RunnerOptions.RootVariable] = _root;
@@ -231,7 +262,8 @@ public sealed class RunnerSpineTests : IDisposable
         return true;
     }
 
-    private static CliRun Cli(string arguments)
+    /// Runs the real CLI against this test's own isolated worker root, the one <see cref="StartRunner"/> uses too.
+    private CliRun Cli(string arguments)
     {
         var executable = Path.Combine(RepoPaths.FindRepoRoot(), "src", "SIL.Motif.Cli", "bin", "Debug",
             "net10.0", "motif.exe");
@@ -243,6 +275,7 @@ public sealed class RunnerSpineTests : IDisposable
             UseShellExecute = false,
             CreateNoWindow = true,
         };
+        start.Environment[RunnerOptions.RootVariable] = _root;
         using var process = Process.Start(start)!;
         var output = process.StandardOutput.ReadToEnd();
         var error = process.StandardError.ReadToEnd();

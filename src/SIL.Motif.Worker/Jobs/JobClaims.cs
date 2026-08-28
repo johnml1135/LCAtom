@@ -25,6 +25,9 @@ namespace SIL.Motif.Worker.Jobs;
 /// </remarks>
 public sealed class JobClaims
 {
+    private const string QueuedAndDue = "(Status = 'queued' AND (NotBeforeUtc IS NULL OR NotBeforeUtc <= $now))";
+    private const string RunningAndExpired = "(Status = 'running' AND (LeaseUntilUtc IS NULL OR LeaseUntilUtc <= $now))";
+
     private readonly MotifDatabase _database;
     private readonly JobRepository _jobs;
 
@@ -33,6 +36,29 @@ public sealed class JobClaims
     {
         _database = database ?? throw new ArgumentNullException(nameof(database));
         _jobs = new JobRepository(database, clock);
+    }
+
+    /// <summary>Reads the identity and position of one project's next claimable row, without claiming it.</summary>
+    /// <remarks>
+    /// This is what lets a sweep across many projects' databases pick the globally first job before it
+    /// commits to any one of them: peek every project's head, then <see cref="Claim"/> only the winner.
+    /// </remarks>
+    public JobQueueHead? PeekHead(string projectKey, string nowUtc)
+    {
+        if (string.IsNullOrWhiteSpace(projectKey))
+            throw new ArgumentException("A project key is required.", nameof(projectKey));
+        if (string.IsNullOrWhiteSpace(nowUtc))
+            throw new ArgumentException("A timestamp is required.", nameof(nowUtc));
+
+        using var connection = _database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT JobId, QueueOrder FROM Jobs WHERE ProjectKey = $project AND " +
+            "ArchivedUtc IS NULL AND (" + QueuedAndDue + " OR " + RunningAndExpired + ") " +
+            "ORDER BY QueueOrder, JobId LIMIT 1;";
+        command.Parameters.AddWithValue("$now", nowUtc);
+        command.Parameters.AddWithValue("$project", projectKey);
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? new JobQueueHead(reader.GetString(0), reader.GetDouble(1)) : null;
     }
 
     /// <summary>Takes the oldest due job for one project, or returns null when another claimant won.</summary>
@@ -52,8 +78,6 @@ public sealed class JobClaims
         if (lease <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(lease), "A lease must be positive.");
 
-        var queuedAndDue = "(Status = 'queued' AND (NotBeforeUtc IS NULL OR NotBeforeUtc <= $now))";
-        var runningAndExpired = "(Status = 'running' AND (LeaseUntilUtc IS NULL OR LeaseUntilUtc <= $now))";
         using var connection = _database.OpenConnection();
         using var transaction = connection.BeginTransaction();
         var token = Guid.NewGuid().ToString("N");
@@ -65,8 +89,8 @@ public sealed class JobClaims
                 "LeaseUntilUtc = $until, HeartbeatUtc = $now, UpdatedUtc = $now, Version = Version + 1, " +
                 "Attempt = Attempt + CASE WHEN Status = 'running' THEN 1 ELSE 0 END " +
                 "WHERE JobId = (SELECT JobId FROM Jobs WHERE ProjectKey = $project AND ArchivedUtc IS NULL " +
-                "AND (" + queuedAndDue + " OR " + runningAndExpired + ") ORDER BY UpdatedUtc LIMIT 1) " +
-                "AND (" + queuedAndDue + " OR " + runningAndExpired + ");";
+                "AND (" + QueuedAndDue + " OR " + RunningAndExpired + ") ORDER BY QueueOrder, JobId LIMIT 1) " +
+                "AND (" + QueuedAndDue + " OR " + RunningAndExpired + ");";
             claim.Parameters.AddWithValue("$owner", ownerId);
             claim.Parameters.AddWithValue("$token", token);
             claim.Parameters.AddWithValue("$until", Stamp(nowUtc, lease));
@@ -150,3 +174,10 @@ public sealed class JobClaims
             DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal) + lease)
         .UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture);
 }
+
+/// <summary>
+/// The identity and position of one project's next claimable row, as read by <see cref="JobClaims.PeekHead"/>.
+/// </summary>
+/// <param name="JobId">Never claimed by this alone; a sweep must still call <see cref="JobClaims.Claim"/>.</param>
+/// <param name="QueueOrder">Compared before <paramref name="JobId"/>, which only breaks a tie.</param>
+public readonly record struct JobQueueHead(string JobId, double QueueOrder);

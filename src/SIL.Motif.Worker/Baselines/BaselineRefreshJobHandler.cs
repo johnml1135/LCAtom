@@ -1,7 +1,9 @@
 using System;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using SIL.LCModel;
+using SIL.Motif.Contract.Jobs;
 using SIL.Motif.Contract.Projects;
 using SIL.Motif.Worker.Jobs;
 
@@ -11,8 +13,9 @@ namespace SIL.Motif.Worker.Baselines;
 /// <remarks>
 /// The handler decides nothing about whether the refresh may proceed — <see cref="BaselineRefreshBarrier"/>
 /// owns that, and owns it by attempting the project open rather than by asking anyone. What this adds is
-/// the translation: a project held elsewhere is a job that failed in a way worth retrying, while a capture
-/// that broke is a job that failed for a reason the caller has to read.
+/// the translation: both of the barrier's failure answers become a <see cref="JobFailureCategory.Infrastructure"/>
+/// failure, so a parked Dry Run waiting on this project's Baseline can bound its own retries through
+/// <see cref="JobRepository.RetryInfrastructure"/> the same way a crash-interrupted job does.
 /// </remarks>
 public sealed class BaselineRefreshJobHandler
 {
@@ -27,21 +30,22 @@ public sealed class BaselineRefreshJobHandler
         _capture = capture ?? throw new ArgumentNullException(nameof(capture));
     }
 
-    /// <summary>Refreshes the project's Baseline, throwing when the job should be recorded as failed.</summary>
+    /// <summary>Refreshes the project's Baseline, or reports an infrastructure failure carrying why.</summary>
     public async Task<JobOutcome?> RunAsync(ProjectLocator project, CancellationToken cancellationToken)
     {
         var result = await _barrier.RefreshAsync(project, _capture, cancellationToken).ConfigureAwait(false);
-        if (!result.Succeeded) throw new BaselineRefreshFailedException(result.Outcome, result.Message);
+        if (!result.Succeeded)
+        {
+            var detail = JsonSerializer.Serialize(new { detail = result.Message, outcome = WireOf(result.Outcome) });
+            return new JobOutcome(JobStatus.Failed, JobFailureCategory.Infrastructure, detail);
+        }
         return JobOutcome.Completed;
     }
-}
 
-/// <summary>A refresh that did not happen, carrying which of the barrier's answers explains it.</summary>
-public sealed class BaselineRefreshFailedException : Exception
-{
-    public BaselineRefreshFailedException(BaselineRefreshOutcome outcome, string message)
-        : base(message) => Outcome = outcome;
-
-    /// <summary>Whether the project was held elsewhere, or the capture itself broke.</summary>
-    public BaselineRefreshOutcome Outcome { get; }
+    private static string WireOf(BaselineRefreshOutcome outcome) => outcome switch
+    {
+        BaselineRefreshOutcome.ProjectInUse => "project-in-use",
+        BaselineRefreshOutcome.CaptureFailed => "capture-failed",
+        _ => throw new ArgumentOutOfRangeException(nameof(outcome))
+    };
 }

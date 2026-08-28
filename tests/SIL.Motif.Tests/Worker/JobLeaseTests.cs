@@ -160,6 +160,37 @@ public sealed class JobLeaseTests : IDisposable
                 $"{created[i]} sorts before {created[i - 1]} despite being created after it.");
     }
 
+    [Fact]
+    public void ATiedQueueOrderClaimsInAStableJobIdOrderRatherThanArbitrarily()
+    {
+        var jobs = new JobRepository(_database);
+        var claims = new JobClaims(_database);
+        jobs.Create("job-z", Project, "dry-run", "{}", Now());
+        jobs.Create("job-a", Project, "dry-run", "{}", Now());
+        SetQueueOrder("job-z", 5.0);
+        SetQueueOrder("job-a", 5.0);
+
+        // Peeking and claiming must agree, and must agree every time this exact state is read.
+        Assert.Equal("job-a", claims.PeekHead(Project, Now())!.Value.JobId);
+        Assert.Equal("job-a", claims.PeekHead(Project, Now())!.Value.JobId);
+
+        var first = claims.Claim(Project, "runner-a", Now(), Lease());
+        var second = claims.Claim(Project, "runner-a", Now(), Lease());
+
+        Assert.Equal("job-a", first!.JobId);
+        Assert.Equal("job-z", second!.JobId);
+    }
+
+    private void SetQueueOrder(string jobId, double queueOrder)
+    {
+        using var connection = _database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE Jobs SET QueueOrder = $order WHERE JobId = $id;";
+        command.Parameters.AddWithValue("$order", queueOrder);
+        command.Parameters.AddWithValue("$id", jobId);
+        command.ExecuteNonQuery();
+    }
+
     private Dictionary<string, double> QueueOrders()
     {
         var orders = new Dictionary<string, double>(StringComparer.Ordinal);

@@ -71,6 +71,16 @@ public sealed class JobRunnerLoop
         }
     }
 
+    /// <summary>Reads this project's next claimable row's identity and position, without claiming it.</summary>
+    internal JobQueueHead? PeekHead() => _claims.PeekHead(_projectKey, Now());
+
+    /// <summary>Claims this project's next due row, or returns null when nothing is claimable right now.</summary>
+    internal JobRecord? TryClaim() => _claims.Claim(_projectKey, _ownerId, Now(), _lease);
+
+    /// <summary>Runs one already-claimed row to a terminal state, or leaves it exactly where a handler parked it.</summary>
+    internal Task RunClaimedAsync(JobRecord claimed, CancellationToken cancellationToken) =>
+        RunOneAsync(claimed, cancellationToken);
+
     private async Task RunOneAsync(JobRecord claimed, CancellationToken cancellationToken)
     {
         if (!_handlers.TryGetValue(claimed.Kind, out var handler))
