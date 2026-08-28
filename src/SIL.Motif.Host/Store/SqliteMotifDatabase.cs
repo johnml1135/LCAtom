@@ -23,7 +23,7 @@ internal static class SqliteMotifDatabase
             Mode = SqliteOpenMode.ReadWriteCreate
         }.ToString());
         connection.Open();
-        MotifSchema.ConfigureConnection(connection);
+        SqliteConnections.ConfigureConnection(connection);
         MotifSchema.EnsureLegacyTables(connection);
         return connection;
     }

@@ -23,7 +23,7 @@ public sealed class MotifDatabaseMigrationTests : IDisposable
         Assert.Equal(MotifSchema.CurrentSchema, PragmaInt(connection, "user_version"));
         Assert.Equal(1, PragmaInt(connection, "foreign_keys"));
         Assert.Equal("wal", PragmaText(connection, "journal_mode"));
-        Assert.Equal(MotifSchema.BusyTimeoutMilliseconds, PragmaInt(connection, "busy_timeout"));
+        Assert.Equal(SqliteConnections.BusyTimeoutMilliseconds, PragmaInt(connection, "busy_timeout"));
         Assert.Equal("new", Scalar(connection, "SELECT FieldWorksProjectIdentity FROM MotifMetadata WHERE Id = 1;"));
         Assert.Equal(Path.Combine(_root, "new.fwdata"), Scalar(connection, "SELECT FullFwDataPath FROM MotifMetadata WHERE Id = 1;"));
     }
@@ -428,16 +428,16 @@ public sealed class MotifDatabaseMigrationTests : IDisposable
     [Fact]
     public void AvailabilityErrorsAreNotClassifiedAsCorruption()
     {
-        Assert.True(MotifSchema.IsCorruptionCode(26));
-        Assert.True(MotifSchema.IsCorruptionCode(11));
-        Assert.False(MotifSchema.IsCorruptionCode(1));
-        Assert.False(MotifSchema.IsCorruptionCode(17));
-        Assert.False(MotifSchema.IsCorruptionCode(24));
-        Assert.False(MotifSchema.IsCorruptionCode(5));
-        Assert.False(MotifSchema.IsCorruptionCode(6));
-        Assert.False(MotifSchema.IsCorruptionCode(8));
-        Assert.False(MotifSchema.IsCorruptionCode(10));
-        Assert.False(MotifSchema.IsCorruptionCode(13));
+        Assert.True(SqliteConnections.IsCorruptionCode(26));
+        Assert.True(SqliteConnections.IsCorruptionCode(11));
+        Assert.False(SqliteConnections.IsCorruptionCode(1));
+        Assert.False(SqliteConnections.IsCorruptionCode(17));
+        Assert.False(SqliteConnections.IsCorruptionCode(24));
+        Assert.False(SqliteConnections.IsCorruptionCode(5));
+        Assert.False(SqliteConnections.IsCorruptionCode(6));
+        Assert.False(SqliteConnections.IsCorruptionCode(8));
+        Assert.False(SqliteConnections.IsCorruptionCode(10));
+        Assert.False(SqliteConnections.IsCorruptionCode(13));
     }
 
     [Fact]

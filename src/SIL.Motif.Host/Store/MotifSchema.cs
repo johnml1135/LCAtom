@@ -13,36 +13,11 @@ public static class MotifSchema
     /// <summary>The newest ordered schema generation implemented by this assembly.</summary>
     public const int CurrentSchema = 8;
 
-    /// <summary>The connection busy timeout used for short-lived worker database sessions.</summary>
-    public const int BusyTimeoutMilliseconds = 15000;
-
     internal static Version MinimumWorkerVersion(int schema) => schema switch
     {
         1 or 2 or 3 or 4 or 5 or 6 or 7 or 8 => new Version(1, 0),
         _ => throw new NotSupportedException($"Motif schema {schema} is not known to this worker.")
     };
-
-    internal static void ConfigureConnection(SqliteConnection connection)
-    {
-        using var command = connection.CreateCommand();
-        command.CommandText =
-            "PRAGMA journal_mode = WAL; PRAGMA busy_timeout = " + BusyTimeoutMilliseconds + "; PRAGMA foreign_keys = ON;";
-        command.ExecuteNonQuery();
-    }
-
-    internal static void ConfigureSession(SqliteConnection connection)
-    {
-        using var command = connection.CreateCommand();
-        command.CommandText = "PRAGMA busy_timeout = " + BusyTimeoutMilliseconds + "; PRAGMA foreign_keys = ON;";
-        command.ExecuteNonQuery();
-    }
-
-    internal static void EnableWal(SqliteConnection connection)
-    {
-        using var command = connection.CreateCommand();
-        command.CommandText = "PRAGMA journal_mode = WAL;";
-        command.ExecuteNonQuery();
-    }
 
     internal static void Migrate(
         SqliteConnection connection,
@@ -178,22 +153,11 @@ public static class MotifSchema
             ValidateIndex(connection, transaction, index, IndexColumnsFor(index));
     }
 
-    internal static bool IsCorruption(SqliteException exception) => IsCorruptionCode(exception.SqliteErrorCode);
-
-    internal static bool IsCorruptionCode(int errorCode) => errorCode is 11 or 26;
-
     internal static void EnsureLegacyTables(SqliteConnection connection)
     {
         using var command = connection.CreateCommand();
         command.CommandText = CorpusAndAssessmentDdl;
         command.ExecuteNonQuery();
-    }
-
-    internal static bool HasUserTables(SqliteConnection connection)
-    {
-        using var command = connection.CreateCommand();
-        command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type IN ('table', 'index', 'view', 'trigger') AND name NOT LIKE 'sqlite_%';";
-        return Convert.ToInt32(command.ExecuteScalar(), CultureInfo.InvariantCulture) > 0;
     }
 
     internal static (ProjectLocator Project, Version MinimumWorkerVersion) ReadMetadata(
@@ -223,7 +187,7 @@ public static class MotifSchema
         {
             throw;
         }
-        catch (SqliteException exception) when (IsCorruption(exception))
+        catch (SqliteException exception) when (SqliteConnections.IsCorruption(exception))
         {
             throw new InvalidDataException("Motif database metadata is corrupt.", exception);
         }
