@@ -33,10 +33,7 @@ public sealed class ProposalWorkflowTests
         _seed = pristine.Seed;
         using var scratch = pristine.NewScratch();
         _fwDataPath = scratch.ProjectId.Path;
-
-        // The scratch root is the project folder's parent -- a sibling location for the CLI's own store.
-        var scratchRoot = Path.GetDirectoryName(Path.GetDirectoryName(_fwDataPath))!;
-        _storeDir = Path.Combine(scratchRoot, ".motif-store");
+        _storeDir = ProposalStore.ForProject(_fwDataPath).RootDirectory;
     }
 
     [Fact]

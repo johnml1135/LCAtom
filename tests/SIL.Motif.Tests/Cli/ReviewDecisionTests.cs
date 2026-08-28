@@ -22,8 +22,7 @@ public sealed class ReviewDecisionTests
     public ReviewDecisionTests(PristineProjectFixture pristine)
     {
         using var scratch = pristine.NewScratch();
-        var scratchRoot = Path.GetDirectoryName(Path.GetDirectoryName(scratch.ProjectId.Path))!;
-        _storeDir = Path.Combine(scratchRoot, ".motif-store");
+        _storeDir = ProposalStore.ForProject(scratch.ProjectId.Path).RootDirectory;
     }
 
     private string CommitFreshProposal(string draftName = "d")

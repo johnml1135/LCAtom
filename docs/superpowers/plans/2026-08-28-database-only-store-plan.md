@@ -138,6 +138,20 @@ State what the compatibility floor moved to and why it moved once rather than th
 ADR 0041 decisions 1, 2 and 3. The largest task; `Commands.cs` does the file I/O directly, so this is a
 rewrite of its Proposal path rather than a swap of one collaborator.
 
+**Split in two, because each half can be green on its own and the whole cannot be reviewed at once.**
+`Commands.cs` is 1,726 lines with 20 `ProposalStore` call sites, and nine test files hold 49 more.
+
+- **5a — every verb names its project, storage unchanged.** Each verb gains a required `--project`, and
+  the store directory is derived from the project (`<project dir>/.motif`) rather than from the working
+  directory. This alone closes ADR 0041 decision 2's defect: the same project reached from two terminals
+  now resolves to one store. `--store` survives only for the corpus verbs until Task 6.
+- **5b — the storage swaps underneath.** `ProposalStore` gives way to `ProposalRepository`, and the verb
+  signatures 5a settled do not move again.
+
+A single pass was rejected: the intermediate state where `finalize` writes the database and `list` reads
+files fails `ProposalWorkflowTests`, so the storage swap cannot be staged verb-by-verb. Splitting on
+*where the store is* against *what the store is* gives two green landings instead.
+
 **Files:**
 - Modify: `src/SIL.Motif.Cli/Commands.cs`, `src/SIL.Motif.Cli/Program.cs`
 - Delete: `src/SIL.Motif.Cli/Store/ProposalStore.cs`
@@ -176,14 +190,27 @@ without the project file's write time changing says the same thing, and says it 
 - Delete: `FileCorpusStore` from `src/SIL.Motif.Host/Corpus/ICorpusStore.cs`,
   `src/SIL.Motif.Host/Corpus/CorpusStoreMigration.cs`
 
-- [ ] **Step 1: Point `CorpusCommands.StoreFor` at `SqliteCorpusStore` and run red**
+**Corrected 2026-08-28 — see the ADR's amendment.** `CorpusCommands.StoreFor` already returns a
+`SqliteCorpusStore`; what is wrong is *which* database it points at — `<storeDir>/motif.db`, a third
+database beside the paired one and the machine store. `FileCorpusStore` has 0 production constructions and
+`CorpusStoreMigration` has no caller at all.
 
-`SqliteCorpusStore` already implements `ICorpusStore`, so the interface does not change — which is the
-evidence the seam was in the right place all along.
+**Do this next, ahead of 5b.** Task 5a opens a window where `promote-gloss` reads the project's store while
+`add-corpus` writes the working directory's; this task closes it.
 
-- [ ] **Step 2: Delete `FileCorpusStore`, remove `--store` from `Program.cs` entirely, run green and commit**
+- [ ] **Step 1: Write the test that fails today**
 
-The usage log moves to the machine store here, since `storeDir` was its last remaining reader.
+`motif add-corpus --project <fwdata>` then `motif promote-gloss --project <fwdata> --corpus <id>` from a
+*different* working directory. That is the break 5a opened, and it must be red before it is fixed.
+
+- [ ] **Step 2: Repoint the corpus store at the paired project database**
+
+`StoreFor` takes the project, not a store directory, and resolves the paired `<project>.motif.db`. The
+corpus verbs gain a required `--project`. `Corpora` and `CorpusDocuments` already exist in that schema.
+
+- [ ] **Step 3: Delete `FileCorpusStore` and `CorpusStoreMigration`, remove `--store` entirely, run green**
+
+The usage log moves to `MachineUsageLog` here, since `storeDir` was its last remaining reader.
 
 ---
 

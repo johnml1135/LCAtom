@@ -31,6 +31,7 @@ namespace SIL.Motif.Tests.Cli;
 /// </summary>
 public sealed class SelectiveEditingTests : IDisposable
 {
+    private readonly string _fwDataPath = PlaceholderProject.Create("SIL.Motif.Tests.SelectiveEditing");
     private readonly string _storeDir;
 
     private static readonly JsonSerializerOptions ManifestJsonOptions = new()
@@ -42,13 +43,12 @@ public sealed class SelectiveEditingTests : IDisposable
 
     public SelectiveEditingTests()
     {
-        _storeDir = Path.Combine(
-            Path.GetTempPath(), "SIL.Motif.Tests.SelectiveEditing", Guid.NewGuid().ToString("N"));
+        _storeDir = ProposalStore.ForProject(_fwDataPath).RootDirectory;
     }
 
     public void Dispose()
     {
-        try { Directory.Delete(_storeDir, recursive: true); }
+        try { Directory.Delete(Path.GetDirectoryName(_fwDataPath)!, recursive: true); }
         catch { /* best-effort cleanup */ }
     }
 

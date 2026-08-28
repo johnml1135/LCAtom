@@ -11,8 +11,13 @@ public sealed class FailureContractTests : IDisposable
 {
     private readonly string _root =
         Path.Combine(Path.GetTempPath(), "motif-failure-" + Guid.NewGuid().ToString("N"));
+    private readonly string _fwDataPath;
 
-    public FailureContractTests() => Directory.CreateDirectory(_root);
+    public FailureContractTests()
+    {
+        Directory.CreateDirectory(_root);
+        _fwDataPath = Path.Combine(_root, "Project.fwdata");
+    }
 
     [Fact]
     public void AJsonFailureIsOneEnvelopeOnStderrAndNothingOnStdout()
@@ -64,7 +69,7 @@ public sealed class FailureContractTests : IDisposable
         // A well-formed id that nothing queued: the caller may act on the reason, and must not retry.
         var absent = "proposal/" + new string('A', 22);
 
-        var result = Run($"show {absent} --store \"{_root}\" --json");
+        var result = Run($"show {absent} --project \"{_fwDataPath}\" --json");
 
         Assert.Equal(2, result.ExitCode);
         Assert.Equal(FailureReason.NotFound, Envelope(result.Error).Reason);
@@ -74,7 +79,7 @@ public sealed class FailureContractTests : IDisposable
     [Fact]
     public void AMalformedProposalIdIsAnInvocationErrorAndEnveloped()
     {
-        var result = Run($"show proposal/short --store \"{_root}\" --json");
+        var result = Run($"show proposal/short --project \"{_fwDataPath}\" --json");
 
         Assert.Equal(1, result.ExitCode);
         Assert.Equal(FailureReason.InvalidArgument, Envelope(result.Error).Reason);
@@ -97,8 +102,8 @@ public sealed class FailureContractTests : IDisposable
         // One reader must handle every verb; a verb opting out silently is worse than one that fails.
         foreach (var invocation in new[]
                  {
-                     $"show proposal/short --store \"{_root}\" --json",
-                     $"show proposal/{new string('A', 22)} --store \"{_root}\" --json",
+                     $"show proposal/short --project \"{_fwDataPath}\" --json",
+                     $"show proposal/{new string('A', 22)} --project \"{_fwDataPath}\" --json",
                      $"open \"{Path.Combine(_root, "absent.fwdata")}\" --json",
                  })
         {

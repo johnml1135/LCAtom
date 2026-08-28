@@ -210,3 +210,44 @@ what `Baselines` already does.
   parameter anybody has to reason about.
 - **Machine capacity and the runner singleton as database rows.** Rejected in decision 4; a named mutex is
   released by the kernel when its holder dies.
+
+## Amendments
+
+### 2026-08-28 — Corpora were already in a database, just the wrong one
+
+The Context above says `SqliteCorpusStore` is "not referenced anywhere in `src/` outside its own file". That
+is true of `ProposalRepository` and **false of the corpus store**. Measured:
+
+```
+new FileCorpusStore(    → 0 in src/, 4 in tests/
+new SqliteCorpusStore(  → 1 in src/:
+    CorpusCommands.StoreFor(storeDir) => new SqliteCorpusStore(Path.Combine(storeDir, "motif.db"))
+```
+
+`FileCorpusStore` is the dead one. Corpora already live in SQLite — but in a **store-local** `motif.db`
+under whichever `.motif` directory the caller resolved, which is a third database beside the project's
+paired one and the machine store. Confirmed by running the real executable: `motif add-corpus` from a
+working directory wrote `<cwd>/.motif/motif.db`.
+
+The claim was written from a stale reading taken before this ADR's own Task 1 landed, and it was not
+re-checked. Decision 1 is unaffected in substance — corpora still end up in the paired project database —
+but the work is not "swap the file implementation for the SQLite one". It is **repoint the SQLite one at
+the paired project database**, and delete `FileCorpusStore` and `CorpusStoreMigration`, neither of which
+has a production caller.
+
+Rule adopted: **re-measure a "nothing references this" claim against the tree the work will actually run
+on**, not against the tree the claim was first written on.
+
+### 2026-08-28 — `promote-gloss` has a window where it cannot see a corpus
+
+`Commands.PromoteGloss` takes one store directory and uses it for both its Proposal store and its corpus
+lookup. Once decision 2 derives that directory from `--project`, promote-gloss reads
+`<project dir>/.motif/motif.db` while `add-corpus` still writes `<cwd>/.motif/motif.db`, so a corpus added
+from a working directory is invisible to it.
+
+The gate does not see this: `PromoteGlossTests` drives the in-process `Commands.PromoteGloss(storeDir, …)`
+and passes one directory to both, so the two agree in the test and disagree only through the CLI.
+
+The window opens when decision 2 lands for the Proposal verbs and closes when the corpus verbs follow. It
+is recorded rather than patched because the patch — restoring a separate corpus-store flag — would add back
+the flag this ADR deletes, for one intermediate commit.

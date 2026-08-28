@@ -52,6 +52,27 @@ public sealed class ProposalStore
     public string ObjectsDirectory { get; }
     public string ManifestsDirectory { get; }
 
+    /// <summary>
+    /// The store for the project at <paramref name="fwDataPath"/>: <c>&lt;directory containing the
+    /// .fwdata&gt;/<see cref="DefaultDirectoryName"/></c>. A Proposal belongs to the project, not to
+    /// the caller's working directory, so this is the only route a verb should take to its store —
+    /// the same project resolves to the same store regardless of where the command runs.
+    /// </summary>
+    public static ProposalStore ForProject(string fwDataPath)
+    {
+        if (string.IsNullOrWhiteSpace(fwDataPath))
+            throw new ArgumentException("Project path must not be empty.", nameof(fwDataPath));
+
+        var projectDirectory = Path.GetDirectoryName(Path.GetFullPath(fwDataPath));
+        if (string.IsNullOrEmpty(projectDirectory))
+        {
+            throw new ArgumentException(
+                $"Project path '{fwDataPath}' has no containing directory.", nameof(fwDataPath));
+        }
+
+        return new ProposalStore(Path.Combine(projectDirectory, DefaultDirectoryName));
+    }
+
     public void EnsureDirectoriesExist()
     {
         Directory.CreateDirectory(DraftsDirectory);

@@ -32,9 +32,7 @@ public sealed class CommandsRefusalsTests
         using var scratch = pristine.NewScratch();
         _fwDataPath = scratch.ProjectId.Path;
         _target = CanonicalId.FromGuid(seed.FirstSenseId).Value;
-
-        var scratchRoot = Path.GetDirectoryName(Path.GetDirectoryName(_fwDataPath))!;
-        _storeDir = Path.Combine(scratchRoot, ".motif-store");
+        _storeDir = ProposalStore.ForProject(_fwDataPath).RootDirectory;
     }
 
     // --- New ---
@@ -626,7 +624,7 @@ public sealed class CommandsRefusalsTests
             RepoPaths.FindRepoRoot(), "src", "SIL.Motif.Cli", "bin", "Debug", "net10.0", "motif.exe");
         var start = new ProcessStartInfo(executable)
         {
-            Arguments = $"{arguments} --store \"{_storeDir}\"",
+            Arguments = $"{arguments} --project \"{_fwDataPath}\"",
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,

@@ -5,14 +5,20 @@ using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Model;
 using SIL.Motif.Projection.Store;
 using SIL.Motif.Runner.Operations;
+using SIL.Motif.Tests.TestFixtures;
 using Xunit;
 
 namespace SIL.Motif.Tests.Cli;
 
 public sealed class PrerequisitePlannerTests : IDisposable
 {
-    private readonly string _storeDir = Path.Combine(
-        Path.GetTempPath(), "SIL.Motif.Tests", Guid.NewGuid().ToString("N"));
+    private readonly string _fwDataPath = PlaceholderProject.Create("SIL.Motif.Tests.PrerequisitePlanner");
+    private readonly string _storeDir;
+
+    public PrerequisitePlannerTests()
+    {
+        _storeDir = ProposalStore.ForProject(_fwDataPath).RootDirectory;
+    }
 
     [Fact]
     public void Plan_MissingTransitiveProposal_NamesTheMissingId()
@@ -191,7 +197,8 @@ public sealed class PrerequisitePlannerTests : IDisposable
 
     public void Dispose()
     {
-        if (Directory.Exists(_storeDir)) Directory.Delete(_storeDir, recursive: true);
+        var projectDir = Path.GetDirectoryName(_fwDataPath)!;
+        if (Directory.Exists(projectDir)) Directory.Delete(projectDir, recursive: true);
     }
 
     private static IReadOnlyList<Proposal> Plan(

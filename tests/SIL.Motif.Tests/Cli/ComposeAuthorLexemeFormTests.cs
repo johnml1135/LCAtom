@@ -32,8 +32,7 @@ public sealed class ComposeAuthorLexemeFormTests
         _seed = pristine.Seed;
         using var scratch = pristine.NewScratch();
         _fwDataPath = scratch.ProjectId.Path;
-        var scratchRoot = Path.GetDirectoryName(Path.GetDirectoryName(_fwDataPath))!;
-        _storeDir = Path.Combine(scratchRoot, ".motif-store");
+        _storeDir = ProposalStore.ForProject(_fwDataPath).RootDirectory;
     }
 
     private string IntentJson(string entry, bool includeGloss) =>
