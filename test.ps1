@@ -24,13 +24,20 @@
   .PARAMETER SkipBuild
   Reuse the existing binaries and skip the build gate. For re-running a suite you just built.
 
+  .PARAMETER AllowRunningTestHosts
+  Proceed even though a test host from an earlier run is still alive. A stale one holds a lock on the
+  build output, which stalls the build rather than failing it -- and a stalled build prints nothing, so
+  the gate looks like a test that never finishes. This script therefore stops and names the processes
+  instead. Pass this only when the running host is a deliberate second run you want to race.
+
   .EXAMPLE
   ./test.ps1
 #>
 [CmdletBinding()]
 param(
     [string] $Configuration = 'Debug',
-    [switch] $SkipBuild
+    [switch] $SkipBuild,
+    [switch] $AllowRunningTestHosts
 )
 
 Set-StrictMode -Version Latest
@@ -43,6 +50,16 @@ function Write-Step {
     param([string] $Text)
     Write-Host ''
     Write-Host "==> $Text" -ForegroundColor Cyan
+}
+
+$running = @(Get-Process -Name 'testhost' -ErrorAction SilentlyContinue)
+if ($running.Count -gt 0 -and -not $AllowRunningTestHosts) {
+    Write-Host ''
+    Write-Host "A test host from an earlier run is still alive (PID $($running.Id -join ', '))." -ForegroundColor Red
+    Write-Host 'It holds a lock on the build output, so this gate would stall with no output at all.'
+    Write-Host 'Stop it and run again:  Get-Process testhost | Stop-Process -Force'
+    Write-Host 'Or pass -AllowRunningTestHosts to proceed anyway.'
+    exit 1
 }
 
 if ($SkipBuild) {
