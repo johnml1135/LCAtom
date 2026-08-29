@@ -153,3 +153,49 @@ The cache is a file PanGloss owns the format of; Motif records its path and dige
   is best"* moves a verdict into Motif, and ADR 0033 decision 4 puts it with the linguist.
 - **Motif deriving per-rule cost from per-word timings.** Rejected in decision 8; it would invent a measure
   of another system's internals from outside.
+
+## Amendments
+
+### 2026-08-29 — comparability is a join on words, not containment of scopes
+
+Decision 3 said a candidate Assessment compares to a Baseline's when its scope is **contained** in the
+Baseline's along every axis. That is wrong, and it was wrong in an expensive direction: it would have refused
+comparisons that are perfectly meaningful and forced Baselines to be re-run to permit them.
+
+**Two Assessments are compared by joining on the word.** What must match is the word and the **kind** of
+measurement. Everything else — Assessor, engine, limits, which corpus the words came from — is **context that
+annotates the comparison rather than gating it**. Two runs whose word sets were resolved from different
+corpora still compare, on the words they have in common.
+
+That the join key is a word, and that two analyses of it are the same analysis when `MatchesIWfiAnalysis`'s
+shape agrees, was already settled by [ADR 0027](0027-what-counts-as-the-same-word-analysis.md). Decision 3
+reinvented a coarser mechanism on top of a finer one that already existed.
+
+A scope keeps its meaning as *what a run was told to do*, and is still embedded by content so a measurement
+cannot be reinterpreted later. It is no longer a gate on comparison. The consequence for decision 4 stands
+unchanged and is in fact the mechanism that replaces containment: a Report that needs data the run never
+collected must say so, naming the reason — and that check is per-report, not per-comparison.
+
+### 2026-08-29 — an Assessment is one *kind* of measurement, and one invocation yields several
+
+Decision 1 implied one Assessor invocation produces one Assessment. It produces several, of different kinds.
+One PanGloss run can yield: the size of the compiled engine; the time to parse a subset of words; per-morpheme
+and per-rule timing over a subset; the correctness of parses against manual analysis; the difference between
+two sets of automatic analysis; which words now complete that did not before.
+
+So **Assessment kind** is part of an Assessment's identity, and it is what a comparison matches on alongside
+the word. This also means a *difference* can itself be an Assessment — which collapses a distinction the
+earlier draft kept apart, and is the more honest model: a delta is a measurement like any other, and storing
+it is how it stays citable as evidence.
+
+### 2026-08-29 — a Report is a presentation, and computing it may be delegated
+
+Decision 4 treated a Report as a query Motif runs. Sharpened: an Assessor returns an Assessment in **raw
+form** — a SQLite database, analyses of specific words — and the **Report is the presentation of that raw
+material**. Producing one may mean handing the raw data back to the Assessor that owns its format, for
+example asking PanGloss to interpret its own stats cache or to compare two sets of data. The result is then
+rendered for a CLI reader or a FieldWorks view.
+
+This does not move ownership. Motif still orchestrates, stores and cites; what changes is that Motif does not
+assume it must compute every interpretation itself, and specifically must not reimplement a reading of
+another system's format when that system can be asked. It is decision 8's reasoning applied one level up.

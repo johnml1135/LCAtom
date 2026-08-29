@@ -51,9 +51,12 @@ Two different evaluations, deliberately named apart. One asks *does the grammar 
 other asks *what would this do to the project?*
 
 **Assessment**:
-One immutable measurement, made by one Assessor under one Assessment scope. A parse run is the common
-kind and PanGloss is the common Assessor, but an Assessment is not tied to either: a C# HermitCrab or an
-alignment model asking whether more lexemes align each produce one too. Immutable once written, so it
+One immutable measurement of one kind, made by one Assessor under one Assessment scope, returned in raw
+form. A parse run is the common kind and PanGloss is the common Assessor, but an Assessment is tied to
+neither: a C# HermitCrab or an alignment model asking whether more lexemes align each produce them too.
+One invocation of one Assessor yields several — the compiled engine's size, the time to parse a subset,
+per-rule timing, correctness against manual analysis, the difference between two sets of automatic
+analysis, which words now complete. A difference is a measurement like any other. Immutable once written, so it
 has no lifecycle of its own — the Job that produced it has the states, and *current* is a pointer the
 project holds rather than a state the Assessment carries. Motif stores Assessments and compares them; it
 never renders a verdict from one.
@@ -66,12 +69,11 @@ coverage.
 _Avoid_: backend, engine, provider, plugin
 
 **Assessment scope**:
-What a run holds equal so that two runs can be subtracted: which words, which Assessor and engine, what
-the run collects, and what limits it applies — a per-word limit defaulting to about a second, or an
-equivalent cap on attempts. Declared per project and embedded in each Assessment by content,
-so editing the declaration cannot reinterpret a measurement already taken. A Baseline is measured under
-the superset of every scope a Proposal will use, so a narrower candidate run is comparable without
-measuring the Baseline again.
+What a run was told to do: which words, which Assessor and engine, what to collect, and what limits to
+apply — a per-word limit defaulting to about a second, or an equivalent cap on attempts. Declared per
+project and embedded in each Assessment by content, so editing the declaration cannot reinterpret a
+measurement already taken. A scope is **context, not a gate**: two Assessments compare by joining on the
+word, and a differing engine or corpus annotates that comparison rather than forbidding it.
 _Avoid_: profile, config, settings, run options
 
 **Grammar Delta**:
