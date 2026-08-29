@@ -7,10 +7,18 @@ owns the data and is the only authority on it) and **PanGloss** (which parses wi
 ## The unit of change
 
 **Motif operation**:
-A small, named, reusable unit of linguistic intent — `MergeLexicalEntries`, `SplitSense`,
-`CreateAffixProcessRule`. Named for the musical sense: the smallest recognizable unit that recurs and
-is developed across a work.
+The smallest durable unit a Proposal is made of, named for its field and its verb —
+`grammar/fsFeatDefn/setAbbreviation`. Named for the musical sense: the smallest recognizable unit that
+recurs and is developed across a work. This is the hashed vocabulary a digest is computed over, so it
+does not churn ([ADR 0021](docs/adr/0021-cli-is-the-full-surface-layer-1-churns.md)).
 _Avoid_: command, CRUD+ operation, mutation, edit
+
+**Intent**:
+A unit of linguistic purpose an author states, which Lowering turns into the several Motif operations
+that realize it — `AuthorLexemeForm`, `AuthorFeatureStructure`. What an agent addresses; the verb
+surface may churn beneath a stable operation vocabulary
+([ADR 0029](docs/adr/0029-agents-address-layer-1-only.md)).
+_Avoid_: macro, template, high-level operation, composite
 
 **Lowering**:
 Turning one Motif operation into the concrete changes that realize it against a particular store.
@@ -45,8 +53,18 @@ other asks *what would this do to the project?*
 **Assessment**:
 An immutable PanGloss run: one grammar against one frozen set of evaluation words, producing parse
 results and diagnostics. PanGloss owns this word — it has a `pg-assess` crate and uses the term in its
-own contracts. Motif stores Assessments and compares them; it never renders a verdict from one.
+own contracts. Motif stores Assessments and compares them; it never renders a verdict from one. An
+Assessment records the Assessment scope it ran under, because that decides which Reports can be
+answered from it at all.
 _Avoid_: parse report, evaluation, score, verdict
+
+**Assessment scope**:
+What a run holds equal so that two runs can be subtracted: which words, which engine, what the run
+collects, and what limits it applies. Declared per project and embedded in each Assessment by content,
+so editing the declaration cannot reinterpret a measurement already taken. A Baseline is measured under
+the superset of every scope a Proposal will use, so a narrower candidate run is comparable without
+measuring the Baseline again.
+_Avoid_: profile, config, settings, run options
 
 **Grammar Delta**:
 The exact structural difference between two Assessments — which analyses were added, removed,
