@@ -93,6 +93,14 @@ Dry Run scratches. It contains the LibLCM and writing-system data needed to repr
 but no linked media bytes. A Baseline is replaced explicitly, not merely because time passed.
 _Avoid_: snapshot, backup, session cache, live model
 
+**Trial**:
+One attempt at a Proposal on a throwaway copy of the project, producing both a Dry Run and one or more
+Assessments — what it would do, and how well the result parses. Started whenever an author wants to
+know, at no cost to the Proposal's state: a Trial freezes nothing, edits continue afterwards, and a
+Proposal may have many at different points in its life. What a Trial measured is identified by the
+content it ran against, so two Trials either side of an edit are distinguishable and comparable.
+_Avoid_: run, attempt, test, experiment, evaluation
+
 **Preflight**:
 The final non-mutating comparison against the live model immediately before Apply. It proves that the
 approved evidence still matches the project; it is not the earlier, reusable Dry Run.

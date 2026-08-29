@@ -199,3 +199,30 @@ rendered for a CLI reader or a FieldWorks view.
 This does not move ownership. Motif still orchestrates, stores and cites; what changes is that Motif does not
 assume it must compute every interpretation itself, and specifically must not reimplement a reading of
 another system's format when that system can be asked. It is decision 8's reasoning applied one level up.
+
+### 2026-08-29 — a Trial is the composite, and what survives an apply
+
+The stage that produces both a Dry Run and a candidate's Assessments is a **Trial**, and `trial` is the verb.
+It is a kick-off rather than a transition: a Proposal does not move when one is started, nothing is frozen,
+editing continues, and a Proposal may have many across its life. See
+[the Proposal lifecycle](../proposal-lifecycle.md).
+
+Two consequences of "no state change" are worth stating here because they touch this ADR's decisions.
+
+**A Trial may measure uncommitted content**, so its Assessments cannot pin to a revision. They cite the
+draft's intent digest instead. That is consistent with decision 3's rule — a scope is embedded by content —
+and it means two Trials either side of an edit are distinguishable and comparable without either being a
+lie. `finalize` is no longer the gateway to measurement; it commits a text so a Decision can bind to exact
+words, and nothing more.
+
+**On apply, a Proposal's Trials, Dry Runs and Assessments become deletable**, by configuration in the
+`<project>.motif.toml`, defaulting to on — the same instinct as deleting a branch when a pull request
+merges. This completes the retention picture: Assessment rows are otherwise kept, stats caches are capped,
+and a Proposal's working artifacts are swept when it lands.
+
+**The trap in that, stated so nobody has to find it.** Applying *promotes* one candidate Assessment to be the
+project's current one (decision 6). That Assessment is no longer the Proposal's working scratch — it is the
+project's measurement and the baseline every future Trial compares against. A purge that treats it as one of
+the applied Proposal's artifacts destroys the reference point for every later comparison, and the damage is
+invisible until the next Trial fails to produce a delta. Promotion must therefore happen before the sweep,
+and the promoted Assessment must be excluded from it by identity rather than by hoping the ordering holds.

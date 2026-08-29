@@ -79,7 +79,42 @@ on what a Proposal is doing, and they would disagree the moment a second Assessm
 The states do, however, **decide what may be queued**: there is nothing to measure about a `draft` with no
 committed revision, and nothing worth measuring about a `superseded` one.
 
-## The stage that has no name yet
+## Trial, and why it is not a state
+
+**Settled: the composite is a Trial, and `trial` is the verb.** One attempt at a Proposal on a throwaway
+copy, producing a Dry Run *and* Assessments.
+
+A Trial is **a kick-off, not a transition**. An author starts one whenever they want to know how things
+stand; the Proposal does not move, nothing is frozen, and editing continues afterwards. A Proposal may have
+many Trials across its life, and they are comparable to each other as well as to the Baseline — which is the
+point, because that is how an author sees whether the last edit helped.
+
+This means a Trial can measure **uncommitted** content, and therefore cannot pin to a revision, because there
+is not one. It does not need to: content here is addressed by digest, so a Trial computes the draft's intent
+digest and its Assessments cite that, whether or not those bytes ever become a committed revision. Two Trials
+either side of an edit cite different digests, so neither is a lie and both stay comparable.
+
+The consequence for `finalize` is a simplification. It stops being the gateway to measurement and becomes
+only what it should always have been: committing a text so a **Decision** can be bound to exact words.
+Measure whenever; commit when you want a judgement.
+
+`dry-run` survives as its own verb. Reading effects off a scratch is cheap; parsing a corpus is not, and
+somebody who only wants to know whether their operations resolve against the project should not wait for a
+parser. So `dry-run` is the cheap question and `trial` is the expensive one that contains it.
+
+## What happens to all of it when the Proposal is applied
+
+A Proposal accumulates Trials, Dry Runs and Assessments. On apply, they become deletable — **by
+configuration, defaulting to on**, in the same spirit as deleting a branch when a pull request merges. The
+`<project>.motif.toml` owns that choice, so a project that wants to keep its working history may.
+
+**One thing must never be swept up in that.** Applying *promotes* one candidate Assessment to be the
+project's current one (ADR 0042 decision 6). That Assessment is no longer working scratch — it is the
+project's measurement, the thing the next Trial will be compared against. A purge that treated it as one of
+the applied Proposal's artifacts would delete the baseline for every future comparison, and the loss would
+only surface at the next Trial, as a comparison that could not be made.
+
+## The stage that had no name
 
 `dry-run` is a job that opens a single-use scratch from the Baseline, applies the Proposal, and reads the
 effects back. Under ADR 0042 that same job should also produce the candidate's Assessments — one scratch, one
@@ -93,7 +128,10 @@ That makes the verb under-describe itself. `CONTEXT.md` keeps the two outputs de
 A **Dry Run** answers the second. An **Assessment** answers the first. The composite — one attempt at a
 Proposal on a throwaway copy, producing both — has no name.
 
-**Open.** The obvious candidate is **Evaluation**, which fits because the glossary already uses that word for
-the pair. The risk is precisely that: a term whose plural already means something slightly different in the
-sentence above. The alternative is a fresh word — **Trial** — which cannot be confused with either output but
-adds vocabulary rather than reusing it.
+**Settled: Trial.** *Evaluation* was the tempting reuse — the glossary already calls the two outputs "two
+different evaluations" — and that is exactly why it was rejected: "an Evaluation contains two evaluations"
+reads fine once and confuses everyone after. *Trial* adds a word rather than overloading one, carries the
+right sense of a single attempt on a throwaway copy, and leaves Dry Run and Assessment untouched.
+
+The verb is `trial`, matching the noun, as `label`, `comment` and `split` already do. `try` was rejected: it
+reads as an attempt that might fail, and a Trial is a measurement rather than a gamble.
