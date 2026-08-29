@@ -117,6 +117,10 @@ public sealed class JobClaims
         return claimed;
     }
 
+    /// <summary>Reads whether a cancellation has been requested for one job, by id rather than by token.</summary>
+    /// <remarks>This is what the loop's heartbeat polls to cancel a running handler's token.</remarks>
+    public bool IsCancellationRequested(string jobId) => _jobs.Get(jobId)?.CancellationRequested ?? false;
+
     /// <summary>Pushes one held job lease forward, refusing a token that no longer owns the row.</summary>
     /// <remarks>
     /// The token, not the owner identity, is what authorises this. A runner can stall past its lease, lose

@@ -416,11 +416,53 @@ try
             break;
 
         case "jobs":
-            if (positionals.Count != 2 || positionals[0] != "show")
-                return Usage("Usage: motif jobs show <jobId> --project <fwdata> [--json]", asJson);
-            if (!flags.TryGetValue("project", out var jobsProject))
-                return Usage("Usage: motif jobs show <jobId> --project <fwdata> [--json]", asJson);
-            result = JobCommands.Show(jobsProject, positionals[1], CliProductVersion(), asJson);
+            if (positionals.Count == 0)
+                return Usage(JobsUsage(), asJson);
+            switch (positionals[0])
+            {
+                case "show":
+                    if (positionals.Count != 2 || !flags.TryGetValue("project", out var jobsShowProject))
+                        return Usage("Usage: motif jobs show <jobId> --project <fwdata> [--json]", asJson);
+                    result = JobCommands.Show(jobsShowProject, positionals[1], CliProductVersion(), asJson);
+                    break;
+
+                case "list":
+                    if (positionals.Count != 1 || !flags.ContainsKey("all"))
+                        return Usage("Usage: motif jobs list --all [--json]", asJson);
+                    result = JobCommands.ListAll(CliProductVersion(), asJson);
+                    break;
+
+                case "cancel":
+                    if (positionals.Count != 2 || !flags.TryGetValue("project", out var jobsCancelProject))
+                        return Usage("Usage: motif jobs cancel <jobId> --project <fwdata> [--json]", asJson);
+                    result = JobCommands.Cancel(jobsCancelProject, positionals[1], CliProductVersion(), asJson);
+                    break;
+
+                case "requeue":
+                    if (positionals.Count != 2 || !flags.TryGetValue("project", out var jobsRequeueProject))
+                        return Usage("Usage: motif jobs requeue <jobId> --project <fwdata> [--json]", asJson);
+                    result = JobCommands.Requeue(jobsRequeueProject, positionals[1], CliProductVersion(), asJson);
+                    if (result.ExitCode == 0) RunnerKick.After();
+                    break;
+
+                case "move":
+                    if (positionals.Count != 2 || !flags.TryGetValue("project", out var jobsMoveProject))
+                        return Usage(JobsMoveUsage(), asJson);
+                    var hasBefore = flags.TryGetValue("before", out var jobsMoveBefore);
+                    var hasToTop = flags.ContainsKey("to-top");
+                    var hasToBottom = flags.ContainsKey("to-bottom");
+                    if ((hasBefore ? 1 : 0) + (hasToTop ? 1 : 0) + (hasToBottom ? 1 : 0) != 1)
+                        return Usage(JobsMoveUsage(), asJson);
+                    var jobsMoveTarget = hasBefore ? JobMoveTarget.Before(jobsMoveBefore!)
+                        : hasToTop ? JobMoveTarget.ToTop()
+                        : JobMoveTarget.ToBottom();
+                    result = JobCommands.Move(jobsMoveProject, positionals[1], CliProductVersion(),
+                        jobsMoveTarget, asJson);
+                    break;
+
+                default:
+                    return Usage(JobsUsage(), asJson);
+            }
             break;
 
         default:
@@ -466,6 +508,14 @@ static int Usage(string message, bool asJson = false, bool withUsageBanner = fal
     if (withUsageBanner) PrintUsage(Console.Error);
     return FailureEnvelope.ExitCodeFor(FailureReason.InvalidArgument);
 }
+
+static string JobsUsage() =>
+    "Usage: motif jobs show <jobId> --project <fwdata> [--json] OR motif jobs list --all [--json] OR " +
+    "motif jobs cancel <jobId> --project <fwdata> [--json] OR motif jobs requeue <jobId> --project <fwdata> " +
+    "[--json] OR " + JobsMoveUsage();
+
+static string JobsMoveUsage() =>
+    "motif jobs move <jobId> --project <fwdata> (--before <jobId> | --to-top | --to-bottom) [--json]";
 
 static string AnalysesUsage() =>
     "Usage: motif analyses --project <fwdata> [--json] OR motif analyses --project <fwdata> " +
@@ -532,8 +582,16 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine("  corpora --project <fwdata> [--json]");
     writer.WriteLine("  show-corpus --project <fwdata> <corpusId> [--json]");
     writer.WriteLine();
+    writer.WriteLine("Jobs (the durable queue; --project selects which project's queue, except list --all):");
+    writer.WriteLine("  baseline-refresh --project <fwdata>");
+    writer.WriteLine("  jobs show <jobId> --project <fwdata> [--json]");
+    writer.WriteLine("  jobs list --all [--json]");
+    writer.WriteLine("  jobs cancel <jobId> --project <fwdata> [--json]");
+    writer.WriteLine("  jobs requeue <jobId> --project <fwdata> [--json]");
+    writer.WriteLine("  " + JobsMoveUsage());
+    writer.WriteLine();
     writer.WriteLine("Global options: --json  (structured output; supported by " +
-        "open/analyses/list/show/dry-run/apply/log/corpora/show-corpus)");
+        "open/analyses/list/show/dry-run/apply/log/corpora/show-corpus/jobs)");
 }
 
 /// <summary>Whether the caller said anything at all about what a licence permits.</summary>

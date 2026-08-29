@@ -91,10 +91,11 @@ public sealed class JobRunnerLoop
         }
 
         using var beating = new CancellationTokenSource();
-        var heartbeat = HeartbeatAsync(claimed, beating.Token);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var heartbeat = HeartbeatAsync(claimed, beating.Token, linked);
         try
         {
-            var outcome = await handler(claimed, cancellationToken).ConfigureAwait(false);
+            var outcome = await handler(claimed, linked.Token).ConfigureAwait(false);
             if (outcome is not null) Finish(claimed, outcome.Status, outcome.Category, outcome.ResultJson);
         }
         catch (OperationCanceledException)
@@ -112,7 +113,9 @@ public sealed class JobRunnerLoop
         }
     }
 
-    private async Task HeartbeatAsync(JobRecord claimed, CancellationToken stopping)
+    /// Cancels <paramref name="cancelIfRequested"/> the first heartbeat after <c>jobs cancel</c> sets the flag.
+    private async Task HeartbeatAsync(JobRecord claimed, CancellationToken stopping,
+        CancellationTokenSource cancelIfRequested)
     {
         var interval = _lease < HeartbeatShare * 3 ? _lease / 3 : HeartbeatShare;
         while (!stopping.IsCancellationRequested)
@@ -120,6 +123,7 @@ public sealed class JobRunnerLoop
             try { await Task.Delay(interval, stopping).ConfigureAwait(false); }
             catch (OperationCanceledException) { return; }
             _claims.Renew(claimed.JobId, claimed.ClaimToken!, Now(), _lease);
+            if (_claims.IsCancellationRequested(claimed.JobId)) cancelIfRequested.Cancel();
         }
     }
 

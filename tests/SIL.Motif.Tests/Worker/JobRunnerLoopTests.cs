@@ -106,6 +106,30 @@ public sealed class JobRunnerLoopTests : IDisposable
     }
 
     [Fact]
+    public async Task ACancellationRequestReachesARunningHandlerThroughTheHeartbeatAndLandsItCancelled()
+    {
+        var jobs = new JobRepository(_database);
+        jobs.Create("job-1", Project, "demo", "{}", Stamp());
+        var started = new TaskCompletionSource();
+
+        var running = Loop(async (_, token) =>
+        {
+            started.TrySetResult();
+            await Task.Delay(TimeSpan.FromSeconds(5), token);
+            return JobOutcome.Completed;
+        }, lease: TimeSpan.FromMilliseconds(300)).RunUntilIdleAsync(CancellationToken.None);
+
+        await started.Task;
+        // Set from outside the handler, exactly like `jobs cancel` does against a running row.
+        jobs.RequestCancellation("job-1");
+        await running;
+
+        var job = jobs.Get("job-1")!;
+        Assert.Equal(JobStatus.Cancelled, job.Status);
+        Assert.Equal(JobFailureCategory.Cancellation, job.FailureCategory);
+    }
+
+    [Fact]
     public async Task AnEmptyQueueIsNotAnError()
     {
         var jobs = new JobRepository(_database);

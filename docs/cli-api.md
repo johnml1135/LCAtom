@@ -19,7 +19,7 @@ lives in `Project.motif.db` beside the project, and a resident job runner picks 
 motif <verb> [--project <path.fwdata>] [--store <dir>] [flags] [--json]
 ```
 
-Thirty verbs exist today, in five groups:
+Thirty-six verbs exist today, in six groups:
 
 | Group | Verbs |
 | --- | --- |
@@ -28,6 +28,11 @@ Thirty verbs exist today, in five groups:
 | Proposal lifecycle | `label`, `comment`, `finalize`, `discard-draft`, `reopen`, `defer`, `approve`, `reject`, `supersede` |
 | Inspection | `list`, `show`, `dry-run`, `apply` |
 | Corpus | `add-corpus`, `add-document`, `add-corpus-bundle`, `corpora`, `show-corpus` |
+| Jobs | `baseline-refresh`, `jobs show`, `jobs list --all`, `jobs cancel`, `jobs requeue`, `jobs move` |
+
+`jobs list --all` is the one verb that does not take `--project`: it spans every project this
+installation has been pointed at, resolved through the machine store's `KnownProjects` rather than
+through the working directory.
 
 The verb set is expected to churn. [ADR 0021](adr/0021-cli-is-the-full-surface-layer-1-churns.md) settles
 that churn is welcome in this surface and forbidden in the hashed operation vocabulary and canonical JSON
@@ -131,6 +136,28 @@ negotiation in the deleted protocol existed to manage. It is managed here instea
   FieldWorks releases the project, the verb runs, FieldWorks reloads.
 
 ## Amendments
+
+### 2026-08-28 — Jobs can be seen and reordered across every project, not just queried one at a time
+
+[ADR 0041](adr/0041-the-database-is-the-only-store.md) decision 6 gives `Jobs` a stored `QueueOrder`
+rather than deriving position from `UpdatedUtc`, and this is where the verbs that read and move it land:
+`jobs list --all` (the one exception to decision 2's required `--project`, since it spans every project
+by definition), `jobs cancel`, `jobs requeue`, and `jobs move <id> --before <id> | --to-top | --to-bottom`.
+
+`jobs list --all` and the runner's own claim must agree on one thing or `move` would be dishonest: both
+order strictly by `QueueOrder, JobId`, because `QueueOrder`'s default (`julianday('now')` in epoch
+milliseconds) ties under real load — 200 inserts spanning 1,389 ms produced 199 distinct values. `move`
+writes the moved job's own `QueueOrder` to a value between its new neighbours rather than swapping with
+one, since a neighbour usually lives in a different project's database and no transaction spans two
+SQLite files. `--before <id>` ordinarily has a midpoint; when the named job is tied with its predecessor
+there is none, so the predecessor is renumbered down first to open one — in its own project's database,
+which may differ from the moved job's, as a second single-row write that is not atomic with the move.
+
+`cancel` sets `CancellationRequested` on a running job, which its runner's heartbeat reads and uses to
+cancel the handler's own token, landing in the same terminal path a stopped runner already used. A job
+that is only queued (or parked waiting on a Baseline or the project host) has no live handler to signal,
+so it moves straight to `cancelled`. `requeue` calls the existing retry path to start a fresh attempt of
+a terminal job's lineage.
 
 ### 2026-08-28 — `discard-draft` closes the abandon-a-draft gap
 

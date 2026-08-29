@@ -1,3 +1,4 @@
+using System.Linq;
 using SIL.Motif.Contract.Jobs;
 using SIL.Motif.Contract.Projects;
 using SIL.Motif.Host.Store;
@@ -179,6 +180,77 @@ public sealed class JobLeaseTests : IDisposable
 
         Assert.Equal("job-a", first!.JobId);
         Assert.Equal("job-z", second!.JobId);
+    }
+
+    [Fact]
+    public void ListActiveByQueueOrderAgreesWithClaimOnATiedQueue()
+    {
+        var jobs = new JobRepository(_database);
+        var claims = new JobClaims(_database);
+        jobs.Create("job-z", Project, "dry-run", "{}", Now());
+        jobs.Create("job-a", Project, "dry-run", "{}", Now());
+        jobs.Create("job-m", Project, "dry-run", "{}", Now());
+        SetQueueOrder("job-z", 5.0);
+        SetQueueOrder("job-a", 5.0);
+        SetQueueOrder("job-m", 1.0);
+
+        var listed = jobs.ListActiveByQueueOrder(Project).Select(entry => entry.Job.JobId).ToArray();
+        Assert.Equal(new[] { "job-m", "job-a", "job-z" }, listed);
+
+        // The list this reads must be exactly the order a real claim takes, not merely agree by coincidence.
+        var claimed = new List<string>();
+        while (claims.Claim(Project, "runner-a", Now(), Lease()) is { } claim) claimed.Add(claim.JobId);
+        Assert.Equal(listed, claimed);
+    }
+
+    [Fact]
+    public void ListActiveByQueueOrderExcludesTerminalJobs()
+    {
+        var jobs = new JobRepository(_database);
+        var claims = new JobClaims(_database);
+        jobs.Create("job-1", Project, "dry-run", "{}", Now());
+        var claimed = claims.Claim(Project, "runner-a", Now(), Lease())!;
+        claims.Finish(claimed.JobId, claimed.ClaimToken!, JobStatus.Completed, JobFailureCategory.None, null);
+
+        Assert.Empty(jobs.ListActiveByQueueOrder(Project));
+    }
+
+    [Fact]
+    public void SetQueueOrderWritesTheGivenValueAndIsVisibleToLaterReads()
+    {
+        var jobs = new JobRepository(_database);
+        jobs.Create("job-1", Project, "dry-run", "{}", Now());
+        var before = jobs.GetWithQueueOrder("job-1")!.Value;
+
+        var after = jobs.SetQueueOrder("job-1", 42.5, before.Job.Version, Now());
+
+        Assert.Equal(42.5, jobs.GetWithQueueOrder("job-1")!.Value.QueueOrder);
+        Assert.Equal(before.Job.Version + 1, after.Version);
+    }
+
+    [Fact]
+    public void SetQueueOrderRefusesAStaleVersion()
+    {
+        var jobs = new JobRepository(_database);
+        jobs.Create("job-1", Project, "dry-run", "{}", Now());
+        var current = jobs.GetWithQueueOrder("job-1")!.Value;
+
+        jobs.SetQueueOrder("job-1", 1.0, current.Job.Version, Now());
+
+        Assert.Throws<InvalidOperationException>(() => jobs.SetQueueOrder("job-1", 2.0, current.Job.Version, Now()));
+    }
+
+    [Fact]
+    public void SetQueueOrderRefusesATerminalJob()
+    {
+        var jobs = new JobRepository(_database);
+        var claims = new JobClaims(_database);
+        jobs.Create("job-1", Project, "dry-run", "{}", Now());
+        var claimed = claims.Claim(Project, "runner-a", Now(), Lease())!;
+        claims.Finish(claimed.JobId, claimed.ClaimToken!, JobStatus.Completed, JobFailureCategory.None, null);
+        var current = jobs.GetWithQueueOrder("job-1")!.Value;
+
+        Assert.Throws<InvalidOperationException>(() => jobs.SetQueueOrder("job-1", 1.0, current.Job.Version, Now()));
     }
 
     private void SetQueueOrder(string jobId, double queueOrder)

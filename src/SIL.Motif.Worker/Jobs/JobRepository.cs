@@ -105,6 +105,67 @@ public sealed class JobRepository
         return records;
     }
 
+    /// <summary>
+    /// Lists this project's active jobs together with their <c>QueueOrder</c>, ordered the same way
+    /// <see cref="JobClaims.Claim"/> takes them next: <c>QueueOrder, JobId</c>. This is what lets
+    /// <c>jobs list --all</c> show the order work will actually run in rather than a different one.
+    /// </summary>
+    public IReadOnlyList<JobQueueEntry> ListActiveByQueueOrder(string? projectKey = null)
+    {
+        using var connection = _database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = SelectSqlWithQueueOrder + " WHERE Status NOT IN ('completed','completed-dry-run-only'," +
+            "'completed-with-assessment-failure','failed','cancelled','interrupted')" +
+            (projectKey is null ? "" : " AND ProjectKey = $project") + " ORDER BY QueueOrder, JobId;";
+        if (projectKey is not null) command.Parameters.AddWithValue("$project", projectKey);
+        using var reader = command.ExecuteReader();
+        var records = new List<JobQueueEntry>();
+        while (reader.Read()) records.Add(new JobQueueEntry(Read(reader), reader.GetDouble(QueueOrderOrdinal)));
+        return records;
+    }
+
+    /// <summary>Reads one job together with its <c>QueueOrder</c>, or null if it does not exist.</summary>
+    public JobQueueEntry? GetWithQueueOrder(string jobId)
+    {
+        if (string.IsNullOrWhiteSpace(jobId)) throw new ArgumentException("A job id is required.", nameof(jobId));
+        using var connection = _database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = SelectSqlWithQueueOrder + " WHERE JobId = $id;";
+        command.Parameters.AddWithValue("$id", jobId);
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? new JobQueueEntry(Read(reader), reader.GetDouble(QueueOrderOrdinal)) : null;
+    }
+
+    /// <summary>
+    /// Writes one job's <c>QueueOrder</c> alone, guarded by its version. This is <c>jobs move</c>'s whole
+    /// implementation: giving the moved row a value between its new neighbours writes exactly one row,
+    /// rather than swapping positions with a neighbour that may live in a different project's database.
+    /// </summary>
+    public JobRecord SetQueueOrder(string jobId, double queueOrder, long expectedVersion, string nowUtc)
+    {
+        using var connection = _database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+        var current = ReadRequired(connection, transaction, jobId);
+        EnsureVersion(current, expectedVersion);
+        if (JobStateMachine.IsTerminal(current.Status))
+            throw new InvalidOperationException("A terminal job's queue position cannot be changed.");
+        using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = "UPDATE Jobs SET QueueOrder = $order, UpdatedUtc = $updated, " +
+                "Version = $version WHERE JobId = $id AND Version = $expected;";
+            command.Parameters.AddWithValue("$order", queueOrder);
+            command.Parameters.AddWithValue("$updated", nowUtc);
+            command.Parameters.AddWithValue("$version", current.Version + 1);
+            command.Parameters.AddWithValue("$id", jobId);
+            command.Parameters.AddWithValue("$expected", current.Version);
+            if (command.ExecuteNonQuery() != 1)
+                throw new InvalidOperationException("The job changed concurrently; reload it before writing.");
+        }
+        transaction.Commit();
+        return current with { UpdatedUtc = nowUtc, Version = current.Version + 1 };
+    }
+
     /// <summary>Lists every attempt of one kind recorded for one project, oldest first, any status.</summary>
     public IReadOnlyList<JobRecord> ListByProjectAndKind(string projectKey, string kind)
     {
@@ -555,6 +616,10 @@ public sealed class JobRepository
         "CancellationRequested, CreatedUtc, UpdatedUtc, Version, DryRunPublished, FailureCategory, NotBeforeUtc, ArchivedUtc, " +
         "OwnerId, ClaimToken, LeaseUntilUtc, HeartbeatUtc FROM Jobs";
 
+    // One column appended to SelectSql; QueueOrderOrdinal below is where Read()'s own columns end.
+    private static readonly string SelectSqlWithQueueOrder = SelectSql.Replace(" FROM Jobs", ", QueueOrder FROM Jobs");
+    private const int QueueOrderOrdinal = 22;
+
     private static JobRecord ReadRequired(SqliteConnection connection, SqliteTransaction transaction, string jobId)
     {
         using var command = connection.CreateCommand();
@@ -731,3 +796,6 @@ public sealed class JobRepository
             throw new ArgumentException("Not-before is reserved for queued retry attempts.");
     }
 }
+
+/// <summary>One job together with the <c>QueueOrder</c> it was read under.</summary>
+public readonly record struct JobQueueEntry(JobRecord Job, double QueueOrder);
