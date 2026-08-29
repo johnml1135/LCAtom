@@ -43,12 +43,12 @@ because `OperationKindRegistry` is populated by `SIL.Motif.Runner`'s module init
 - Modify: `tests/SIL.Motif.Tests/Cli/FailureContractTests.cs` — it drives `store-cutover`; retarget its
   cases at a surviving verb rather than deleting the coverage
 
-- [ ] **Step 1: Retarget `FailureContractTests` first, and run green**
+- [x] **Step 1: Retarget `FailureContractTests` first, and run green**
 
 It is the only test file here that covers something surviving. Its four envelope cases must keep asserting
 the same properties against a verb that still exists.
 
-- [ ] **Step 2: Delete, and run green**
+- [x] **Step 2: Delete, and run green**
 
 `MigrationLedger` stays in the schema until Task 4 drops it, so nothing here touches `MotifSchema`.
 
@@ -67,7 +67,7 @@ ADR 0041 decision 7. `CliSession`'s four `Commands` overloads are `DryRun`, `Dry
 - Modify: `motif.sln`
 - Delete: the Launcher's tests
 
-- [ ] **Step 1: Confirm nothing else reaches either, then delete and run green**
+- [x] **Step 1: Confirm nothing else reaches either, then delete and run green**
 
 Six test files mention `CliSession`. Check each: a test that only *constructs* it goes with it; a test that
 asserts something about `Commands` needs its non-session overload instead.
@@ -87,20 +87,20 @@ two schemas, two databases — so it earns a separate module rather than a flag.
 - Modify: `src/SIL.Motif.Projection/Usage/UsageLogFile.cs` → a `UsageLog` writing to the machine store
 - Test: `tests/SIL.Motif.Tests/Store/MachineStoreTests.cs`
 
-- [ ] **Step 1: Write the tests**
+- [x] **Step 1: Write the tests**
 
 `KnownProjectRegistry.Record` upserts and is idempotent; `List` returns what was recorded; a project whose
 file is gone is dropped by `Forget`; concurrent usage appends from two connections both land.
 
-- [ ] **Step 2: Run red**
+- [x] **Step 2: Run red**
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `MachineDatabase.Open(root)` resolving `<root>/motif.db`, its own schema generation, WAL, and the same
 corruption/unavailable translation `MotifDatabase` uses. Do **not** generalise `MotifSchema` to serve both
 — duplicate the small amount that is genuinely common rather than growing a parameterised schema module.
 
-- [ ] **Step 4: Run green and commit**
+- [x] **Step 4: Run green and commit**
 
 ---
 
@@ -114,11 +114,11 @@ needs, so the compatibility floor moves once.
 - Modify: `src/SIL.Motif.Worker/Store/ProposalRepository.cs`
 - Test: `tests/SIL.Motif.Tests/Store/MotifDatabaseMigrationTests.cs`
 
-- [ ] **Step 1: Write the schema tests**
+- [x] **Step 1: Write the schema tests**
 
-- [ ] **Step 2: Run red**
+- [x] **Step 2: Run red**
 
-- [ ] **Step 3: Change the schema**
+- [x] **Step 3: Change the schema**
 
 Drop `Drafts` and `MigrationLedger`. `Proposals` gains `DraftName TEXT NULL` with a unique index, and
 `CurrentIntentDigest` becomes nullable. `Jobs` gains `QueueOrder REAL NOT NULL` and an index on it.
@@ -127,7 +127,7 @@ Then extend `ProposalRepository` so a Draft is a Proposal it can create, amend a
 `CreateDraft`, `SaveDraft`, `Finalize`, and `List` including drafts. `finalize` writes the first
 `ProposalRevisions` row and sets `CurrentIntentDigest` in one transaction.
 
-- [ ] **Step 4: Run green and commit**
+- [x] **Step 4: Run green and commit**
 
 State what the compatibility floor moved to and why it moved once rather than three times.
 
@@ -157,15 +157,15 @@ files fails `ProposalWorkflowTests`, so the storage swap cannot be staged verb-b
 - Delete: `src/SIL.Motif.Cli/Store/ProposalStore.cs`
 - Modify: ~13 test files under `tests/SIL.Motif.Tests/Cli/`
 
-- [ ] **Step 1: Give the verb tests a project fixture**
+- [x] **Step 1: Give the verb tests a project fixture**
 
 Every test currently passing `--store <dir>` needs a project. The existing `ProjectStoreCommand.Run` seam
 is what a verb goes through; a fixture that creates a `.fwdata` and lets the paired database be created is
 enough — no LibLCM load.
 
-- [ ] **Step 2: Run red**
+- [x] **Step 2: Run red**
 
-- [ ] **Step 3: Move the verbs**
+- [x] **Step 3: Move the verbs**
 
 `new`, `add-*`, `compose-*`, `promote-gloss`, `label`, `comment`, `finalize`, `reopen`, `duplicate`,
 `remove-operations`, `split`, `defer`, `approve`, `reject`, `supersede`, `list`, `show` — each gains a
@@ -179,7 +179,7 @@ is touched. The counter went with `CliSession`, and the tests kept their other a
 real and worth asserting again once these move onto `ProposalRepository`: a refusal reaching the caller
 without the project file's write time changing says the same thing, and says it about the live path.
 
-- [ ] **Step 4: Run green and commit**
+- [x] **Step 4: Run green and commit**
 
 ---
 
@@ -198,17 +198,17 @@ database beside the paired one and the machine store. `FileCorpusStore` has 0 pr
 **Do this next, ahead of 5b.** Task 5a opens a window where `promote-gloss` reads the project's store while
 `add-corpus` writes the working directory's; this task closes it.
 
-- [ ] **Step 1: Write the test that fails today**
+- [x] **Step 1: Write the test that fails today**
 
 `motif add-corpus --project <fwdata>` then `motif promote-gloss --project <fwdata> --corpus <id>` from a
 *different* working directory. That is the break 5a opened, and it must be red before it is fixed.
 
-- [ ] **Step 2: Repoint the corpus store at the paired project database**
+- [x] **Step 2: Repoint the corpus store at the paired project database**
 
 `StoreFor` takes the project, not a store directory, and resolves the paired `<project>.motif.db`. The
 corpus verbs gain a required `--project`. `Corpora` and `CorpusDocuments` already exist in that schema.
 
-- [ ] **Step 3: Delete `FileCorpusStore` and `CorpusStoreMigration`, remove `--store` entirely, run green**
+- [x] **Step 3: Delete `FileCorpusStore` and `CorpusStoreMigration`, remove `--store` entirely, run green**
 
 The usage log moves to `MachineUsageLog` here, since `storeDir` was its last remaining reader.
 
@@ -222,19 +222,19 @@ ADR 0041 decision 7.
 - Modify: `src/SIL.Motif.Cli/JobCommands.cs`, `Program.cs`, `Commands.cs`
 - Modify: `src/SIL.Motif.Worker/Jobs/DryRunJobHandler.cs`, `src/SIL.Motif.Worker/Program.cs`
 
-- [ ] **Step 1: Write the argv test**
+- [x] **Step 1: Write the argv test**
 
 `motif dry-run --project <fwdata> <proposalId>` prints a job id and exits 0; `--wait` blocks until
 terminal. Absent Baseline leaves the job `WaitingForBaseline` rather than failing.
 
-- [ ] **Step 2: Run red**
+- [x] **Step 2: Run red**
 
-- [ ] **Step 3: Fix the handler's contract and register it**
+- [x] **Step 3: Fix the handler's contract and register it**
 
 `DryRunJobHandler.RunAsync` refuses a job that is not `Queued`, but `JobRunnerLoop` claims before it
 dispatches, so the handler would throw on the first job. Its precondition must match the loop.
 
-- [ ] **Step 4: Delete `BuildFileDryRunProjection` and the in-process path; run green and commit**
+- [x] **Step 4: Delete `BuildFileDryRunProjection` and the in-process path; run green and commit**
 
 ---
 
@@ -275,20 +275,20 @@ predicted:
    behaviour it is being built for. The spine test currently kills the runner rather than waiting for it
    to exit, because waiting would hang.
 
-- [ ] **Step 1: Extend the spine test to two projects**
+- [x] **Step 1: Extend the spine test to two projects**
 
 One runner, two projects, one job in each; both reach terminal. This is the test that fails today and is
 the reason this task exists.
 
-- [ ] **Step 2: Run red**
+- [x] **Step 2: Run red**
 
-- [ ] **Step 3: Sweep, and derive idleness from it**
+- [x] **Step 3: Sweep, and derive idleness from it**
 
 The loop peeks the head of every Known project and claims the globally first by `QueueOrder`. Idleness is
 "no Known project has a queued, running or waiting row" — computed by the sweep, not cached. Close the
 kick race: a spawned runner that loses the ownership mutex retries for a short window rather than exiting.
 
-- [ ] **Step 4: Run green and commit**
+- [x] **Step 4: Run green and commit**
 
 ---
 
@@ -300,14 +300,14 @@ ADR 0041 decision 6.
 - Modify: `src/SIL.Motif.Cli/JobCommands.cs`, `Program.cs`
 - Modify: `src/SIL.Motif.Worker/Jobs/JobRepository.cs`, `JobClaims.cs`
 
-- [ ] **Step 1: Write the verb tests**
+- [x] **Step 1: Write the verb tests**
 
 `jobs list --all` orders across two projects by `QueueOrder`; `jobs move --to-top` changes what claims
 next; `jobs cancel` stops a running handler; `jobs requeue` inserts a fresh attempt.
 
-- [ ] **Step 2: Run red**
+- [x] **Step 2: Run red**
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `jobs cancel` sets `CancellationRequested`; the heartbeat reads it and cancels the handler's token, landing
 in the loop's existing `OperationCanceledException` → `Cancelled` path. `jobs move` writes one row, giving
@@ -321,7 +321,7 @@ caller enqueueing in bulk would collide far more often. Every ordering must ther
 order that changes between runs. `jobs move --before <id>` also has no midpoint to pick when the two
 neighbours are tied: it must renumber the tie rather than write a duplicate.
 
-- [ ] **Step 4: Run green and commit**
+- [x] **Step 4: Run green and commit**
 
 ---
 
@@ -333,7 +333,7 @@ ADR 0041 decision 8.
 - Modify: `src/SIL.Motif.Worker/Store/ArchivePolicy.cs`, `Jobs/JobRepository.cs`
 - Modify: `src/SIL.Motif.Worker/Program.cs` — purge on a sweep tick when a project has nothing active
 
-- [ ] **Step 1: Write the tests, run red, implement, run green and commit**
+- [x] **Step 1: Write the tests, run red, implement, run green and commit**
 
 `ArchivePolicy` becomes a retained count. `IsEligibleArchive`'s lineage rule is unchanged — an attempt is
 not purged while a later attempt in its lineage is live — and that is why the engine is kept rather than
@@ -348,3 +348,42 @@ rewritten.
   PanGloss; the others wait on the Assessment path. Revisit once `dry-run` is running as a job.
 - **Reports.** `ReportRepository` moves with the same cut, but no verb reads Reports today.
 - **`--wait` polling interval and output shape.** Settle when Task 7 lands.
+
+---
+
+## 2026-08-28 — delivered
+
+Every task above is in `main`. What the plan did not anticipate is recorded here rather than edited into it.
+
+| Task | Commit | Gate |
+| --- | --- | --- |
+| 1 — delete the migration path | `a69ba7a` | 1181 |
+| 2 — delete `CliSession` and the Launcher | `b3d9e53` | 1144 |
+| 3 — the machine store | `b4c3602` | 1150 |
+| 4 — one schema generation | `ea9bc3e` | 1157 |
+| 5a — every verb names its project | `fcd7101` | 1159 |
+| 6 — corpora, and `--store` deleted | `fc36ccd` | 1158 |
+| 5b — Proposals into the database | `c0d2850` | 1157 |
+| 7 — `dry-run` becomes a job | `05d53bb` | 1161 |
+| 8a — the sweep | `b57753e` | 1172 |
+| 8b — lifetime and the kick | `f77c3ca` | 1192 |
+| 9 — the job verbs | `bfc7075` | 1211 |
+| 10 — the retention cap | `fe68f52` | 1214 |
+
+**Two tasks split under contact.** Task 5 split into 5a and 5b because the intermediate state where
+`finalize` writes the database and `list` reads files fails `ProposalWorkflowTests`, so the storage swap
+could not be staged verb by verb; splitting on *where the store is* against *what the store is* gave two
+green landings. Task 8 split because `WorkerWorkTracker` turned out to be threaded through `JobRunnerHost`,
+`ProjectRuntimeRegistry` and `ProjectRuntime` rather than confined to one of them.
+
+**Task 6 was reordered ahead of 5b** to close a window 5a opened, where `promote-gloss` read the project's
+corpus database while `add-corpus` still wrote the working directory's.
+
+**Three regressions were caught by tests rather than by review.** Deleting the in-process dry-run left
+`PlanPrerequisites` with no caller, so a Dry Run would have reported a Proposal applied without its
+prerequisites. The first `jobs move` reinstated a cross-database two-row write in the one case fractional
+indexing exists to avoid. And moving Drafts into the database removed the only way to abandon one while the
+refusal still named it — fixed by `discard-draft` (`e975fd7`).
+
+**Also delivered outside the ten tasks:** `discard-draft`, the absent-digest fix on the `--json` surface
+(`798aebd`), and the gate's stale-test-host guard (`cee2f1b`).
