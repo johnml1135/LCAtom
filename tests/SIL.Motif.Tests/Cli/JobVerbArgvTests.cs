@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using SIL.Motif.Cli;
 using SIL.Motif.Contract.Responses;
 using SIL.Motif.Generator;
 using Xunit;
@@ -160,6 +161,8 @@ public sealed class JobVerbArgvTests : IDisposable
             UseShellExecute = false,
             CreateNoWindow = true,
         };
+        // This suite asserts on the queue with nothing claiming it; a real kicked runner would race it.
+        start.Environment[RunnerKick.SuppressVariable] = "1";
         using var process = Process.Start(start)!;
         var output = process.StandardOutput.ReadToEnd();
         var error = process.StandardError.ReadToEnd();

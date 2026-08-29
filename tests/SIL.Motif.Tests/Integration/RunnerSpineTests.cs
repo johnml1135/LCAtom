@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using SIL.Motif.Cli;
 using SIL.Motif.Generator;
 using SIL.Motif.Tests.TestFixtures;
 using SIL.Motif.Worker;
@@ -276,6 +277,8 @@ public sealed class RunnerSpineTests : IDisposable
             CreateNoWindow = true,
         };
         start.Environment[RunnerOptions.RootVariable] = _root;
+        // This suite starts and manages its own runners explicitly; RunnerKickRaceTests covers the kick itself.
+        start.Environment[RunnerKick.SuppressVariable] = "1";
         using var process = Process.Start(start)!;
         var output = process.StandardOutput.ReadToEnd();
         var error = process.StandardError.ReadToEnd();

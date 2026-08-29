@@ -5,13 +5,6 @@ using System.Threading.Tasks;
 
 namespace SIL.Motif.Worker;
 
-/// <summary>Reports work which must keep the worker alive.</summary>
-public interface IWorkerWorkTracker
-{
-    /// <summary>Whether queued, running, or waiting work currently exists.</summary>
-    bool HasQueuedRunningOrWaitingWork { get; }
-}
-
 /// <summary>Provides a monotonic-enough wall-clock seam for worker lifetime decisions.</summary>
 public interface IWorkerClock
 {
@@ -34,20 +27,24 @@ public sealed class WorkerLifetime
     public WorkerLifetime(IWorkerClock? clock = null) => _clock = clock ?? SystemWorkerClock.Instance;
 
     /// <summary>Completes when shutdown is requested or an idle period elapses.</summary>
+    /// <param name="hasActiveWork">
+    /// Answers "is there queued, running, or waiting work right now", freshly, each time it is called —
+    /// callers must not cache the result across calls.
+    /// </param>
     public async Task RunUntilIdleAsync(
-        TimeSpan idleTimeout, IWorkerWorkTracker work, CancellationToken shutdown)
+        TimeSpan idleTimeout, Func<bool> hasActiveWork, CancellationToken shutdown)
     {
         if (idleTimeout <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(idleTimeout));
-        if (work is null)
-            throw new ArgumentNullException(nameof(work));
+        if (hasActiveWork is null)
+            throw new ArgumentNullException(nameof(hasActiveWork));
 
         var idleSince = _clock.MonotonicNow;
-        var wasBusy = work.HasQueuedRunningOrWaitingWork;
+        var wasBusy = hasActiveWork();
         while (!shutdown.IsCancellationRequested)
         {
             var now = _clock.MonotonicNow;
-            if (work.HasQueuedRunningOrWaitingWork)
+            if (hasActiveWork())
             {
                 idleSince = now;
                 wasBusy = true;

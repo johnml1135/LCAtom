@@ -297,6 +297,8 @@ try
                     "Usage: motif dry-run --project <fwdata> <proposalId> [--wait] [--json]", asJson);
             }
             result = JobCommands.EnqueueDryRun(dryRunProject, CliProductVersion(), positionals[0], usage);
+            // A job just entered the queue: wake the runner before anything below waits on it.
+            if (result.ExitCode == 0) RunnerKick.After();
             if (result.ExitCode == 0 && flags.ContainsKey("wait"))
             {
                 var dryRunJobId = result.Output.Trim();
@@ -410,6 +412,7 @@ try
             if (!flags.TryGetValue("project", out var refreshProject))
                 return Usage("Usage: motif baseline-refresh --project <fwdata>", asJson);
             result = JobCommands.EnqueueBaselineRefresh(refreshProject, CliProductVersion());
+            if (result.ExitCode == 0) RunnerKick.After();
             break;
 
         case "jobs":

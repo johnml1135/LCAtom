@@ -21,24 +21,20 @@ public sealed class ProjectRuntime : IDisposable
 {
     private readonly object _state = new();
     private readonly ProjectOperationGate _operations = new();
-    private readonly WorkerWorkTracker _work;
     private readonly Func<bool> _hasLiveHost;
     private readonly Func<bool> _hasPendingEvents;
-    private IDisposable? _workLease;
     private int _activeOperations;
     private bool _draining;
     private bool _disposed;
 
     private ProjectRuntime(ProjectLocator project, string workspaceKey, MotifDatabase database,
-        JobRepository jobs, BaselineRepository baselines, WorkerWorkTracker work,
-        Func<bool> hasLiveHost, Func<bool> hasPendingEvents)
+        JobRepository jobs, BaselineRepository baselines, Func<bool> hasLiveHost, Func<bool> hasPendingEvents)
     {
         Project = project;
         WorkspaceKey = workspaceKey;
         Database = database;
         Jobs = jobs;
         Baselines = baselines;
-        _work = work;
         _hasLiveHost = hasLiveHost;
         _hasPendingEvents = hasPendingEvents;
         Admission = ProjectRuntimeAdmission.Opening;
@@ -61,16 +57,6 @@ public sealed class ProjectRuntime : IDisposable
     /// <summary>Gets the current admission state.</summary>
     public ProjectRuntimeAdmission Admission { get; private set; }
 
-    /// <summary>Whether durable queued, running, or waiting work keeps this runtime alive.</summary>
-    public bool HasActiveWork
-    {
-        get
-        {
-            if (!RefreshWorkLease()) return false;
-            lock (_state) return _workLease is not null;
-        }
-    }
-
     internal bool HasActiveOperation
     {
         get { lock (_state) return _activeOperations != 0; }
@@ -79,24 +65,22 @@ public sealed class ProjectRuntime : IDisposable
     internal static ProjectRuntime Open(ProjectLocator project, string workspaceKey,
         ProjectDatabaseCatalog catalog,
         Func<JobRepository, string, WorkerRecoveryCoordinator> recoveryFactory,
-        WorkerWorkTracker work, Func<DateTimeOffset>? now = null,
+        Func<DateTimeOffset>? now = null,
         Func<bool>? hasLiveHost = null, Func<bool>? hasPendingEvents = null)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(recoveryFactory);
-        ArgumentNullException.ThrowIfNull(work);
         var database = catalog.OpenOwned(project);
         var jobs = new JobRepository(database);
         var baselines = new BaselineRepository(database);
-        var runtime = new ProjectRuntime(project, workspaceKey, database, jobs, baselines, work,
+        var runtime = new ProjectRuntime(project, workspaceKey, database, jobs, baselines,
             hasLiveHost ?? (() => false), hasPendingEvents ?? (() => false));
         try
         {
             runtime.Admission = ProjectRuntimeAdmission.Recovering;
             recoveryFactory(jobs, workspaceKey).RecoverStartup(workspaceKey,
                 (now ?? (() => DateTimeOffset.UtcNow))());
-            runtime.RefreshWorkLeaseDuringRecovery();
             runtime.Admission = ProjectRuntimeAdmission.Ready;
             return runtime;
         }
@@ -140,32 +124,6 @@ public sealed class ProjectRuntime : IDisposable
         }
     }
 
-    /// <summary>Refreshes the keepalive lease from the durable active-job rows.</summary>
-    public bool RefreshWorkLease()
-    {
-        lock (_state)
-        {
-            if (_disposed || Admission is ProjectRuntimeAdmission.Rejected or ProjectRuntimeAdmission.Disposed)
-                return false;
-        }
-        using var operation = AcquireOperationAsync(CancellationToken.None).GetAwaiter().GetResult();
-        RefreshWorkLeaseCore();
-        return true;
-    }
-
-    /// <summary>Refreshes the keepalive lease without waiting when the operation gate is busy.</summary>
-    internal bool TryRefreshWorkLease()
-    {
-        lock (_state)
-        {
-            if (_disposed || Admission is ProjectRuntimeAdmission.Rejected or ProjectRuntimeAdmission.Disposed)
-                return false;
-        }
-        if (!TryAcquireOperationLease(out var operation)) return false;
-        using (operation) RefreshWorkLeaseCore();
-        return true;
-    }
-
     private bool TryAcquireOperationLease(out IDisposable lease)
     {
         EnterAdmission();
@@ -179,29 +137,18 @@ public sealed class ProjectRuntime : IDisposable
         return false;
     }
 
-    internal void RefreshWorkLeaseDuringRecovery()
+    /// Mirrors the disposed/rejected pre-check every non-throwing lease acquisition needs before entering admission.
+    private bool TryAcquireOperationLeaseIfReady(out IDisposable lease)
     {
         lock (_state)
         {
-            if (_disposed || Admission != ProjectRuntimeAdmission.Recovering)
-                throw new InvalidOperationException("Recovery work refresh requires a recovering runtime.");
-        }
-        RefreshWorkLeaseCore();
-    }
-
-    private void RefreshWorkLeaseCore()
-    {
-        var active = Jobs.ListActive(WorkspaceKey).Count != 0;
-        lock (_state)
-        {
-            if (_disposed) return;
-            if (active && _workLease is null) _workLease = _work.AcquireLease();
-            else if (!active)
+            if (_disposed || Admission is ProjectRuntimeAdmission.Rejected or ProjectRuntimeAdmission.Disposed)
             {
-                _workLease?.Dispose();
-                _workLease = null;
+                lease = null!;
+                return false;
             }
         }
+        return TryAcquireOperationLease(out lease);
     }
 
     /// <summary>Releases resources after the registry has proven that no work can enter this runtime.</summary>
@@ -218,10 +165,12 @@ public sealed class ProjectRuntime : IDisposable
 
     internal bool TryBeginReleaseIfIdle()
     {
-        if (!TryRefreshWorkLease()) return false;
+        if (!TryAcquireOperationLeaseIfReady(out var operation)) return false;
+        bool active;
+        using (operation) active = Jobs.ListActive(WorkspaceKey).Count != 0;
         lock (_state)
         {
-            if (_disposed || _draining || _activeOperations != 0 || _workLease is not null ||
+            if (_disposed || _draining || _activeOperations != 0 || active ||
                 _hasLiveHost() || _hasPendingEvents()) return false;
             _draining = true;
             return true;
@@ -253,11 +202,6 @@ public sealed class ProjectRuntime : IDisposable
         Exception? gateFailure = null;
         try { _operations.Dispose(); }
         catch (Exception exception) { gateFailure = exception; }
-        finally
-        {
-            lock (_state) _workLease?.Dispose();
-            _workLease = null;
-        }
         try { Database.Dispose(); }
         catch (Exception exception)
         {

@@ -22,8 +22,7 @@ public sealed class ProjectRuntimeTests : IDisposable
     {
         var first = Project("C:/workspace/./demo.fwdata", "project");
         var equivalent = Project("c:/workspace/demo.fwdata", "project");
-        using var work = new WorkerWorkTracker();
-        using var registry = Registry(work);
+        using var registry = Registry();
 
         var left = registry.GetOrOpen(first);
         var right = registry.GetOrOpen(equivalent);
@@ -37,10 +36,8 @@ public sealed class ProjectRuntimeTests : IDisposable
     public void ASecondRegistryMayOpenAProjectDatabaseAlreadyOpen()
     {
         var project = Project("C:/workspace/ownership.fwdata", "project");
-        using var firstWork = new WorkerWorkTracker();
-        using var secondWork = new WorkerWorkTracker();
-        using var first = Registry(firstWork);
-        using var second = Registry(secondWork);
+        using var first = Registry();
+        using var second = Registry();
         var runtime = first.GetOrOpen(project);
 
         // Both are open at once by design; excluding one would make the database unusable as a rendezvous.
@@ -55,8 +52,7 @@ public sealed class ProjectRuntimeTests : IDisposable
     public void StartupCleanupAndRecoveryCompleteBeforeReady()
     {
         var project = Project("C:/workspace/recovery.fwdata", "project");
-        using var work = new WorkerWorkTracker();
-        using var registry = Registry(work);
+        using var registry = Registry();
         var key = ProjectWorkspaceKey.Compute(project);
         var ownedRoot = Path.Combine(_root, "owned");
         var storageKey = ProjectWorkspaceKey.StorageSegment(key);
@@ -72,7 +68,6 @@ public sealed class ProjectRuntimeTests : IDisposable
     public void RejectedOpenReleasesOwnershipAndRemovesTheRuntimeEntry()
     {
         var project = Project("C:/workspace/rejected.fwdata", "project");
-        using var work = new WorkerWorkTracker();
         var ownership = WorkspaceOwnership.Bootstrap(Path.Combine(_root, "owned"));
         var catalog = new ProjectDatabaseCatalog(MotifSchema.CurrentSchema, new Version(1, 0));
         var attempts = 0;
@@ -83,14 +78,13 @@ public sealed class ProjectRuntimeTests : IDisposable
                     throw new InvalidOperationException("recovery failed");
                 return new WorkerRecoveryCoordinator(new WorkerRecovery(jobs, _clock),
                     new WorkspaceCleaner(ownership));
-            }, work, new ProjectRuntimeActivity(), () => _clock.UtcNow);
+            }, new ProjectRuntimeActivity(), () => _clock.UtcNow);
 
         Assert.Throws<InvalidOperationException>(() => registry.GetOrOpen(project));
         Assert.False(registry.TryGet(ProjectWorkspaceKey.Compute(project), out _));
-        using var otherWork = new WorkerWorkTracker();
         using var otherRegistry = new ProjectRuntimeRegistry(catalog,
             (jobs, key) => new WorkerRecoveryCoordinator(new WorkerRecovery(jobs, _clock),
-                new WorkspaceCleaner(ownership)), otherWork, new ProjectRuntimeActivity(),
+                new WorkspaceCleaner(ownership)), new ProjectRuntimeActivity(),
             () => _clock.UtcNow);
         var other = otherRegistry.GetOrOpen(project);
         other.Dispose();
@@ -175,8 +169,7 @@ public sealed class ProjectRuntimeTests : IDisposable
     public async Task RuntimeDisposeWaitsForAnActiveOperationBeforeClosingTheDatabase()
     {
         var project = Project("C:/workspace/dispose-active.fwdata", "project");
-        using var work = new WorkerWorkTracker();
-        using var registry = Registry(work);
+        using var registry = Registry();
         var runtime = registry.GetOrOpen(project);
         var lease = await runtime.AcquireOperationAsync(CancellationToken.None);
         var disposing = Task.Run(runtime.Dispose);
@@ -193,7 +186,6 @@ public sealed class ProjectRuntimeTests : IDisposable
         var first = Project("C:/workspace/blocked-a.fwdata", "a");
         var second = Project("C:/workspace/blocked-b.fwdata", "b");
         var firstKey = ProjectWorkspaceKey.Compute(first);
-        using var work = new WorkerWorkTracker();
         var ownership = WorkspaceOwnership.Bootstrap(Path.Combine(_root, "parallel-owned"));
         var catalog = new ProjectDatabaseCatalog(MotifSchema.CurrentSchema, new Version(1, 0));
         using var entered = new ManualResetEventSlim();
@@ -207,7 +199,7 @@ public sealed class ProjectRuntimeTests : IDisposable
             }
             return new WorkerRecoveryCoordinator(new WorkerRecovery(jobs, _clock),
                 new WorkspaceCleaner(ownership));
-        }, work, new ProjectRuntimeActivity(), () => _clock.UtcNow);
+        }, new ProjectRuntimeActivity(), () => _clock.UtcNow);
 
         var openingFirst = Task.Run(() => registry.GetOrOpen(first));
         Assert.True(entered.Wait(TimeSpan.FromSeconds(1)));
@@ -221,7 +213,6 @@ public sealed class ProjectRuntimeTests : IDisposable
     public async Task DisposalAdmissionBarrierDoesNotAllowAGetOrOpenToEscape()
     {
         var project = Project("C:/workspace/dispose-race.fwdata", "project");
-        using var work = new WorkerWorkTracker();
         var ownership = WorkspaceOwnership.Bootstrap(Path.Combine(_root, "dispose-race-owned"));
         var catalog = new ProjectDatabaseCatalog(MotifSchema.CurrentSchema, new Version(1, 0));
         using var entered = new ManualResetEventSlim();
@@ -232,7 +223,7 @@ public sealed class ProjectRuntimeTests : IDisposable
             release.Wait(TimeSpan.FromSeconds(5));
             return new WorkerRecoveryCoordinator(new WorkerRecovery(jobs, _clock),
                 new WorkspaceCleaner(ownership));
-        }, work, new ProjectRuntimeActivity(), () => _clock.UtcNow);
+        }, new ProjectRuntimeActivity(), () => _clock.UtcNow);
 
         var opening = Task.Run(() => registry.GetOrOpen(project));
         Assert.True(entered.Wait(TimeSpan.FromSeconds(1)));
@@ -249,8 +240,7 @@ public sealed class ProjectRuntimeTests : IDisposable
     public async Task ActiveOperationPreventsIdleReleaseAndReopenCreatesFreshRuntime()
     {
         var project = Project("C:/workspace/release.fwdata", "project");
-        using var work = new WorkerWorkTracker();
-        using var registry = Registry(work);
+        using var registry = Registry();
         var runtime = registry.GetOrOpen(project);
         using var lease = await runtime.AcquireOperationAsync(CancellationToken.None);
 
@@ -267,8 +257,7 @@ public sealed class ProjectRuntimeTests : IDisposable
     public async Task TryReleaseIfIdleReturnsFalseWithoutBlockingWhileExclusiveLeaseIsHeld()
     {
         var project = Project("C:/workspace/exclusive-idle.fwdata", "project");
-        using var work = new WorkerWorkTracker();
-        using var registry = Registry(work);
+        using var registry = Registry();
         var runtime = registry.GetOrOpen(project);
         var exclusive = await runtime.AcquireExclusiveAsync(CancellationToken.None);
 
@@ -280,30 +269,11 @@ public sealed class ProjectRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task RefreshAndIdleReleaseDoNotRaceRepositoryDisposal()
-    {
-        var project = Project("C:/workspace/refresh-race.fwdata", "project");
-        using var work = new WorkerWorkTracker();
-        using var registry = Registry(work);
-        var runtime = registry.GetOrOpen(project);
-        using var operation = await runtime.AcquireOperationAsync(CancellationToken.None);
-
-        var refresh = Task.Run(() => runtime.RefreshWorkLease());
-        var release = Task.Run(() => registry.TryReleaseIfIdle(runtime.WorkspaceKey));
-        await Task.WhenAll(refresh, release);
-
-        Assert.False(release.Result);
-        operation.Dispose();
-        Assert.True(registry.TryReleaseIfIdle(runtime.WorkspaceKey));
-    }
-
-    [Fact]
     public void PendingEventPreventsIdleReleaseUntilTheEventCompletes()
     {
         var project = Project("C:/workspace/events.fwdata", "project");
-        using var work = new WorkerWorkTracker();
         var activity = new ProjectRuntimeActivity();
-        using var registry = Registry(work, activity);
+        using var registry = Registry(activity);
         var runtime = registry.GetOrOpen(project);
         using var pendingLease = activity.Acquire(runtime.WorkspaceKey);
 
@@ -357,29 +327,29 @@ public sealed class ProjectRuntimeTests : IDisposable
     }
 
     [Fact]
-    public void ActiveDurableJobHoldsAndThenReleasesWorkerLease()
+    public void ActiveDurableJobPreventsIdleReleaseAndItsCompletionAllowsIt()
     {
         var project = Project("C:/workspace/jobs.fwdata", "project");
-        using var work = new WorkerWorkTracker();
-        using var catalog = Registry(work);
-        var runtime = catalog.GetOrOpen(project);
-        using var operation = runtime.AcquireOperationAsync(CancellationToken.None).GetAwaiter().GetResult();
+        using var registry = Registry();
+        var runtime = registry.GetOrOpen(project);
         runtime.Jobs.Create("job", runtime.WorkspaceKey, "dry-run", "{}", _clock.UtcNow.ToString("O"));
-        runtime.RefreshWorkLease();
-        Assert.True(runtime.HasActiveWork);
+
+        // Derived fresh from the durable row, not a cached lease: idleness is one statement on this connection.
+        Assert.False(registry.TryReleaseIfIdle(runtime.WorkspaceKey));
+
         runtime.Jobs.Transition("job", JobStatus.Running);
         runtime.Jobs.Transition("job", JobStatus.Completed);
-        runtime.RefreshWorkLease();
-        Assert.False(runtime.HasActiveWork);
+
+        Assert.True(registry.TryReleaseIfIdle(runtime.WorkspaceKey));
     }
 
-    private ProjectRuntimeRegistry Registry(WorkerWorkTracker work, ProjectRuntimeActivity? activity = null)
+    private ProjectRuntimeRegistry Registry(ProjectRuntimeActivity? activity = null)
     {
         var ownership = WorkspaceOwnership.Bootstrap(Path.Combine(_root, "owned"));
         var catalog = new ProjectDatabaseCatalog(MotifSchema.CurrentSchema, new Version(1, 0));
         return new ProjectRuntimeRegistry(catalog,
             (jobs, key) => new WorkerRecoveryCoordinator(new WorkerRecovery(jobs, _clock),
-                new WorkspaceCleaner(ownership)), work, activity ?? new ProjectRuntimeActivity(), () => _clock.UtcNow);
+                new WorkspaceCleaner(ownership)), activity ?? new ProjectRuntimeActivity(), () => _clock.UtcNow);
     }
 
     private ProjectLocator Project(string path, string identity) =>

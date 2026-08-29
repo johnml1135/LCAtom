@@ -28,6 +28,14 @@ public sealed record RunnerOptions
     /// </remarks>
     public const string NamespaceVariable = "MOTIF_RUNNER_NAMESPACE";
 
+    /// <summary>
+    /// How long the runner stays alive with nothing to do, in seconds. A runner the CLI spawned takes no
+    /// arguments, so this is the only way to tune one that was not started by hand — an operator shortening
+    /// the wait on a machine that idles badly, or a caller that wants a kicked runner to go away promptly.
+    /// <c>--idle-ms</c> still wins where it is passed.
+    /// </summary>
+    public const string IdleVariable = "MOTIF_RUNNER_IDLE_SECONDS";
+
     public string Root { get; init; } = ResolveRoot();
 
     public TimeSpan Lease { get; init; } = TimeSpan.FromMinutes(5);
@@ -42,7 +50,7 @@ public sealed record RunnerOptions
         Root = ResolveRoot(),
         Lease = Seconds(Value(LeaseVariable)) ?? TimeSpan.FromMinutes(5),
         OwnerNamespace = Value(NamespaceVariable),
-        IdleTimeout = IdleFrom(args) ?? TimeSpan.FromMinutes(5),
+        IdleTimeout = IdleFrom(args) ?? Seconds(Value(IdleVariable)) ?? TimeSpan.FromMinutes(5),
     };
 
     /// <summary>The worker root any process (runner or CLI) uses: <see cref="RootVariable"/>, or the per-user default.</summary>

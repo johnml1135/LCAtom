@@ -30,10 +30,9 @@ namespace SIL.Motif.Worker;
 /// before the mutex that admitted them.
 /// </para>
 /// </remarks>
-public sealed class JobRunnerHost : IDisposable, IWorkerWorkTracker
+public sealed class JobRunnerHost : IDisposable
 {
     private readonly WorkerMutexOwner _ownerMutex;
-    private readonly IWorkerWorkTracker _workTracker;
     private readonly ProjectHostRegistry _hostRegistry;
     private readonly ProjectHostReleaseCoordinator _hostReleases;
     private readonly ConcurrentDictionary<string, ProjectFreshnessTracker> _freshness =
@@ -50,18 +49,17 @@ public sealed class JobRunnerHost : IDisposable, IWorkerWorkTracker
     private bool _disposed;
 
     /// <summary>Creates a runner host for the current Windows user.</summary>
-    public JobRunnerHost(IWorkerWorkTracker? workTracker = null)
-        : this(CurrentSid(), workTracker)
+    public JobRunnerHost()
+        : this(CurrentSid())
     {
     }
 
-    internal JobRunnerHost(string userNamespace, IWorkerWorkTracker? workTracker = null)
+    internal JobRunnerHost(string userNamespace)
     {
         var sid = WindowsIdentity.GetCurrent().User?.Value ?? "unknown-user";
         OwnerName = GetOwnerMutexNameForNamespace(
             string.IsNullOrWhiteSpace(userNamespace) ? sid : userNamespace);
         _ownerMutex = new WorkerMutexOwner(OwnerName);
-        _workTracker = workTracker ?? new WorkerWorkTracker();
         _hostRegistry = new ProjectHostRegistry();
         _hostReleases = new ProjectHostReleaseCoordinator();
     }
@@ -71,18 +69,18 @@ public sealed class JobRunnerHost : IDisposable, IWorkerWorkTracker
     /// Only a test has a reason to call this. Two real installations are separated by where they work,
     /// not by who may run, so an operator relocating a runner changes its root rather than its namespace.
     /// </remarks>
-    public static JobRunnerHost ForNamespace(string ownerNamespace, IWorkerWorkTracker? workTracker = null)
+    public static JobRunnerHost ForNamespace(string ownerNamespace)
     {
         if (string.IsNullOrWhiteSpace(ownerNamespace))
             throw new ArgumentException("A runner namespace is required.", nameof(ownerNamespace));
-        return new JobRunnerHost(ownerNamespace, workTracker);
+        return new JobRunnerHost(ownerNamespace);
     }
 
     /// <summary>Creates an isolated runner identity for tests only.</summary>
     internal static JobRunnerHost CreateForTests(string userNamespace, bool composeRuntime = true,
         string? workerRoot = null)
     {
-        var host = new JobRunnerHost(userNamespace, null);
+        var host = new JobRunnerHost(userNamespace);
         var root = workerRoot ?? Path.Combine(
             Path.GetTempPath(), "motif-runner-test-" + Guid.NewGuid().ToString("N"));
         var ownership = WorkspaceOwnership.Bootstrap(root);
@@ -103,9 +101,6 @@ public sealed class JobRunnerHost : IDisposable, IWorkerWorkTracker
 
     /// <summary>Whether this process currently owns the user-scoped runner mutex.</summary>
     public bool IsOwner { get; private set; }
-
-    /// <summary>Whether queued, running, or waiting work is keeping the runner alive.</summary>
-    public bool HasQueuedRunningOrWaitingWork => _workTracker.HasQueuedRunningOrWaitingWork;
 
     internal ProjectLaneRegistry ProjectLanes => _projectLanes ??
         throw new InvalidOperationException("The project scheduler is not composed.");
@@ -147,9 +142,7 @@ public sealed class JobRunnerHost : IDisposable, IWorkerWorkTracker
                 throw new InvalidOperationException("Runtime composition is closed after the runner starts.");
             if (_runtimeRegistry is not null)
                 throw new InvalidOperationException("The runner runtime registry is already composed.");
-            if (_workTracker is not WorkerWorkTracker work)
-                throw new InvalidOperationException("Runtime composition requires the worker work tracker.");
-            _runtimeRegistry = new ProjectRuntimeRegistry(catalog, recoveryFactory, work, now, _hostRegistry);
+            _runtimeRegistry = new ProjectRuntimeRegistry(catalog, recoveryFactory, now, _hostRegistry);
             _projectLanes = new ProjectLaneRegistry(key =>
             {
                 if (!_runtimeRegistry.TryGet(key, out var runtime))

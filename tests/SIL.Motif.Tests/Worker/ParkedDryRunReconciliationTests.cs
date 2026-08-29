@@ -125,7 +125,7 @@ public sealed class ParkedDryRunReconciliationTests : IDisposable
         var catalog = new ProjectDatabaseCatalog(MotifSchema.CurrentSchema, new Version(1, 0));
         var registry = new ProjectRuntimeRegistry(catalog,
             (jobs, key) => new WorkerRecoveryCoordinator(new WorkerRecovery(jobs), new WorkspaceCleaner(ownership)),
-            new WorkerWorkTracker(), new ProjectRuntimeActivity(), () => _now);
+            new ProjectRuntimeActivity(), () => _now);
         return registry.GetOrOpen(project);
     }
 

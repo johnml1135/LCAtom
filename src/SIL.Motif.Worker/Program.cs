@@ -30,13 +30,16 @@ internal static class Program
 
     private static readonly TimeSpan IdlePollInterval = TimeSpan.FromMilliseconds(200);
 
+    // Only needs to outlast an exiting owner's own teardown (sub-second); the idle timeout is minutes.
+    private static readonly TimeSpan OwnershipRetryWindow = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan OwnershipRetryPoll = TimeSpan.FromMilliseconds(50);
+
     private static async Task<int> Main(string[] args)
     {
         var options = RunnerOptions.Read(args);
-        using var tracker = new WorkerWorkTracker();
         using var host = options.OwnerNamespace is { } isolated
-            ? JobRunnerHost.ForNamespace(isolated, tracker)
-            : new JobRunnerHost(tracker);
+            ? JobRunnerHost.ForNamespace(isolated)
+            : new JobRunnerHost();
         var ownership = WorkspaceOwnership.Bootstrap(options.Root);
         host.ConfigureWorkspaces(ownership);
         var ownerId = "runner-" + Environment.ProcessId.ToString();
@@ -44,7 +47,7 @@ internal static class Program
         var runtimes = host.CreateRuntimeRegistry(catalog,
             (jobs, key) => new WorkerRecoveryCoordinator(
                 new WorkerRecovery(jobs, ownerId: ownerId), new WorkspaceCleaner(ownership)));
-        if (!host.TryAcquireOwnership())
+        if (!await TryAcquireOwnershipWithRetryAsync(host).ConfigureAwait(false))
         {
             Console.WriteLine("existing runner: " + host.OwnerName);
             return 0;
@@ -61,37 +64,64 @@ internal static class Program
 
         using var machine = MachineDatabase.Open(options.Root);
         var knownProjects = new KnownProjectRegistry(machine);
+        var activity = new SweepActivity();
         var sweeping = SweepUntilCancelledAsync(knownProjects, runtimes, host.ProjectLanes, options, ownerId,
-            shutdown.Token);
+            activity, shutdown.Token);
 
-        await new WorkerLifetime().RunUntilIdleAsync(options.IdleTimeout, host, shutdown.Token)
-            .ConfigureAwait(false);
+        await new WorkerLifetime().RunUntilIdleAsync(options.IdleTimeout, () => activity.HasActiveWork,
+            shutdown.Token).ConfigureAwait(false);
         shutdown.Cancel();
         await sweeping.ConfigureAwait(false);
         return 0;
     }
 
+    /// <summary>
+    /// Retries a bounded window rather than giving up on the first failed attempt: closes the race where
+    /// the currently-owning runner is inside its final idle tick and about to release the mutex, not gone.
+    /// </summary>
+    internal static async Task<bool> TryAcquireOwnershipWithRetryAsync(JobRunnerHost host)
+    {
+        var deadline = DateTimeOffset.UtcNow + OwnershipRetryWindow;
+        while (true)
+        {
+            if (host.TryAcquireOwnership()) return true;
+            if (DateTimeOffset.UtcNow >= deadline) return false;
+            await Task.Delay(OwnershipRetryPoll).ConfigureAwait(false);
+        }
+    }
+
     /// Ticks the sweep back-to-back while jobs keep being found; idles for <see cref="IdlePollInterval"/> when not.
     private static async Task SweepUntilCancelledAsync(KnownProjectRegistry knownProjects,
         Projects.ProjectRuntimeRegistry runtimes, Scheduling.ProjectLaneRegistry lanes, RunnerOptions options,
-        string ownerId, CancellationToken cancellationToken)
+        string ownerId, SweepActivity activity, CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
         {
-            string? ranJobId;
+            SweepOutcome outcome;
             try
             {
-                ranJobId = await SweepOnceAsync(knownProjects, runtimes, lanes, options, ownerId, cancellationToken)
+                outcome = await SweepOnceAsync(knownProjects, runtimes, lanes, options, ownerId, cancellationToken)
                     .ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
                 return;
             }
-            if (ranJobId is not null) continue;
+            activity.Set(outcome.HasActiveWork);
+            if (outcome.JobId is not null) continue;
             try { await Task.Delay(IdlePollInterval, cancellationToken).ConfigureAwait(false); }
             catch (OperationCanceledException) { return; }
         }
+    }
+
+    /// <summary>The sweep's own record of whether anything, anywhere, is keeping the runner alive.</summary>
+    private sealed class SweepActivity
+    {
+        private volatile bool _hasActiveWork;
+
+        public bool HasActiveWork => _hasActiveWork;
+
+        public void Set(bool hasActiveWork) => _hasActiveWork = hasActiveWork;
     }
 
     /// <summary>
@@ -99,12 +129,16 @@ internal static class Program
     /// single globally-first job across all of them by <c>QueueOrder</c> then <c>JobId</c>: a k-way merge
     /// over each project's own queue head, not a drain of one project before the next.
     /// </summary>
-    /// <returns>The claimed job's id, or <c>null</c> when nothing across every Known project was claimable.</returns>
-    internal static async Task<string?> SweepOnceAsync(KnownProjectRegistry knownProjects,
+    /// <returns>
+    /// The claimed job's id (or <c>null</c> when nothing across every Known project was claimable), paired
+    /// with whether any Known project had queued, running, or waiting work at any point during this tick.
+    /// </returns>
+    internal static async Task<SweepOutcome> SweepOnceAsync(KnownProjectRegistry knownProjects,
         Projects.ProjectRuntimeRegistry runtimes, Scheduling.ProjectLaneRegistry lanes, RunnerOptions options,
         string ownerId, CancellationToken cancellationToken)
     {
         var opened = new List<(Projects.ProjectRuntime Runtime, JobRunnerLoop Loop)>();
+        var hasActiveWork = false;
         foreach (var known in knownProjects.List())
         {
             if (!File.Exists(known.FullFwDataPath))
@@ -138,12 +172,12 @@ internal static class Program
                 Console.Error.WriteLine("warning: parked Dry Run reconciliation failed for '" +
                     known.FullFwDataPath + "' (" + exception.Message + ").");
             }
-            runtime.RefreshWorkLease();
+            if (runtime.Jobs.ListActive(runtime.WorkspaceKey).Count != 0) hasActiveWork = true;
 
             opened.Add((runtime, BuildLoop(runtime, project, options, ownerId, lanes)));
         }
 
-        if (opened.Count == 0) return null;
+        if (opened.Count == 0) return new SweepOutcome(null, hasActiveWork);
 
         (Projects.ProjectRuntime Runtime, JobRunnerLoop Loop)? chosen = null;
         var chosenHead = default(JobQueueHead);
@@ -156,14 +190,16 @@ internal static class Program
                 chosenHead = head;
             }
         }
-        if (chosen is not { } winner) return null;
+        if (chosen is not { } winner) return new SweepOutcome(null, hasActiveWork);
 
         var claimed = winner.Loop.TryClaim();
-        if (claimed is null) return null;
+        if (claimed is null) return new SweepOutcome(null, hasActiveWork);
         await winner.Loop.RunClaimedAsync(claimed, cancellationToken).ConfigureAwait(false);
-        winner.Runtime.RefreshWorkLease();
-        return claimed.JobId;
+        return new SweepOutcome(claimed.JobId, true);
     }
+
+    /// <summary>One sweep tick's result: the job it ran, if any, and whether any project had active work.</summary>
+    internal readonly record struct SweepOutcome(string? JobId, bool HasActiveWork);
 
     /// QueueOrder ties are real, so JobId is what makes the order stable.
     private static bool IsEarlier(JobQueueHead candidate, JobQueueHead current) =>

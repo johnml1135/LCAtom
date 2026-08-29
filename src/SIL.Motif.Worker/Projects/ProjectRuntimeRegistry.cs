@@ -71,7 +71,6 @@ public sealed class ProjectRuntimeRegistry : IDisposable
 {
     private readonly ProjectDatabaseCatalog _catalog;
     private readonly Func<JobRepository, string, WorkerRecoveryCoordinator> _recoveryFactory;
-    private readonly WorkerWorkTracker _work;
     private readonly Func<DateTimeOffset>? _now;
     private readonly ProjectRuntimeActivity _activity;
     private readonly object _admission = new();
@@ -82,26 +81,23 @@ public sealed class ProjectRuntimeRegistry : IDisposable
     /// <summary>Creates a registry with injected store, recovery, and keepalive boundaries.</summary>
     public ProjectRuntimeRegistry(ProjectDatabaseCatalog catalog,
         Func<JobRepository, string, WorkerRecoveryCoordinator> recoveryFactory,
-        WorkerWorkTracker work, ProjectRuntimeActivity activity,
-        Func<DateTimeOffset>? now = null)
-        : this(catalog, recoveryFactory, work, now,
+        ProjectRuntimeActivity activity, Func<DateTimeOffset>? now = null)
+        : this(catalog, recoveryFactory, now,
             activity ?? throw new ArgumentNullException(nameof(activity))) { }
 
     internal ProjectRuntimeRegistry(ProjectDatabaseCatalog catalog,
         Func<JobRepository, string, WorkerRecoveryCoordinator> recoveryFactory,
-        WorkerWorkTracker work, Func<DateTimeOffset>? now, ProjectHostRegistry? hosts)
-        : this(catalog, recoveryFactory, work, now, hosts is null
+        Func<DateTimeOffset>? now, ProjectHostRegistry? hosts)
+        : this(catalog, recoveryFactory, now, hosts is null
             ? throw new ArgumentNullException(nameof(hosts))
             : hosts.Activity) { }
 
     private ProjectRuntimeRegistry(ProjectDatabaseCatalog catalog,
         Func<JobRepository, string, WorkerRecoveryCoordinator> recoveryFactory,
-        WorkerWorkTracker work, Func<DateTimeOffset>? now,
-        ProjectRuntimeActivity activity)
+        Func<DateTimeOffset>? now, ProjectRuntimeActivity activity)
     {
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         _recoveryFactory = recoveryFactory ?? throw new ArgumentNullException(nameof(recoveryFactory));
-        _work = work ?? throw new ArgumentNullException(nameof(work));
         _now = now;
         _activity = activity ?? throw new ArgumentNullException(nameof(activity));
     }
@@ -120,7 +116,7 @@ public sealed class ProjectRuntimeRegistry : IDisposable
             {
                 ThrowIfDisposed();
                 lazy = _runtimes.GetOrAdd(key, _ => new Lazy<ProjectRuntime>(
-                    () => ProjectRuntime.Open(canonical, key, _catalog, _recoveryFactory, _work, _now,
+                    () => ProjectRuntime.Open(canonical, key, _catalog, _recoveryFactory, _now,
                         () => _activity.IsActive(key), () => _activity.IsActive(key)),
                     LazyThreadSafetyMode.ExecutionAndPublication));
             }

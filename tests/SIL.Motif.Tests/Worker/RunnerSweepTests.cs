@@ -32,7 +32,7 @@ public sealed class RunnerSweepTests : IDisposable
         var catalog = new ProjectDatabaseCatalog(MotifSchema.CurrentSchema, new Version(1, 0));
         _runtimes = new ProjectRuntimeRegistry(catalog,
             (jobs, key) => new WorkerRecoveryCoordinator(new WorkerRecovery(jobs), new WorkspaceCleaner(ownership)),
-            new WorkerWorkTracker(), new ProjectRuntimeActivity());
+            new ProjectRuntimeActivity());
     }
 
     [Fact]
@@ -120,11 +120,12 @@ public sealed class RunnerSweepTests : IDisposable
     private async Task<IReadOnlyList<string>> DrainAsync(KnownProjectRegistry known)
     {
         var claimed = new List<string>();
-        string? next;
         var guard = 0;
-        while ((next = await SIL.Motif.Worker.Program.SweepOnceAsync(known, _runtimes, _lanes, _options, OwnerId,
-            CancellationToken.None)) is not null)
+        while (true)
         {
+            var outcome = await SIL.Motif.Worker.Program.SweepOnceAsync(known, _runtimes, _lanes, _options, OwnerId,
+                CancellationToken.None);
+            if (outcome.JobId is not { } next) break;
             claimed.Add(next);
             if (++guard > 50) throw new InvalidOperationException("The sweep did not converge.");
         }
