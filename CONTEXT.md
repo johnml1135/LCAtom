@@ -51,16 +51,24 @@ Two different evaluations, deliberately named apart. One asks *does the grammar 
 other asks *what would this do to the project?*
 
 **Assessment**:
-An immutable PanGloss run: one grammar against one frozen set of evaluation words, producing parse
-results and diagnostics. PanGloss owns this word — it has a `pg-assess` crate and uses the term in its
-own contracts. Motif stores Assessments and compares them; it never renders a verdict from one. An
-Assessment records the Assessment scope it ran under, because that decides which Reports can be
-answered from it at all.
-_Avoid_: parse report, evaluation, score, verdict
+One immutable measurement, made by one Assessor under one Assessment scope. A parse run is the common
+kind and PanGloss is the common Assessor, but an Assessment is not tied to either: a C# HermitCrab or an
+alignment model asking whether more lexemes align each produce one too. Immutable once written, so it
+has no lifecycle of its own — the Job that produced it has the states, and *current* is a pointer the
+project holds rather than a state the Assessment carries. Motif stores Assessments and compares them; it
+never renders a verdict from one.
+_Avoid_: parse report, evaluation, score, verdict, PanGloss run
+
+**Assessor**:
+What produces an Assessment — PanGloss, a C# HermitCrab, an alignment model. Two Assessments may only be
+compared when they share an Assessor, which is what stops an alignment score being subtracted from parse
+coverage.
+_Avoid_: backend, engine, provider, plugin
 
 **Assessment scope**:
-What a run holds equal so that two runs can be subtracted: which words, which engine, what the run
-collects, and what limits it applies. Declared per project and embedded in each Assessment by content,
+What a run holds equal so that two runs can be subtracted: which words, which Assessor and engine, what
+the run collects, and what limits it applies — a per-word limit defaulting to about a second, or an
+equivalent cap on attempts. Declared per project and embedded in each Assessment by content,
 so editing the declaration cannot reinterpret a measurement already taken. A Baseline is measured under
 the superset of every scope a Proposal will use, so a narrower candidate run is comparable without
 measuring the Baseline again.

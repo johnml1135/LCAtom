@@ -198,3 +198,110 @@ every convenience that reads *"tell me which proposal is best"* moves a verdict 
 6. **Report tailoring.** *"Skim it down to one word, or one text"* — is that a filter argument on a report, or
    a narrower scope? They are different: one re-queries stored data, the other implies a new run.
 7. **Retention.** How many Assessments and stats caches a project keeps.
+
+---
+
+## 7. Amendments — 2026-08-29
+
+### The engine constraint in §4 was overstated
+
+§4 says per-object counters are collected by HermitCrab alone, and builds a conclusion on it: that the fast
+loop and the per-rule diagnostic can never be the same run. **That is a description of what PanGloss ships
+today, not a property of the problem.** Any backend can support per-object counters, HermitCrab included, and
+counters from other grammars are useful in their own right.
+
+So the honest statement is narrower: *today*, `--engine=foma` records word-level timing only, so today a
+scope must choose. If foma gains counters the choice disappears, and nothing in the design should assume it
+will not. §4's framing — treat the trade-off as permanent — would have hardened a temporary gap into an
+architecture.
+
+### Word limits have a default
+
+A scope carries a per-word limit, defaulting to about **one second, or an equivalent cap on attempts**.
+PanGloss already distinguishes the two mechanisms and their outcomes: `--word-timeout-ms` sets a wall-clock
+bound and marks a word `timed_out`; `--step-cap` bounds work and marks it `capped`. Both are distinct from a
+word that genuinely did not parse, and all three flags are stored per word.
+
+The limit is part of the scope rather than a run-time flag, because a coverage figure computed under a
+one-second cap is not comparable with one computed under ten.
+
+### An Assessment is not a PanGloss run — it is one measurement by one assessor
+
+The reframing that motivates this amendment: a **Job** is the queued unit of work, and a job may produce
+**several Assessments**, each made by an **Assessor**. PanGloss is one assessor. A C# HermitCrab is another.
+An SMT alignment model asking whether more lexemes align is a third, and it is not a parser at all.
+
+This is a better model than "one PanGloss run is one Assessment", for three reasons:
+
+1. It matches what the code already anticipates. `JobStatus.CompletedWithAssessmentFailure` exists, which
+   only makes sense if a job and an assessment are different things that can fail separately.
+2. It makes new measures additive. Adding an alignment measure becomes a new assessor rather than a new
+   concept, and every scope, report and comparison mechanism already built continues to apply.
+3. It puts the comparability rule in one place. Two Assessments are comparable when they share an assessor
+   **and** their scopes are compatible — and the assessor check is what stops anyone subtracting an alignment
+   score from a parse coverage figure.
+
+**The cost, stated plainly.** `CONTEXT.md` currently says of Assessment: *"PanGloss owns this word."*
+`../linguistic-assistant` agrees: *"'Assessment' belongs to PanGloss, not this evaluation."* Making it Motif's
+general term takes the word back, and both statements become wrong. The alternative is a different general
+term — *Measurement* — leaving Assessment to PanGloss.
+
+Recommended: **Motif takes the general term.** Motif is the system that has several of them, which is what
+earns the general noun; a PanGloss assessment becomes one kind. But this must be written into all three
+glossaries at once, because a term that means one thing here and another next door is worse than either
+choice.
+
+### The three state machines, written down
+
+**Job** — ten states, and the only one of the three with a transition table in code
+(`JobStateMachine.Transitions`):
+
+```mermaid
+stateDiagram-v2
+    [*] --> Queued
+    Queued --> WaitingForBaseline
+    Queued --> WaitingForProjectHost
+    Queued --> Running
+    WaitingForBaseline --> Queued
+    WaitingForBaseline --> Running
+    WaitingForProjectHost --> Queued
+    WaitingForProjectHost --> Running
+    Running --> WaitingForBaseline
+    Running --> Completed
+    Running --> CompletedDryRunOnly
+    Running --> CompletedWithAssessmentFailure
+    Running --> Interrupted
+    Running --> Failed
+    Running --> Cancelled
+    Completed --> [*]
+    CompletedDryRunOnly --> [*]
+    CompletedWithAssessmentFailure --> [*]
+    Interrupted --> [*]
+    Failed --> [*]
+    Cancelled --> [*]
+```
+
+**Proposal** — seven states, enforced by the repository rather than by a table:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Draft
+    Draft --> Proposed : finalize
+    Proposed --> Approved : approve
+    Proposed --> Rejected : reject
+    Proposed --> Deferred : defer
+    Deferred --> Proposed
+    Proposed --> Draft : reopen
+    Approved --> Applied : apply
+    Proposed --> Superseded : supersede
+    Approved --> Superseded
+    Applied --> [*]
+    Rejected --> [*]
+    Superseded --> [*]
+```
+
+**Assessment** — **no lifecycle at all, deliberately.** An Assessment is immutable once written, like a
+`ProposalRevision`. What has states is the Job that produced it. "Current" is not a state on an Assessment
+but a **pointer held by the project**, which promotion moves — the same shape as `Proposals.CurrentIntentDigest`
+pointing at a revision. Inventing a third state machine here would give two places the power to say an
+Assessment is stale, and they would disagree.
