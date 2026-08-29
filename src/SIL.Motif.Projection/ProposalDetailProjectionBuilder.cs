@@ -17,7 +17,7 @@ public static class ProposalDetailProjectionBuilder
             Target: op.Target?.Value,
             EntityId: op.EntityId?.Value,
             DependsOn: op.DependsOn.Select(d => d.OperationId.Value).ToList(),
-            AfterJson: op.After?.GetRawText() ?? "{}")).ToList();
+            AfterJson: op.After?.GetRawText())).ToList();
 
         var decision = manifest.Decision is { } d
             ? new DecisionView(d.Outcome, d.ActorType, d.ActorId, d.Comment, d.TimestampUtc)

@@ -300,9 +300,9 @@ public sealed class ProposalRepository : IProposalRepository
         transaction.Commit();
     }
 
-    public IReadOnlyList<ProposalRecord> ListArchived(DateTimeOffset now, ArchivePolicy? policy = null)
+    public IReadOnlyList<ProposalRecord> ListArchived(DateTimeOffset now, TimeRetentionPolicy? policy = null)
     {
-        policy ??= ArchivePolicy.Default;
+        policy ??= TimeRetentionPolicy.Default;
         return List(new ProposalListFilter(IncludeArchived: true))
             .Where(proposal => IsTerminal(proposal.Status) &&
                 policy.ShouldPurge(ParseNullableUtc(proposal.ArchivedUtc), now)).ToArray();

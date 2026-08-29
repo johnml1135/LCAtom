@@ -151,6 +151,33 @@ public sealed class ProjectionRenderingTests
     }
 
     [Fact]
+    public void ProposalDetail_OperationWithNoAfterState_OmitsAfterJson()
+    {
+        var projection = new ProposalDetailProjection(
+            ProposalId: "agent_AAECAwQFBgcICQoLDA0ODw",
+            Status: "proposed",
+            Label: "Revise gloss",
+            Comment: null,
+            CurrentIntentDigest: "sha256:" + new string('a', 64),
+            Operations: new[]
+            {
+                new ProposalOperationView(
+                    OperationId: "agent_AQIDBAUGBwgJCgsMDQ4PEA",
+                    Kind: "lexical/lexSense/setGloss",
+                    Target: "agent_AgMEBQYHCAkKCwwNDg8QEQ",
+                    EntityId: null,
+                    DependsOn: System.Array.Empty<string>(),
+                    AfterJson: null),
+            });
+
+        var text = CommandTextRenderer.Render(projection);
+        var json = ProjectionJson.Serialize(projection);
+
+        Assert.DoesNotContain("after:", text);
+        Assert.DoesNotContain("afterJson", json);
+    }
+
+    [Fact]
     public void ProposalDetail_WithADecision_TextFiguresAllAppearInJson()
     {
         var projection = new ProposalDetailProjection(

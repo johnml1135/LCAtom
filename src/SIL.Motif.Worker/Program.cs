@@ -173,6 +173,7 @@ internal static class Program
                     known.FullFwDataPath + "' (" + exception.Message + ").");
             }
             if (runtime.Jobs.ListActive(runtime.WorkspaceKey).Count != 0) hasActiveWork = true;
+            else runtime.Jobs.PurgeArchived(ArchivePolicy.Default);
 
             opened.Add((runtime, BuildLoop(runtime, project, options, ownerId, lanes)));
         }

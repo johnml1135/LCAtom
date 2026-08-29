@@ -45,21 +45,21 @@ public sealed class BaselineRetentionCleaner
     private readonly IPublishedBaselineQuery _published;
     private readonly IBaselinePinQuery _references;
     private readonly IJobClock _clock;
-    private readonly ArchivePolicy _policy;
+    private readonly TimeRetentionPolicy _policy;
     private readonly IWorkspaceFileSystem _fileSystem;
 
     public BaselineRetentionCleaner(
         IWorkspaceOwnership ownership,
         IPublishedBaselineQuery published,
         IBaselinePinQuery references,
-        ArchivePolicy? policy = null,
+        TimeRetentionPolicy? policy = null,
         IJobClock? clock = null,
         IWorkspaceFileSystem? fileSystem = null)
     {
         _ownership = ownership ?? throw new ArgumentNullException(nameof(ownership));
         _published = published ?? throw new ArgumentNullException(nameof(published));
         _references = references ?? throw new ArgumentNullException(nameof(references));
-        _policy = policy ?? ArchivePolicy.Default;
+        _policy = policy ?? TimeRetentionPolicy.Default;
         _clock = clock ?? new SystemJobClock();
         _fileSystem = fileSystem ?? new LocalFileSystem();
     }

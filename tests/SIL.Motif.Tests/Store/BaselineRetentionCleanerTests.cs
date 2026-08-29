@@ -19,7 +19,7 @@ public sealed class BaselineRetentionCleanerTests : IDisposable
         var pinnedPath = CreatePublishedBaseline(baselineRoot, "pinned");
         var query = new BaselineQuery(oldPath, pinnedPath);
         var cleaner = new BaselineRetentionCleaner(WorkspaceOwnership.Bootstrap(_root), query, query,
-            ArchivePolicy.Default, new FixedClock("2026-08-23T00:00:00Z"));
+            TimeRetentionPolicy.Default, new FixedClock("2026-08-23T00:00:00Z"));
 
         var result = cleaner.Clean("project");
 
@@ -34,7 +34,7 @@ public sealed class BaselineRetentionCleanerTests : IDisposable
         var oldPath = CreatePublishedBaseline(baselineRoot, "old");
         var query = new SingleUnpinnedBaselineQuery(oldPath);
         var cleaner = new BaselineRetentionCleaner(WorkspaceOwnership.Bootstrap(_root), query, query,
-            ArchivePolicy.Default, new FixedClock("2026-08-23T00:00:00Z"));
+            TimeRetentionPolicy.Default, new FixedClock("2026-08-23T00:00:00Z"));
 
         var result = cleaner.Clean("project");
 
@@ -49,7 +49,7 @@ public sealed class BaselineRetentionCleanerTests : IDisposable
         var outside = CreatePublishedBaseline(_root, "outside");
         var query = new BaselineQuery(outside, outside);
         var cleaner = new BaselineRetentionCleaner(WorkspaceOwnership.Bootstrap(_root), query, query,
-            new ArchivePolicy(TimeSpan.Zero), new FixedClock("2026-08-23T00:00:00Z"));
+            new TimeRetentionPolicy(TimeSpan.Zero), new FixedClock("2026-08-23T00:00:00Z"));
 
         var result = cleaner.Clean("../other");
 
@@ -66,7 +66,7 @@ public sealed class BaselineRetentionCleanerTests : IDisposable
         var free = CreatePublishedBaseline(baselineRoot, "free");
         var query = new MultiPinQuery(paths, free);
         var cleaner = new BaselineRetentionCleaner(WorkspaceOwnership.Bootstrap(_root), query, query,
-            new ArchivePolicy(TimeSpan.Zero), new FixedClock("2026-08-23T00:00:00Z"));
+            new TimeRetentionPolicy(TimeSpan.Zero), new FixedClock("2026-08-23T00:00:00Z"));
 
         var result = cleaner.Clean("project");
 

@@ -4,13 +4,14 @@ using System.Linq;
 namespace SIL.Motif.Contract.Responses;
 
 /// <summary>One operation inside the <c>show</c> report, with every id rendered as its text form.</summary>
+/// <param name="AfterJson"><c>null</c> when the operation carries no after-state at all.</param>
 public sealed record ProposalOperationView(
     string OperationId,
     string Kind,
     string? Target,
     string? EntityId,
     IReadOnlyList<string> DependsOn,
-    string AfterJson);
+    string? AfterJson);
 
 /// <summary>The most recent human or AI verdict on a Proposal, shaped for the <c>show</c> report.</summary>
 public sealed record DecisionView(

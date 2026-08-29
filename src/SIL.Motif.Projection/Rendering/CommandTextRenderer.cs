@@ -70,7 +70,8 @@ public static class CommandTextRenderer
                 sb.AppendLine($"      entityId:  {op.EntityId}");
             if (op.DependsOn.Count > 0)
                 sb.AppendLine($"      dependsOn: {string.Join(", ", op.DependsOn)}");
-            sb.AppendLine($"      after:     {op.AfterJson}");
+            if (op.AfterJson is not null)
+                sb.AppendLine($"      after:     {op.AfterJson}");
         }
         return sb.ToString();
     }

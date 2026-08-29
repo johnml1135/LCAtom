@@ -462,20 +462,20 @@ public sealed class JobRepository
         return records.Where(record => ValidateUtc(record.ArchivedUtc!, nameof(record.ArchivedUtc)) <= cutoff).ToArray();
     }
 
-    public IReadOnlyList<JobRecord> ListEligibleArchived(DateTimeOffset now, ArchivePolicy policy)
+    public IReadOnlyList<JobRecord> ListEligibleArchived(ArchivePolicy policy)
     {
-        if (policy.Forever) return Array.Empty<JobRecord>();
         var all = ListAll();
-        return all.Where(record => IsEligibleArchive(record, all, now, policy)).ToArray();
+        var beyondCap = BeyondRetainedCount(all, policy);
+        return all.Where(record => IsEligibleArchive(record, all, beyondCap)).ToArray();
     }
 
-    public int PurgeArchived(DateTimeOffset now, ArchivePolicy policy)
+    public int PurgeArchived(ArchivePolicy policy)
     {
         using var connection = _database.OpenConnection();
         using var transaction = connection.BeginTransaction();
-        if (policy.Forever) return 0;
         var all = ReadAll(connection, transaction);
-        var candidates = all.Where(record => IsEligibleArchive(record, all, now, policy)).ToArray();
+        var beyondCap = BeyondRetainedCount(all, policy);
+        var candidates = all.Where(record => IsEligibleArchive(record, all, beyondCap)).ToArray();
         var count = 0;
         foreach (var candidate in candidates)
         {
@@ -507,15 +507,22 @@ public sealed class JobRepository
         return records;
     }
 
-    private static bool IsEligibleArchive(JobRecord record, IReadOnlyList<JobRecord> all,
-        DateTimeOffset now, ArchivePolicy policy)
+    // A live later attempt keeps its earlier one; pinned by JobArchiveCapTests.LiveLaterAttemptKeepsEarlier
+    private static bool IsEligibleArchive(JobRecord record, IReadOnlyList<JobRecord> all, ISet<string> beyondCap)
     {
-        if (!JobStateMachine.IsTerminal(record.Status) || !policy.ShouldPurge(
-                ValidateUtc(record.ArchivedUtc!, nameof(record.ArchivedUtc)), now)) return false;
+        if (!JobStateMachine.IsTerminal(record.Status) || !beyondCap.Contains(record.JobId)) return false;
         return !all.Any(later => later.LogicalJobId == record.LogicalJobId && later.Attempt > record.Attempt &&
-            (!JobStateMachine.IsTerminal(later.Status) || !policy.ShouldPurge(
-                ValidateUtc(later.ArchivedUtc!, nameof(later.ArchivedUtc)), now)));
+            (!JobStateMachine.IsTerminal(later.Status) || !beyondCap.Contains(later.JobId)));
     }
+
+    /// <summary>The job ids ranked past the retained count, most recently archived first.</summary>
+    private static ISet<string> BeyondRetainedCount(IReadOnlyList<JobRecord> all, ArchivePolicy policy) =>
+        all.Where(record => JobStateMachine.IsTerminal(record.Status))
+            .OrderByDescending(record => ValidateUtc(record.ArchivedUtc!, nameof(record.ArchivedUtc)))
+            .ThenBy(record => record.JobId, StringComparer.Ordinal)
+            .Skip(policy.RetainedCount)
+            .Select(record => record.JobId)
+            .ToHashSet(StringComparer.Ordinal);
 
     public void DeleteArchived(string jobId)
     {
