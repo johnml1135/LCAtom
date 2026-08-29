@@ -140,6 +140,30 @@ public sealed class ProposalDryRunnerTests : IDisposable
     }
 
     [Fact]
+    public void DryRunScratch_PeekCacheDoesNotConsumeAndASubsequentRunStillSucceedsExactlyOnce()
+    {
+        var (sense, _, wsTag, originalGloss) = FindSenseWithKnownGloss();
+        var proposal = BuildSetGlossProposal(CanonicalId.FromGuid(sense.Guid), wsTag, originalGloss + " x");
+
+        var scratchRoot = Path.Combine(_tempRoot, "scratch-peek-then-run");
+        var scratchCache = new ScratchCacheFactory().CreateFromFileCopy(_cache.ProjectId.Path, scratchRoot);
+        using var scratch = DryRunScratch.Adopt(scratchCache, "test scratch, peeked before it is run");
+
+        // Peeking any number of times, before the run, must not itself count as the one use.
+        Assert.Same(scratchCache, scratch.PeekCache());
+        Assert.Same(scratchCache, scratch.PeekCache());
+
+        ProposalDryRunner.Run(scratch, proposal);
+
+        // The run still happened exactly once: a second one is refused exactly as it always was.
+        var reuse = Assert.Throws<InvalidOperationException>(() => ProposalDryRunner.Run(scratch, proposal));
+        Assert.Contains("single-use", reuse.Message);
+
+        // Peeking after consumption is unaffected too: it is not gated by the single-use flag either.
+        Assert.Same(scratchCache, scratch.PeekCache());
+    }
+
+    [Fact]
     public void DryRunScratch_RejectsMemoryOnlyCacheBeforeTakingOwnership()
     {
         var memoryOnlyCache = new ScratchCacheFactory().CreateInMemoryCopy(_cache);

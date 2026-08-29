@@ -9,7 +9,6 @@ using SIL.Motif.Contract.Baselines;
 using SIL.Motif.Contract.Projects;
 using SIL.Motif.Contract.Responses;
 using SIL.Motif.Host.Baselines;
-using SIL.Motif.Host.LcmUtils;
 using SIL.Motif.Runner.AppliedLog;
 using SIL.Motif.Runner.DryRun;
 using SIL.Motif.Worker.Baselines;
@@ -58,13 +57,13 @@ internal static class DryRunJobRunner
             var handler = new DryRunJobHandler(new JobRepository(database), baselines, proposals, lanes, _ => null,
                 (candidatePath, _) =>
                 {
-                    // A peek open on the immutable published Baseline, separate from the scratch the run opens.
-                    using var peek = new FwDataProjectLoader().LoadScratchCache(candidatePath);
-                    return Task.FromResult<IReadOnlyCollection<Guid>>(
-                        ProjectAppliedLog.ReadAll(peek).Select(entry => entry.ProposalId).ToArray());
+                    // One open of the published Baseline: peeked here for the applied log, consumed later to run.
+                    var scratch = new BaselineScratchFactory().OpenSingleUse(candidatePath);
+                    var appliedProposalIds = ProjectAppliedLog.ReadAll(scratch.PeekCache())
+                        .Select(entry => entry.ProposalId).ToArray();
+                    return Task.FromResult<(IReadOnlyCollection<Guid>, DryRunScratch?)>((appliedProposalIds, scratch));
                 },
-                (candidatePath, plan, _) => Task.FromResult(
-                    ProposalDryRunner.Run(new BaselineScratchFactory().OpenSingleUse(candidatePath), plan)));
+                (scratch, plan, _) => Task.FromResult(ProposalDryRunner.Run(scratch!, plan)));
             var loop = new JobRunnerLoop(new JobClaims(database), workspaceKey, "test-runner",
                 TimeSpan.FromMinutes(1), TimeSpan.Zero,
                 new Dictionary<string, JobRunnerLoop.Handler>(StringComparer.Ordinal)

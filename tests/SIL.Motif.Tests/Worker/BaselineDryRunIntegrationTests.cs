@@ -107,15 +107,12 @@ public sealed class BaselineDryRunIntegrationTests : IDisposable
         var handler = new DryRunJobHandler(_jobs, _baselines, proposals, lanes, _ => null,
             (fwDataPath, _) =>
             {
-                using var peek = _loader.LoadScratchCache(fwDataPath);
-                return Task.FromResult<IReadOnlyCollection<Guid>>(
-                    ProjectAppliedLog.ReadAll(peek).Select(entry => entry.ProposalId).ToArray());
+                var scratch = factory.OpenSingleUse(fwDataPath);
+                var appliedProposalIds = ProjectAppliedLog.ReadAll(scratch.PeekCache())
+                    .Select(entry => entry.ProposalId).ToArray();
+                return Task.FromResult<(IReadOnlyCollection<Guid>, DryRunScratch?)>((appliedProposalIds, scratch));
             },
-            (fwDataPath, plan, _) =>
-            {
-                using var scratch = factory.OpenSingleUse(fwDataPath);
-                return Task.FromResult(ProposalDryRunner.Run(scratch, plan));
-            });
+            (scratch, plan, _) => Task.FromResult(ProposalDryRunner.Run(scratch!, plan)));
 
         var directoriesBefore = DirectoriesUnder(_root);
         var manifestBefore = ManifestOf(_publishedRoot);
@@ -147,6 +144,35 @@ public sealed class BaselineDryRunIntegrationTests : IDisposable
         Assert.Equal(manifestBefore, ManifestOf(_publishedRoot));
         Assert.Equal(directoriesBefore, DirectoriesUnder(_root));
         Assert.Equal(1, _loader.SaveCount);
+        // One scratch open per job, not two: proves the fix across twenty runs, not just one.
+        Assert.Equal(20, _loader.LoadScratchCacheCount);
+    }
+
+    [Fact]
+    public void ADryRunJobOpensThePublishedBaselineExactlyOnce()
+    {
+        var proposals = new ProposalRepository(_database);
+        var lanes = new ProjectLaneRegistry(_ => _token);
+        var factory = new BaselineScratchFactory(_loader);
+        var handler = new DryRunJobHandler(_jobs, _baselines, proposals, lanes, _ => null,
+            (fwDataPath, _) =>
+            {
+                var scratch = factory.OpenSingleUse(fwDataPath);
+                var appliedProposalIds = ProjectAppliedLog.ReadAll(scratch.PeekCache())
+                    .Select(entry => entry.ProposalId).ToArray();
+                return Task.FromResult<(IReadOnlyCollection<Guid>, DryRunScratch?)>((appliedProposalIds, scratch));
+            },
+            (scratch, plan, _) => Task.FromResult(ProposalDryRunner.Run(scratch!, plan)));
+
+        var job = _jobs.Create(Guid.NewGuid().ToString("N"), ProjectWorkspaceKey.Compute(_project),
+            "dry-run", _proposalJson, "2026-08-24T00:00:00Z");
+        DryRunJobTestHarness.Claim(_jobs, job.JobId);
+
+        var completed = DryRunJobTestHarness.RunAndFinishAsync(_jobs, handler, job.JobId, _project)
+            .GetAwaiter().GetResult();
+
+        Assert.Equal(JobStatus.CompletedDryRunOnly, completed.Status);
+        Assert.Equal(1, _loader.LoadScratchCacheCount);
     }
 
     private static string[] DirectoriesUnder(string root) =>
@@ -168,15 +194,22 @@ public sealed class BaselineDryRunIntegrationTests : IDisposable
         return Convert.ToHexString(sha.ComputeHash(stream));
     }
 
-    // Counts real saves so the test proves the twenty Dry Runs below never triggered a second one.
+    // Counts real saves and scratch opens so a test can prove how many of each a run actually did.
     private sealed class CountingFwDataProjectLoader : FwDataProjectLoader
     {
         public int SaveCount { get; private set; }
+        public int LoadScratchCacheCount { get; private set; }
 
         public override void Save(LcmCache cache)
         {
             SaveCount++;
             base.Save(cache);
+        }
+
+        public override LcmCache LoadScratchCache(string fwDataFilePath, string? templatesFolder = null)
+        {
+            LoadScratchCacheCount++;
+            return base.LoadScratchCache(fwDataFilePath, templatesFolder);
         }
     }
 }
@@ -251,7 +284,7 @@ public sealed class BaselineDryRunSchedulingTests : IDisposable
 
         var proposals = new ProposalRepository(context.Database);
         var handler = new DryRunJobHandler(context.Jobs, context.Baselines, proposals, lanes, _ => null,
-            (_, _) => Task.FromResult<IReadOnlyCollection<Guid>>(Array.Empty<Guid>()),
+            (_, _) => Task.FromResult<(IReadOnlyCollection<Guid>, DryRunScratch?)>((Array.Empty<Guid>(), null)),
             async (_, _, cancellationToken) =>
             {
                 if (Interlocked.Increment(ref callCount) == 1)
@@ -332,7 +365,7 @@ public sealed class BaselineDryRunSchedulingTests : IDisposable
         using var cts = new CancellationTokenSource();
         var proposals = new ProposalRepository(context.Database);
         var handler = new DryRunJobHandler(context.Jobs, context.Baselines, proposals, lanes, _ => null,
-            (_, _) => Task.FromResult<IReadOnlyCollection<Guid>>(Array.Empty<Guid>()),
+            (_, _) => Task.FromResult<(IReadOnlyCollection<Guid>, DryRunScratch?)>((Array.Empty<Guid>(), null)),
             (_, _, _) =>
             {
                 var result = DryRunTestSupport.FakeDryRun();
@@ -386,7 +419,7 @@ public sealed class BaselineDryRunSchedulingTests : IDisposable
         var lane = lanes.GetOrCreate(context.WorkspaceKey);
         var proposals = new ProposalRepository(context.Database);
         var handler = new DryRunJobHandler(context.Jobs, context.Baselines, proposals, lanes, _ => null,
-            (_, _) => Task.FromResult<IReadOnlyCollection<Guid>>(Array.Empty<Guid>()),
+            (_, _) => Task.FromResult<(IReadOnlyCollection<Guid>, DryRunScratch?)>((Array.Empty<Guid>(), null)),
             (_, _, _) => Task.FromResult(DryRunTestSupport.FakeDryRun()));
 
         await Assert.ThrowsAsync<IOException>(() => lane.EnqueueAsync(ProjectWorkItem.Refresh(
@@ -465,7 +498,7 @@ public sealed class BaselineDryRunSchedulingTests : IDisposable
         var proposals = new ProposalRepository(context.Database);
         var handler = new DryRunJobHandler(context.Jobs, context.Baselines, proposals, lanes,
             key => key == context.WorkspaceKey ? tracker : null,
-            (_, _) => Task.FromResult<IReadOnlyCollection<Guid>>(Array.Empty<Guid>()),
+            (_, _) => Task.FromResult<(IReadOnlyCollection<Guid>, DryRunScratch?)>((Array.Empty<Guid>(), null)),
             (_, _, _) => Task.FromResult(DryRunTestSupport.FakeDryRun()));
         var job = context.CreateJob("run");
         DryRunJobTestHarness.Claim(context.Jobs, job.JobId);

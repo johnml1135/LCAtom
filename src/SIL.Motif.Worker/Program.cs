@@ -282,13 +282,13 @@ internal static class Program
         var dryRun = new DryRunJobHandler(runtime.Jobs, runtime.Baselines, proposals, lanes, _ => null,
             (fwDataPath, _) =>
             {
-                // A peek open on the immutable published Baseline, separate from the scratch the run itself opens.
-                using var peek = new FwDataProjectLoader().LoadScratchCache(fwDataPath);
-                return Task.FromResult<IReadOnlyCollection<Guid>>(
-                    ProjectAppliedLog.ReadAll(peek).Select(entry => entry.ProposalId).ToArray());
+                // One open of the published Baseline: peeked here for the applied log, consumed later to run.
+                var scratch = new BaselineScratchFactory().OpenSingleUse(fwDataPath);
+                var appliedProposalIds = ProjectAppliedLog.ReadAll(scratch.PeekCache())
+                    .Select(entry => entry.ProposalId).ToArray();
+                return Task.FromResult<(IReadOnlyCollection<Guid>, DryRunScratch?)>((appliedProposalIds, scratch));
             },
-            (fwDataPath, plan, _) => Task.FromResult(
-                ProposalDryRunner.Run(new BaselineScratchFactory().OpenSingleUse(fwDataPath), plan)));
+            (scratch, plan, _) => Task.FromResult(ProposalDryRunner.Run(scratch!, plan)));
         return new JobRunnerLoop(new JobClaims(runtime.Database), runtime.WorkspaceKey, ownerId: ownerId,
             lease: options.Lease, poll: TimeSpan.Zero,
             handlers: new Dictionary<string, JobRunnerLoop.Handler>(StringComparer.Ordinal)

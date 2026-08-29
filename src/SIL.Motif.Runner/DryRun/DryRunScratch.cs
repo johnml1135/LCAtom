@@ -83,6 +83,27 @@ public sealed class DryRunScratch : IDisposable
     public string Provenance { get; }
 
     /// <summary>
+    /// Read-only access to the cache before <see cref="ConsumeForOneRun"/> hands it over for mutation.
+    /// </summary>
+    /// <remarks>
+    /// Exists so a caller who must read something from this scratch first — the applied-proposal log,
+    /// say — does not need a second open of the same project to do it. Peeking never marks this scratch
+    /// used: it does not touch the single-use flag <see cref="ConsumeForOneRun"/> checks, so calling this
+    /// any number of times, before or after that call, changes nothing about whether a run is still
+    /// available. That flag is the only thing single-use ever rested on, so it is exactly as strict as
+    /// before. As with <see cref="Adopt"/>, nothing stops a caller from mutating through the reference
+    /// this returns; that would be the same lie <see cref="Adopt"/>'s remarks describe, just told here
+    /// instead of there.
+    /// </remarks>
+    public LcmCache PeekCache()
+    {
+        if (_cache is null)
+            throw new ObjectDisposedException(nameof(DryRunScratch), "This scratch has already been discarded.");
+
+        return _cache;
+    }
+
+    /// <summary>
     /// Hands the cache to the one Dry Run this scratch is good for. Refuses a second time rather than
     /// returning a baseline that silently includes the first run's mutations (pinned by
     /// `DryRunScratch_RefusesASecondRun`).

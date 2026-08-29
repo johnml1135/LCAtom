@@ -29,8 +29,8 @@ internal sealed class DryRunJobHandler
     private readonly ProposalRepository _proposals;
     private readonly ProjectLaneRegistry _lanes;
     private readonly Func<string, ProjectFreshnessTracker?> _freshnessTrackers;
-    private readonly Func<string, CancellationToken, Task<IReadOnlyCollection<Guid>>> _readAppliedProposalIds;
-    private readonly Func<string, PrerequisiteExecutionPlan, CancellationToken, Task<DryRunModel>> _runDryRun;
+    private readonly Func<string, CancellationToken, Task<(IReadOnlyCollection<Guid> AppliedProposalIds, DryRunScratch? Scratch)>> _openScratch;
+    private readonly Func<DryRunScratch?, PrerequisiteExecutionPlan, CancellationToken, Task<DryRunModel>> _runDryRun;
 
     /// <param name="jobs">This project's job store.</param>
     /// <param name="baselines">This project's published-Baseline store.</param>
@@ -41,23 +41,27 @@ internal sealed class DryRunJobHandler
     /// </param>
     /// <param name="lanes">Serializes Baseline-dependent work per project.</param>
     /// <param name="freshnessTrackers">Looks up a live observation to compare the Baseline against, if any.</param>
-    /// <param name="readAppliedProposalIds">
-    /// Reads which Proposals are already applied in the state the Dry Run measures against — the
-    /// Baseline-derived cache, not the live project — so <see cref="ProposalRepository.PlanPrerequisites"/>
-    /// knows which of the requested Proposal's prerequisites still need pre-applying to the scratch.
+    /// <param name="openScratch">
+    /// Opens the one scratch this Dry Run measures against and reads which Proposals are already
+    /// applied in it — the Baseline-derived cache, not the live project — via
+    /// <see cref="DryRunScratch.PeekCache"/>, so <see cref="ProposalRepository.PlanPrerequisites"/> knows
+    /// which of the requested Proposal's prerequisites still need pre-applying. The scratch is returned
+    /// so <paramref name="runDryRun"/> reuses this same open rather than opening a second one; it is
+    /// disposed once <paramref name="runDryRun"/> returns. Nullable only so a test double that never
+    /// touches a real cache can return none.
     /// </param>
-    /// <param name="runDryRun">Opens a single-use scratch from the published Baseline and runs the resolved plan.</param>
+    /// <param name="runDryRun">Runs the resolved plan against the scratch <paramref name="openScratch"/> opened.</param>
     internal DryRunJobHandler(JobRepository jobs, BaselineRepository baselines, ProposalRepository proposals,
         ProjectLaneRegistry lanes, Func<string, ProjectFreshnessTracker?> freshnessTrackers,
-        Func<string, CancellationToken, Task<IReadOnlyCollection<Guid>>> readAppliedProposalIds,
-        Func<string, PrerequisiteExecutionPlan, CancellationToken, Task<DryRunModel>> runDryRun)
+        Func<string, CancellationToken, Task<(IReadOnlyCollection<Guid> AppliedProposalIds, DryRunScratch? Scratch)>> openScratch,
+        Func<DryRunScratch?, PrerequisiteExecutionPlan, CancellationToken, Task<DryRunModel>> runDryRun)
     {
         _jobs = jobs ?? throw new ArgumentNullException(nameof(jobs));
         _baselines = baselines ?? throw new ArgumentNullException(nameof(baselines));
         _proposals = proposals ?? throw new ArgumentNullException(nameof(proposals));
         _lanes = lanes ?? throw new ArgumentNullException(nameof(lanes));
         _freshnessTrackers = freshnessTrackers ?? throw new ArgumentNullException(nameof(freshnessTrackers));
-        _readAppliedProposalIds = readAppliedProposalIds ?? throw new ArgumentNullException(nameof(readAppliedProposalIds));
+        _openScratch = openScratch ?? throw new ArgumentNullException(nameof(openScratch));
         _runDryRun = runDryRun ?? throw new ArgumentNullException(nameof(runDryRun));
     }
 
@@ -95,10 +99,17 @@ internal sealed class DryRunJobHandler
         await lane.EnqueueAsync(ProjectWorkItem.DryRun(async (_, laneToken) =>
         {
             _jobs.Transition(_jobs.Get(jobId)!, JobStatus.Running);
-            var appliedProposalIds = await _readAppliedProposalIds(baseline.FwDataPath, laneToken)
+            var (appliedProposalIds, scratch) = await _openScratch(baseline.FwDataPath, laneToken)
                 .ConfigureAwait(false);
-            var plan = _proposals.PlanPrerequisites(proposal, appliedProposalIds);
-            dryRun = await _runDryRun(baseline.FwDataPath, plan, laneToken).ConfigureAwait(false);
+            try
+            {
+                var plan = _proposals.PlanPrerequisites(proposal, appliedProposalIds);
+                dryRun = await _runDryRun(scratch, plan, laneToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                scratch?.Dispose();
+            }
         }),
             cancellationToken).ConfigureAwait(false);
 
