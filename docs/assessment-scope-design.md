@@ -1,7 +1,8 @@
 # Assessment scope — the design problem, and what is already settled
 
-*2026-08-29. A working design document, not a decision. It exists so the next grilling session starts from
-what is known rather than from a blank page.*
+*2026-08-29. A working design document. The decisions it reached are now recorded in
+[ADR 0042](adr/0042-a-job-produces-assessments-an-assessor-makes-them.md); what remains here is the working
+that produced them, and the questions in §6 that are still open.*
 
 **In plain terms:** before Motif can tell a linguist whether a grammar change helped, it has to have measured
 the same thing twice. That sounds obvious and is the whole difficulty: two runs of the parser can differ in

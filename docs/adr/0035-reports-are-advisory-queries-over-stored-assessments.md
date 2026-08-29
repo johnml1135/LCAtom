@@ -142,3 +142,25 @@ approvals.
 - **Risk accepted:** decision 1 means an unattended agent loop can breach a target the project explicitly set
   and carry on. That is the cost of not inventing a gate, and it is revisitable the moment someone wants the
   Check Run path from the declined option.
+
+## Amendments
+
+### 2026-08-29 — decision 1 is narrowed: a project may configure a regression to gate
+
+Decision 1 says reports are advisory and a configured target does not gate.
+[ADR 0042](0042-a-job-produces-assessments-an-assessor-makes-them.md) decision 5 narrows that.
+
+A project may declare in a human-readable `<project>.motif.toml` that a regression blocks `apply`. The model
+is a failing check on a pull request rather than a hard rule: it blocks, a human may override it, and the
+override is recorded as a Decision with an actor and a comment — the machinery `approve` and `reject` already
+use.
+
+What survives unchanged is the reasoning this ADR was built on. A report is still a cheap query over a stored
+Assessment, still pinned to the Assessment it was computed against, and still carries its Selection as
+non-hashed provenance so a reviewer may run a quick check or a full one without disturbing approvals. What
+changes is only that a project may now choose to make one of those queries load-bearing, and that choice is
+visible in a file a human can read and diff.
+
+The reason for the change is that a regression is worth stopping on even when it turns out to be wrong: an
+approved analysis that no longer parses is as often a wrong manual analysis as a bad grammar change, and
+surfacing it is how that gets found. Advisory-only could not express "stop, look at this, then decide".
