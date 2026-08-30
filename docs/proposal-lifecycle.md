@@ -1,7 +1,7 @@
 # The Proposal lifecycle
 
 *2026-08-29. What every state means, what moves between them, and where Jobs and Assessments attach. The
-states and guards below are read from the code, not aspirational — `ManifestStatus`,
+states and guards below are read from the code, with one exception found later and marked as such — `ManifestStatus`,
 `Commands.DeferrableFrom`/`ApprovableFrom`/`RejectableFrom`/`SupersedableFrom`, and
 `ProposalRepository`.*
 
@@ -62,8 +62,12 @@ The guards are asymmetric on purpose, and each asymmetry says something:
   wanted.
 - **`supersede` may follow anything non-terminal, including `rejected`**, because a replacement should be
   able to point at what it replaces however that ended.
-- **Only `approved` may be applied.** Applying is the only irreversible step, and it requires a Decision
-  bound to the exact revision being written.
+- **`apply` has no status guard at all** — and this document originally claimed the opposite. There is no
+  `ApplicableFrom` array, and `ProposalWorkflowTests` applies straight from `proposed` without ever calling
+  `approve`. The diagram's `approved --> applied` edge is the *intended* path, not an enforced one. Whether
+  applying should require a Decision bound to the exact revision is a real open question — it is the only
+  irreversible step, which argues for a guard, and an AI loop applying its own proposals argues against one.
+  Recorded rather than decided, and rather than left as a false claim.
 
 ## Where measurement attaches
 

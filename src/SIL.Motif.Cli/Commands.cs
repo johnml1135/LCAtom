@@ -12,8 +12,11 @@ using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Parsing;
 using SIL.Motif.Contract.Projects;
 using SIL.Motif.Host.Analysis;
+using SIL.Motif.Host.Assess;
+using SIL.Motif.Host.Config;
 using SIL.Motif.Host.Corpus;
 using SIL.Motif.Host.LcmUtils;
+using SIL.Motif.Host.Parser;
 using SIL.Motif.Host.Store;
 using SIL.Motif.Projection;
 using SIL.Motif.Projection.Rendering;
@@ -1376,32 +1379,50 @@ public static class Commands
     /// reload the project rather than reuse it after a failed apply.
     /// </remarks>
     public static CommandResult Apply(
-        string fwDataPath, string productVersion, string proposalId, string user, UsageLog? usage = null)
+        string fwDataPath, string productVersion, string proposalId, string user, string? overrideComment = null,
+        UsageLog? usage = null)
     {
         RecordApplyUsage(usage, "fwDataPath", "proposalId", "user");
         return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, project) =>
         {
-            var (reason, projection, error) = BuildApplyProjection(database, project, proposalId, user);
+            var (reason, projection, error) = BuildApplyProjection(database, project, proposalId, user, overrideComment);
             return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : Refused(reason, error!);
         });
     }
 
-    /// <summary>The <c>apply</c> report as JSON — the same <see cref="ApplyProjection"/> <see cref="Apply(string,string,string,string,UsageLog)"/> renders as text.</summary>
+    /// <summary>The <c>apply</c> report as JSON — the same <see cref="ApplyProjection"/> <see cref="Apply(string,string,string,string,string,UsageLog)"/> renders as text.</summary>
     public static CommandResult ApplyJson(
-        string fwDataPath, string productVersion, string proposalId, string user, UsageLog? usage = null)
+        string fwDataPath, string productVersion, string proposalId, string user, string? overrideComment = null,
+        UsageLog? usage = null)
     {
         RecordApplyUsage(usage, "fwDataPath", "proposalId", "user");
         return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, project) =>
         {
-            var (reason, projection, error) = BuildApplyProjection(database, project, proposalId, user);
+            var (reason, projection, error) = BuildApplyProjection(database, project, proposalId, user, overrideComment);
             return projection is not null
                 ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
                 : Refused(reason, error!);
         });
     }
 
+    /// <summary>The latest <c>Correctness</c> Assessment recorded against this exact revision, if any.</summary>
+    private static AssessmentRecord? FindCandidateAssessment(
+        AssessmentRepository assessments, CanonicalId proposalId, string intentDigest)
+    {
+        var candidateId = assessments.ListByProposal(proposalId)
+            .Where(header => string.Equals(header.ProposalIntentDigest, intentDigest, StringComparison.Ordinal) &&
+                string.Equals(header.Kind, RegressionChecker.RequiredKind, StringComparison.Ordinal))
+            .Select(header => header.AssessmentId)
+            .LastOrDefault();
+        return candidateId is null ? null : assessments.Get(candidateId);
+    }
+
+    private static CorrectnessAssessment ToCorrectnessAssessment(AssessmentRecord record) => new(
+        record.AssessmentId, record.Assessor, record.TokeniserName, record.TokeniserVersion, record.ScopeJson,
+        record.Corpus, record.GrammarSourceSha256, record.Words ?? Array.Empty<AssessedWord>());
+
     private static (FailureReason? Reason, ApplyProjection? Projection, string? Error) BuildApplyProjection(
-        MotifDatabase database, ProjectLocator project, string proposalId, string user)
+        MotifDatabase database, ProjectLocator project, string proposalId, string user, string? overrideComment = null)
     {
         LcmCache? cache = null;
         try
@@ -1418,6 +1439,38 @@ public static class Commands
                 return (FailureReason.Refused, null, FailText(
                     $"Proposal {id} has no bound DryRun recorded. Run " +
                     $"'dry-run {id} --project <fwdata>' first, then 'apply'."));
+            }
+
+            var configuration = new ProjectConfigurationReader().Read(project);
+            var assessments = new AssessmentRepository(database);
+            var candidate = manifest.CurrentIntentDigest is null
+                ? null
+                : FindCandidateAssessment(assessments, canonicalId, manifest.CurrentIntentDigest);
+
+            // Gates only when configured, checked before loading the project, same as the anchor check above.
+            if (candidate is not null && configuration.GateOnRegression)
+            {
+                var previous = assessments.GetCurrent();
+                var finding = previous is not null &&
+                    string.Equals(previous.Kind, RegressionChecker.RequiredKind, StringComparison.Ordinal)
+                    ? RegressionChecker.Check(ToCorrectnessAssessment(previous), ToCorrectnessAssessment(candidate))
+                    : null;
+
+                if (finding is { IsRegression: true })
+                {
+                    if (string.IsNullOrWhiteSpace(overrideComment))
+                    {
+                        return (FailureReason.Refused, null, FailText(
+                            $"Applying Proposal {id} would be a regression: {finding.Describe()}. Provide an " +
+                            "override comment to apply anyway; the override is recorded as a Decision."));
+                    }
+
+                    // Surfaced even though overridden: it is often the manual analysis that was wrong.
+                    repository.SaveDecision(new DecisionRecord(
+                        canonicalId, manifest.CurrentIntentDigest!, DecisionOutcome.Approved, DecisionActorType.Human,
+                        user, $"Regression override ({finding.Describe()}): {overrideComment}",
+                        SIL.Motif.Model.AppliedLog.AppliedLogFormat.FormatTimestamp(DateTime.UtcNow)));
+                }
             }
 
             var loader = new FwDataProjectLoader();
@@ -1457,6 +1510,10 @@ public static class Commands
                         "doing anything else with it.",
                         ex);
                 }
+
+                // Promotion happens before the sweep; the promoted Assessment is excluded from it by identity.
+                if (candidate is not null) assessments.PromoteToCurrent(candidate.AssessmentId);
+                if (configuration.PurgeOnApply) assessments.DeleteByProposal(canonicalId, candidate?.AssessmentId);
 
                 return (null, ApplyProjectionBuilder.Build(id, receipt), null);
             }

@@ -338,11 +338,16 @@ try
                 !flags.TryGetValue("project", out var applyProject) ||
                 !flags.TryGetValue("user", out var applyUser))
             {
-                return Usage("Usage: motif apply <proposalId> --project <fwdata> --user <name> [--json]", asJson);
+                return Usage(
+                    "Usage: motif apply <proposalId> --project <fwdata> --user <name> " +
+                    "[--override-comment <text>] [--json]", asJson);
             }
+            flags.TryGetValue("override-comment", out var applyOverrideComment);
             result = asJson
-                ? Commands.ApplyJson(applyProject, CliProductVersion(), positionals[0], applyUser, usage)
-                : Commands.Apply(applyProject, CliProductVersion(), positionals[0], applyUser, usage);
+                ? Commands.ApplyJson(applyProject, CliProductVersion(), positionals[0], applyUser,
+                    applyOverrideComment, usage)
+                : Commands.Apply(applyProject, CliProductVersion(), positionals[0], applyUser,
+                    applyOverrideComment, usage);
             break;
 
         case "log":
@@ -492,6 +497,12 @@ try
                     result = JobCommands.Show(jobsShowProject, positionals[1], CliProductVersion(), asJson);
                     break;
 
+                case "assessments":
+                    if (positionals.Count != 2 || !flags.TryGetValue("project", out var jobsAssessmentsProject))
+                        return Usage("Usage: motif jobs assessments <jobId> --project <fwdata> [--json]", asJson);
+                    result = JobCommands.Assessments(jobsAssessmentsProject, positionals[1], CliProductVersion(), asJson);
+                    break;
+
                 case "list":
                     if (positionals.Count != 1 || !flags.ContainsKey("all"))
                         return Usage("Usage: motif jobs list --all [--json]", asJson);
@@ -585,7 +596,8 @@ static string CompareUsage() =>
     "Usage: motif compare --project <fwdata> --from <assessmentId> --to <assessmentId> [--json]";
 
 static string JobsUsage() =>
-    "Usage: motif jobs show <jobId> --project <fwdata> [--json] OR motif jobs list --all [--json] OR " +
+    "Usage: motif jobs show <jobId> --project <fwdata> [--json] OR " +
+    "motif jobs assessments <jobId> --project <fwdata> [--json] OR motif jobs list --all [--json] OR " +
     "motif jobs cancel <jobId> --project <fwdata> [--json] OR motif jobs requeue <jobId> --project <fwdata> " +
     "[--json] OR " + JobsMoveUsage();
 
@@ -670,6 +682,7 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine("Jobs (the durable queue; --project selects which project's queue, except list --all):");
     writer.WriteLine("  baseline-refresh --project <fwdata>");
     writer.WriteLine("  jobs show <jobId> --project <fwdata> [--json]");
+    writer.WriteLine("  jobs assessments <jobId> --project <fwdata> [--json]");
     writer.WriteLine("  jobs list --all [--json]");
     writer.WriteLine("  jobs cancel <jobId> --project <fwdata> [--json]");
     writer.WriteLine("  jobs requeue <jobId> --project <fwdata> [--json]");

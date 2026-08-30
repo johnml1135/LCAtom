@@ -275,7 +275,7 @@ public sealed class ReportProjectionIntegrationTests
         FigureAudit.AssertEveryTextFigureAppearsInJson(dryRunText.Output, dryRunJson.Output);
 
         // apply: mutating (one shot), so the JSON report is checked directly against ground truth.
-        var applyJson = Commands.ApplyJson(_fwDataPath, ProductVersion, proposalId, applier, usage);
+        var applyJson = Commands.ApplyJson(_fwDataPath, ProductVersion, proposalId, applier, usage: usage);
         Assert.Equal(0, applyJson.ExitCode);
         Assert.Contains(originalGloss, applyJson.Output);
         Assert.Contains(newGloss, applyJson.Output);

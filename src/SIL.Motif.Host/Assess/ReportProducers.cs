@@ -90,11 +90,33 @@ public sealed class CoverageReportProducer : IReportProducer
 }
 
 /// <summary>
+/// Turns a <c>Correctness</c> Assessment's own stored words and analyses into the
+/// <see cref="GrammarCoverageFigure"/> both <see cref="CorrectnessReportProducer"/> and
+/// <c>RegressionChecker</c> need — a word counts as analysed when it carries at least one stored
+/// <see cref="ParsedAnalysis"/> row, never by comparing digests across PanGloss's and FieldWorks' separate
+/// identity schemes, which <c>AutomaticAnalysis</c>'s own remarks document as not comparable.
+/// </summary>
+internal static class CorrectnessCoverage
+{
+    /// <exception cref="ReportRefusalException">The scope's engine name or per-word limit cannot be read.</exception>
+    public static GrammarCoverageFigure Compute(
+        IReadOnlyList<AssessedWord> words, string scopeJson, CorpusDescriptor corpus, string grammarSourceSha256,
+        string reportKind)
+    {
+        var (engine, perWordLimitMs) = ScopeJsonReader.ReadEngineAndLimit(scopeJson, reportKind);
+        var analysed = words.Select((word, index) => new WordAnalysis(
+            index, word.Word, 0,
+            word.Analyses.Count > 0 ? WordOutcome.Analysed : WordOutcome.NoAnalysis,
+            word.Analyses.Count > 0 ? word.Analyses[0].IdentityDigest : string.Empty)).ToList();
+        var batch = new BatchAnalysis(analysed, engine, perWordLimitMs, string.Empty, Array.Empty<string>());
+        return GrammarCoverageFigure.Compute(batch, corpus, grammarSourceSha256);
+    }
+}
+
+/// <summary>
 /// Correctness against manual analysis: of the words this scope declared as carrying a human-decided
 /// analysis, how many the parser still produces at least one analysis for. Rendered from a <c>Correctness</c>
-/// Assessment's own stored words and analyses — a word counts as analysed here when it carries at least one
-/// stored <see cref="ParsedAnalysis"/> row, never by comparing digests across PanGloss's and FieldWorks'
-/// separate identity schemes, which <c>AutomaticAnalysis</c>'s own remarks document as not comparable.
+/// Assessment's own stored words and analyses.
 /// </summary>
 /// <remarks>
 /// Reuses <see cref="GrammarCoverageFigure"/> rather than a second figure type: whether a word still gets an
@@ -126,14 +148,9 @@ public sealed class CorrectnessReportProducer : IReportProducer
                 "not collect.");
         }
 
-        var (engine, perWordLimitMs) = ScopeJsonReader.ReadEngineAndLimit(assessment.ScopeJson, KindName);
-        var words = assessment.Words.Select((word, index) => new WordAnalysis(
-            index, word.Word, 0,
-            word.Analyses.Count > 0 ? WordOutcome.Analysed : WordOutcome.NoAnalysis,
-            word.Analyses.Count > 0 ? word.Analyses[0].IdentityDigest : string.Empty)).ToList();
-        var batch = new BatchAnalysis(words, engine, perWordLimitMs, string.Empty, Array.Empty<string>());
         var corpus = new CorpusDescriptor(assessment.CorpusId, assessment.CorpusWords, assessment.CorpusSha256);
-        var figure = GrammarCoverageFigure.Compute(batch, corpus, assessment.GrammarSourceSha256);
+        var figure = CorrectnessCoverage.Compute(
+            assessment.Words, assessment.ScopeJson, corpus, assessment.GrammarSourceSha256, KindName);
         var text = "Correctness against manual analysis — " +
             figure.Describe(assessment.CorpusSha256, assessment.GrammarSourceSha256);
         return new RenderedReport(KindName, text);

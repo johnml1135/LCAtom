@@ -5,6 +5,8 @@ using SIL.Motif.Contract.Jobs;
 using SIL.Motif.Contract.Projects;
 using SIL.Motif.Contract.Responses;
 using SIL.Motif.Generator;
+using SIL.Motif.Host.Corpus;
+using SIL.Motif.Host.Parser;
 using SIL.Motif.Host.Store;
 using SIL.Motif.Worker;
 using SIL.Motif.Worker.Jobs;
@@ -219,6 +221,76 @@ public sealed class JobQueueVerbArgvTests : IDisposable
 
         Assert.Equal(2, result.ExitCode);
         Assert.Equal(FailureReason.Refused, Envelope(result.Error).Reason);
+    }
+
+    [Fact]
+    public void AssessmentsReturnsWhatATrialProduced()
+    {
+        var jobId = Enqueue(ProjectA);
+        var assessmentId = RecordAssessment(ProjectA, "alpha");
+        CompleteAsTrial(ProjectA, jobId, assessmentId);
+
+        var result = Run($"jobs assessments {jobId} --project \"{ProjectA}\" --json");
+
+        Assert.Equal(0, result.ExitCode);
+        var response = ProjectionJson.Deserialize<JobAssessmentsResponse>(result.Output)!;
+        Assert.Equal(jobId, response.JobId);
+        Assert.Single(response.Assessments);
+        Assert.Equal(assessmentId, response.Assessments[0].AssessmentId);
+        Assert.Equal("pangloss", response.Assessments[0].Assessor);
+        Assert.Equal("Correctness", response.Assessments[0].Kind);
+    }
+
+    [Fact]
+    public void AssessmentsOnAnUnknownJobIsNotFound()
+    {
+        var result = Run($"jobs assessments job/doesNotExist --project \"{ProjectA}\" --json");
+
+        Assert.Equal(2, result.ExitCode);
+        Assert.Equal(FailureReason.NotFound, Envelope(result.Error).Reason);
+    }
+
+    /// Records one Correctness Assessment directly, standing in for what a real Trial's Assessor would produce.
+    private static string RecordAssessment(string project, string word)
+    {
+        var locator = new ProjectLocator(project, Path.GetFileNameWithoutExtension(project));
+        using var database = MotifDatabase.OpenOwned(ProjectDatabaseCatalog.DatabasePathFor(locator), locator,
+            MotifSchema.CurrentSchema, new Version(1, 0));
+        var assessmentId = SIL.Motif.Contract.Ids.CanonicalId.Mint("assessment/").Value;
+        var corpus = CorpusDescriptor.Create("test", new[] { word });
+        new AssessmentRepository(database).Record(new NewAssessmentRecord(
+            AssessmentId: assessmentId,
+            ProposalId: null,
+            ProposalIntentDigest: null,
+            Assessor: "pangloss",
+            Kind: "Correctness",
+            ScopeJson: """{"engine":"fast","perWordLimitMs":1000}""",
+            ScopeDigest: "sha256:" + new string('a', 64),
+            TokeniserName: "none",
+            TokeniserVersion: "1",
+            BaselineToken: "{}",
+            Corpus: corpus,
+            OutcomeDigest: "sha256:" + new string('b', 64),
+            SemanticDigest: "sha256:" + new string('c', 64),
+            GrammarSourceSha256: "sha256:" + new string('d', 64),
+            ModelFingerprint: "model",
+            Pipeline: "pipeline",
+            DiagnosticCount: 0,
+            Words: new[] { new AssessedWord(word, "analysed", new[] { new ParsedAnalysis(null, Array.Empty<string>(), 0, "digest") }) }));
+        return assessmentId;
+    }
+
+    /// Drives a queued job through Running to Completed with a Trial-shaped ResultJson, without a real runner.
+    private static void CompleteAsTrial(string project, string jobId, params string[] assessmentIds)
+    {
+        var locator = new ProjectLocator(project, Path.GetFileNameWithoutExtension(project));
+        using var database = MotifDatabase.OpenOwned(ProjectDatabaseCatalog.DatabasePathFor(locator), locator,
+            MotifSchema.CurrentSchema, new Version(1, 0));
+        var jobs = new JobRepository(database);
+        jobs.Transition(jobId, JobStatus.Running);
+        var resultJson = "{\"baselineToken\":{},\"assessmentIds\":[" +
+            string.Join(",", assessmentIds.Select(id => "\"" + id + "\"")) + "]}";
+        jobs.Transition(jobId, JobStatus.Completed, resultJson);
     }
 
     [Fact]

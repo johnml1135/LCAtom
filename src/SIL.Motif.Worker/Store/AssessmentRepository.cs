@@ -49,6 +49,14 @@ public interface IAssessmentRepository
     /// <summary>Gets the project's current Assessment, or <c>null</c> when none has been promoted yet.</summary>
     /// <exception cref="InvalidDataException">The pointer names an Assessment that is no longer recorded.</exception>
     AssessmentRecord? GetCurrent();
+
+    /// <summary>
+    /// Deletes every Assessment recorded against one Proposal, except <paramref name="exceptAssessmentId"/> —
+    /// the sweep purge-on-apply drives (ADR 0042's Trial amendment). A promoted candidate must always be
+    /// named here by its exact id: this call, not the order it runs in relative to promotion, is what keeps
+    /// it out of the sweep.
+    /// </summary>
+    void DeleteByProposal(CanonicalId proposalId, string? exceptAssessmentId);
 }
 
 /// <summary>
@@ -212,6 +220,41 @@ public sealed class AssessmentRepository : IAssessmentRepository
             $"MotifMetadata points at current Assessment '{currentId}', which is not recorded " +
             "(store inconsistency).");
         return header with { Words = ReadWords(connection, currentId) };
+    }
+
+    /// <inheritdoc />
+    public void DeleteByProposal(CanonicalId proposalId, string? exceptAssessmentId)
+    {
+        using var connection = _database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        foreach (var sql in new[]
+        {
+            """
+            DELETE FROM ParsedAnalyses WHERE AssessedWordId IN (
+                SELECT AssessedWordId FROM AssessedWords WHERE AssessmentId IN (
+                    SELECT AssessmentId FROM Assessments
+                    WHERE ProposalId = $proposalId AND ($exceptId IS NULL OR AssessmentId != $exceptId)));
+            """,
+            """
+            DELETE FROM AssessedWords WHERE AssessmentId IN (
+                SELECT AssessmentId FROM Assessments
+                WHERE ProposalId = $proposalId AND ($exceptId IS NULL OR AssessmentId != $exceptId));
+            """,
+            """
+            DELETE FROM Assessments
+            WHERE ProposalId = $proposalId AND ($exceptId IS NULL OR AssessmentId != $exceptId);
+            """,
+        })
+        {
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = sql;
+            command.Parameters.AddWithValue("$proposalId", proposalId.Value);
+            command.Parameters.AddWithValue("$exceptId", (object?)exceptAssessmentId ?? DBNull.Value);
+            command.ExecuteNonQuery();
+        }
+        transaction.Commit();
     }
 
     private static void InsertHeader(

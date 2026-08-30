@@ -1,3 +1,4 @@
+using System.Linq;
 using Microsoft.Data.Sqlite;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Projects;
@@ -129,6 +130,63 @@ public sealed class AssessmentRepositoryTests : IDisposable
         var reread = repository.Get("collide");
         Assert.Equal(2, reread.Words!.Count);
         Assert.Equal("bo", reread.Words[0].Word);
+    }
+
+    /// <summary>
+    /// The trap ADR 0042's Trial amendment names: promotion must happen before the sweep, and the promoted
+    /// Assessment must survive by identity, not by hoping the sweep never learns to run first.
+    /// </summary>
+    [Fact]
+    public void SweepDeletesTheProposalsOtherAssessments_ButThePromotedOneSurvivesByIdentity()
+    {
+        var repository = NewRepository("sweep-trap.fwdata", out var database);
+        var proposal = CanonicalId.Mint("proposal/");
+        SeedProposal(database, proposal.Value);
+
+        repository.Record(NewAssessment("promoted", proposal, "sha256:intent", "Correctness"));
+        repository.Record(NewAssessment("scratch-1", proposal, "sha256:intent", "ParseTime"));
+        repository.Record(NewAssessment("scratch-2", proposal, "sha256:older-intent", "Correctness"));
+
+        // Promotion happens first, exactly as apply must sequence it.
+        repository.PromoteToCurrent("promoted");
+        repository.DeleteByProposal(proposal, exceptAssessmentId: "promoted");
+
+        // Asserted after the sweep has already run — the identity exclusion, not the ordering, is what is pinned.
+        Assert.Equal("promoted", repository.Get("promoted").AssessmentId);
+        Assert.Equal("promoted", repository.GetCurrent()!.AssessmentId);
+        Assert.Throws<KeyNotFoundException>(() => repository.Get("scratch-1"));
+        Assert.Throws<KeyNotFoundException>(() => repository.Get("scratch-2"));
+        Assert.Empty(repository.ListByProposal(proposal).Where(record => record.AssessmentId != "promoted"));
+    }
+
+    [Fact]
+    public void SweepWithNoExceptionDeletesEveryAssessmentOnTheProposal()
+    {
+        var repository = NewRepository("sweep-all.fwdata", out var database);
+        var proposal = CanonicalId.Mint("proposal/");
+        SeedProposal(database, proposal.Value);
+        repository.Record(NewAssessment("only-one", proposal, "sha256:intent", "Correctness"));
+
+        repository.DeleteByProposal(proposal, exceptAssessmentId: null);
+
+        Assert.Empty(repository.ListByProposal(proposal));
+    }
+
+    [Fact]
+    public void SweepLeavesAnotherProposalsAssessmentsUntouched()
+    {
+        var repository = NewRepository("sweep-other.fwdata", out var database);
+        var swept = CanonicalId.Mint("proposal/");
+        var untouched = CanonicalId.Mint("proposal/");
+        SeedProposal(database, swept.Value);
+        SeedProposal(database, untouched.Value);
+        repository.Record(NewAssessment("swept-1", swept, "sha256:intent", "Correctness"));
+        repository.Record(NewAssessment("kept-1", untouched, "sha256:intent", "Correctness"));
+
+        repository.DeleteByProposal(swept, exceptAssessmentId: null);
+
+        Assert.Empty(repository.ListByProposal(swept));
+        Assert.Equal("kept-1", repository.Get("kept-1").AssessmentId);
     }
 
     private IAssessmentRepository NewRepository(string fileName, out MotifDatabase database)

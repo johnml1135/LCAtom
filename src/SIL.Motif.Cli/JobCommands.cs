@@ -242,6 +242,81 @@ public static class JobCommands
     }
 
     /// <summary>
+    /// The Assessments one job produced — the lookup an agent needs when it holds a Trial's job id and
+    /// nothing else, having enqueued several without waiting on any of them. Reads the ids a completed
+    /// Trial recorded on its own outcome and looks each one up, rather than re-deriving them from the job's
+    /// input.
+    /// </summary>
+    public static CommandResult Assessments(string fwDataPath, string jobId, string productVersion, bool asJson)
+    {
+        if (string.IsNullOrWhiteSpace(jobId))
+            return ProjectStoreCommand.Refuse(FailureReason.InvalidArgument, "A job id is required.");
+
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, project) =>
+        {
+            var job = new JobRepository(database).Get(jobId);
+            if (job is null)
+                return ProjectStoreCommand.Refuse(FailureReason.NotFound,
+                    "No job '" + jobId + "' is recorded for this project.");
+
+            var assessmentIds = TryReadAssessmentIds(job.ResultJson);
+            if (assessmentIds is null)
+            {
+                return ProjectStoreCommand.Refuse(FailureReason.Refused,
+                    "Job '" + jobId + "' recorded no Assessments" +
+                    (JobStateMachine.IsTerminal(job.Status)
+                        ? "."
+                        : "; it is still " + JobStatusJson.ToWire(job.Status) + "."));
+            }
+
+            var repository = new AssessmentRepository(database);
+            var summaries = assessmentIds
+                .Select(repository.Get)
+                .Select(record => new JobAssessmentSummary(record.AssessmentId, record.Assessor, record.Kind, record.SavedUtc))
+                .ToArray();
+            var response = new JobAssessmentsResponse(jobId, summaries);
+            return new CommandResult(0, asJson
+                ? ProjectionJson.Serialize(response) + Environment.NewLine
+                : RenderAssessments(response));
+        });
+    }
+
+    // Reads the "assessmentIds" array a completed Trial's own ResultJson carries; null for anything else.
+    private static IReadOnlyList<string>? TryReadAssessmentIds(string? resultJson)
+    {
+        if (resultJson is null) return null;
+        try
+        {
+            using var document = JsonDocument.Parse(resultJson);
+            if (!document.RootElement.TryGetProperty("assessmentIds", out var array) ||
+                array.ValueKind != JsonValueKind.Array)
+                return null;
+            return array.EnumerateArray().Select(element => element.GetString()!).ToArray();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string RenderAssessments(JobAssessmentsResponse response)
+    {
+        var text = new StringBuilder();
+        text.AppendLine("Job " + response.JobId);
+        if (response.Assessments.Count == 0)
+        {
+            text.AppendLine("  No Assessments.");
+            return text.ToString();
+        }
+        foreach (var assessment in response.Assessments)
+        {
+            text.AppendLine("  " + assessment.AssessmentId + "  " + assessment.Assessor + "  " +
+                assessment.Kind + "  " + assessment.SavedUtc);
+        }
+        return text.ToString();
+    }
+
+    /// <summary>
     /// Cancels one job. A job still queued (or parked waiting for a Baseline or the project host) is
     /// moved straight to <c>cancelled</c> — nothing is running it, so no runner is needed. A running job
     /// only has its cancellation flag set; the runner that holds it reads the flag on its own heartbeat
