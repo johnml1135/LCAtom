@@ -3,7 +3,7 @@ using SIL.LCModel;
 namespace SIL.Motif.Host.Corpus;
 
 /// <summary>
-/// Extracts a <see cref="CorpusDescriptor"/> from a live <see cref="LcmCache"/>'s wordforms.
+/// Extracts a <see cref="Selection"/> from a live <see cref="LcmCache"/>'s wordforms.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -18,15 +18,15 @@ namespace SIL.Motif.Host.Corpus;
 /// <b>Streamed and cappable on purpose.</b> A mid-size project has about 7,000 word forms;
 /// a larger project must not force every form
 /// into memory before a caller can decide it only wants a bounded sample. <see cref="ExtractForms"/> yields
-/// lazily from <c>IWfiWordformRepository.AllInstances()</c>, and <see cref="Extract"/> applies an optional
-/// cap before anything is sorted or hashed.
+/// lazily from <c>IWfiWordformRepository.AllInstances()</c>, and <see cref="ExtractSelection"/> applies an
+/// optional cap before anything is sorted or hashed.
 /// </para>
 /// </remarks>
 public static class LcmWordformCorpus
 {
     /// <summary>
     /// Every non-empty surface form in <paramref name="cache"/>'s default vernacular writing system, in
-    /// whatever order the repository happens to enumerate them — <see cref="CorpusDescriptor.Create"/> is
+    /// whatever order the repository happens to enumerate them — <see cref="Selection.Create"/> is
     /// what imposes a deterministic order, deliberately not this method.
     /// </summary>
     public static IEnumerable<string> ExtractForms(LcmCache cache)
@@ -43,10 +43,10 @@ public static class LcmWordformCorpus
     }
 
     /// <summary>
-    /// Builds a <see cref="CorpusDescriptor"/> from <paramref name="cache"/>'s wordforms.
+    /// Builds a <see cref="Selection"/> from <paramref name="cache"/>'s wordforms.
     /// </summary>
-    /// <param name="corpusId">
-    /// The label the resulting descriptor carries — see <see cref="CorpusDescriptor.CorpusId"/>. Not
+    /// <param name="name">
+    /// The label the resulting selection carries — see <see cref="Selection.Name"/>. Not
     /// derived from the cache automatically; a caller extracting a capped sample should say so here (for
     /// example <c>"my-project (first 1000)"</c>) rather than let the label imply the whole project.
     /// </param>
@@ -54,10 +54,10 @@ public static class LcmWordformCorpus
     /// Caps how many forms are pulled from the live enumeration before sorting and hashing. Omit for the
     /// whole corpus; pass a small number for a quick check against a large project.
     /// </param>
-    public static CorpusDescriptor Extract(LcmCache cache, string corpusId, int? limit = null)
+    public static Selection ExtractSelection(LcmCache cache, string name, int? limit = null)
     {
         var forms = ExtractForms(cache);
         if (limit is int max) forms = forms.Take(max);
-        return CorpusDescriptor.Create(corpusId, forms);
+        return Selection.Create(name, forms);
     }
 }

@@ -275,7 +275,7 @@ public class CorpusIngestionTests : IDisposable
 
         var text = Store().Load("c")!.Documents[0].Text;
 
-        // CorpusDescriptor sorts/dedupes and is right to; a Document must not — "mbali" three times is the data.
+        // Selection sorts/dedupes and is right to; a Document must not — "mbali" three times is the data.
         Assert.Equal("mbali mbali nyumba\nmbali\n", text);
         Assert.Equal(3, text.Split(new[] { ' ', '\n' }, StringSplitOptions.RemoveEmptyEntries)
             .Count(w => w == "mbali"));

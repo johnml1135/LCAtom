@@ -146,7 +146,7 @@ internal sealed class TrialJobHandler
 
         DryRunModel? dryRun = null;
         AssessmentScope? scope = null;
-        CorpusDescriptor? corpus = null;
+        Selection? selection = null;
         string? exportedDirectory = null;
         var scratchRoot = AllocateScratchRoot();
         Exception? laneFailure = null;
@@ -169,7 +169,7 @@ internal sealed class TrialJobHandler
                     var words = cache is null
                         ? Array.Empty<string>()
                         : WordQueryResolver.Resolve(scopeConfiguration.Query, cache).ToArray();
-                    corpus = CorpusDescriptor.Create(scopeConfiguration.Name, words);
+                    selection = Selection.Create(scopeConfiguration.Name, words);
                     scope = new AssessmentScope(words, scopeConfiguration.Engine,
                         ParseCollect(scopeConfiguration.Collect), scopeConfiguration.PerWordLimit);
                     exportedDirectory = await _prepareForAssessment(cache, laneToken).ConfigureAwait(false);
@@ -206,7 +206,7 @@ internal sealed class TrialJobHandler
         {
             var produced = await assessor.ProduceAsync(scope!, exportedDirectory!, cancellationToken)
                 .ConfigureAwait(false);
-            var assessmentIds = RecordAll(produced, proposal, dryRun!, corpus!, scope!, scopeConfiguration,
+            var assessmentIds = RecordAll(produced, proposal, dryRun!, selection!, scope!, scopeConfiguration,
                 assessor.Name, baseline.Token);
             var completionJson = JsonSerializer.Serialize(
                 new TrialCompletion(baseline.Token, assessmentIds), MotifJson.CreateOptions());
@@ -228,7 +228,7 @@ internal sealed class TrialJobHandler
     }
 
     private IReadOnlyList<string> RecordAll(IReadOnlyList<ProducedAssessment> produced, Contract.Model.Proposal proposal,
-        DryRunModel dryRun, CorpusDescriptor corpus, AssessmentScope scope,
+        DryRunModel dryRun, Selection selection, AssessmentScope scope,
         AssessmentScopeConfiguration scopeConfiguration, string assessorName, BaselineToken baselineToken)
     {
         // The query is what the scope was told to do; the words are only what it resolved to on this run.
@@ -240,6 +240,7 @@ internal sealed class TrialJobHandler
         var ids = new List<string>();
         foreach (var item in produced)
         {
+            var material = MaterialFor(item.Raw);
             var assessmentId = CanonicalId.Mint("assessment/").Value;
             _assessments.Record(new NewAssessmentRecord(
                 AssessmentId: assessmentId,
@@ -252,38 +253,30 @@ internal sealed class TrialJobHandler
                 TokeniserName: "none",
                 TokeniserVersion: "1",
                 BaselineToken: baselineTokenJson,
-                Corpus: corpus,
+                Selection: selection,
                 OutcomeDigest: item.OutcomeDigest,
                 SemanticDigest: item.SemanticDigest,
                 GrammarSourceSha256: item.GrammarSourceSha256,
                 ModelFingerprint: item.ModelFingerprint,
                 Pipeline: item.Pipeline,
                 DiagnosticCount: item.DiagnosticCount,
-                Words: WordsFor(item.Raw)));
+                Words: material.Words,
+                CachePath: material.CachePath,
+                CacheDigest: material.CacheDigest));
             ids.Add(assessmentId);
         }
         return ids;
     }
 
-    private static IReadOnlyList<AssessedWord> WordsFor(AssessmentRaw raw) => raw switch
+    /// <summary>Reduces one kind's raw shape to word rows, or a cache path and digest.</summary>
+    private static (IReadOnlyList<AssessedWord> Words, string? CachePath, string? CacheDigest) MaterialFor(AssessmentRaw raw) => raw switch
     {
-        AssessmentRaw.WordMeasurements measurements => measurements.Words,
-        AssessmentRaw.Batch batch => batch.Analysis.Words
-            .Select(word => new AssessedWord(word.Word, WordOutcomeWire(word.Outcome), Array.Empty<ParsedAnalysis>()))
-            .ToArray(),
-        AssessmentRaw.FileCache => throw new NotSupportedException(
-            "An ObjectTiming Assessment carries a stats-cache file, not per-word rows, and the Assessments " +
-            "schema has no column for a cache path or digest yet; a Trial does not request this kind."),
+        AssessmentRaw.WordMeasurements measurements => (measurements.Words, null, null),
+        AssessmentRaw.Batch batch => (batch.Analysis.Words
+            .Select(word => new AssessedWord(word.Word, word.Outcome.ToStoredOutcome(), Array.Empty<ParsedAnalysis>()))
+            .ToArray(), null, null),
+        AssessmentRaw.FileCache fileCache => (Array.Empty<AssessedWord>(), fileCache.Path, fileCache.Digest),
         _ => throw new ArgumentOutOfRangeException(nameof(raw)),
-    };
-
-    private static string WordOutcomeWire(WordOutcome outcome) => outcome switch
-    {
-        WordOutcome.Analysed => "analysed",
-        WordOutcome.NoAnalysis => "no-analysis",
-        WordOutcome.TimedOut => "timed-out",
-        WordOutcome.Skipped => "skipped",
-        _ => throw new ArgumentOutOfRangeException(nameof(outcome)),
     };
 
     private static AssessmentScopeConfiguration ResolveScope(ProjectConfiguration configuration, string? requestedName)

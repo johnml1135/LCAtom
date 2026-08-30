@@ -23,6 +23,39 @@ public enum WordOutcome
     Skipped,
 }
 
+/// <summary>
+/// The one place a <see cref="WordOutcome"/> and an <see cref="Assess.AssessedWord"/>'s stored <c>Outcome</c>
+/// string ever change into each other, the same discipline <see cref="Assess.AssessmentKindNames"/> applies
+/// to <see cref="Assess.AssessmentKind"/>. A writer cites <see cref="ToStoredOutcome"/> and a reader cites
+/// <see cref="TryParseStoredOutcome"/>, so the two vocabularies can never drift the way two independently
+/// hand-written switches could.
+/// </summary>
+public static class StoredWordOutcomeNames
+{
+    /// <summary>The spelling this outcome is written under in a stored <c>Outcome</c> value.</summary>
+    public static string ToStoredOutcome(this WordOutcome outcome) => outcome switch
+    {
+        WordOutcome.Analysed => "analysed",
+        WordOutcome.NoAnalysis => "no-analysis",
+        WordOutcome.TimedOut => "timed-out",
+        WordOutcome.Skipped => "skipped",
+        _ => throw new ArgumentOutOfRangeException(nameof(outcome)),
+    };
+
+    /// <summary>Reads a stored <c>Outcome</c> value back, or reports it unrecognised rather than guessing.</summary>
+    public static bool TryParseStoredOutcome(this string stored, out WordOutcome outcome)
+    {
+        switch (stored)
+        {
+            case "analysed": outcome = WordOutcome.Analysed; return true;
+            case "no-analysis": outcome = WordOutcome.NoAnalysis; return true;
+            case "timed-out": outcome = WordOutcome.TimedOut; return true;
+            case "skipped": outcome = WordOutcome.Skipped; return true;
+            default: outcome = default; return false;
+        }
+    }
+}
+
 /// <summary>One row of a batch run.</summary>
 public sealed record WordAnalysis(int Index, string Word, int ElapsedMs, WordOutcome Outcome, string Signature);
 

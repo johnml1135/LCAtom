@@ -93,14 +93,14 @@ public sealed class ReportProjectionIntegrationTests
                 "model",
                 "pipeline",
                 0),
-            CorpusDescriptor.Create("corpus-one", Array.Empty<string>()));
+            Selection.Create("corpus-one", Array.Empty<string>()));
         var assessmentId = new SqliteAssessmentStore(AssessmentDatabasePath()).Save(assessment);
         var usage = new UsageLog();
 
         var text = Commands.Analyses(
             _fwDataPath,
             assessmentId,
-            assessment.Corpus.Sha256,
+            assessment.Selection.Sha256,
             assessment.Report.GrammarSourceSha256,
             usage);
         var json = Commands.AnalysesJson(
@@ -128,7 +128,7 @@ public sealed class ReportProjectionIntegrationTests
         var usageText = string.Join(" ", usage.Entries.SelectMany(entry => entry.ArgumentShape));
         Assert.DoesNotContain(_fwDataPath, usageText, StringComparison.Ordinal);
         Assert.DoesNotContain(assessmentId, usageText, StringComparison.Ordinal);
-        Assert.DoesNotContain(assessment.Corpus.Sha256, usageText, StringComparison.Ordinal);
+        Assert.DoesNotContain(assessment.Selection.Sha256, usageText, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -192,7 +192,7 @@ public sealed class ReportProjectionIntegrationTests
                 "model",
                 "pipeline",
                 0),
-            CorpusDescriptor.Create(
+            Selection.Create(
                 "real-join",
                 new[] { "zzAssessmentParsed", "zzAssessmentEmpty" }));
         var assessmentId = new SqliteAssessmentStore(AssessmentDatabasePath()).Save(assessment);
@@ -200,7 +200,7 @@ public sealed class ReportProjectionIntegrationTests
         var result = Commands.AnalysesJson(
             _fwDataPath,
             assessmentId,
-            assessment.Corpus.Sha256,
+            assessment.Selection.Sha256,
             assessment.Report.GrammarSourceSha256);
 
         Assert.Equal(0, result.ExitCode);

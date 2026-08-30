@@ -86,7 +86,7 @@ public sealed class RegressionCheckerTests
     private static CorrectnessAssessment Build(
         string assessmentId, string assessor, (string Word, bool Analysed)[] words)
     {
-        var corpus = CorpusDescriptor.Create("test", words.Select(w => w.Word));
+        var corpus = Selection.Create("test", words.Select(w => w.Word));
         var assessedWords = words
             .Select(w => new AssessedWord(
                 w.Word, w.Analysed ? "analysed" : "no-analysis",

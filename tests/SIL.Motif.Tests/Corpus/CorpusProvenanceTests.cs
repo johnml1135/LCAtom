@@ -31,7 +31,7 @@ public class CorpusProvenanceTests
     public void AnUncuratedCorpusCarriesItsOrigin_ButCannotSupportAccuracy()
     {
         var provenance = new CorpusProvenance(Wikipedia(), Tokenisation());
-        var corpus = CorpusDescriptor.Create("tst-wikipedia", new[] { "mbali", "ya" }, provenance);
+        var corpus = Selection.Create("tst-wikipedia", new[] { "mbali", "ya" }, provenance);
 
         Assert.False(corpus.SupportsAccuracyClaims);
 
@@ -90,8 +90,8 @@ public class CorpusProvenanceTests
     {
         // Attesting changes what may be claimed, not which words they are; moving the hash would break every figure.
         var words = new[] { "mbali", "ya", "miseru" };
-        var bare = CorpusDescriptor.Create("tst", words);
-        var attested = CorpusDescriptor.Create("tst", words,
+        var bare = Selection.Create("tst", words);
+        var attested = Selection.Create("tst", words,
             new CorpusProvenance(Wikipedia(), Tokenisation(),
                 new CorpusQualification(true, true, "A. Linguist", DateTimeOffset.UtcNow, "checked")));
 

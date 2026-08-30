@@ -178,7 +178,7 @@ public sealed class ApplyPromotionGatingAndSweepTests
     private string RecordAssessment(
         string? proposalId, string? intentDigest, string kind, params (string Word, bool Analysed)[] words)
     {
-        var corpus = CorpusDescriptor.Create("test", words.Select(w => w.Word));
+        var corpus = Selection.Create("test", words.Select(w => w.Word));
         var assessmentId = CanonicalId.Mint("assessment/").Value;
         var assessedWords = words
             .Select(w => new AssessedWord(
@@ -200,7 +200,7 @@ public sealed class ApplyPromotionGatingAndSweepTests
             TokeniserName: "none",
             TokeniserVersion: "1",
             BaselineToken: "{}",
-            Corpus: corpus,
+            Selection: corpus,
             OutcomeDigest: "sha256:" + new string('b', 64),
             SemanticDigest: "sha256:" + new string('c', 64),
             GrammarSourceSha256: GrammarSha,

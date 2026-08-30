@@ -10,9 +10,9 @@ public sealed record ReportableAssessment(
     string Assessor,
     string Kind,
     string ScopeJson,
-    string CorpusId,
-    IReadOnlyList<string> CorpusWords,
-    string CorpusSha256,
+    string SelectionName,
+    IReadOnlyList<string> SelectionWords,
+    string SelectionSha256,
     string GrammarSourceSha256,
     IReadOnlyList<Parser.AssessedWord> Words);
 

@@ -3,16 +3,16 @@ using SIL.Motif.Host.Corpus;
 namespace SIL.Motif.Host.Parser;
 
 /// <summary>
-/// A coverage figure, computed from one <see cref="BatchAnalysis"/> over one <see cref="CorpusDescriptor"/>,
+/// A coverage figure, computed from one <see cref="BatchAnalysis"/> over one <see cref="Selection"/>,
 /// carrying everything ADR 0032 §4 requires a
 /// coverage number to cite. There is deliberately no path in this codebase that produces a bare coverage
 /// percentage — that omission is the defect this type exists to make impossible rather than merely
 /// discouraged.
 /// </summary>
-/// <param name="CorpusId">Which corpus this was measured over. See <see cref="CorpusDescriptor.CorpusId"/>.</param>
-/// <param name="CorpusSha256">
-/// The corpus's content hash at measurement time. A figure whose corpus no longer hashes to this value
-/// describes a corpus that has since changed and must not be trusted as still describing it.
+/// <param name="SelectionName">Which selection this was measured over. See <see cref="Selection.Name"/>.</param>
+/// <param name="SelectionSha256">
+/// The selection's content hash at measurement time. A figure whose selection no longer hashes to this value
+/// describes a selection that has since changed and must not be trusted as still describing it.
 /// </param>
 /// <param name="GrammarSourceSha256">
 /// The grammar's identity. Always taken from an <see cref="AssessReport"/>'s own field — this type never
@@ -36,8 +36,8 @@ namespace SIL.Motif.Host.Parser;
 /// figure move for reasons that have nothing to do with the grammar.
 /// </param>
 public sealed record GrammarCoverageFigure(
-    string CorpusId,
-    string CorpusSha256,
+    string SelectionName,
+    string SelectionSha256,
     string GrammarSourceSha256,
     ParserEngine Engine,
     int? PerWordTimeoutMs,
@@ -65,7 +65,7 @@ public sealed record GrammarCoverageFigure(
     /// Whether this figure still describes the current world.
     /// </summary>
     public bool IsCurrent(string currentCorpusSha256, string currentGrammarSourceSha256) =>
-        string.Equals(CorpusSha256, currentCorpusSha256, StringComparison.Ordinal)
+        string.Equals(SelectionSha256, currentCorpusSha256, StringComparison.Ordinal)
         && string.Equals(GrammarSourceSha256, currentGrammarSourceSha256, StringComparison.Ordinal);
 
     /// <summary>
@@ -93,7 +93,7 @@ public sealed record GrammarCoverageFigure(
     /// </remarks>
     public string Describe(string currentCorpusSha256, string currentGrammarSourceSha256)
     {
-        var subject = $"corpus '{CorpusId}' ({Short(CorpusSha256)}) under grammar {Short(GrammarSourceSha256)}";
+        var subject = $"corpus '{SelectionName}' ({Short(SelectionSha256)}) under grammar {Short(GrammarSourceSha256)}";
         var current = IsCurrent(currentCorpusSha256, currentGrammarSourceSha256);
 
         // The tense is chosen once, here, and threaded through — not patched into finished prose afterwards.
@@ -116,7 +116,7 @@ public sealed record GrammarCoverageFigure(
         if (current) return $"For {subject}, {measure}.";
 
         var moved = new List<string>();
-        if (!string.Equals(CorpusSha256, currentCorpusSha256, StringComparison.Ordinal))
+        if (!string.Equals(SelectionSha256, currentCorpusSha256, StringComparison.Ordinal))
             moved.Add($"the corpus has changed (now {Short(currentCorpusSha256)})");
         if (!string.Equals(GrammarSourceSha256, currentGrammarSourceSha256, StringComparison.Ordinal))
             moved.Add($"the grammar has changed (now {Short(currentGrammarSourceSha256)})");
@@ -154,7 +154,7 @@ public sealed record GrammarCoverageFigure(
     /// over with whichever count happens to be smaller.
     /// </para>
     /// </remarks>
-    public static GrammarCoverageFigure Compute(BatchAnalysis analysis, CorpusDescriptor corpus, string grammarSourceSha256)
+    public static GrammarCoverageFigure Compute(BatchAnalysis analysis, Selection corpus, string grammarSourceSha256)
     {
         if (analysis is null) throw new ArgumentNullException(nameof(analysis));
         if (corpus is null) throw new ArgumentNullException(nameof(corpus));
@@ -165,15 +165,15 @@ public sealed record GrammarCoverageFigure(
         var corpusWords = new HashSet<string>(corpus.Words, StringComparer.Ordinal);
         if (!analysedWords.SetEquals(corpusWords))
             throw new ArgumentException(
-                $"The batch analysed {analysedWords.Count} distinct word(s) but corpus '{corpus.CorpusId}' " +
+                $"The batch analysed {analysedWords.Count} distinct word(s) but corpus '{corpus.Name}' " +
                 $"describes {corpusWords.Count}. A coverage figure must be measured over exactly the corpus " +
                 "it cites; passing a mismatched pair would make the provenance this type exists to carry " +
                 "false.",
                 nameof(analysis));
 
         return new GrammarCoverageFigure(
-            CorpusId: corpus.CorpusId,
-            CorpusSha256: corpus.Sha256,
+            SelectionName: corpus.Name,
+            SelectionSha256: corpus.Sha256,
             GrammarSourceSha256: grammarSourceSha256,
             Engine: analysis.Engine,
             PerWordTimeoutMs: analysis.PerWordTimeoutMs,
@@ -186,7 +186,7 @@ public sealed record GrammarCoverageFigure(
     /// Convenience overload taking the whole <see cref="AssessReport"/> the grammar hash came free with,
     /// rather than making every caller spell out <c>report.GrammarSourceSha256</c>.
     /// </summary>
-    public static GrammarCoverageFigure Compute(BatchAnalysis analysis, CorpusDescriptor corpus, AssessReport grammarSource)
+    public static GrammarCoverageFigure Compute(BatchAnalysis analysis, Selection corpus, AssessReport grammarSource)
     {
         if (grammarSource is null) throw new ArgumentNullException(nameof(grammarSource));
         return Compute(analysis, corpus, grammarSource.GrammarSourceSha256);

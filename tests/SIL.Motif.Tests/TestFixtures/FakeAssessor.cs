@@ -12,11 +12,14 @@ internal sealed class FakeAssessor : IAssessor
     private const string FakeGrammarSha256 = "sha256:" + "ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff";
 
     private readonly IReadOnlyList<AssessmentKind> _declaredKinds;
+    private readonly Func<AssessmentKind, AssessmentRaw>? _rawFor;
 
-    public FakeAssessor(string name, IReadOnlyList<AssessmentKind> declaredKinds)
+    public FakeAssessor(
+        string name, IReadOnlyList<AssessmentKind> declaredKinds, Func<AssessmentKind, AssessmentRaw>? rawFor = null)
     {
         Name = name;
         _declaredKinds = declaredKinds;
+        _rawFor = rawFor;
     }
 
     public string Name { get; }
@@ -36,7 +39,7 @@ internal sealed class FakeAssessor : IAssessor
         IReadOnlyList<ProducedAssessment> produced = wanted
             .Select(kind => new ProducedAssessment(kind, FakeGrammarSha256, "sha256:" + new string('0', 64),
                 "sha256:" + new string('0', 64), "fake-model", "fake-pipeline", 0,
-                new AssessmentRaw.WordMeasurements([])))
+                _rawFor?.Invoke(kind) ?? new AssessmentRaw.WordMeasurements([])))
             .ToList();
         return Task.FromResult(produced);
     }

@@ -22,9 +22,6 @@ namespace SIL.Motif.Cli;
 /// </summary>
 public static class CompareCommands
 {
-    // A Difference is Motif's own join over two already-stored Assessments, never a fresh measurement.
-    private static readonly AssessorCatalog NoAssessorsRegistered = new(Array.Empty<IAssessor>());
-
     /// <summary>
     /// Loads the two named Assessments, joins them on the word, stores the result as a new Assessment of the
     /// <c>Difference</c> kind, and prints it.
@@ -74,7 +71,7 @@ public static class CompareCommands
                     change.Word, $"{change.Kind}:{change.FromOutcome}->{change.ToOutcome}",
                     Array.Empty<ParsedAnalysis>()))
                 .ToArray();
-            var corpus = CorpusDescriptor.Create(
+            var corpus = Selection.Create(
                 $"difference:{fromAssessmentId}..{toAssessmentId}", comparison.SharedWords);
             var (tokeniserName, tokeniserVersion) = comparison.TokeniserMismatch
                 ? ("mixed", "mixed")
@@ -91,7 +88,7 @@ public static class CompareCommands
                 TokeniserName: tokeniserName,
                 TokeniserVersion: tokeniserVersion,
                 BaselineToken: "{\"from\":" + from.BaselineToken + ",\"to\":" + to.BaselineToken + "}",
-                Corpus: corpus,
+                Selection: corpus,
                 OutcomeDigest: Digest(scopeJson),
                 SemanticDigest: Digest(string.Join('\n', words.Select(w => w.Word + "|" + w.Outcome))),
                 GrammarSourceSha256: string.Empty,
@@ -103,7 +100,7 @@ public static class CompareCommands
             // Read back the row just recorded, so this can't disagree with a later report of the same row.
             var stored = repository.Get(assessmentId);
             var rendered = ReportCommands.Catalog.Resolve(DifferenceReportProducer.KindName)
-                .Produce(stored.ToReportable(), new ReportQuery(), NoAssessorsRegistered);
+                .Produce(stored.ToReportable(), new ReportQuery(), AssessorCatalog.Empty);
 
             var response = new CompareResponse(assessmentId, fromAssessmentId, toAssessmentId, from.Assessor,
                 comparison.FromWordCount, comparison.ToWordCount, comparison.SharedWords.Count,

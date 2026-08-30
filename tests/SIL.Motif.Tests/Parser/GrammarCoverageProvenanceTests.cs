@@ -18,7 +18,7 @@ public sealed class GrammarCoverageProvenanceTests
     [Fact]
     public void TheFigureCitesTheCorpusAndGrammarItWasComputedFrom()
     {
-        var corpus = CorpusDescriptor.Create("corpus/sample", ["motifa", "zzznotaword"]);
+        var corpus = Selection.Create("corpus/sample", ["motifa", "zzznotaword"]);
         var report = AssessReportParser.Parse(ReportJson);
         var batch = new BatchAnalysis(
             [new WordAnalysis(0, "motifa", 3, WordOutcome.Analysed, "sig-1"),
@@ -27,8 +27,8 @@ public sealed class GrammarCoverageProvenanceTests
 
         var figure = GrammarCoverageFigure.Compute(batch, corpus, report);
 
-        Assert.Equal(corpus.CorpusId, figure.CorpusId);
-        Assert.Equal(corpus.Sha256, figure.CorpusSha256);
+        Assert.Equal(corpus.Name, figure.SelectionName);
+        Assert.Equal(corpus.Sha256, figure.SelectionSha256);
         // The grammar identity comes from the parser's own hash rather than anything Motif computed.
         Assert.Equal(report.GrammarSourceSha256, figure.GrammarSourceSha256);
         Assert.Equal(ParserEngine.FstPrunedByHermitCrab, figure.Engine);
@@ -38,7 +38,7 @@ public sealed class GrammarCoverageProvenanceTests
     [Fact]
     public void EveryWordIsAccountedForAndTheFractionStaysWithinItsDenominator()
     {
-        var corpus = CorpusDescriptor.Create("corpus/sample", ["a", "b", "c"]);
+        var corpus = Selection.Create("corpus/sample", ["a", "b", "c"]);
         var batch = new BatchAnalysis(
             [new WordAnalysis(0, "a", 1, WordOutcome.Analysed, "s"),
              new WordAnalysis(1, "b", 1, WordOutcome.NoAnalysis, "s"),

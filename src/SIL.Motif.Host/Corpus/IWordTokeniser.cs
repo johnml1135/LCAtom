@@ -2,7 +2,7 @@ namespace SIL.Motif.Host.Corpus;
 
 /// <summary>
 /// Turns running text into word forms — the bridge <see cref="CorpusTokenisation"/> needs to turn a
-/// <see cref="StoredCorpus"/>'s Documents into a <see cref="CorpusDescriptor"/>.
+/// <see cref="StoredCorpus"/>'s Documents into a <see cref="Selection"/>.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -15,7 +15,7 @@ namespace SIL.Motif.Host.Corpus;
 /// <see cref="WhitespaceAndPunctuationTokeniser"/> is the BCL-only implementation available today.
 /// </para>
 /// <para>
-/// <b>Name and Version are load-bearing, not descriptive.</b> <see cref="CorpusTokenisation.ToDescriptor"/>
+/// <b>Name and Version are load-bearing, not descriptive.</b> <see cref="CorpusTokenisation.ToSelection"/>
 /// throws rather than tokenising a corpus with an implementation whose <see cref="Name"/> or
 /// <see cref="Version"/> disagrees with what the corpus's own <see cref="TokenisationRecord"/> declares
 /// (pinned by `DeclaredVsSuppliedTokeniserMismatchThrows_NamingBothTheDeclaredAndSuppliedValues`) — two
@@ -27,7 +27,7 @@ public interface IWordTokeniser
 {
     /// <summary>
     /// The tokeniser's name, matched against a corpus's declared <see cref="TokenisationRecord.Method"/> by
-    /// <see cref="CorpusTokenisation.ToDescriptor"/> before it will run.
+    /// <see cref="CorpusTokenisation.ToSelection"/> before it will run.
     /// </summary>
     string Name { get; }
 
@@ -48,7 +48,7 @@ public interface IWordTokeniser
 
     /// <summary>
     /// Splits <paramref name="text"/> into word forms, in order, with repetition. Must not deduplicate or
-    /// sort — that is what <see cref="CorpusDescriptor.Create"/> is for, and doing it here as well would
+    /// sort — that is what <see cref="Selection.Create"/> is for, and doing it here as well would
     /// destroy the frequency and sequence information a <see cref="CorpusDocument"/> exists to keep before
     /// <see cref="CorpusTokenisation"/> gets a chance to fold it in.
     /// </summary>

@@ -1,19 +1,19 @@
 namespace SIL.Motif.Host.Corpus;
 
 /// <summary>
-/// Turns a <see cref="StoredCorpus"/>'s Documents into the <see cref="CorpusDescriptor"/> that
+/// Turns a <see cref="StoredCorpus"/>'s Documents into the <see cref="Selection"/> that
 /// <see cref="Parser.GrammarCoverageFigure.Compute"/> consumes.
 /// </summary>
 /// <remarks>
 /// <para>
 /// <b>The asymmetry this preserves.</b> A <see cref="CorpusDocument"/> keeps its text in order, with
-/// repetition; a <see cref="CorpusDescriptor"/> is sorted and distinct. This type tokenises in order and
-/// hands the result to <see cref="CorpusDescriptor.Create"/>, which is the only place deduplication and
+/// repetition; a <see cref="Selection"/> is sorted and distinct. This type tokenises in order and
+/// hands the result to <see cref="Selection.Create"/>, which is the only place deduplication and
 /// sorting happen — never here, and never inside an <see cref="IWordTokeniser"/>.
 /// </para>
 /// <para>
-/// <b>Provenance flows through deliberately.</b> <see cref="CorpusDescriptor.Create"/> is called with
-/// <paramref name="corpus"/>'s own <see cref="CorpusProvenance"/>, so <see cref="CorpusDescriptor.SupportsAccuracyClaims"/>
+/// <b>Provenance flows through deliberately.</b> <see cref="Selection.Create"/> is called with
+/// <paramref name="corpus"/>'s own <see cref="CorpusProvenance"/>, so <see cref="Selection.SupportsAccuracyClaims"/>
 /// answers correctly on the far side of the bridge: a corpus nobody has attested clean and in scope must
 /// still be unable to support an accuracy figure once it has been tokenised. Building the bridge must not be
 /// a back door to that refusal.
@@ -24,7 +24,7 @@ public static class CorpusTokenisation
     /// <summary>
     /// Tokenises <paramref name="corpus"/>'s Documents — all of them, or the subset named by
     /// <paramref name="documentIds"/> — in the order they were added to the corpus, concatenates the word
-    /// forms, and folds them into a <see cref="CorpusDescriptor"/> carrying <paramref name="corpus"/>'s
+    /// forms, and folds them into a <see cref="Selection"/> carrying <paramref name="corpus"/>'s
     /// provenance.
     /// </summary>
     /// <param name="corpus">The corpus to tokenise.</param>
@@ -34,8 +34,8 @@ public static class CorpusTokenisation
     /// </param>
     /// <param name="documentIds">
     /// When supplied, only these Documents are tokenised, and the resulting
-    /// <see cref="CorpusDescriptor.CorpusId"/> says so rather than reading as if it covered the whole corpus
-    /// — the same discipline <see cref="LcmWordformCorpus.Extract"/>'s <c>corpusId</c> parameter documents
+    /// <see cref="Selection.Name"/> says so rather than reading as if it covered the whole corpus
+    /// — the same discipline <see cref="LcmWordformCorpus.ExtractSelection"/>'s <c>name</c> parameter documents
     /// for a capped sample. Omit, or pass <c>null</c>, to tokenise every Document.
     /// </param>
     /// <remarks>
@@ -53,7 +53,7 @@ public static class CorpusTokenisation
     /// <paramref name="tokeniser"/>'s name or version does not match what <paramref name="corpus"/> declared.
     /// </exception>
     /// <exception cref="ArgumentException"><paramref name="documentIds"/> names a document the corpus does not have.</exception>
-    public static CorpusDescriptor ToDescriptor(
+    public static Selection ToSelection(
         StoredCorpus corpus,
         IWordTokeniser tokeniser,
         IReadOnlyCollection<string>? documentIds = null)
@@ -67,7 +67,7 @@ public static class CorpusTokenisation
         var label = Label(corpus.CorpusId, corpus.Documents.Count, selected);
         var words = selected.SelectMany(document => tokeniser.Tokenise(document.Text));
 
-        return CorpusDescriptor.Create(label, words, corpus.Provenance);
+        return Selection.Create(label, words, corpus.Provenance);
     }
 
     private static void DemandDeclaredTokeniserMatches(StoredCorpus corpus, IWordTokeniser tokeniser)

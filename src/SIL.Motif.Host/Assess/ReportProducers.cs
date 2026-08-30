@@ -25,14 +25,10 @@ internal static class ScopeEngine
 internal static class StoredWordOutcome
 {
     /// <exception cref="ReportRefusalException"><paramref name="outcome"/> is not a recognised stored value.</exception>
-    public static WordOutcome Parse(string outcome, string reportKind) => outcome switch
-    {
-        "analysed" => WordOutcome.Analysed,
-        "no-analysis" => WordOutcome.NoAnalysis,
-        "timed-out" => WordOutcome.TimedOut,
-        "skipped" => WordOutcome.Skipped,
-        _ => throw new ReportRefusalException(reportKind, $"stored word outcome '{outcome}' is not recognised."),
-    };
+    public static WordOutcome Parse(string outcome, string reportKind) =>
+        outcome.TryParseStoredOutcome(out var parsed)
+            ? parsed
+            : throw new ReportRefusalException(reportKind, $"stored word outcome '{outcome}' is not recognised.");
 }
 
 /// <summary>
@@ -69,9 +65,9 @@ public sealed class CoverageReportProducer : IReportProducer
             index, word.Word, 0, StoredWordOutcome.Parse(word.Outcome, KindName), string.Empty)).ToList();
         var batch = new BatchAnalysis(
             words, engine, (int)scope.PerWordLimit.TotalMilliseconds, string.Empty, Array.Empty<string>());
-        var corpus = new CorpusDescriptor(assessment.CorpusId, assessment.CorpusWords, assessment.CorpusSha256);
+        var corpus = new Selection(assessment.SelectionName, assessment.SelectionWords, assessment.SelectionSha256);
         var figure = GrammarCoverageFigure.Compute(batch, corpus, assessment.GrammarSourceSha256);
-        return new RenderedReport(KindName, figure.Describe(assessment.CorpusSha256, assessment.GrammarSourceSha256));
+        return new RenderedReport(KindName, figure.Describe(assessment.SelectionSha256, assessment.GrammarSourceSha256));
     }
 }
 
@@ -86,7 +82,7 @@ internal static class CorrectnessCoverage
 {
     /// <exception cref="ReportRefusalException">The scope's engine name cannot be read.</exception>
     public static GrammarCoverageFigure Compute(
-        IReadOnlyList<AssessedWord> words, StoredScope.Trial scope, CorpusDescriptor corpus,
+        IReadOnlyList<AssessedWord> words, StoredScope.Trial scope, Selection corpus,
         string grammarSourceSha256, string reportKind)
     {
         var engine = ScopeEngine.Resolve(scope.Engine, reportKind);
@@ -135,12 +131,12 @@ public sealed class CorrectnessReportProducer : IReportProducer
                 "not collect.");
         }
 
-        var corpus = new CorpusDescriptor(assessment.CorpusId, assessment.CorpusWords, assessment.CorpusSha256);
+        var corpus = new Selection(assessment.SelectionName, assessment.SelectionWords, assessment.SelectionSha256);
         var scope = ScopeCodec.ReadTrial(assessment.ScopeJson, KindName);
         var figure = CorrectnessCoverage.Compute(
             assessment.Words, scope, corpus, assessment.GrammarSourceSha256, KindName);
         var text = "Correctness against manual analysis — " +
-            figure.Describe(assessment.CorpusSha256, assessment.GrammarSourceSha256);
+            figure.Describe(assessment.SelectionSha256, assessment.GrammarSourceSha256);
         return new RenderedReport(KindName, text);
     }
 }

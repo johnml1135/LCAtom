@@ -5,7 +5,7 @@ namespace SIL.Motif.Host.Analysis;
 /// the naming <c>GrammarCoverageFigure</c> requires of every figure it renders, carried here instead so
 /// this response can honour the same rule (ADR 0038 decision 8).
 /// </summary>
-public sealed record AnalysisAssessmentProvenance(string CorpusId, string CorpusSha256, string GrammarSourceSha256);
+public sealed record AnalysisAssessmentProvenance(string SelectionName, string SelectionSha256, string GrammarSourceSha256);
 
 /// <summary>
 /// The whole answer, for a set of word forms: what has a human approved and what did the parser say, as
@@ -68,7 +68,7 @@ public sealed record AnalysisAggregateResponse
     /// </summary>
     public bool IsCurrent(string currentCorpusSha256, string currentGrammarSourceSha256) =>
         Assessment is not null
-        && string.Equals(Assessment.CorpusSha256, currentCorpusSha256, StringComparison.Ordinal)
+        && string.Equals(Assessment.SelectionSha256, currentCorpusSha256, StringComparison.Ordinal)
         && string.Equals(Assessment.GrammarSourceSha256, currentGrammarSourceSha256, StringComparison.Ordinal);
 
     /// <summary>
@@ -95,7 +95,7 @@ public sealed record AnalysisAggregateResponse
                    "step, not part of reading this aggregate.";
         }
 
-        var subject = $"corpus '{Assessment.CorpusId}' ({Short(Assessment.CorpusSha256)}) " +
+        var subject = $"corpus '{Assessment.SelectionName}' ({Short(Assessment.SelectionSha256)}) " +
                       $"under grammar {Short(Assessment.GrammarSourceSha256)}";
 
         if (IsCurrent(currentCorpusSha256, currentGrammarSourceSha256))
@@ -105,7 +105,7 @@ public sealed record AnalysisAggregateResponse
         }
 
         var moved = new List<string>();
-        if (!string.Equals(Assessment.CorpusSha256, currentCorpusSha256, StringComparison.Ordinal))
+        if (!string.Equals(Assessment.SelectionSha256, currentCorpusSha256, StringComparison.Ordinal))
             moved.Add($"the corpus has changed (now {Short(currentCorpusSha256)})");
         if (!string.Equals(Assessment.GrammarSourceSha256, currentGrammarSourceSha256, StringComparison.Ordinal))
             moved.Add($"the grammar has changed (now {Short(currentGrammarSourceSha256)})");

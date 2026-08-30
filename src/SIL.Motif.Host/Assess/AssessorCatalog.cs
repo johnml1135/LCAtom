@@ -17,6 +17,13 @@ public interface IAssessorCatalog
 /// </remarks>
 public sealed class AssessorCatalog : IAssessorCatalog
 {
+    /// <summary>
+    /// A catalog with no Assessor registered, for a caller whose every kind renders from an Assessment's own
+    /// stored rows and never resolves one — <c>report</c> and <c>compare</c> both cite this rather than each
+    /// constructing an empty catalog of their own.
+    /// </summary>
+    public static readonly AssessorCatalog Empty = new(Array.Empty<IAssessor>());
+
     private readonly IReadOnlyDictionary<string, IAssessor> _byName;
 
     public AssessorCatalog(IEnumerable<IAssessor> assessors)

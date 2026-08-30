@@ -11,7 +11,7 @@ namespace SIL.Motif.Host.Corpus;
 /// <remarks>
 /// <para>
 /// <b>A Document keeps its text as it arrived: in order, with its repetitions.</b> That is the difference
-/// between this and <see cref="CorpusDescriptor"/>, which sorts and deduplicates. Both are wanted, and only
+/// between this and <see cref="Selection"/>, which sorts and deduplicates. Both are wanted, and only
 /// this one can be turned into the other: frequency is what ranks an unparsed-form worklist, and sequence is
 /// what an n-gram model is built from. Deduplicating on the way in destroys both irrecoverably.
 /// </para>

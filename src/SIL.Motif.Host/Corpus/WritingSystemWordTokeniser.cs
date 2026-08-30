@@ -84,7 +84,7 @@ public sealed class WritingSystemWordTokeniser : IWordTokeniser
 
     /// <summary>
     /// Matched against a corpus's declared <see cref="TokenisationRecord.Method"/> by
-    /// <see cref="CorpusTokenisation.ToDescriptor"/>. A new name, not a replacement for
+    /// <see cref="CorpusTokenisation.ToSelection"/>. A new name, not a replacement for
     /// <see cref="WhitespaceAndPunctuationTokeniser.Name"/> — both must keep working, because a corpus
     /// declares whichever one it was actually tokenised with.
     /// </summary>

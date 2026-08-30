@@ -6,7 +6,7 @@ namespace SIL.Motif.Tests.Parser;
 
 /// <summary>
 /// Unit tests for assembling a <see cref="GrammarCoverageFigure"/> from a <see cref="BatchAnalysis"/> and a
-/// <see cref="CorpusDescriptor"/>. Built on synthetic rows rather than captured fixtures — the mapping from
+/// <see cref="Selection"/>. Built on synthetic rows rather than captured fixtures — the mapping from
 /// raw parser text to <see cref="WordAnalysis"/> is already covered by <see cref="ParserOutputTests"/>
 /// against real captured output; what is new and untested here is purely the arithmetic and provenance
 /// assembly on top of already-typed results.
@@ -30,7 +30,7 @@ public class GrammarCoverageFigureTests
             ("nkazi", WordOutcome.NoAnalysis),
             ("munthu", WordOutcome.TimedOut),
             ("anthu", WordOutcome.Skipped));
-        var corpus = CorpusDescriptor.Create("test-corpus", batch.Words.Select(w => w.Word));
+        var corpus = Selection.Create("test-corpus", batch.Words.Select(w => w.Word));
 
         var figure = GrammarCoverageFigure.Compute(batch, corpus, "sha256:" + new string('a', 64));
 
@@ -45,7 +45,7 @@ public class GrammarCoverageFigureTests
     public void Compute_MarksLowerBoundWhenAnyWordTimedOut()
     {
         var batch = Batch(("mbali", WordOutcome.Analysed), ("ya", WordOutcome.TimedOut));
-        var corpus = CorpusDescriptor.Create("test-corpus", new[] { "mbali", "ya" });
+        var corpus = Selection.Create("test-corpus", new[] { "mbali", "ya" });
 
         var figure = GrammarCoverageFigure.Compute(batch, corpus, "sha256:" + new string('a', 64));
 
@@ -56,7 +56,7 @@ public class GrammarCoverageFigureTests
     public void Compute_NotALowerBoundWhenNoWordTimedOut()
     {
         var batch = Batch(("mbali", WordOutcome.Analysed), ("ya", WordOutcome.NoAnalysis));
-        var corpus = CorpusDescriptor.Create("test-corpus", new[] { "mbali", "ya" });
+        var corpus = Selection.Create("test-corpus", new[] { "mbali", "ya" });
 
         var figure = GrammarCoverageFigure.Compute(batch, corpus, "sha256:" + new string('a', 64));
 
@@ -69,7 +69,7 @@ public class GrammarCoverageFigureTests
     {
         // Nothing was judged against the grammar (all timed out/skipped): no percentage — not 0%, not 100%.
         var batch = Batch(("mbali", WordOutcome.TimedOut), ("ya", WordOutcome.Skipped));
-        var corpus = CorpusDescriptor.Create("test-corpus", new[] { "mbali", "ya" });
+        var corpus = Selection.Create("test-corpus", new[] { "mbali", "ya" });
 
         var figure = GrammarCoverageFigure.Compute(batch, corpus, "sha256:" + new string('a', 64));
 
@@ -82,13 +82,13 @@ public class GrammarCoverageFigureTests
     public void Compute_CitesTheFullProvenanceSetAdr0032Requires()
     {
         var batch = Batch(("mbali", WordOutcome.Analysed));
-        var corpus = CorpusDescriptor.Create("test-corpus-3", new[] { "mbali" });
+        var corpus = Selection.Create("test-corpus-3", new[] { "mbali" });
         var grammarHash = "sha256:" + new string('b', 64);
 
         var figure = GrammarCoverageFigure.Compute(batch, corpus, grammarHash);
 
-        Assert.Equal(corpus.CorpusId, figure.CorpusId);
-        Assert.Equal(corpus.Sha256, figure.CorpusSha256);
+        Assert.Equal(corpus.Name, figure.SelectionName);
+        Assert.Equal(corpus.Sha256, figure.SelectionSha256);
         Assert.Equal(grammarHash, figure.GrammarSourceSha256);
         Assert.Equal(ParserEngine.FstPrunedByHermitCrab, figure.Engine);
         Assert.Equal(5000, figure.PerWordTimeoutMs);
@@ -99,7 +99,7 @@ public class GrammarCoverageFigureTests
     public void Compute_ThrowsWhenTheBatchsWordsDoNotMatchTheCorpus()
     {
         var batch = Batch(("mbali", WordOutcome.Analysed), ("ya", WordOutcome.Analysed));
-        var corpus = CorpusDescriptor.Create("test-corpus", new[] { "mbali", "somethingElse" });
+        var corpus = Selection.Create("test-corpus", new[] { "mbali", "somethingElse" });
 
         var ex = Assert.Throws<ArgumentException>(
             () => GrammarCoverageFigure.Compute(batch, corpus, "sha256:" + new string('a', 64)));
@@ -111,7 +111,7 @@ public class GrammarCoverageFigureTests
     public void Compute_TheAssessReportOverload_PullsTheGrammarHashFromTheReport()
     {
         var batch = Batch(("mbali", WordOutcome.Analysed));
-        var corpus = CorpusDescriptor.Create("test-corpus", new[] { "mbali" });
+        var corpus = Selection.Create("test-corpus", new[] { "mbali" });
         var report = new AssessReport(
             Words: Array.Empty<AssessedWord>(),
             OutcomeDigest: "irrelevant",

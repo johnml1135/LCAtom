@@ -209,12 +209,35 @@ public sealed class TrialJobHandlerTests : IDisposable
 
         Assert.Equal(JobStatus.Completed, completed.Status);
         var recorded = Assert.Single(_assessments.ListByProposal(proposalId));
-        Assert.Contains(AnalysedWordform, recorded.Corpus.Words);
-        Assert.DoesNotContain(UnanalysedWordform, recorded.Corpus.Words);
+        Assert.Contains(AnalysedWordform, recorded.Selection.Words);
+        Assert.DoesNotContain(UnanalysedWordform, recorded.Selection.Words);
 
         // The words are what this run resolved to; the query is what the scope was told, and both are kept.
         Assert.Contains("\"query\"", recorded.ScopeJson, StringComparison.Ordinal);
         Assert.Contains(AssessmentScopeConfiguration.DefaultQueryText, recorded.ScopeJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AnObjectTimingAssessmentRecordsTheCachePathAndDigestWithNoWordRows()
+    {
+        const string cachePath = @"C:\stats\pangloss-cache.db";
+        var cacheDigest = "sha256:" + new string('7', 64);
+        using var lanes = new ProjectLaneRegistry(_ => _token);
+        var handler = BuildHandler(lanes, new FakeAssessor("pangloss", [AssessmentKind.ObjectTiming],
+            _ => new AssessmentRaw.FileCache(cachePath, cacheDigest)));
+        var proposalId = CanonicalId.Mint("proposal/");
+        var proposalJson = BuildSetGlossProposalJson(proposalId, _seed.FirstSenseId, "object timing text");
+        SaveCommittedProposal(proposalId, proposalJson);
+
+        var job = CreateTrialJob(proposalJson);
+        var completed = RunAndFinish(handler, job.JobId);
+
+        Assert.Equal(JobStatus.Completed, completed.Status);
+        var header = Assert.Single(_assessments.ListByProposal(proposalId));
+        var full = _assessments.Get(header.AssessmentId);
+        Assert.Equal(cachePath, full.CachePath);
+        Assert.Equal(cacheDigest, full.CacheDigest);
+        Assert.Empty(full.Words!);
     }
 
     // One wordform carries a human-approved analysis; the other has none, and a resolved Selection excludes it.

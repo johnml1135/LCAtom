@@ -100,7 +100,7 @@ public static class AnalysisAggregateReader
         var provenance = assessment is null
             ? null
             : new AnalysisAssessmentProvenance(
-                assessment.Corpus.CorpusId, assessment.Corpus.Sha256, assessment.Report.GrammarSourceSha256);
+                assessment.Selection.Name, assessment.Selection.Sha256, assessment.Report.GrammarSourceSha256);
 
         var unanalysedReach = assessment is null
             ? null

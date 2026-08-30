@@ -22,10 +22,10 @@ public sealed class DifferenceReportProducerTests
     [Fact]
     public void RefusesAnAssessmentOfAnyOtherKind_NamingTheReason()
     {
-        var corpus = CorpusDescriptor.Create("test", new[] { "alpha" });
+        var corpus = Selection.Create("test", new[] { "alpha" });
         var assessment = new ReportableAssessment(
             "assessment/1", "pangloss", "ParseTime", ScopeJson,
-            corpus.CorpusId, corpus.Words, corpus.Sha256, string.Empty, Array.Empty<AssessedWord>());
+            corpus.Name, corpus.Words, corpus.Sha256, string.Empty, Array.Empty<AssessedWord>());
 
         var failure = Assert.Throws<ReportRefusalException>(
             () => new DifferenceReportProducer().Produce(assessment, new ReportQuery(), NoAssessorsRegistered));
@@ -38,14 +38,14 @@ public sealed class DifferenceReportProducerTests
     [Fact]
     public void RendersTheStoredChanges_AndTheCounts_FromScopeJsonAlone()
     {
-        var corpus = CorpusDescriptor.Create("difference:from..to", new[] { "alpha", "beta" });
+        var corpus = Selection.Create("difference:from..to", new[] { "alpha", "beta" });
         var words = new[]
         {
             new AssessedWord("alpha", "LostAnalysis:analysed->no-analysis", Array.Empty<ParsedAnalysis>()),
         };
         var assessment = new ReportableAssessment(
             "assessment/diff", "pangloss", "Difference", ScopeJson,
-            corpus.CorpusId, corpus.Words, corpus.Sha256, string.Empty, words);
+            corpus.Name, corpus.Words, corpus.Sha256, string.Empty, words);
 
         var rendered = new DifferenceReportProducer().Produce(assessment, new ReportQuery(), NoAssessorsRegistered);
 
@@ -60,7 +60,7 @@ public sealed class DifferenceReportProducerTests
     [Fact]
     public void ATokeniserMismatch_IsRenderedAsAWarning()
     {
-        var corpus = CorpusDescriptor.Create("difference:from..to", new[] { "alpha" });
+        var corpus = Selection.Create("difference:from..to", new[] { "alpha" });
         const string mismatchedScope = """
             {"fromAssessmentId":"assessment/from","toAssessmentId":"assessment/to","fromWordCount":1,
              "toWordCount":1,"sharedWordCount":1,"tokeniserMismatch":true,
@@ -68,7 +68,7 @@ public sealed class DifferenceReportProducerTests
             """;
         var assessment = new ReportableAssessment(
             "assessment/diff", "pangloss", "Difference", mismatchedScope,
-            corpus.CorpusId, corpus.Words, corpus.Sha256, string.Empty, Array.Empty<AssessedWord>());
+            corpus.Name, corpus.Words, corpus.Sha256, string.Empty, Array.Empty<AssessedWord>());
 
         var rendered = new DifferenceReportProducer().Produce(assessment, new ReportQuery(), NoAssessorsRegistered);
 

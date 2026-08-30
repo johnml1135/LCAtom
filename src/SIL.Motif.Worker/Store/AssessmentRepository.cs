@@ -78,7 +78,7 @@ public sealed record NewAssessmentRecord(
     string TokeniserName,
     string TokeniserVersion,
     string BaselineToken,
-    CorpusDescriptor Corpus,
+    Selection Selection,
     string OutcomeDigest,
     string SemanticDigest,
     string GrammarSourceSha256,
@@ -86,6 +86,8 @@ public sealed record NewAssessmentRecord(
     string Pipeline,
     int DiagnosticCount,
     IReadOnlyList<AssessedWord> Words,
+    string? CachePath = null,
+    string? CacheDigest = null,
     string? SavedUtc = null);
 
 /// <summary>
@@ -104,7 +106,7 @@ public sealed record AssessmentRecord(
     string TokeniserName,
     string TokeniserVersion,
     string BaselineToken,
-    CorpusDescriptor Corpus,
+    Selection Selection,
     string OutcomeDigest,
     string SemanticDigest,
     string GrammarSourceSha256,
@@ -112,6 +114,8 @@ public sealed record AssessmentRecord(
     string Pipeline,
     int DiagnosticCount,
     string SavedUtc,
+    string? CachePath = null,
+    string? CacheDigest = null,
     IReadOnlyList<AssessedWord>? Words = null);
 
 /// <summary>
@@ -125,7 +129,7 @@ public static class AssessmentRecordProjections
     /// <summary>The material a Report is computed from — see <see cref="ReportableAssessment"/>.</summary>
     public static ReportableAssessment ToReportable(this AssessmentRecord record) => new(
         record.AssessmentId, record.Assessor, record.Kind, record.ScopeJson,
-        record.Corpus.CorpusId, record.Corpus.Words, record.Corpus.Sha256, record.GrammarSourceSha256,
+        record.Selection.Name, record.Selection.Words, record.Selection.Sha256, record.GrammarSourceSha256,
         record.Words ?? Array.Empty<AssessedWord>());
 
     /// <summary>The fields a join between two Assessments needs — see <see cref="ComparableAssessment"/>.</summary>
@@ -137,7 +141,7 @@ public static class AssessmentRecordProjections
     public static CorrectnessAssessment ToCorrectness(this AssessmentRecord record) => new(
         record.AssessmentId, record.Assessor, record.TokeniserName, record.TokeniserVersion,
         ScopeCodec.ReadTrial(record.ScopeJson, RegressionChecker.RequiredKind),
-        record.Corpus, record.GrammarSourceSha256, record.Words ?? Array.Empty<AssessedWord>());
+        record.Selection, record.GrammarSourceSha256, record.Words ?? Array.Empty<AssessedWord>());
 }
 
 /// <summary>Reads and writes normalized Assessment tables and the project's current-Assessment pointer.</summary>
@@ -162,7 +166,7 @@ public sealed class AssessmentRepository : IAssessmentRepository
                 "Assessment id, Assessor, Kind, scope, tokeniser identity, and Baseline token are required.",
                 nameof(assessment));
         }
-        ArgumentNullException.ThrowIfNull(assessment.Corpus);
+        ArgumentNullException.ThrowIfNull(assessment.Selection);
         ArgumentNullException.ThrowIfNull(assessment.Words);
 
         using var connection = _database.OpenConnection();
@@ -291,22 +295,22 @@ public sealed class AssessmentRepository : IAssessmentRepository
         command.Transaction = transaction;
         command.CommandText = """
             INSERT INTO Assessments
-                (AssessmentId, CorpusId, CorpusWordsJson, CorpusSha256, CorpusProvenanceJson,
+                (AssessmentId, SelectionName, SelectionWordsJson, SelectionSha256, SelectionProvenanceJson,
                  OutcomeDigest, SemanticDigest, GrammarSourceSha256, ModelFingerprint, Pipeline,
                  DiagnosticCount, SavedUtc, ProposalId, ProposalIntentDigest, Assessor, Kind,
-                 ScopeJson, ScopeDigest, TokeniserName, TokeniserVersion, BaselineToken)
+                 ScopeJson, ScopeDigest, TokeniserName, TokeniserVersion, BaselineToken, CachePath, CacheDigest)
             VALUES
-                ($id, $corpusId, $corpusWords, $corpusSha, $corpusProvenance,
+                ($id, $selectionName, $selectionWords, $selectionSha, $selectionProvenance,
                  $outcomeDigest, $semanticDigest, $grammarSha, $modelFingerprint, $pipeline,
                  $diagnosticCount, $savedUtc, $proposalId, $proposalIntentDigest, $assessor, $kind,
-                 $scopeJson, $scopeDigest, $tokeniserName, $tokeniserVersion, $baselineToken);
+                 $scopeJson, $scopeDigest, $tokeniserName, $tokeniserVersion, $baselineToken, $cachePath, $cacheDigest);
             """;
         command.Parameters.AddWithValue("$id", assessment.AssessmentId);
-        command.Parameters.AddWithValue("$corpusId", assessment.Corpus.CorpusId);
-        command.Parameters.AddWithValue("$corpusWords", JsonSerializer.Serialize(assessment.Corpus.Words));
-        command.Parameters.AddWithValue("$corpusSha", assessment.Corpus.Sha256);
-        command.Parameters.AddWithValue("$corpusProvenance",
-            assessment.Corpus.Provenance is null ? DBNull.Value : JsonSerializer.Serialize(assessment.Corpus.Provenance));
+        command.Parameters.AddWithValue("$selectionName", assessment.Selection.Name);
+        command.Parameters.AddWithValue("$selectionWords", JsonSerializer.Serialize(assessment.Selection.Words));
+        command.Parameters.AddWithValue("$selectionSha", assessment.Selection.Sha256);
+        command.Parameters.AddWithValue("$selectionProvenance",
+            assessment.Selection.Provenance is null ? DBNull.Value : JsonSerializer.Serialize(assessment.Selection.Provenance));
         command.Parameters.AddWithValue("$outcomeDigest", assessment.OutcomeDigest);
         command.Parameters.AddWithValue("$semanticDigest", assessment.SemanticDigest);
         command.Parameters.AddWithValue("$grammarSha", assessment.GrammarSourceSha256);
@@ -324,6 +328,8 @@ public sealed class AssessmentRepository : IAssessmentRepository
         command.Parameters.AddWithValue("$tokeniserName", assessment.TokeniserName);
         command.Parameters.AddWithValue("$tokeniserVersion", assessment.TokeniserVersion);
         command.Parameters.AddWithValue("$baselineToken", assessment.BaselineToken);
+        command.Parameters.AddWithValue("$cachePath", (object?)assessment.CachePath ?? DBNull.Value);
+        command.Parameters.AddWithValue("$cacheDigest", (object?)assessment.CacheDigest ?? DBNull.Value);
         command.ExecuteNonQuery();
     }
 
@@ -385,9 +391,9 @@ public sealed class AssessmentRepository : IAssessmentRepository
 
     private const string HeaderSelectSql = """
         SELECT AssessmentId, ProposalId, ProposalIntentDigest, Assessor, Kind, ScopeJson, ScopeDigest,
-               TokeniserName, TokeniserVersion, BaselineToken, CorpusId, CorpusWordsJson, CorpusSha256,
-               CorpusProvenanceJson, OutcomeDigest, SemanticDigest, GrammarSourceSha256, ModelFingerprint,
-               Pipeline, DiagnosticCount, SavedUtc
+               TokeniserName, TokeniserVersion, BaselineToken, SelectionName, SelectionWordsJson, SelectionSha256,
+               SelectionProvenanceJson, OutcomeDigest, SemanticDigest, GrammarSourceSha256, ModelFingerprint,
+               Pipeline, DiagnosticCount, SavedUtc, CachePath, CacheDigest
         FROM Assessments
         """;
 
@@ -403,7 +409,7 @@ public sealed class AssessmentRepository : IAssessmentRepository
 
     private static AssessmentRecord ReadHeader(SqliteDataReader reader)
     {
-        var corpus = new CorpusDescriptor(
+        var selection = new Selection(
             reader.GetString(10),
             JsonSerializer.Deserialize<List<string>>(reader.GetString(11))!,
             reader.GetString(12),
@@ -419,14 +425,16 @@ public sealed class AssessmentRepository : IAssessmentRepository
             TokeniserName: reader.GetString(7),
             TokeniserVersion: reader.GetString(8),
             BaselineToken: reader.GetString(9),
-            Corpus: corpus,
+            Selection: selection,
             OutcomeDigest: reader.GetString(14),
             SemanticDigest: reader.GetString(15),
             GrammarSourceSha256: reader.GetString(16),
             ModelFingerprint: reader.GetString(17),
             Pipeline: reader.GetString(18),
             DiagnosticCount: reader.GetInt32(19),
-            SavedUtc: reader.GetString(20));
+            SavedUtc: reader.GetString(20),
+            CachePath: reader.IsDBNull(21) ? null : reader.GetString(21),
+            CacheDigest: reader.IsDBNull(22) ? null : reader.GetString(22));
     }
 
     // One streaming pass over a word/analysis join, grouped by word — no N+1 querying.

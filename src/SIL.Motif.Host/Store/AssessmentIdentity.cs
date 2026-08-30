@@ -6,10 +6,10 @@ namespace SIL.Motif.Host.Store;
 
 /// <summary>Derives a stable id for a <see cref="StoredAssessment"/> from what it says, not from a caller's name.</summary>
 /// <remarks>
-/// Combines the corpus it was measured over (<see cref="Corpus.CorpusDescriptor.Sha256"/>), the grammar that
+/// Combines the selection it was measured over (<see cref="Corpus.Selection.Sha256"/>), the grammar that
 /// produced it, and the parser's own digest of the outcome — the same newline-joined, <c>sha256:</c>-prefixed
-/// convention <see cref="Corpus.CorpusDescriptor"/> uses, for the same reason: two extractions of the same
-/// content must hash identically. Re-saving the same parser run against the same corpus and grammar therefore
+/// convention <see cref="Corpus.Selection"/> uses, for the same reason: two extractions of the same
+/// content must hash identically. Re-saving the same parser run against the same selection and grammar therefore
 /// lands on the same id rather than accumulating a duplicate row.
 /// </remarks>
 public static class AssessmentIdentity
@@ -18,7 +18,7 @@ public static class AssessmentIdentity
     {
         var joined = string.Join(
             "\n",
-            assessment.Corpus.Sha256,
+            assessment.Selection.Sha256,
             assessment.Report.GrammarSourceSha256,
             assessment.Report.OutcomeDigest);
 

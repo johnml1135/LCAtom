@@ -11,7 +11,7 @@ namespace SIL.Motif.Tests.Analysis;
 /// The one place these types touch a real <c>LcmCache</c>: <see cref="AnalysisAggregateReader"/> itself.
 /// Everything else in this folder — <see cref="AnalysisContentTests"/>, <see cref="AnalysisAggregateDiffTests"/>,
 /// <see cref="AnalysisAggregateResponseTests"/>, <see cref="WordFormAnalysisAggregateTests"/> — is pure and
-/// needs no project, following <c>CorpusDescriptorTests</c>' house pattern. This class exists only to prove
+/// needs no project, following <c>SelectionTests</c>' house pattern. This class exists only to prove
 /// the reader's wiring — <c>IWfiWordform.HumanApprovedAnalyses</c>, content comparison, and the
 /// <c>Opinions</c> tri-state — against a real project, using the same fixture and unit-of-work pattern
 /// already established by <c>GeneratedSlice3OperationsTests</c> and <c>SaveIsSynchronousTests</c> rather

@@ -11,11 +11,11 @@ public static class MotifSchema
     public const int ApplicationId = 0x4D4F5446;
 
     /// <summary>The newest ordered schema generation implemented by this assembly.</summary>
-    public const int CurrentSchema = 10;
+    public const int CurrentSchema = 11;
 
     internal static Version MinimumWorkerVersion(int schema) => schema switch
     {
-        1 or 2 or 3 or 4 or 5 or 6 or 7 or 8 or 9 or 10 => new Version(1, 0),
+        1 or 2 or 3 or 4 or 5 or 6 or 7 or 8 or 9 or 10 or 11 => new Version(1, 0),
         _ => throw new NotSupportedException($"Motif schema {schema} is not known to this worker.")
     };
 
@@ -60,6 +60,9 @@ public static class MotifSchema
                     break;
                 case 10:
                     MigrateToGenerationTen(connection, transaction);
+                    break;
+                case 11:
+                    MigrateToGenerationEleven(connection, transaction);
                     break;
                 default:
                     throw new NotSupportedException($"Motif schema {schema} is not known to this worker.");
@@ -116,7 +119,7 @@ public static class MotifSchema
                 "ParsedAnalyses", "AssessmentPins", "Proposals", "ProposalRevisions", "Drafts",
                 "Decisions", "Receipts", "Reports", "AppliedIndex", "MigrationLedger", "Jobs", "Baselines"
             },
-            9 or 10 => new HashSet<string>(StringComparer.Ordinal)
+            9 or 10 or 11 => new HashSet<string>(StringComparer.Ordinal)
             {
                 "MotifMetadata", "Corpora", "CorpusDocuments", "Assessments", "AssessedWords",
                 "ParsedAnalyses", "AssessmentPins", "Proposals", "ProposalRevisions",
@@ -573,6 +576,139 @@ public static class MotifSchema
         command.ExecuteNonQuery();
     }
 
+    // Renames the Corpus*-named columns to Selection* and adds a cache path and digest; preserves existing rows.
+    private static void MigrateToGenerationEleven(SqliteConnection connection, SqliteTransaction? transaction)
+    {
+        RenameAndRecreateAssessmentsForGenerationEleven(connection, transaction);
+        RebuildAssessedWordsForGenerationEleven(connection, transaction);
+        RebuildParsedAnalysesForGenerationEleven(connection, transaction);
+        RebuildLeafForGenerationEleven(connection, transaction, "AssessmentPins",
+            "AssessmentId TEXT NOT NULL REFERENCES Assessments(AssessmentId), PinnedBy TEXT NOT NULL, " +
+            "PinnedUtc TEXT NOT NULL, PRIMARY KEY (AssessmentId, PinnedBy)",
+            "AssessmentId, PinnedBy, PinnedUtc");
+        RebuildLeafForGenerationEleven(connection, transaction, "Reports",
+            "ReportId TEXT PRIMARY KEY, ProposalId TEXT NULL REFERENCES Proposals(ProposalId), " +
+            "AssessmentId TEXT NULL REFERENCES Assessments(AssessmentId), ReportJson TEXT NOT NULL, " +
+            "EvidenceJson TEXT NULL, CreatedUtc TEXT NOT NULL, Kind TEXT NULL, RenderedText TEXT NULL",
+            "ReportId, ProposalId, AssessmentId, ReportJson, EvidenceJson, CreatedUtc, Kind, RenderedText");
+        using var dropOldAssessments = connection.CreateCommand();
+        dropOldAssessments.Transaction = transaction;
+        dropOldAssessments.CommandText = "DROP TABLE Assessments_GenerationTen;";
+        dropOldAssessments.ExecuteNonQuery();
+    }
+
+    // Not dropped yet: AssessedWords, AssessmentPins, and Reports still reference it until they are rebuilt.
+    private static void RenameAndRecreateAssessmentsForGenerationEleven(
+        SqliteConnection connection, SqliteTransaction? transaction)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            DROP INDEX IF EXISTS IX_Assessments_Proposal;
+            DROP INDEX IF EXISTS IX_Assessments_Kind;
+            ALTER TABLE Assessments RENAME TO Assessments_GenerationTen;
+            CREATE TABLE Assessments (
+                AssessmentId TEXT PRIMARY KEY,
+                SelectionName TEXT NOT NULL,
+                SelectionWordsJson TEXT NOT NULL,
+                SelectionSha256 TEXT NOT NULL,
+                SelectionProvenanceJson TEXT NULL,
+                OutcomeDigest TEXT NOT NULL,
+                SemanticDigest TEXT NOT NULL,
+                GrammarSourceSha256 TEXT NOT NULL,
+                ModelFingerprint TEXT NOT NULL,
+                Pipeline TEXT NOT NULL,
+                DiagnosticCount INTEGER NOT NULL,
+                SavedUtc TEXT NOT NULL,
+                ProposalId TEXT NULL REFERENCES Proposals(ProposalId),
+                ProposalIntentDigest TEXT NULL,
+                Assessor TEXT NOT NULL,
+                Kind TEXT NOT NULL,
+                ScopeJson TEXT NOT NULL,
+                ScopeDigest TEXT NOT NULL,
+                TokeniserName TEXT NOT NULL,
+                TokeniserVersion TEXT NOT NULL,
+                BaselineToken TEXT NOT NULL,
+                CachePath TEXT NULL,
+                CacheDigest TEXT NULL
+            );
+            CREATE INDEX IX_Assessments_Proposal ON Assessments(ProposalId);
+            CREATE INDEX IX_Assessments_Kind ON Assessments(Kind);
+            INSERT INTO Assessments (AssessmentId, SelectionName, SelectionWordsJson, SelectionSha256,
+                SelectionProvenanceJson, OutcomeDigest, SemanticDigest, GrammarSourceSha256, ModelFingerprint,
+                Pipeline, DiagnosticCount, SavedUtc, ProposalId, ProposalIntentDigest, Assessor, Kind, ScopeJson,
+                ScopeDigest, TokeniserName, TokeniserVersion, BaselineToken)
+            SELECT AssessmentId, CorpusId, CorpusWordsJson, CorpusSha256, CorpusProvenanceJson, OutcomeDigest,
+                SemanticDigest, GrammarSourceSha256, ModelFingerprint, Pipeline, DiagnosticCount, SavedUtc,
+                ProposalId, ProposalIntentDigest, Assessor, Kind, ScopeJson, ScopeDigest, TokeniserName,
+                TokeniserVersion, BaselineToken
+            FROM Assessments_GenerationTen;
+            """;
+        command.ExecuteNonQuery();
+    }
+
+    // Renamed but not dropped: ParsedAnalyses still references it, and is rebuilt next.
+    private static void RebuildAssessedWordsForGenerationEleven(SqliteConnection connection, SqliteTransaction? transaction)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            DROP INDEX IF EXISTS IX_AssessedWords_Assessment;
+            DROP INDEX IF EXISTS IX_AssessedWords_Word;
+            ALTER TABLE AssessedWords RENAME TO AssessedWords_GenerationTen;
+            CREATE TABLE AssessedWords (
+                AssessedWordId INTEGER PRIMARY KEY AUTOINCREMENT,
+                AssessmentId TEXT NOT NULL REFERENCES Assessments(AssessmentId),
+                OrdinalIndex INTEGER NOT NULL,
+                Word TEXT NOT NULL,
+                Outcome TEXT NOT NULL
+            );
+            CREATE INDEX IX_AssessedWords_Assessment ON AssessedWords(AssessmentId);
+            CREATE INDEX IX_AssessedWords_Word ON AssessedWords(AssessmentId, Word);
+            INSERT INTO AssessedWords SELECT * FROM AssessedWords_GenerationTen;
+            """;
+        command.ExecuteNonQuery();
+    }
+
+    // Drops the old ParsedAnalyses and AssessedWords: the latter is unreferenced only once this rebuild runs.
+    private static void RebuildParsedAnalysesForGenerationEleven(SqliteConnection connection, SqliteTransaction? transaction)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            DROP INDEX IF EXISTS IX_ParsedAnalyses_Word;
+            ALTER TABLE ParsedAnalyses RENAME TO ParsedAnalyses_GenerationTen;
+            CREATE TABLE ParsedAnalyses (
+                AssessedWordId INTEGER NOT NULL REFERENCES AssessedWords(AssessedWordId),
+                OrdinalIndex INTEGER NOT NULL,
+                CategoryGuid TEXT NULL,
+                MorphemeGuidsJson TEXT NOT NULL,
+                RootIndex INTEGER NOT NULL,
+                IdentityDigest TEXT NOT NULL
+            );
+            CREATE INDEX IX_ParsedAnalyses_Word ON ParsedAnalyses(AssessedWordId);
+            INSERT INTO ParsedAnalyses SELECT * FROM ParsedAnalyses_GenerationTen;
+            DROP TABLE ParsedAnalyses_GenerationTen;
+            DROP TABLE AssessedWords_GenerationTen;
+            """;
+        command.ExecuteNonQuery();
+    }
+
+    /// One rename-recreate-copy-drop cycle, safe only for a table nothing else declares a foreign key onto.
+    private static void RebuildLeafForGenerationEleven(
+        SqliteConnection connection, SqliteTransaction? transaction, string table, string columnDefinitions,
+        string copyColumns)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            $"ALTER TABLE {table} RENAME TO {table}_GenerationTen; " +
+            $"CREATE TABLE {table} ({columnDefinitions}); " +
+            $"INSERT INTO {table} ({copyColumns}) SELECT {copyColumns} FROM {table}_GenerationTen; " +
+            $"DROP TABLE {table}_GenerationTen;";
+        command.ExecuteNonQuery();
+    }
+
     private static void AddRecoveryAndArchiveFacts(SqliteConnection connection, SqliteTransaction? transaction)
     {
         using var command = connection.CreateCommand();
@@ -864,20 +1000,33 @@ public static class MotifSchema
         _ => throw new InvalidDataException($"Motif table {table} is not registered.")
     };
 
-    private static IReadOnlyList<ColumnShape> AssessmentColumns(int schema) => schema >= 10
-        ? [C("AssessmentId", "TEXT", false, 1), C("CorpusId", "TEXT", true), C("CorpusWordsJson", "TEXT", true),
+    private static IReadOnlyList<ColumnShape> AssessmentColumns(int schema) => schema switch
+    {
+        >= 11 =>
+        [C("AssessmentId", "TEXT", false, 1), C("SelectionName", "TEXT", true), C("SelectionWordsJson", "TEXT", true),
+            C("SelectionSha256", "TEXT", true), C("SelectionProvenanceJson", "TEXT"), C("OutcomeDigest", "TEXT", true),
+            C("SemanticDigest", "TEXT", true), C("GrammarSourceSha256", "TEXT", true),
+            C("ModelFingerprint", "TEXT", true), C("Pipeline", "TEXT", true), C("DiagnosticCount", "INTEGER", true),
+            C("SavedUtc", "TEXT", true), C("ProposalId", "TEXT"), C("ProposalIntentDigest", "TEXT"),
+            C("Assessor", "TEXT", true), C("Kind", "TEXT", true), C("ScopeJson", "TEXT", true),
+            C("ScopeDigest", "TEXT", true), C("TokeniserName", "TEXT", true), C("TokeniserVersion", "TEXT", true),
+            C("BaselineToken", "TEXT", true), C("CachePath", "TEXT"), C("CacheDigest", "TEXT")],
+        10 =>
+        [C("AssessmentId", "TEXT", false, 1), C("CorpusId", "TEXT", true), C("CorpusWordsJson", "TEXT", true),
             C("CorpusSha256", "TEXT", true), C("CorpusProvenanceJson", "TEXT"), C("OutcomeDigest", "TEXT", true),
             C("SemanticDigest", "TEXT", true), C("GrammarSourceSha256", "TEXT", true),
             C("ModelFingerprint", "TEXT", true), C("Pipeline", "TEXT", true), C("DiagnosticCount", "INTEGER", true),
             C("SavedUtc", "TEXT", true), C("ProposalId", "TEXT"), C("ProposalIntentDigest", "TEXT"),
             C("Assessor", "TEXT", true), C("Kind", "TEXT", true), C("ScopeJson", "TEXT", true),
             C("ScopeDigest", "TEXT", true), C("TokeniserName", "TEXT", true), C("TokeniserVersion", "TEXT", true),
-            C("BaselineToken", "TEXT", true)]
-        : [C("AssessmentId", "TEXT", false, 1), C("CorpusId", "TEXT", true), C("CorpusWordsJson", "TEXT", true),
+            C("BaselineToken", "TEXT", true)],
+        _ =>
+        [C("AssessmentId", "TEXT", false, 1), C("CorpusId", "TEXT", true), C("CorpusWordsJson", "TEXT", true),
             C("CorpusSha256", "TEXT", true), C("CorpusProvenanceJson", "TEXT"), C("OutcomeDigest", "TEXT", true),
             C("SemanticDigest", "TEXT", true), C("GrammarSourceSha256", "TEXT", true),
             C("ModelFingerprint", "TEXT", true), C("Pipeline", "TEXT", true), C("DiagnosticCount", "INTEGER", true),
-            C("SavedUtc", "TEXT", true)];
+            C("SavedUtc", "TEXT", true)],
+    };
 
     private static IReadOnlyList<ColumnShape> ProposalColumns(int schema) => schema switch
     {

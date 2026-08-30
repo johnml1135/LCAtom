@@ -257,7 +257,7 @@ public sealed class JobQueueVerbArgvTests : IDisposable
         using var database = MotifDatabase.OpenOwned(ProjectDatabaseCatalog.DatabasePathFor(locator), locator,
             MotifSchema.CurrentSchema, new Version(1, 0));
         var assessmentId = SIL.Motif.Contract.Ids.CanonicalId.Mint("assessment/").Value;
-        var corpus = CorpusDescriptor.Create("test", new[] { word });
+        var corpus = Selection.Create("test", new[] { word });
         new AssessmentRepository(database).Record(new NewAssessmentRecord(
             AssessmentId: assessmentId,
             ProposalId: null,
@@ -269,7 +269,7 @@ public sealed class JobQueueVerbArgvTests : IDisposable
             TokeniserName: "none",
             TokeniserVersion: "1",
             BaselineToken: "{}",
-            Corpus: corpus,
+            Selection: corpus,
             OutcomeDigest: "sha256:" + new string('b', 64),
             SemanticDigest: "sha256:" + new string('c', 64),
             GrammarSourceSha256: "sha256:" + new string('d', 64),

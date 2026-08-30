@@ -149,9 +149,9 @@ public class WritingSystemWordTokeniserTests
             .With(new CorpusDocument("d", "d", new DocumentSource.File("d.txt"),
                 "nyumba mbali mbali nyumba", new string('0', 64), DateTimeOffset.UtcNow));
 
-        var descriptor = CorpusTokenisation.ToDescriptor(corpus, tokeniser);
+        var descriptor = CorpusTokenisation.ToSelection(corpus, tokeniser);
 
-        // Only CorpusDescriptor.Create sorts and dedupes — never the tokeniser, never the bridge.
+        // Only Selection.Create sorts and dedupes — never the tokeniser, never the bridge.
         Assert.Equal(new[] { "mbali", "nyumba" }, descriptor.Words);
     }
 
@@ -250,9 +250,9 @@ public class WritingSystemWordTokeniserTests
         var ws = WritingSystem("seh", "'");
         var tokeniser = new WritingSystemWordTokeniser(ws);
 
-        // ToDescriptor must still refuse a mismatched tokeniser — differently-tokenised corpora aren't comparable.
+        // ToSelection must still refuse a mismatched tokeniser — differently-tokenised corpora aren't comparable.
         var ex = Assert.Throws<InvalidOperationException>(
-            () => CorpusTokenisation.ToDescriptor(corpus, tokeniser));
+            () => CorpusTokenisation.ToSelection(corpus, tokeniser));
         Assert.Contains("whitespace-and-punctuation", ex.Message);
         Assert.Contains("fieldworks-word-forming", ex.Message);
     }
@@ -269,7 +269,7 @@ public class WritingSystemWordTokeniserTests
             .With(new CorpusDocument("d", "d", new DocumentSource.File("d.txt"),
                 "'mbali' nyumba", new string('0', 64), DateTimeOffset.UtcNow));
 
-        var descriptor = CorpusTokenisation.ToDescriptor(corpus, tokeniser);
+        var descriptor = CorpusTokenisation.ToSelection(corpus, tokeniser);
 
         Assert.Equal(new[] { "'mbali'", "nyumba" }, descriptor.Words);
     }

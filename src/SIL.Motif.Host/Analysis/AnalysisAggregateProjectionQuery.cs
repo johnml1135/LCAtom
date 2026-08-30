@@ -34,7 +34,7 @@ public static class AnalysisAggregateProjectionQuery
         {
             Sha256Value.RequireCanonical(currentCorpusSha256, nameof(currentCorpusSha256));
             Sha256Value.RequireCanonical(currentGrammarSourceSha256, nameof(currentGrammarSourceSha256));
-            Sha256Value.RequireCanonical(assessment.CorpusSha256, nameof(assessment.CorpusSha256));
+            Sha256Value.RequireCanonical(assessment.SelectionSha256, nameof(assessment.SelectionSha256));
             Sha256Value.RequireCanonical(
                 assessment.GrammarSourceSha256,
                 nameof(assessment.GrammarSourceSha256));

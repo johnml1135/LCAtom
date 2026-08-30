@@ -14,7 +14,7 @@ public sealed record CorrectnessAssessment(
     string TokeniserName,
     string TokeniserVersion,
     StoredScope.Trial Scope,
-    CorpusDescriptor Corpus,
+    Selection Selection,
     string GrammarSourceSha256,
     IReadOnlyList<AssessedWord> Words);
 
@@ -84,9 +84,9 @@ public static class RegressionChecker
         var lostAnalyses = comparison.Changes.Where(change => change.Kind == WordChangeKind.LostAnalysis).ToArray();
 
         var previousCoverage = CorrectnessCoverage.Compute(
-            previous.Words, previous.Scope, previous.Corpus, previous.GrammarSourceSha256, "regression");
+            previous.Words, previous.Scope, previous.Selection, previous.GrammarSourceSha256, "regression");
         var candidateCoverage = CorrectnessCoverage.Compute(
-            candidate.Words, candidate.Scope, candidate.Corpus, candidate.GrammarSourceSha256, "regression");
+            candidate.Words, candidate.Scope, candidate.Selection, candidate.GrammarSourceSha256, "regression");
         var coverageDropped = previousCoverage.Fraction is { } previousFraction &&
             candidateCoverage.Fraction is { } candidateFraction && candidateFraction < previousFraction;
 

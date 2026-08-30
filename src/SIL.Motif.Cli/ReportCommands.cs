@@ -35,9 +35,6 @@ public static class ReportCommands
         new DifferenceReportProducer(),
     });
 
-    // No IAssessor is registered: every kind above renders from stored rows and never resolves one.
-    private static readonly AssessorCatalog Assessors = new(Array.Empty<IAssessor>());
-
     /// <summary>Every report kind that may be asked for, as <c>report --list-kinds</c> prints it.</summary>
     public static CommandResult ListKinds(bool asJson)
     {
@@ -82,7 +79,7 @@ public static class ReportCommands
             RenderedReport rendered;
             try
             {
-                rendered = producer.Produce(record.ToReportable(), new ReportQuery(word, text), Assessors);
+                rendered = producer.Produce(record.ToReportable(), new ReportQuery(word, text), AssessorCatalog.Empty);
             }
             catch (ReportRefusalException exception)
             {
@@ -95,7 +92,7 @@ public static class ReportCommands
             var evidenceJson = JsonSerializer.Serialize(new
             {
                 assessmentId,
-                corpusSha256 = record.Corpus.Sha256,
+                corpusSha256 = record.Selection.Sha256,
                 grammarSourceSha256 = record.GrammarSourceSha256,
             }, MotifJson.CreateOptions());
             new ReportRepository(database).Save(new ReportRecord(

@@ -741,6 +741,52 @@ public sealed class MotifDatabaseMigrationTests : IDisposable
     }
 
     [Fact]
+    public void MigrationToGenerationElevenRenamesSelectionColumnsAddsCacheColumnsAndPreservesExistingRows()
+    {
+        // Unlike generation 10's own migration, generation 11 does not require Assessments to be empty.
+        var path = DatabasePath("generation-eleven.fwdata");
+        using (Open("generation-eleven.fwdata", supportedSchema: 10)) { }
+        using (var connection = NewConnection(path))
+        {
+            Execute(connection, "INSERT INTO Assessments (AssessmentId, CorpusId, CorpusWordsJson, CorpusSha256, " +
+                "CorpusProvenanceJson, OutcomeDigest, SemanticDigest, GrammarSourceSha256, ModelFingerprint, " +
+                "Pipeline, DiagnosticCount, SavedUtc, Assessor, Kind, ScopeJson, ScopeDigest, TokeniserName, " +
+                "TokeniserVersion, BaselineToken) VALUES ('assessment-eleven', 'corpus-eleven', '[\"a\",\"b\"]', " +
+                "'sha256:words', '{\"origin\":\"test\"}', 'sha256:outcome', 'sha256:semantic', 'sha256:grammar', " +
+                "'fp', 'pipeline', 2, '2026-08-01T00:00:00Z', 'pangloss', 'ParseTime', '{}', 'sha256:scope', " +
+                "'none', '1', '{}');");
+            Execute(connection, "INSERT INTO AssessedWords (AssessmentId, OrdinalIndex, Word, Outcome) VALUES " +
+                "('assessment-eleven', 0, 'a', 'analysed');");
+            Execute(connection, "INSERT INTO ParsedAnalyses (AssessedWordId, OrdinalIndex, MorphemeGuidsJson, " +
+                "RootIndex, IdentityDigest) VALUES (last_insert_rowid(), 0, '[]', 0, 'digest-eleven');");
+            Execute(connection, "INSERT INTO AssessmentPins (AssessmentId, PinnedBy, PinnedUtc) VALUES " +
+                "('assessment-eleven', 'proposal-x', '2026-08-01T00:00:00Z');");
+            Execute(connection, "INSERT INTO Reports (ReportId, ProposalId, AssessmentId, ReportJson, EvidenceJson, " +
+                "CreatedUtc, Kind, RenderedText) VALUES ('report-eleven', NULL, 'assessment-eleven', '{}', NULL, " +
+                "'2026-08-01T00:00:00Z', 'coverage', 'rendered text');");
+        }
+
+        using var upgraded = Open("generation-eleven.fwdata", supportedSchema: MotifSchema.CurrentSchema);
+        using var check = upgraded.OpenConnection();
+        MotifSchema.ValidateSchema(check, MotifSchema.CurrentSchema);
+
+        Assert.Equal("corpus-eleven", Scalar(check, "SELECT SelectionName FROM Assessments WHERE AssessmentId = 'assessment-eleven';"));
+        Assert.Equal("[\"a\",\"b\"]", Scalar(check, "SELECT SelectionWordsJson FROM Assessments WHERE AssessmentId = 'assessment-eleven';"));
+        Assert.Equal("sha256:words", Scalar(check, "SELECT SelectionSha256 FROM Assessments WHERE AssessmentId = 'assessment-eleven';"));
+        Assert.Equal("{\"origin\":\"test\"}", Scalar(check, "SELECT SelectionProvenanceJson FROM Assessments WHERE AssessmentId = 'assessment-eleven';"));
+        Assert.Same(DBNull.Value, Scalar(check, "SELECT CachePath FROM Assessments WHERE AssessmentId = 'assessment-eleven';"));
+        Assert.Same(DBNull.Value, Scalar(check, "SELECT CacheDigest FROM Assessments WHERE AssessmentId = 'assessment-eleven';"));
+        Assert.Equal("pangloss", Scalar(check, "SELECT Assessor FROM Assessments WHERE AssessmentId = 'assessment-eleven';"));
+
+        // The rebuilt child tables still resolve to the same row, through the whole rename-recreate chain.
+        Assert.Equal(1L, Scalar(check, "SELECT COUNT(*) FROM AssessedWords WHERE AssessmentId = 'assessment-eleven';"));
+        Assert.Equal(1L, Scalar(check, "SELECT COUNT(*) FROM ParsedAnalyses WHERE IdentityDigest = 'digest-eleven';"));
+        Assert.Equal(1L, Scalar(check, "SELECT COUNT(*) FROM AssessmentPins WHERE AssessmentId = 'assessment-eleven';"));
+        Assert.Equal("rendered text", Scalar(check, "SELECT RenderedText FROM Reports WHERE ReportId = 'report-eleven';"));
+        Assert.Equal(MotifSchema.CurrentSchema, PragmaInt(check, "user_version"));
+    }
+
+    [Fact]
     public void AssessmentMigrationRefusesExistingRows()
     {
         var path = DatabasePath("assessments-not-empty.fwdata");

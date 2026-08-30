@@ -48,7 +48,7 @@ public sealed class GrammarCoverageFigureIntegrationTests : IDisposable
             factory.Create(TsStringUtils.MakeString("zzznotaseededword", _cache.DefaultVernWs));
         });
 
-        var corpus = LcmWordformCorpus.Extract(_cache, "seeded project (smoke sample)");
+        var corpus = LcmWordformCorpus.ExtractSelection(_cache, "seeded project (smoke sample)");
         Assert.NotEmpty(corpus.Words);
 
         var projectPath = _cache.ProjectId.Path;
@@ -64,8 +64,8 @@ public sealed class GrammarCoverageFigureIntegrationTests : IDisposable
         var figure = GrammarCoverageFigure.Compute(batchResult.Analysis!, corpus, report!);
 
         // Every field ADR 0032 §4 requires is present and traceable back to what actually ran.
-        Assert.Equal(corpus.CorpusId, figure.CorpusId);
-        Assert.Equal(corpus.Sha256, figure.CorpusSha256);
+        Assert.Equal(corpus.Name, figure.SelectionName);
+        Assert.Equal(corpus.Sha256, figure.SelectionSha256);
         Assert.Equal(report!.GrammarSourceSha256, figure.GrammarSourceSha256);
         Assert.StartsWith("sha256:", figure.GrammarSourceSha256);
         Assert.Equal(ParserEngine.FstPrunedByHermitCrab, figure.Engine);

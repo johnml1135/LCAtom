@@ -176,12 +176,12 @@ public sealed class SqliteAssessmentStore : IAssessmentStore
                  $diagnosticCount, $savedUtc);
             """;
         command.Parameters.AddWithValue("$id", assessmentId);
-        command.Parameters.AddWithValue("$corpusId", assessment.Corpus.CorpusId);
-        command.Parameters.AddWithValue("$corpusWords", JsonSerializer.Serialize(assessment.Corpus.Words));
-        command.Parameters.AddWithValue("$corpusSha", assessment.Corpus.Sha256);
+        command.Parameters.AddWithValue("$corpusId", assessment.Selection.Name);
+        command.Parameters.AddWithValue("$corpusWords", JsonSerializer.Serialize(assessment.Selection.Words));
+        command.Parameters.AddWithValue("$corpusSha", assessment.Selection.Sha256);
         command.Parameters.AddWithValue(
             "$corpusProvenance",
-            assessment.Corpus.Provenance is null ? DBNull.Value : JsonSerializer.Serialize(assessment.Corpus.Provenance));
+            assessment.Selection.Provenance is null ? DBNull.Value : JsonSerializer.Serialize(assessment.Selection.Provenance));
         command.Parameters.AddWithValue("$outcomeDigest", assessment.Report.OutcomeDigest);
         command.Parameters.AddWithValue("$semanticDigest", assessment.Report.SemanticDigest);
         command.Parameters.AddWithValue("$grammarSha", assessment.Report.GrammarSourceSha256);
@@ -265,9 +265,9 @@ public sealed class SqliteAssessmentStore : IAssessmentStore
             Pipeline: header.Pipeline,
             DiagnosticCount: header.DiagnosticCount);
 
-        var corpus = new CorpusDescriptor(header.CorpusId, header.CorpusWords, header.CorpusSha256, header.CorpusProvenance);
+        var selection = new Selection(header.CorpusId, header.CorpusWords, header.CorpusSha256, header.CorpusProvenance);
 
-        return new StoredAssessment(report, corpus);
+        return new StoredAssessment(report, selection);
     }
 
     private sealed record AssessmentHeader(

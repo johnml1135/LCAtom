@@ -10,7 +10,7 @@ namespace SIL.Motif.Host.Corpus;
 /// corpora already tokenised this way must keep working.
 /// </para>
 /// No dependency beyond the .NET base class library, so this project can bridge Documents into a
-/// <see cref="CorpusDescriptor"/> without referencing SIL.Machine. A SIL.Machine tokeniser may sit behind
+/// <see cref="Selection"/> without referencing SIL.Machine. A SIL.Machine tokeniser may sit behind
 /// <see cref="IWordTokeniser"/> as well; this one is the fallback that ships with Motif itself, not a
 /// placeholder for it.
 /// </summary>
@@ -79,7 +79,7 @@ public sealed class WhitespaceAndPunctuationTokeniser : IWordTokeniser
 {
     /// <summary>
     /// Matched against a corpus's declared <see cref="TokenisationRecord.Method"/> by
-    /// <see cref="CorpusTokenisation.ToDescriptor"/>. This exact string is a fixture value in
+    /// <see cref="CorpusTokenisation.ToSelection"/>. This exact string is a fixture value in
     /// <c>CorpusIngestionTests</c> and <c>CorpusProvenanceTests</c> — changing it changes what those tests
     /// mean, not just what this class is called.
     /// </summary>

@@ -4,14 +4,14 @@ using Xunit;
 namespace SIL.Motif.Tests.Corpus;
 
 /// <summary>
-/// The bridge from Documents — running text, in order, with repetition — to a CorpusDescriptor — sorted,
+/// The bridge from Documents — running text, in order, with repetition — to a Selection — sorted,
 /// distinct word forms — the missing connection between ingestion and measurement.
 /// </summary>
 /// <remarks>
 /// The rules these tests defend, in order of how much damage getting them wrong would do:
 /// <list type="number">
 /// <item>The bridge must preserve the asymmetry: a Document's order and repetition survive tokenisation, and
-/// only <see cref="CorpusDescriptor.Create"/> sorts and deduplicates. Doing either step twice, or in the
+/// only <see cref="Selection.Create"/> sorts and deduplicates. Doing either step twice, or in the
 /// wrong place, destroys information the other corpus consumers (frequency ranking, n-gram sequence) need.</item>
 /// <item>A form invented by splitting on word-internal punctuation reads as a grammar gap that is really a
 /// tokenisation bug — the specific failure <c>docs/adr/0036</c> decision 4 calls out by name.</item>
@@ -104,12 +104,12 @@ public class CorpusTokenisationTests
             new[] { Document("tstNT", "mbali nyumba") });
 
         var ex = Assert.Throws<ArgumentException>(() =>
-            CorpusTokenisation.ToDescriptor(corpus, new WhitespaceAndPunctuationTokeniser(), Array.Empty<string>()));
+            CorpusTokenisation.ToSelection(corpus, new WhitespaceAndPunctuationTokeniser(), Array.Empty<string>()));
 
         Assert.Contains("not a figure", ex.Message);
 
         // And null still means every document — the two must not be conflated.
-        var all = CorpusTokenisation.ToDescriptor(corpus, new WhitespaceAndPunctuationTokeniser(), null);
+        var all = CorpusTokenisation.ToSelection(corpus, new WhitespaceAndPunctuationTokeniser(), null);
         Assert.Equal(new[] { "mbali", "nyumba" }, all.Words);
     }
 
@@ -127,8 +127,8 @@ public class CorpusTokenisationTests
             new[] { "nyumba", "mbali", "mbali", "nyumba" },
             tokeniser.Tokenise(corpus.Documents[0].Text));
 
-        // Half two: ToDescriptor's result is sorted/distinct — that's CorpusDescriptor.Create's job, not the bridge's.
-        var descriptor = CorpusTokenisation.ToDescriptor(corpus, tokeniser);
+        // Half two: ToSelection's result is sorted/distinct — that's Selection.Create's job, not the bridge's.
+        var descriptor = CorpusTokenisation.ToSelection(corpus, tokeniser);
         Assert.Equal(new[] { "mbali", "nyumba" }, descriptor.Words);
     }
 
@@ -184,7 +184,7 @@ public class CorpusTokenisationTests
         var corpus = StoredCorpus.Create("tst-wikipedia", Provenance())
             .With(Document("d", "mbali nyumba"));
 
-        var descriptor = CorpusTokenisation.ToDescriptor(corpus, new WhitespaceAndPunctuationTokeniser());
+        var descriptor = CorpusTokenisation.ToSelection(corpus, new WhitespaceAndPunctuationTokeniser());
 
         Assert.Equal(corpus.Provenance, descriptor.Provenance);
 
@@ -201,7 +201,7 @@ public class CorpusTokenisationTests
         var corpus = StoredCorpus.Create("c", Provenance(qualification))
             .With(Document("d", "mbali"));
 
-        var descriptor = CorpusTokenisation.ToDescriptor(corpus, new WhitespaceAndPunctuationTokeniser());
+        var descriptor = CorpusTokenisation.ToSelection(corpus, new WhitespaceAndPunctuationTokeniser());
 
         // The bridge must not accidentally launder qualification away either — it is a straight pass-through.
         Assert.True(descriptor.SupportsAccuracyClaims);
@@ -218,7 +218,7 @@ public class CorpusTokenisationTests
         var corpus = StoredCorpus.Create("c", declaredElsewhere).With(Document("d", "mbali"));
 
         var ex = Assert.Throws<InvalidOperationException>(
-            () => CorpusTokenisation.ToDescriptor(corpus, new WhitespaceAndPunctuationTokeniser()));
+            () => CorpusTokenisation.ToSelection(corpus, new WhitespaceAndPunctuationTokeniser()));
 
         // Differently-tokenised corpora aren't comparable (ADR 0036 decision 4); message must name both values.
         Assert.Contains("SIL.Machine LatinWordTokenizer", ex.Message);
@@ -235,14 +235,14 @@ public class CorpusTokenisationTests
             .With(Document("tstNT", "mbali"))
             .With(Document("tstPD", "nyumba"));
 
-        var whole = CorpusTokenisation.ToDescriptor(corpus, new WhitespaceAndPunctuationTokeniser());
-        var subset = CorpusTokenisation.ToDescriptor(
+        var whole = CorpusTokenisation.ToSelection(corpus, new WhitespaceAndPunctuationTokeniser());
+        var subset = CorpusTokenisation.ToSelection(
             corpus, new WhitespaceAndPunctuationTokeniser(), documentIds: new[] { "tstNT" });
 
         // Following LcmWordformCorpus.Extract's precedent: a label must not claim to cover more than it measured.
-        Assert.Equal("ebible-tst", whole.CorpusId);
-        Assert.NotEqual("ebible-tst", subset.CorpusId);
-        Assert.Contains("tstNT", subset.CorpusId);
+        Assert.Equal("ebible-tst", whole.Name);
+        Assert.NotEqual("ebible-tst", subset.Name);
+        Assert.Contains("tstNT", subset.Name);
         Assert.Equal(new[] { "mbali" }, subset.Words);
     }
 
@@ -251,7 +251,7 @@ public class CorpusTokenisationTests
     {
         var corpus = StoredCorpus.Create("c", Provenance()).With(Document("d1", "mbali"));
 
-        var ex = Assert.Throws<ArgumentException>(() => CorpusTokenisation.ToDescriptor(
+        var ex = Assert.Throws<ArgumentException>(() => CorpusTokenisation.ToSelection(
             corpus, new WhitespaceAndPunctuationTokeniser(), documentIds: new[] { "no-such-doc" }));
 
         Assert.Contains("no-such-doc", ex.Message);
@@ -266,7 +266,7 @@ public class CorpusTokenisationTests
             .With(Document("second", "mbali"))
             .With(Document("third", "chuma"));
 
-        CorpusTokenisation.ToDescriptor(corpus, recorder);
+        CorpusTokenisation.ToSelection(corpus, recorder);
 
         // Document order is what a downstream n-gram model sees; invisible after Create sorts, so pin it at the feed.
         Assert.Equal(new[] { "nyumba", "mbali", "chuma" }, recorder.TokenisedTexts);

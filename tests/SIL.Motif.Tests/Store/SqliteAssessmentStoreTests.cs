@@ -38,7 +38,7 @@ public sealed class SqliteAssessmentStoreTests : IDisposable
 
     private static StoredAssessment Assessment(params AssessedWord[] words)
     {
-        var corpus = CorpusDescriptor.Create(
+        var corpus = Selection.Create(
             "reach-test",
             words.Select(w => w.Word),
             new CorpusProvenance(
@@ -72,10 +72,10 @@ public sealed class SqliteAssessmentStoreTests : IDisposable
         Assert.Equal(assessment.Report.OutcomeDigest, loaded!.Report.OutcomeDigest);
         Assert.Equal(assessment.Report.GrammarSourceSha256, loaded.Report.GrammarSourceSha256);
         Assert.Equal(assessment.Report.DiagnosticCount, loaded.Report.DiagnosticCount);
-        Assert.Equal(assessment.Corpus.CorpusId, loaded.Corpus.CorpusId);
-        Assert.Equal(assessment.Corpus.Sha256, loaded.Corpus.Sha256);
-        Assert.Equal(assessment.Corpus.Words, loaded.Corpus.Words);
-        Assert.Equal(assessment.Corpus.Provenance!.Origin.Description, loaded.Corpus.Provenance!.Origin.Description);
+        Assert.Equal(assessment.Selection.Name, loaded.Selection.Name);
+        Assert.Equal(assessment.Selection.Sha256, loaded.Selection.Sha256);
+        Assert.Equal(assessment.Selection.Words, loaded.Selection.Words);
+        Assert.Equal(assessment.Selection.Provenance!.Origin.Description, loaded.Selection.Provenance!.Origin.Description);
 
         Assert.Equal(2, loaded.Report.Words.Count);
         Assert.Equal("mbali", loaded.Report.Words[0].Word);

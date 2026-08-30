@@ -60,12 +60,12 @@ public sealed class AnalysisCommandDispatchTests : IDisposable
         var assessment = new StoredAssessment(
             new AssessReport(
                 Array.Empty<AssessedWord>(), "outcome", "semantic", Hash('c'), "model", "pipeline", 0),
-            CorpusDescriptor.Create("dispatch-corpus", Array.Empty<string>()));
+            Selection.Create("dispatch-corpus", Array.Empty<string>()));
         var assessmentId = new SqliteAssessmentStore(AssessmentDatabasePath()).Save(assessment);
 
         var result = Run(
             $"analyses --project \"{_fwDataPath}\" --assessment \"{assessmentId}\" " +
-            $"--current-corpus-sha256 \"{assessment.Corpus.Sha256}\" " +
+            $"--current-corpus-sha256 \"{assessment.Selection.Sha256}\" " +
             $"--current-grammar-sha256 \"{assessment.Report.GrammarSourceSha256}\" --json");
 
         Assert.Equal(0, result.ExitCode);

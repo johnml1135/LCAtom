@@ -38,26 +38,26 @@ public sealed class LcmWordformCorpusTests : IDisposable
     }
 
     [Fact]
-    public void Extract_ProducesTheSameDescriptorAsHashingExtractFormsDirectly()
+    public void ExtractSelection_ProducesTheSameSelectionAsHashingExtractFormsDirectly()
     {
         SeedWordforms("motifwf-a", "motifwf-b", "motifwf-c");
 
-        var viaExtract = LcmWordformCorpus.Extract(_cache, "seeded", limit: 25);
-        var viaFormsThenCreate = CorpusDescriptor.Create("seeded", LcmWordformCorpus.ExtractForms(_cache).Take(25));
+        var viaExtract = LcmWordformCorpus.ExtractSelection(_cache, "seeded", limit: 25);
+        var viaFormsThenCreate = Selection.Create("seeded", LcmWordformCorpus.ExtractForms(_cache).Take(25));
 
-        // Extract is documented as ExtractForms (capped) piped into CorpusDescriptor.Create; pins no divergence.
+        // ExtractSelection is documented as ExtractForms (capped) piped into Selection.Create; pins no divergence.
         Assert.Equal(viaFormsThenCreate.Sha256, viaExtract.Sha256);
         Assert.Equal(viaFormsThenCreate.Words, viaExtract.Words);
     }
 
     [Fact]
-    public void Extract_TheLimitCapsHowManyFormsAreHashed()
+    public void ExtractSelection_TheLimitCapsHowManyFormsAreHashed()
     {
         SeedWordforms("motifwf-1", "motifwf-2", "motifwf-3", "motifwf-4",
             "motifwf-5", "motifwf-6", "motifwf-7", "motifwf-8");
 
-        var capped = LcmWordformCorpus.Extract(_cache, "seeded (capped)", limit: 5);
-        var uncapped = LcmWordformCorpus.Extract(_cache, "seeded (whole)");
+        var capped = LcmWordformCorpus.ExtractSelection(_cache, "seeded (capped)", limit: 5);
+        var uncapped = LcmWordformCorpus.ExtractSelection(_cache, "seeded (whole)");
 
         Assert.True(capped.Words.Count <= 5);
         Assert.True(uncapped.Words.Count > capped.Words.Count);
@@ -65,7 +65,7 @@ public sealed class LcmWordformCorpusTests : IDisposable
     }
 
     [Fact]
-    public void Extract_SkipsWordformsWithNoTextInTheDefaultVernacularWritingSystem()
+    public void ExtractSelection_SkipsWordformsWithNoTextInTheDefaultVernacularWritingSystem()
     {
         SeedWordforms("motifwf-x", "motifwf-y");
         NonUndoableUnitOfWorkHelper.Do(_cache.ActionHandlerAccessor, () =>
@@ -73,7 +73,7 @@ public sealed class LcmWordformCorpusTests : IDisposable
             _cache.ServiceLocator.GetInstance<IWfiWordformFactory>().Create(); // no Form in any writing system
         });
 
-        var descriptor = LcmWordformCorpus.Extract(_cache, "seeded");
+        var descriptor = LcmWordformCorpus.ExtractSelection(_cache, "seeded");
 
         // Proves the documented skip behaviour, not just that non-empty forms stay non-empty.
         Assert.Equal(2, descriptor.Words.Count);
