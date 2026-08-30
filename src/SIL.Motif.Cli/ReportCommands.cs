@@ -7,7 +7,6 @@ using SIL.Motif.Contract;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Responses;
 using SIL.Motif.Host.Assess;
-using SIL.Motif.Host.Parser;
 using SIL.Motif.Worker.Store;
 
 namespace SIL.Motif.Cli;
@@ -83,7 +82,7 @@ public static class ReportCommands
             RenderedReport rendered;
             try
             {
-                rendered = producer.Produce(ToReportable(record), new ReportQuery(word, text), Assessors);
+                rendered = producer.Produce(record.ToReportable(), new ReportQuery(word, text), Assessors);
             }
             catch (ReportRefusalException exception)
             {
@@ -108,11 +107,6 @@ public static class ReportCommands
                 : Render(response));
         });
     }
-
-    private static ReportableAssessment ToReportable(AssessmentRecord record) => new(
-        record.AssessmentId, record.Assessor, record.Kind, record.ScopeJson,
-        record.Corpus.CorpusId, record.Corpus.Words, record.Corpus.Sha256, record.GrammarSourceSha256,
-        record.Words ?? Array.Empty<AssessedWord>());
 
     private static string Render(ReportResponse response)
     {

@@ -29,6 +29,27 @@ public enum AssessmentKind
 }
 
 /// <summary>
+/// The one place an <see cref="AssessmentKind"/> and the Assessments table's plain string <c>Kind</c> column
+/// ever change into each other. Every producer and checker that needs to recognise a stored kind asks
+/// <see cref="IsStoredKind"/> rather than spelling the kind as a literal of its own, so renaming a member here
+/// is the only edit such a rename ever needs.
+/// </summary>
+public static class AssessmentKindNames
+{
+    /// <summary>
+    /// The spelling this kind is written under in the store's <c>Kind</c> column. It is the enum member's
+    /// own name, so <b>renaming a member is a data migration rather than a rename</b>: rows written under
+    /// the old spelling stop matching, and a Report that gated on the kind starts refusing Assessments it
+    /// used to answer for. Add a member freely; rename one only with a migration beside it.
+    /// </summary>
+    public static string ToStoredKind(this AssessmentKind kind) => kind.ToString();
+
+    /// <summary>Whether a stored <c>Kind</c> column value names this kind.</summary>
+    public static bool IsStoredKind(this string storedKind, AssessmentKind kind) =>
+        string.Equals(storedKind, kind.ToStoredKind(), StringComparison.Ordinal);
+}
+
+/// <summary>
 /// What a run was told to do (ADR 0042 decision 3): which words, what to collect, and what limit to apply.
 /// </summary>
 /// <remarks>

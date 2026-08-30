@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using SIL.Motif.Contract.Ids;
+using SIL.Motif.Host.Assess;
 using SIL.Motif.Host.Corpus;
 using SIL.Motif.Host.Parser;
 using SIL.Motif.Host.Store;
@@ -112,6 +113,32 @@ public sealed record AssessmentRecord(
     int DiagnosticCount,
     string SavedUtc,
     IReadOnlyList<AssessedWord>? Words = null);
+
+/// <summary>
+/// Where a caller turns one recorded Assessment into the narrower view it actually needs — a Report's, a
+/// comparison's, or a regression check's (ADR 0042's projections). Kept beside <see cref="AssessmentRecord"/>
+/// itself rather than beside each narrower type: those live in <c>SIL.Motif.Host</c>, which this module
+/// depends on and never the reverse, so this is the one place able to see both the row and every view of it.
+/// </summary>
+public static class AssessmentRecordProjections
+{
+    /// <summary>The material a Report is computed from — see <see cref="ReportableAssessment"/>.</summary>
+    public static ReportableAssessment ToReportable(this AssessmentRecord record) => new(
+        record.AssessmentId, record.Assessor, record.Kind, record.ScopeJson,
+        record.Corpus.CorpusId, record.Corpus.Words, record.Corpus.Sha256, record.GrammarSourceSha256,
+        record.Words ?? Array.Empty<AssessedWord>());
+
+    /// <summary>The fields a join between two Assessments needs — see <see cref="ComparableAssessment"/>.</summary>
+    public static ComparableAssessment ToComparable(this AssessmentRecord record) => new(
+        record.AssessmentId, record.Assessor, record.Kind, record.TokeniserName, record.TokeniserVersion,
+        record.Words ?? Array.Empty<AssessedWord>());
+
+    /// <summary>The <c>Correctness</c>-kind fields a regression check needs — see <see cref="CorrectnessAssessment"/>.</summary>
+    public static CorrectnessAssessment ToCorrectness(this AssessmentRecord record) => new(
+        record.AssessmentId, record.Assessor, record.TokeniserName, record.TokeniserVersion,
+        ScopeCodec.ReadTrial(record.ScopeJson, RegressionChecker.RequiredKind),
+        record.Corpus, record.GrammarSourceSha256, record.Words ?? Array.Empty<AssessedWord>());
+}
 
 /// <summary>Reads and writes normalized Assessment tables and the project's current-Assessment pointer.</summary>
 public sealed class AssessmentRepository : IAssessmentRepository

@@ -251,7 +251,7 @@ internal sealed class TrialJobHandler
                 ProposalId: proposal.ProposalId,
                 ProposalIntentDigest: dryRun.IntentDigest,
                 Assessor: assessorName,
-                Kind: item.Kind.ToString(),
+                Kind: item.Kind.ToStoredKind(),
                 ScopeJson: scopeJson,
                 ScopeDigest: scopeDigest,
                 TokeniserName: "none",

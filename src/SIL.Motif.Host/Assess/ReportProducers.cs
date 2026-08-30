@@ -56,7 +56,7 @@ public sealed class CoverageReportProducer : IReportProducer
     public RenderedReport Produce(ReportableAssessment assessment, ReportQuery query, IAssessorCatalog assessors)
     {
         ArgumentNullException.ThrowIfNull(assessment);
-        if (!string.Equals(assessment.Kind, "ParseTime", StringComparison.Ordinal))
+        if (!assessment.Kind.IsStoredKind(AssessmentKind.ParseTime))
         {
             throw new ReportRefusalException(KindName,
                 $"this Assessment is a '{assessment.Kind}' measurement; a coverage report needs one collected " +
@@ -127,7 +127,7 @@ public sealed class CorrectnessReportProducer : IReportProducer
     public RenderedReport Produce(ReportableAssessment assessment, ReportQuery query, IAssessorCatalog assessors)
     {
         ArgumentNullException.ThrowIfNull(assessment);
-        if (!string.Equals(assessment.Kind, "Correctness", StringComparison.Ordinal))
+        if (!assessment.Kind.IsStoredKind(AssessmentKind.Correctness))
         {
             throw new ReportRefusalException(KindName,
                 $"this Assessment is a '{assessment.Kind}' measurement; a correctness report needs one " +
@@ -166,7 +166,7 @@ public sealed class DifferenceReportProducer : IReportProducer
     public RenderedReport Produce(ReportableAssessment assessment, ReportQuery query, IAssessorCatalog assessors)
     {
         ArgumentNullException.ThrowIfNull(assessment);
-        if (!string.Equals(assessment.Kind, "Difference", StringComparison.Ordinal))
+        if (!assessment.Kind.IsStoredKind(AssessmentKind.Difference))
         {
             throw new ReportRefusalException(KindName,
                 $"this Assessment is a '{assessment.Kind}' measurement; a difference report needs one " +

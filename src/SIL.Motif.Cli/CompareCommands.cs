@@ -57,7 +57,7 @@ public static class CompareCommands
             AssessmentComparison comparison;
             try
             {
-                comparison = AssessmentComparer.Compare(ToComparable(from), ToComparable(to));
+                comparison = AssessmentComparer.Compare(from.ToComparable(), to.ToComparable());
             }
             catch (ComparisonRefusalException exception)
             {
@@ -85,7 +85,7 @@ public static class CompareCommands
                 ProposalId: null,
                 ProposalIntentDigest: null,
                 Assessor: from.Assessor,
-                Kind: AssessmentKind.Difference.ToString(),
+                Kind: AssessmentKind.Difference.ToStoredKind(),
                 ScopeJson: scopeJson,
                 ScopeDigest: Digest(scopeJson),
                 TokeniserName: tokeniserName,
@@ -100,11 +100,10 @@ public static class CompareCommands
                 DiagnosticCount: comparison.TokeniserMismatch ? 1 : 0,
                 Words: words));
 
-            var reportable = new ReportableAssessment(
-                assessmentId, from.Assessor, AssessmentKind.Difference.ToString(), scopeJson,
-                corpus.CorpusId, corpus.Words, corpus.Sha256, string.Empty, words);
+            // Read back the row just recorded, so this can't disagree with a later report of the same row.
+            var stored = repository.Get(assessmentId);
             var rendered = ReportCommands.Catalog.Resolve(DifferenceReportProducer.KindName)
-                .Produce(reportable, new ReportQuery(), NoAssessorsRegistered);
+                .Produce(stored.ToReportable(), new ReportQuery(), NoAssessorsRegistered);
 
             var response = new CompareResponse(assessmentId, fromAssessmentId, toAssessmentId, from.Assessor,
                 comparison.FromWordCount, comparison.ToWordCount, comparison.SharedWords.Count,
@@ -114,10 +113,6 @@ public static class CompareCommands
                 : Render(response));
         });
     }
-
-    private static ComparableAssessment ToComparable(AssessmentRecord record) => new(
-        record.AssessmentId, record.Assessor, record.Kind, record.TokeniserName, record.TokeniserVersion,
-        record.Words ?? Array.Empty<AssessedWord>());
 
     private static string Render(CompareResponse response)
     {

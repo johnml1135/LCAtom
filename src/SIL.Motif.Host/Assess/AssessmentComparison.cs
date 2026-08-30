@@ -17,6 +17,19 @@ public sealed record ComparableAssessment(
     string TokeniserVersion,
     IReadOnlyList<AssessedWord> Words);
 
+/// <summary>Where a caller turns what it already has into the narrow join view above.</summary>
+public static class ComparableAssessmentProjections
+{
+    /// <summary>
+    /// A <c>Correctness</c> Assessment's comparable view. <see cref="CorrectnessAssessment"/> carries no Kind
+    /// field of its own — being that type already says a measurement is <see cref="AssessmentKind.Correctness"/> —
+    /// so this is the one place that fact becomes the string a join gates on.
+    /// </summary>
+    public static ComparableAssessment ToComparable(this CorrectnessAssessment assessment) => new(
+        assessment.AssessmentId, assessment.Assessor, AssessmentKind.Correctness.ToStoredKind(),
+        assessment.TokeniserName, assessment.TokeniserVersion, assessment.Words);
+}
+
 /// <summary>
 /// How one shared word's behaviour differed between two Assessments. A word absent from either side, or
 /// present in both with identical outcome and the identical set of produced analyses, is not a change and

@@ -58,8 +58,8 @@ public sealed record RegressionFinding(
 /// </summary>
 public static class RegressionChecker
 {
-    /// <summary>The kind name both inputs must carry — matches <see cref="AssessmentKind.Correctness"/>.</summary>
-    public const string RequiredKind = "Correctness";
+    /// <summary>The stored kind both inputs must carry.</summary>
+    public static readonly string RequiredKind = AssessmentKind.Correctness.ToStoredKind();
 
     /// <summary>
     /// <c>null</c> when there is nothing to regress against yet (no previous Assessment), or when the two
@@ -74,7 +74,7 @@ public static class RegressionChecker
         AssessmentComparison comparison;
         try
         {
-            comparison = AssessmentComparer.Compare(ToComparable(previous), ToComparable(candidate));
+            comparison = AssessmentComparer.Compare(previous.ToComparable(), candidate.ToComparable());
         }
         catch (ComparisonRefusalException)
         {
@@ -92,8 +92,4 @@ public static class RegressionChecker
 
         return new RegressionFinding(coverageDropped, previousCoverage, candidateCoverage, lostAnalyses);
     }
-
-    private static ComparableAssessment ToComparable(CorrectnessAssessment assessment) => new(
-        assessment.AssessmentId, assessment.Assessor, RequiredKind, assessment.TokeniserName,
-        assessment.TokeniserVersion, assessment.Words);
 }

@@ -1417,11 +1417,6 @@ public static class Commands
         return candidateId is null ? null : assessments.Get(candidateId);
     }
 
-    private static CorrectnessAssessment ToCorrectnessAssessment(AssessmentRecord record) => new(
-        record.AssessmentId, record.Assessor, record.TokeniserName, record.TokeniserVersion,
-        ScopeCodec.ReadTrial(record.ScopeJson, RegressionChecker.RequiredKind),
-        record.Corpus, record.GrammarSourceSha256, record.Words ?? Array.Empty<AssessedWord>());
-
     private static (FailureReason? Reason, ApplyProjection? Projection, string? Error) BuildApplyProjection(
         MotifDatabase database, ProjectLocator project, string proposalId, string user, string? overrideComment = null)
     {
@@ -1454,7 +1449,7 @@ public static class Commands
                 var previous = assessments.GetCurrent();
                 var finding = previous is not null &&
                     string.Equals(previous.Kind, RegressionChecker.RequiredKind, StringComparison.Ordinal)
-                    ? RegressionChecker.Check(ToCorrectnessAssessment(previous), ToCorrectnessAssessment(candidate))
+                    ? RegressionChecker.Check(previous.ToCorrectness(), candidate.ToCorrectness())
                     : null;
 
                 if (finding is { IsRegression: true })
