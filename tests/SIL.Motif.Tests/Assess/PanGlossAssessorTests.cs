@@ -51,6 +51,7 @@ public sealed class PanGlossAssessorTests : IDisposable
         var expectedPath = _cachePaths.PathFor(GrammarSha256, PanGlossAssessor.AssessorName, "fast");
         Assert.Equal(AssessmentKind.ObjectTiming, produced.Kind);
         Assert.Equal(GrammarSha256, produced.GrammarSourceSha256);
+        AssertCarriesReportHeader(produced, Report());
         var raw = Assert.IsType<AssessmentRaw.FileCache>(produced.Raw);
         Assert.Equal(expectedPath, raw.Path);
         Assert.Equal(ExpectedDigest(cacheBytes), raw.Digest);
@@ -90,6 +91,7 @@ public sealed class PanGlossAssessorTests : IDisposable
             Scope(AssessmentKind.Correctness), _exportedCandidate, CancellationToken.None));
 
         Assert.Equal(GrammarSha256, produced.GrammarSourceSha256);
+        AssertCarriesReportHeader(produced, report);
         var raw = Assert.IsType<AssessmentRaw.WordMeasurements>(produced.Raw);
         Assert.Same(report.Words, raw.Words);
     }
@@ -111,6 +113,7 @@ public sealed class PanGlossAssessorTests : IDisposable
             Scope(AssessmentKind.ParseTime), _exportedCandidate, CancellationToken.None));
 
         Assert.Equal(GrammarSha256, produced.GrammarSourceSha256);
+        AssertCarriesReportHeader(produced, Report());
         var raw = Assert.IsType<AssessmentRaw.Batch>(produced.Raw);
         Assert.Same(batch, raw.Analysis);
     }
@@ -196,6 +199,16 @@ public sealed class PanGlossAssessorTests : IDisposable
         ModelFingerprint: "fp-1",
         Pipeline: "foma-confirm",
         DiagnosticCount: 0);
+
+    // Pinned by these three call sites: the report's header must survive onto every kind, not just Correctness.
+    private static void AssertCarriesReportHeader(ProducedAssessment produced, AssessReport report)
+    {
+        Assert.Equal(report.OutcomeDigest, produced.OutcomeDigest);
+        Assert.Equal(report.SemanticDigest, produced.SemanticDigest);
+        Assert.Equal(report.ModelFingerprint, produced.ModelFingerprint);
+        Assert.Equal(report.Pipeline, produced.Pipeline);
+        Assert.Equal(report.DiagnosticCount, produced.DiagnosticCount);
+    }
 
     private static string ExpectedDigest(byte[] bytes)
     {

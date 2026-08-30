@@ -40,6 +40,9 @@ public static class JobCommands
     /// <summary>The durable kind a queued Dry Run carries.</summary>
     public const string DryRunKind = "dry-run";
 
+    /// <summary>The durable kind a queued Trial carries.</summary>
+    public const string TrialKind = "trial";
+
     /// <summary><c>--wait</c>'s default bound before it gives up and reports the job still unfinished.</summary>
     public static readonly TimeSpan DefaultWaitTimeout = TimeSpan.FromMinutes(2);
 
@@ -86,6 +89,40 @@ public static class JobCommands
             var jobId = CanonicalId.Mint("job/").Value;
             var created = jobs.Create(jobId, ProjectWorkspaceKey.Compute(project), DryRunKind,
                 record.ProposalJson!, DateTimeOffset.UtcNow.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"));
+            return new CommandResult(0, created.JobId + Environment.NewLine);
+        });
+    }
+
+    /// <summary>
+    /// Loads one Proposal — a committed revision or an uncommitted Draft, either resolves — through
+    /// <see cref="ProposalRepository.Get"/>, refusing before any row is queued when it is absent, then
+    /// queues a Trial job and prints the job id that names it.
+    /// </summary>
+    public static CommandResult EnqueueTrial(string fwDataPath, string productVersion, string proposalId,
+        string? scope = null, UsageLog? usage = null)
+    {
+        usage?.Record(TrialKind,
+            new[] { UsageArgumentShape.Text("fwDataPath"), UsageArgumentShape.Text("proposalId") });
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, project) =>
+        {
+            var repository = new ProposalRepository(database);
+            ProposalRecord record;
+            try
+            {
+                var id = Commands.NormalizeId(proposalId);
+                record = repository.Get(CanonicalId.Parse(id));
+            }
+            catch (Exception exception)
+            {
+                return Commands.RefuseProposalLoad(exception);
+            }
+
+            var jobs = new JobRepository(database);
+            var jobId = CanonicalId.Mint("job/").Value;
+            var inputJson = JsonSerializer.Serialize(
+                new TrialJobInput(record.ProposalJson!, scope), MotifJson.CreateOptions());
+            var created = jobs.Create(jobId, ProjectWorkspaceKey.Compute(project), TrialKind,
+                inputJson, DateTimeOffset.UtcNow.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"));
             return new CommandResult(0, created.JobId + Environment.NewLine);
         });
     }
@@ -140,6 +177,44 @@ public static class JobCommands
             return asJson
                 ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
                 : new CommandResult(0, CommandTextRenderer.Render(projection));
+        });
+    }
+
+    /// <summary>
+    /// Polls one job until it reaches a terminal state, then renders it exactly as <see cref="Show"/>
+    /// does — used by verbs, such as <c>trial</c>, whose completion has no Dry-Run-specific anchor to
+    /// bind and so needs no projection of its own beyond the job's own terminal status.
+    /// </summary>
+    public static CommandResult WaitForJob(string fwDataPath, string jobId, string productVersion, bool asJson,
+        TimeSpan timeout)
+    {
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, project) =>
+        {
+            var jobs = new JobRepository(database);
+            var deadline = DateTimeOffset.UtcNow + timeout;
+            JobRecord? job;
+            while (true)
+            {
+                job = jobs.Get(jobId);
+                if (job is null)
+                    return ProjectStoreCommand.Refuse(FailureReason.NotFound,
+                        "No job '" + jobId + "' is recorded for this project.");
+                if (JobStateMachine.IsTerminal(job.Status)) break;
+                if (DateTimeOffset.UtcNow >= deadline)
+                {
+                    return ProjectStoreCommand.Refuse(FailureReason.Busy,
+                        "Timed out after " + timeout + " waiting for job '" + jobId +
+                        "' to finish; it is still " + JobStatusJson.ToWire(job.Status) +
+                        ". Check again with 'jobs show " + jobId + " --project <fwdata>'.");
+                }
+                Thread.Sleep(WaitPollInterval);
+            }
+
+            var response = new JobStatusResponse(job.JobId, job.ProjectKey, true, job.Kind, job.Status,
+                job.Attempt, job.UpdatedUtc, job.CancellationRequested, job.FailureCategory, job.Version);
+            return new CommandResult(0, asJson
+                ? ProjectionJson.Serialize(response) + Environment.NewLine
+                : Render(response));
         });
     }
 

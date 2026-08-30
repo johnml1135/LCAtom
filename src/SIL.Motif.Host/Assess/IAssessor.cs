@@ -111,8 +111,21 @@ public abstract record AssessmentRaw
 /// discipline <see cref="GrammarCoverageFigure"/> already follows, and what Task 2's <c>Assessments</c> table
 /// needs recorded against every row.
 /// </param>
+/// <param name="OutcomeDigest">The Assessor's own digest of what it produced, taken from its report and never derived here.</param>
+/// <param name="SemanticDigest">The Assessor's own digest of the produced meaning, taken from its report and never derived here.</param>
+/// <param name="ModelFingerprint">Which model or configuration the Assessor ran under, as its report names it.</param>
+/// <param name="Pipeline">Which pipeline the Assessor ran, as its report names it.</param>
+/// <param name="DiagnosticCount">How many warnings the Assessor raised while producing this.</param>
 /// <param name="Raw">The measurement itself, in the shape that kind of Assessment takes.</param>
-public sealed record ProducedAssessment(AssessmentKind Kind, string GrammarSourceSha256, AssessmentRaw Raw);
+public sealed record ProducedAssessment(
+    AssessmentKind Kind,
+    string GrammarSourceSha256,
+    string OutcomeDigest,
+    string SemanticDigest,
+    string ModelFingerprint,
+    string Pipeline,
+    int DiagnosticCount,
+    AssessmentRaw Raw);
 
 /// <summary>
 /// Raised when an Assessor will not produce a requested kind. Carries the kind and, in

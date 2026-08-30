@@ -126,6 +126,25 @@ public sealed class ProposalRepositoryTests : IDisposable
     }
 
     [Fact]
+    public void GetResolvesAnUncommittedDraftByProposalIdWithANullIntentDigest()
+    {
+        var project = new ProjectLocator(Path.Combine(_root, "draft-by-id.fwdata"), "draft-by-id");
+        using var database = MotifDatabase.OpenOwned(Path.Combine(_root, "draft-by-id.motif.db"), project,
+            MotifSchema.CurrentSchema, new Version(1, 0));
+        var repository = new ProposalRepository(database);
+        var id = CanonicalId.Mint("proposal/");
+        repository.CreateDraft("working", id, "{\"label\":\"in progress\"}");
+
+        var result = repository.Get(id);
+
+        Assert.Equal(id, result.ProposalId);
+        Assert.Equal("working", result.DraftName);
+        Assert.Null(result.IntentDigest);
+        Assert.Equal("{\"label\":\"in progress\"}", result.ProposalJson);
+        Assert.Equal("draft", result.Status);
+    }
+
+    [Fact]
     public void FinalizeIsAtomicSettingRevisionDigestAndClearingTheDraftNameTogether()
     {
         var project = new ProjectLocator(Path.Combine(_root, "finalize.fwdata"), "finalize");

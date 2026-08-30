@@ -311,6 +311,28 @@ try
             }
             break;
 
+        case "trial":
+            if (positionals.Count != 1 || !flags.TryGetValue("project", out var trialProject))
+            {
+                return Usage(
+                    "Usage: motif trial --project <fwdata> <proposalId> [--scope <name>] [--wait] [--json]", asJson);
+            }
+            result = JobCommands.EnqueueTrial(
+                trialProject, CliProductVersion(), positionals[0], flags.GetValueOrDefault("scope"), usage);
+            // A job just entered the queue: wake the runner before anything below waits on it.
+            if (result.ExitCode == 0) RunnerKick.After();
+            if (result.ExitCode == 0 && flags.ContainsKey("wait"))
+            {
+                var trialJobId = result.Output.Trim();
+                var trialWaitTimeout = flags.TryGetValue("wait-timeout-ms", out var trialWaitTimeoutRaw) &&
+                    int.TryParse(trialWaitTimeoutRaw, out var trialWaitTimeoutMs)
+                    ? TimeSpan.FromMilliseconds(trialWaitTimeoutMs)
+                    : JobCommands.DefaultWaitTimeout;
+                result = JobCommands.WaitForJob(
+                    trialProject, trialJobId, CliProductVersion(), asJson, trialWaitTimeout);
+            }
+            break;
+
         case "apply":
             if (positionals.Count != 1 ||
                 !flags.TryGetValue("project", out var applyProject) ||
@@ -585,6 +607,7 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine("  list --project <fwdata> [--json]");
     writer.WriteLine("  show --project <fwdata> <proposalId> [--json]");
     writer.WriteLine("  dry-run --project <fwdata> <proposalId> [--wait] [--json]");
+    writer.WriteLine("  trial --project <fwdata> <proposalId> [--scope <name>] [--wait] [--json]");
     writer.WriteLine("  apply <proposalId> --project <fwdata> --user <name> [--json]");
     writer.WriteLine("  log --project <fwdata> [--json]");
     writer.WriteLine();
@@ -614,7 +637,7 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine("  " + JobsMoveUsage());
     writer.WriteLine();
     writer.WriteLine("Global options: --json  (structured output; supported by " +
-        "open/analyses/list/show/dry-run/apply/log/config/corpora/show-corpus/jobs)");
+        "open/analyses/list/show/dry-run/trial/apply/log/config/corpora/show-corpus/jobs)");
 }
 
 /// <summary>Whether the caller said anything at all about what a licence permits.</summary>

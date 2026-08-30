@@ -8,7 +8,7 @@ using Xunit;
 namespace SIL.Motif.Tests.Cli;
 
 /// <summary>
-/// Covers the two verbs that let anything outside this process put work in the queue and read it back.
+/// Covers the verbs that let anything outside this process put work in the queue and read it back.
 /// </summary>
 /// <remarks>
 /// Driven against the real executable rather than the command layer. A verb that only works in-process is
@@ -70,6 +70,51 @@ public sealed class JobVerbArgvTests : IDisposable
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("Timed out after", result.Error);
         Assert.Contains("jobs show", result.Error);
+    }
+
+    [Fact]
+    public void EnqueueingATrialOfAFinalizedProposalPrintsAJobIdAndSucceeds()
+    {
+        var proposalId = FinalizeOneOperationProposal();
+
+        var result = Run($"trial --project \"{Project}\" {proposalId}");
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(string.Empty, result.Error);
+        Assert.False(string.IsNullOrWhiteSpace(result.Output));
+
+        var jobId = result.Output.Trim();
+        var shown = Run($"jobs show {jobId} --project \"{Project}\" --json");
+        Assert.Equal(0, shown.ExitCode);
+        using var document = JsonDocument.Parse(shown.Output);
+        Assert.Equal("trial", document.RootElement.GetProperty("kind").GetString());
+    }
+
+    [Fact]
+    public void EnqueueingATrialOfAnUncommittedDraftPrintsAJobIdAndSucceeds()
+    {
+        var created = Run($"new --project \"{Project}\" --draft d2");
+        Assert.Equal(0, created.ExitCode);
+
+        const string marker = "proposalId: ";
+        var start = created.Output.IndexOf(marker, StringComparison.Ordinal);
+        Assert.True(start >= 0, "Could not find '" + marker + "' in new's output: " + created.Output);
+        var proposalId = created.Output.Substring(start + marker.Length).TrimEnd('\r', '\n');
+
+        var result = Run($"trial --project \"{Project}\" {proposalId}");
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.False(string.IsNullOrWhiteSpace(result.Output));
+    }
+
+    [Fact]
+    public void TrialOfAnAbsentProposalRefusesBeforeQueueingAnything()
+    {
+        var result = Run($"trial --project \"{Project}\" agent_AAECAwQFBgcICQoLDA0ODw --json");
+
+        Assert.Equal(2, result.ExitCode);
+        Assert.Equal(FailureReason.NotFound, Envelope(result.Error).Reason);
+        Assert.Contains("not found", result.Error);
     }
 
     private string FinalizeOneOperationProposal()

@@ -9,11 +9,15 @@ using SIL.LCModel;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Jobs;
 using SIL.Motif.Contract.Projects;
+using SIL.Motif.Host.Assess;
 using SIL.Motif.Host.Baselines;
+using SIL.Motif.Host.Config;
 using SIL.Motif.Host.LcmUtils;
+using SIL.Motif.Host.Parser;
 using SIL.Motif.Host.Store;
 using SIL.Motif.Runner.AppliedLog;
 using SIL.Motif.Runner.DryRun;
+using SIL.Motif.Worker.Assess;
 using SIL.Motif.Worker.Baselines;
 using SIL.Motif.Worker.Jobs;
 using SIL.Motif.Worker.Store;
@@ -289,12 +293,58 @@ internal static class Program
                 return Task.FromResult<(IReadOnlyCollection<Guid>, DryRunScratch?)>((appliedProposalIds, scratch));
             },
             (scratch, plan, _) => Task.FromResult(ProposalDryRunner.Run(scratch!, plan)));
+
+        var handlers = new Dictionary<string, JobRunnerLoop.Handler>(StringComparer.Ordinal)
+        {
+            [BaselineRefreshKind] = (_, token) => refresh.RunAsync(project, token),
+            [DryRunKind] = (job, token) => dryRun.RunAsync(job.JobId, project, token),
+        };
+
+        if (TryBuildTrialHandler(runtime, proposals, lanes, options) is { } trial)
+            handlers[TrialJobHandler.TrialKind] = (job, token) => trial.RunAsync(job.JobId, project, token);
+
         return new JobRunnerLoop(new JobClaims(runtime.Database), runtime.WorkspaceKey, ownerId: ownerId,
-            lease: options.Lease, poll: TimeSpan.Zero,
-            handlers: new Dictionary<string, JobRunnerLoop.Handler>(StringComparer.Ordinal)
+            lease: options.Lease, poll: TimeSpan.Zero, handlers: handlers);
+    }
+
+    /// <summary>Builds a Trial handler, or null when the parser or root is not usable.</summary>
+    private static TrialJobHandler? TryBuildTrialHandler(Projects.ProjectRuntime runtime,
+        ProposalRepository proposals, Scheduling.ProjectLaneRegistry lanes, RunnerOptions options)
+    {
+        IAssessorCatalog catalog;
+        try
+        {
+            var ownership = WorkspaceOwnership.Bootstrap(options.Root);
+            catalog = new AssessorCatalog(new IAssessor[] { new PanGlossAssessor(new StatsCacheStore(ownership)) });
+        }
+        catch (Exception exception) when (exception is ParserUnavailableException or ArgumentException)
+        {
+            return null;
+        }
+
+        var loader = new FwDataProjectLoader();
+        return new TrialJobHandler(runtime.Jobs, runtime.Baselines, proposals, lanes,
+            new ProjectConfigurationReader(), catalog, new AssessmentRepository(runtime.Database),
+            (fwDataPath, scratchRoot, _) =>
             {
-                [BaselineRefreshKind] = (_, token) => refresh.RunAsync(project, token),
-                [DryRunKind] = (job, token) => dryRun.RunAsync(job.JobId, project, token),
+                var factory = new ScratchCacheFactory(loader);
+                var cache = factory.CreateFromFileCopy(fwDataPath, scratchRoot);
+                var scratch = DryRunScratch.Adopt(cache, $"file copy under {scratchRoot}");
+                var appliedProposalIds = ProjectAppliedLog.ReadAll(scratch.PeekCache())
+                    .Select(entry => entry.ProposalId).ToArray();
+                return Task.FromResult<(IReadOnlyCollection<Guid>, DryRunScratch?)>((appliedProposalIds, scratch));
+            },
+            (scratch, plan, _) => Task.FromResult(ProposalDryRunner.Run(scratch!, plan)),
+            (cache, _) =>
+            {
+                if (cache is null)
+                {
+                    throw new InvalidOperationException(
+                        "A Trial requires a real scratch to prepare a candidate for Assessment.");
+                }
+                loader.Save(cache);
+                var directory = Path.GetDirectoryName(Path.GetFullPath(cache.ProjectId.Path))!;
+                return Task.FromResult(directory);
             });
     }
 }

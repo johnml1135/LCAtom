@@ -14,7 +14,11 @@ namespace SIL.Motif.Worker.Store;
 /// <summary>Durable Proposal workflow access through a worker-owned Motif database.</summary>
 public interface IProposalRepository
 {
-    /// <summary>Gets the current revision and review state for one Proposal.</summary>
+    /// <summary>
+    /// Gets the current revision and review state for one Proposal, whether committed or still a Draft
+    /// (marked by <see cref="ProposalRecord.DraftName"/>, whose content is <c>DraftJson</c> rather than a
+    /// committed revision's bytes).
+    /// </summary>
     ProposalRecord Get(CanonicalId proposalId);
     /// <summary>Lists current Proposals, optionally restricted to one workflow status; drafts are included, marked by <see cref="ProposalRecord.DraftName"/>.</summary>
     IReadOnlyList<ProposalRecord> List(ProposalListFilter filter);
@@ -149,7 +153,7 @@ public sealed class ProposalRepository : IProposalRepository
                    p.Status, p.Label, p.Comment, p.SupersededBy,
                    d.Outcome, d.ActorType, d.ActorId, d.Comment, d.TimestampUtc, d.IntentDigest, p.AnchorJson, p.ArchivedUtc,
                    p.DraftName, p.DraftJson
-            FROM Proposals p JOIN ProposalRevisions r ON r.ProposalId = p.ProposalId
+            FROM Proposals p LEFT JOIN ProposalRevisions r ON r.ProposalId = p.ProposalId
                 AND r.IntentDigest = p.CurrentIntentDigest
             LEFT JOIN Decisions d ON d.ProposalId = p.ProposalId AND d.IntentDigest = p.CurrentIntentDigest
             WHERE p.ProposalId = $id;

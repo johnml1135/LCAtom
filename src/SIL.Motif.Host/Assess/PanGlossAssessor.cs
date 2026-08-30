@@ -146,9 +146,12 @@ public sealed class PanGlossStatsProcess : IPanGlossStatsRunner
 /// </para>
 /// <para>
 /// <see cref="ProduceAsync"/> always runs the GUID-keyed assess pass first, whatever was asked for: it is
-/// the only route that carries the grammar's own hash (<see cref="AssessReport.GrammarSourceSha256"/>),
-/// which every produced kind must cite and which this type never derives on its own. That report's own
-/// words double as <see cref="AssessmentKind.Correctness"/>'s raw material when it was asked for.
+/// the only route that carries the grammar's own hash (<see cref="AssessReport.GrammarSourceSha256"/>) and
+/// the rest of its header (<see cref="AssessReport.OutcomeDigest"/>, <see cref="AssessReport.SemanticDigest"/>,
+/// <see cref="AssessReport.ModelFingerprint"/>, <see cref="AssessReport.Pipeline"/>,
+/// <see cref="AssessReport.DiagnosticCount"/>), which every produced kind must cite and which this type
+/// never derives on its own. That report's own words double as <see cref="AssessmentKind.Correctness"/>'s
+/// raw material when it was asked for.
 /// </para>
 /// </remarks>
 public sealed class PanGlossAssessor : IAssessor
@@ -225,8 +228,7 @@ public sealed class PanGlossAssessor : IAssessor
 
         if (wanted.Contains(AssessmentKind.Correctness))
         {
-            results.Add(new ProducedAssessment(
-                AssessmentKind.Correctness, report.GrammarSourceSha256,
+            results.Add(Produced(report, AssessmentKind.Correctness,
                 new AssessmentRaw.WordMeasurements(report.Words)));
         }
 
@@ -239,8 +241,7 @@ public sealed class PanGlossAssessor : IAssessor
                 throw new InvalidOperationException(
                     $"{AssessorName} could not measure parse time: {runResult.Refusal!.Detail}");
             }
-            results.Add(new ProducedAssessment(
-                AssessmentKind.ParseTime, report.GrammarSourceSha256, new AssessmentRaw.Batch(runResult.Analysis!)));
+            results.Add(Produced(report, AssessmentKind.ParseTime, new AssessmentRaw.Batch(runResult.Analysis!)));
         }
 
         if (wanted.Contains(AssessmentKind.ObjectTiming))
@@ -249,13 +250,17 @@ public sealed class PanGlossAssessor : IAssessor
             await _statsRunner.RunBatchAsync(
                 grammarSourcePath, scope.Words, engine, scope.PerWordLimit, cachePath, cancellationToken)
                 .ConfigureAwait(false);
-            results.Add(new ProducedAssessment(
-                AssessmentKind.ObjectTiming, report.GrammarSourceSha256,
+            results.Add(Produced(report, AssessmentKind.ObjectTiming,
                 new AssessmentRaw.FileCache(cachePath, DigestOfFile(cachePath))));
         }
 
         return results;
     }
+
+    // Every produced kind shares one report's header; this is the one place that pairs them.
+    private static ProducedAssessment Produced(AssessReport report, AssessmentKind kind, AssessmentRaw raw) =>
+        new(kind, report.GrammarSourceSha256, report.OutcomeDigest, report.SemanticDigest,
+            report.ModelFingerprint, report.Pipeline, report.DiagnosticCount, raw);
 
     private static string ReasonNotProduced(AssessmentKind kind) => kind switch
     {

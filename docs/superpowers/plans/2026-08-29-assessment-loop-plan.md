@@ -124,6 +124,13 @@ The composite: one scratch, one Baseline load, producing a Dry Run **and** the c
 
 ---
 
+**Carried forward from Task 4, and it must be answered before Task 6 compares anything.** A scope declares
+its words as a *query* — the default being "all words carrying a manual analysis" — and **nothing resolves
+that query yet**. A Trial currently measures every non-empty wordform in the project, which is broader than
+the declared default. Two Assessments joined on the word are still honest about the words they share, so this
+is not a correctness bug in comparison; it is a measurement that says it covered a Selection it did not. The
+resolver belongs here, and until it exists a scope's `Query` is decorative.
+
 ### Task 5: Reports
 
 ADR 0042 decision 4, and decision 4's amendment: an Assessor returns raw material, a Report is its

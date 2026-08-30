@@ -34,7 +34,9 @@ internal sealed class FakeAssessor : IAssessor
         }
 
         IReadOnlyList<ProducedAssessment> produced = wanted
-            .Select(kind => new ProducedAssessment(kind, FakeGrammarSha256, new AssessmentRaw.WordMeasurements([])))
+            .Select(kind => new ProducedAssessment(kind, FakeGrammarSha256, "sha256:" + new string('0', 64),
+                "sha256:" + new string('0', 64), "fake-model", "fake-pipeline", 0,
+                new AssessmentRaw.WordMeasurements([])))
             .ToList();
         return Task.FromResult(produced);
     }
