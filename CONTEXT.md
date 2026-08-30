@@ -76,10 +76,19 @@ measurement already taken. A scope is **context, not a gate**: two Assessments c
 word, and a differing engine or corpus annotates that comparison rather than forbidding it.
 _Avoid_: profile, config, settings, run options
 
-**Grammar Delta**:
-The exact structural difference between two Assessments — which analyses were added, removed,
-retained, or became incomplete.
-_Avoid_: diff, score change, improvement
+**Assessment kind**:
+What one Assessment measured — the compiled engine's size, the time to parse a set of words, per-rule
+and per-morpheme timing, correctness against manual analysis, the difference between two Assessments,
+or which words now complete. A closed set, because a Report can only say it was never given what it
+needs if there is a fixed list of things it could have been given. Two Assessments compare only when
+they share a kind, alongside sharing an Assessor.
+_Avoid_: type, category, measure, metric
+
+**Difference**:
+An Assessment kind: what changed between two other Assessments, joined on the word. Stored and citable
+like any other measurement rather than computed afresh each time it is read. Replaces the earlier term
+*Grammar Delta*, which named the same thing separately and so gave one concept two names.
+_Avoid_: diff, delta, grammar delta, score change, improvement
 
 **Dry Run**:
 What a Proposal would do, computed by applying it to a throwaway copy of the project and reading the
