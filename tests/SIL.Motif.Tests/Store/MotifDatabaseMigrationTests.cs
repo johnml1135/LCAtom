@@ -686,6 +686,95 @@ public sealed class MotifDatabaseMigrationTests : IDisposable
     }
 
     [Fact]
+    public void MigrationToGenerationTenPreservesEveryExistingRowInEveryOtherTable()
+    {
+        var path = DatabasePath("generation-ten.fwdata");
+        const string proposalId = "proposal-ten";
+        using (Open("generation-ten.fwdata", supportedSchema: 9)) { }
+        using (var connection = NewConnection(path))
+        {
+            Execute(connection, "INSERT INTO Corpora (CorpusId, ProvenanceJson) VALUES ('corpus-ten', '{}');");
+            Execute(connection, "INSERT INTO CorpusDocuments (CorpusId, DocumentId, OrdinalIndex, Title, Source, " +
+                "Text, ContentSha256, IngestedUtc) VALUES ('corpus-ten', 'doc-1', 0, 't', 's', 'text', " +
+                "'sha256:doc', '2026-08-01T00:00:00Z');");
+            Execute(connection, "INSERT INTO Proposals (ProposalId, CurrentIntentDigest, Status) " +
+                $"VALUES ('{proposalId}', 'digest-ten', 'proposed');");
+            Execute(connection, "INSERT INTO ProposalRevisions (ProposalId, IntentDigest, ProposalJson, CreatedUtc) " +
+                $"VALUES ('{proposalId}', 'digest-ten', X'7B7D', '2026-08-01T00:00:00Z');");
+            Execute(connection, "INSERT INTO Decisions (ProposalId, IntentDigest, Outcome, ActorType, ActorId, " +
+                $"TimestampUtc) VALUES ('{proposalId}', 'digest-ten', 'approved', 'human', 'a', '2026-08-01T00:00:00Z');");
+            Execute(connection, "INSERT INTO Receipts (ReceiptId, ProposalId, IntentDigest, ReceiptJson, RecordedUtc) " +
+                $"VALUES ('receipt-ten', '{proposalId}', 'digest-ten', '{{}}', '2026-08-01T00:00:00Z');");
+            Execute(connection, "INSERT INTO Reports (ReportId, ProposalId, AssessmentId, ReportJson, EvidenceJson, " +
+                $"CreatedUtc) VALUES ('report-ten', '{proposalId}', NULL, '{{\"x\":1}}', NULL, '2026-08-01T00:00:00Z');");
+            Execute(connection, "INSERT INTO AppliedIndex (ProposalId, IntentDigest, AppliedUtc) " +
+                $"VALUES ('{proposalId}', 'digest-ten', '2026-08-01T00:00:00Z');");
+            Execute(connection, "INSERT INTO Jobs (JobId, ProjectKey, Kind, Status, Attempt, LineageId, InputJson, " +
+                "CancellationRequested, CreatedUtc, UpdatedUtc, Version, DryRunPublished) VALUES " +
+                "('job-ten', 'project', 'dry-run', 'queued', 1, 'job-ten', '{}', 0, " +
+                "'2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z', 0, 0);");
+            Execute(connection, "INSERT INTO Baselines (ProjectKey, ProjectIdentity, SemanticSnapshotDigest, " +
+                "ProjectionVersion, CapturedUtc, BundleDigest, RootDirectory, FwDataPath, PublishedUtc) VALUES " +
+                "('project', 'identity', 'sha256:sem', '1', '2026-08-01T00:00:00Z', 'sha256:bundle', " +
+                "'root', 'fw.fwdata', '2026-08-01T00:00:00Z');");
+        }
+
+        using var upgraded = Open("generation-ten.fwdata", supportedSchema: MotifSchema.CurrentSchema);
+        using var check = upgraded.OpenConnection();
+        MotifSchema.ValidateSchema(check, MotifSchema.CurrentSchema);
+
+        Assert.Equal("{}", Scalar(check, "SELECT ProvenanceJson FROM Corpora WHERE CorpusId = 'corpus-ten';"));
+        Assert.Equal(1L, Scalar(check, "SELECT COUNT(*) FROM CorpusDocuments WHERE CorpusId = 'corpus-ten';"));
+        Assert.Equal("proposed", Scalar(check, $"SELECT Status FROM Proposals WHERE ProposalId = '{proposalId}';"));
+        Assert.Equal(1L, Scalar(check, $"SELECT COUNT(*) FROM ProposalRevisions WHERE ProposalId = '{proposalId}';"));
+        Assert.Equal("approved", Scalar(check, $"SELECT Outcome FROM Decisions WHERE ProposalId = '{proposalId}';"));
+        Assert.Equal(1L, Scalar(check, "SELECT COUNT(*) FROM Receipts WHERE ReceiptId = 'receipt-ten';"));
+        Assert.Equal("{\"x\":1}", Scalar(check, "SELECT ReportJson FROM Reports WHERE ReportId = 'report-ten';"));
+        Assert.Same(DBNull.Value, Scalar(check, "SELECT Kind FROM Reports WHERE ReportId = 'report-ten';"));
+        Assert.Same(DBNull.Value, Scalar(check, "SELECT RenderedText FROM Reports WHERE ReportId = 'report-ten';"));
+        Assert.Equal(1L, Scalar(check, $"SELECT COUNT(*) FROM AppliedIndex WHERE ProposalId = '{proposalId}';"));
+        Assert.Equal(1L, Scalar(check, "SELECT COUNT(*) FROM Jobs WHERE JobId = 'job-ten';"));
+        Assert.Equal(1L, Scalar(check, "SELECT COUNT(*) FROM Baselines WHERE ProjectKey = 'project';"));
+        Assert.Equal(0L, Scalar(check, "SELECT COUNT(*) FROM Assessments;"));
+        Assert.Same(DBNull.Value, Scalar(check, "SELECT CurrentAssessmentId FROM MotifMetadata WHERE Id = 1;"));
+        Assert.Equal(MotifSchema.CurrentSchema, PragmaInt(check, "user_version"));
+    }
+
+    [Fact]
+    public void AssessmentMigrationRefusesExistingRows()
+    {
+        var path = DatabasePath("assessments-not-empty.fwdata");
+        using (Open("assessments-not-empty.fwdata", supportedSchema: 9)) { }
+        using (var connection = NewConnection(path))
+        {
+            Execute(connection, "INSERT INTO Assessments (AssessmentId, CorpusId, CorpusWordsJson, CorpusSha256, " +
+                "OutcomeDigest, SemanticDigest, GrammarSourceSha256, ModelFingerprint, Pipeline, DiagnosticCount, " +
+                "SavedUtc) VALUES ('a1', 'c1', '[]', 'sha256:c', 'sha256:o', 'sha256:s', 'sha256:g', 'fp', " +
+                "'pipeline', 0, '2026-08-01T00:00:00Z');");
+        }
+
+        var exception = Assert.Throws<InvalidDataException>(() => MotifDatabase.OpenOwned(
+            path, Locator("assessments-not-empty.fwdata"), MotifSchema.CurrentSchema, new Version(1, 0)));
+        Assert.Contains("found 1 existing Assessments row(s)", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(9, PragmaFromPath(path, "user_version"));
+    }
+
+    [Fact]
+    public void ValidateSchemaAcceptsGenerationTenAndRejectsATamperedOne()
+    {
+        var path = DatabasePath("generation-ten-tamper.fwdata");
+        using var database = Open("generation-ten-tamper.fwdata", supportedSchema: MotifSchema.CurrentSchema);
+        using (var connection = database.OpenConnection())
+            MotifSchema.ValidateSchema(connection, MotifSchema.CurrentSchema);
+
+        using (var connection = NewConnection(path))
+            Execute(connection, "DROP INDEX IX_Assessments_Kind;");
+
+        Assert.Throws<InvalidDataException>(() => MotifDatabase.OpenOwned(
+            path, Locator("generation-ten-tamper.fwdata"), MotifSchema.CurrentSchema, new Version(1, 0)));
+    }
+
+    [Fact]
     public void GenerationSixBoundaryFailureRollsBackAndCanBeRetried()
     {
         var path = DatabasePath("recovery-rollback.fwdata");

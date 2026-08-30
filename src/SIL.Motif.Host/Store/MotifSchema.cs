@@ -11,11 +11,11 @@ public static class MotifSchema
     public const int ApplicationId = 0x4D4F5446;
 
     /// <summary>The newest ordered schema generation implemented by this assembly.</summary>
-    public const int CurrentSchema = 9;
+    public const int CurrentSchema = 10;
 
     internal static Version MinimumWorkerVersion(int schema) => schema switch
     {
-        1 or 2 or 3 or 4 or 5 or 6 or 7 or 8 or 9 => new Version(1, 0),
+        1 or 2 or 3 or 4 or 5 or 6 or 7 or 8 or 9 or 10 => new Version(1, 0),
         _ => throw new NotSupportedException($"Motif schema {schema} is not known to this worker.")
     };
 
@@ -57,6 +57,9 @@ public static class MotifSchema
                     break;
                 case 9:
                     MigrateToGenerationNine(connection, transaction);
+                    break;
+                case 10:
+                    MigrateToGenerationTen(connection, transaction);
                     break;
                 default:
                     throw new NotSupportedException($"Motif schema {schema} is not known to this worker.");
@@ -113,7 +116,7 @@ public static class MotifSchema
                 "ParsedAnalyses", "AssessmentPins", "Proposals", "ProposalRevisions", "Drafts",
                 "Decisions", "Receipts", "Reports", "AppliedIndex", "MigrationLedger", "Jobs", "Baselines"
             },
-            9 => new HashSet<string>(StringComparer.Ordinal)
+            9 or 10 => new HashSet<string>(StringComparer.Ordinal)
             {
                 "MotifMetadata", "Corpora", "CorpusDocuments", "Assessments", "AssessedWords",
                 "ParsedAnalyses", "AssessmentPins", "Proposals", "ProposalRevisions",
@@ -137,6 +140,11 @@ public static class MotifSchema
         {
             expectedIndexes.Add("IX_Jobs_QueueOrder");
             expectedIndexes.Add("IX_Proposals_DraftName");
+        }
+        if (schema >= 10)
+        {
+            expectedIndexes.Add("IX_Assessments_Proposal");
+            expectedIndexes.Add("IX_Assessments_Kind");
         }
 
         using (var objects = connection.CreateCommand())
@@ -419,6 +427,152 @@ public static class MotifSchema
         drop.ExecuteNonQuery();
     }
 
+    // Rebuilds Assessments onto ADR 0042's shape and adds the project's current-Assessment pointer.
+    private static void MigrateToGenerationTen(SqliteConnection connection, SqliteTransaction? transaction)
+    {
+        RequireNoAssessmentRows(connection, transaction);
+        RenameAndRecreateAssessmentsForGenerationTen(connection, transaction);
+        RebuildAssessedWordsForGenerationTen(connection, transaction);
+        RebuildParsedAnalysesForGenerationTen(connection, transaction);
+        RebuildLeafForGenerationTen(connection, transaction, "AssessmentPins",
+            "AssessmentId TEXT NOT NULL REFERENCES Assessments(AssessmentId), PinnedBy TEXT NOT NULL, " +
+            "PinnedUtc TEXT NOT NULL, PRIMARY KEY (AssessmentId, PinnedBy)",
+            "AssessmentId, PinnedBy, PinnedUtc");
+        RebuildLeafForGenerationTen(connection, transaction, "Reports",
+            "ReportId TEXT PRIMARY KEY, ProposalId TEXT NULL REFERENCES Proposals(ProposalId), " +
+            "AssessmentId TEXT NULL REFERENCES Assessments(AssessmentId), ReportJson TEXT NOT NULL, " +
+            "EvidenceJson TEXT NULL, CreatedUtc TEXT NOT NULL, Kind TEXT NULL, RenderedText TEXT NULL",
+            "ReportId, ProposalId, AssessmentId, ReportJson, EvidenceJson, CreatedUtc");
+        using var dropOldAssessments = connection.CreateCommand();
+        dropOldAssessments.Transaction = transaction;
+        dropOldAssessments.CommandText = "DROP TABLE Assessments_GenerationNine;";
+        dropOldAssessments.ExecuteNonQuery();
+
+        using var pointer = connection.CreateCommand();
+        pointer.Transaction = transaction;
+        pointer.CommandText = "ALTER TABLE MotifMetadata ADD COLUMN CurrentAssessmentId TEXT NULL;";
+        pointer.ExecuteNonQuery();
+    }
+
+    // There is no way to assign Assessor, Kind, or scope values to a row this migration did not write.
+    private static void RequireNoAssessmentRows(SqliteConnection connection, SqliteTransaction? transaction)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT COUNT(*) FROM Assessments;";
+        var count = Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture);
+        if (count != 0)
+            throw new InvalidDataException(
+                $"Motif schema migration to generation 10 found {count} existing Assessments row(s); none " +
+                "were ever expected, and their Assessor, Kind, and Assessment scope cannot be recovered.");
+    }
+
+    // Not dropped yet: AssessedWords, AssessmentPins, and Reports still reference it until they are rebuilt.
+    private static void RenameAndRecreateAssessmentsForGenerationTen(
+        SqliteConnection connection, SqliteTransaction? transaction)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            ALTER TABLE Assessments RENAME TO Assessments_GenerationNine;
+            CREATE TABLE Assessments (
+                AssessmentId TEXT PRIMARY KEY,
+                CorpusId TEXT NOT NULL,
+                CorpusWordsJson TEXT NOT NULL,
+                CorpusSha256 TEXT NOT NULL,
+                CorpusProvenanceJson TEXT NULL,
+                OutcomeDigest TEXT NOT NULL,
+                SemanticDigest TEXT NOT NULL,
+                GrammarSourceSha256 TEXT NOT NULL,
+                ModelFingerprint TEXT NOT NULL,
+                Pipeline TEXT NOT NULL,
+                DiagnosticCount INTEGER NOT NULL,
+                SavedUtc TEXT NOT NULL,
+                ProposalId TEXT NULL REFERENCES Proposals(ProposalId),
+                ProposalIntentDigest TEXT NULL,
+                Assessor TEXT NOT NULL,
+                Kind TEXT NOT NULL,
+                ScopeJson TEXT NOT NULL,
+                ScopeDigest TEXT NOT NULL,
+                TokeniserName TEXT NOT NULL,
+                TokeniserVersion TEXT NOT NULL,
+                BaselineToken TEXT NOT NULL
+            );
+            CREATE INDEX IX_Assessments_Proposal ON Assessments(ProposalId);
+            CREATE INDEX IX_Assessments_Kind ON Assessments(Kind);
+            INSERT INTO Assessments (AssessmentId, CorpusId, CorpusWordsJson, CorpusSha256, CorpusProvenanceJson,
+                OutcomeDigest, SemanticDigest, GrammarSourceSha256, ModelFingerprint, Pipeline, DiagnosticCount,
+                SavedUtc)
+            SELECT AssessmentId, CorpusId, CorpusWordsJson, CorpusSha256, CorpusProvenanceJson,
+                OutcomeDigest, SemanticDigest, GrammarSourceSha256, ModelFingerprint, Pipeline, DiagnosticCount,
+                SavedUtc
+            FROM Assessments_GenerationNine;
+            """;
+        command.ExecuteNonQuery();
+    }
+
+    // Renamed but not dropped: ParsedAnalyses still references it, and is rebuilt next.
+    private static void RebuildAssessedWordsForGenerationTen(SqliteConnection connection, SqliteTransaction? transaction)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            DROP INDEX IF EXISTS IX_AssessedWords_Assessment;
+            DROP INDEX IF EXISTS IX_AssessedWords_Word;
+            ALTER TABLE AssessedWords RENAME TO AssessedWords_GenerationNine;
+            CREATE TABLE AssessedWords (
+                AssessedWordId INTEGER PRIMARY KEY AUTOINCREMENT,
+                AssessmentId TEXT NOT NULL REFERENCES Assessments(AssessmentId),
+                OrdinalIndex INTEGER NOT NULL,
+                Word TEXT NOT NULL,
+                Outcome TEXT NOT NULL
+            );
+            CREATE INDEX IX_AssessedWords_Assessment ON AssessedWords(AssessmentId);
+            CREATE INDEX IX_AssessedWords_Word ON AssessedWords(AssessmentId, Word);
+            INSERT INTO AssessedWords SELECT * FROM AssessedWords_GenerationNine;
+            """;
+        command.ExecuteNonQuery();
+    }
+
+    // Drops the old ParsedAnalyses and AssessedWords: the latter is unreferenced only once this rebuild runs.
+    private static void RebuildParsedAnalysesForGenerationTen(SqliteConnection connection, SqliteTransaction? transaction)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            DROP INDEX IF EXISTS IX_ParsedAnalyses_Word;
+            ALTER TABLE ParsedAnalyses RENAME TO ParsedAnalyses_GenerationNine;
+            CREATE TABLE ParsedAnalyses (
+                AssessedWordId INTEGER NOT NULL REFERENCES AssessedWords(AssessedWordId),
+                OrdinalIndex INTEGER NOT NULL,
+                CategoryGuid TEXT NULL,
+                MorphemeGuidsJson TEXT NOT NULL,
+                RootIndex INTEGER NOT NULL,
+                IdentityDigest TEXT NOT NULL
+            );
+            CREATE INDEX IX_ParsedAnalyses_Word ON ParsedAnalyses(AssessedWordId);
+            INSERT INTO ParsedAnalyses SELECT * FROM ParsedAnalyses_GenerationNine;
+            DROP TABLE ParsedAnalyses_GenerationNine;
+            DROP TABLE AssessedWords_GenerationNine;
+            """;
+        command.ExecuteNonQuery();
+    }
+
+    /// One rename-recreate-copy-drop cycle, safe only for a table nothing else declares a foreign key onto.
+    private static void RebuildLeafForGenerationTen(
+        SqliteConnection connection, SqliteTransaction? transaction, string table, string columnDefinitions,
+        string copyColumns)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            $"ALTER TABLE {table} RENAME TO {table}_GenerationNine; " +
+            $"CREATE TABLE {table} ({columnDefinitions}); " +
+            $"INSERT INTO {table} ({copyColumns}) SELECT {copyColumns} FROM {table}_GenerationNine; " +
+            $"DROP TABLE {table}_GenerationNine;";
+        command.ExecuteNonQuery();
+    }
+
     private static void AddRecoveryAndArchiveFacts(SqliteConnection connection, SqliteTransaction? transaction)
     {
         using var command = connection.CreateCommand();
@@ -602,6 +756,7 @@ public static class MotifSchema
         "IX_ParsedAnalyses_Word" => "ParsedAnalyses",
         "IX_Jobs_Lineage_Attempt" or "IX_Jobs_Status_Updated" or "IX_Jobs_Lease" or "IX_Jobs_QueueOrder" => "Jobs",
         "IX_Proposals_DraftName" => "Proposals",
+        "IX_Assessments_Proposal" or "IX_Assessments_Kind" => "Assessments",
         _ => throw new InvalidDataException($"Motif index {index} is not registered.")
     };
 
@@ -617,12 +772,17 @@ public static class MotifSchema
         "IX_Jobs_Lease" => ["Status", "LeaseUntilUtc"],
         "IX_Jobs_QueueOrder" => ["QueueOrder"],
         "IX_Proposals_DraftName" => ["DraftName"],
+        "IX_Assessments_Proposal" => ["ProposalId"],
+        "IX_Assessments_Kind" => ["Kind"],
         _ => throw new InvalidDataException($"Motif index {index} is not registered.")
     };
 
     private static IReadOnlyList<ForeignKeyShape> ForeignKeysFor(string table, int schema) => table switch
     {
         "CorpusDocuments" => [new("Corpora", "CorpusId", "CorpusId", "NO ACTION", "NO ACTION", "NONE")],
+        "Assessments" => schema >= 10
+            ? [new("Proposals", "ProposalId", "ProposalId", "NO ACTION", "NO ACTION", "NONE")]
+            : [],
         "AssessedWords" => [new("Assessments", "AssessmentId", "AssessmentId", "NO ACTION", "NO ACTION", "NONE")],
         "ParsedAnalyses" => [new("AssessedWords", "AssessedWordId", "AssessedWordId", "NO ACTION", "NO ACTION", "NONE")],
         "AssessmentPins" => [new("Assessments", "AssessmentId", "AssessmentId", "NO ACTION", "NO ACTION", "NONE")],
@@ -639,8 +799,11 @@ public static class MotifSchema
 
     private static IReadOnlyList<ColumnShape> ColumnsFor(string table, int schema) => table switch
     {
-        "MotifMetadata" =>
-        [C("Id", "INTEGER", false, 1), C("FullFwDataPath", "TEXT", true),
+        "MotifMetadata" => schema >= 10
+        ? [C("Id", "INTEGER", false, 1), C("FullFwDataPath", "TEXT", true),
+            C("FieldWorksProjectIdentity", "TEXT", true), C("MinimumWorkerVersion", "TEXT", true),
+            C("CreatedUtc", "TEXT", true), C("CurrentAssessmentId", "TEXT")]
+        : [C("Id", "INTEGER", false, 1), C("FullFwDataPath", "TEXT", true),
             C("FieldWorksProjectIdentity", "TEXT", true), C("MinimumWorkerVersion", "TEXT", true),
             C("CreatedUtc", "TEXT", true)],
         "Corpora" => [C("CorpusId", "TEXT", false, 1), C("ProvenanceJson", "TEXT", true)],
@@ -649,12 +812,7 @@ public static class MotifSchema
             C("Title", "TEXT", true), C("Source", "TEXT", true), C("Text", "TEXT", true),
             C("ContentSha256", "TEXT", true), C("IngestedUtc", "TEXT", true), C("Licence", "TEXT"),
             C("CapabilitiesJson", "TEXT"), C("AttributesJson", "TEXT")],
-        "Assessments" =>
-        [C("AssessmentId", "TEXT", false, 1), C("CorpusId", "TEXT", true), C("CorpusWordsJson", "TEXT", true),
-            C("CorpusSha256", "TEXT", true), C("CorpusProvenanceJson", "TEXT"), C("OutcomeDigest", "TEXT", true),
-            C("SemanticDigest", "TEXT", true), C("GrammarSourceSha256", "TEXT", true),
-            C("ModelFingerprint", "TEXT", true), C("Pipeline", "TEXT", true), C("DiagnosticCount", "INTEGER", true),
-            C("SavedUtc", "TEXT", true)],
+        "Assessments" => AssessmentColumns(schema),
         "AssessedWords" =>
         [C("AssessedWordId", "INTEGER", false, 1), C("AssessmentId", "TEXT", true), C("OrdinalIndex", "INTEGER", true),
             C("Word", "TEXT", true), C("Outcome", "TEXT", true)],
@@ -677,8 +835,11 @@ public static class MotifSchema
         "Receipts" =>
         [C("ReceiptId", "TEXT", false, 1), C("ProposalId", "TEXT", true),
             C("IntentDigest", "TEXT", true), C("ReceiptJson", "TEXT", true), C("RecordedUtc", "TEXT", true)],
-        "Reports" =>
-        [C("ReportId", "TEXT", false, 1), C("ProposalId", "TEXT"), C("AssessmentId", "TEXT"),
+        "Reports" => schema >= 10
+        ? [C("ReportId", "TEXT", false, 1), C("ProposalId", "TEXT"), C("AssessmentId", "TEXT"),
+            C("ReportJson", "TEXT", true), C("EvidenceJson", "TEXT"), C("CreatedUtc", "TEXT", true),
+            C("Kind", "TEXT"), C("RenderedText", "TEXT")]
+        : [C("ReportId", "TEXT", false, 1), C("ProposalId", "TEXT"), C("AssessmentId", "TEXT"),
             C("ReportJson", "TEXT", true), C("EvidenceJson", "TEXT"), C("CreatedUtc", "TEXT", true)],
         "AppliedIndex" =>
         [C("ProposalId", "TEXT", false, 1), C("IntentDigest", "TEXT", true),
@@ -702,6 +863,21 @@ public static class MotifSchema
             C("RootDirectory", "TEXT", true), C("FwDataPath", "TEXT", true), C("PublishedUtc", "TEXT", true)],
         _ => throw new InvalidDataException($"Motif table {table} is not registered.")
     };
+
+    private static IReadOnlyList<ColumnShape> AssessmentColumns(int schema) => schema >= 10
+        ? [C("AssessmentId", "TEXT", false, 1), C("CorpusId", "TEXT", true), C("CorpusWordsJson", "TEXT", true),
+            C("CorpusSha256", "TEXT", true), C("CorpusProvenanceJson", "TEXT"), C("OutcomeDigest", "TEXT", true),
+            C("SemanticDigest", "TEXT", true), C("GrammarSourceSha256", "TEXT", true),
+            C("ModelFingerprint", "TEXT", true), C("Pipeline", "TEXT", true), C("DiagnosticCount", "INTEGER", true),
+            C("SavedUtc", "TEXT", true), C("ProposalId", "TEXT"), C("ProposalIntentDigest", "TEXT"),
+            C("Assessor", "TEXT", true), C("Kind", "TEXT", true), C("ScopeJson", "TEXT", true),
+            C("ScopeDigest", "TEXT", true), C("TokeniserName", "TEXT", true), C("TokeniserVersion", "TEXT", true),
+            C("BaselineToken", "TEXT", true)]
+        : [C("AssessmentId", "TEXT", false, 1), C("CorpusId", "TEXT", true), C("CorpusWordsJson", "TEXT", true),
+            C("CorpusSha256", "TEXT", true), C("CorpusProvenanceJson", "TEXT"), C("OutcomeDigest", "TEXT", true),
+            C("SemanticDigest", "TEXT", true), C("GrammarSourceSha256", "TEXT", true),
+            C("ModelFingerprint", "TEXT", true), C("Pipeline", "TEXT", true), C("DiagnosticCount", "INTEGER", true),
+            C("SavedUtc", "TEXT", true)];
 
     private static IReadOnlyList<ColumnShape> ProposalColumns(int schema) => schema switch
     {
