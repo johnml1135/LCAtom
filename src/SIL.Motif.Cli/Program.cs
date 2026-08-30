@@ -471,6 +471,16 @@ try
                 flags.GetValueOrDefault("word"), flags.GetValueOrDefault("text"), asJson);
             break;
 
+        case "compare":
+            if (!flags.TryGetValue("project", out var compareProject) ||
+                !flags.TryGetValue("from", out var compareFrom) ||
+                !flags.TryGetValue("to", out var compareTo))
+            {
+                return Usage(CompareUsage(), asJson);
+            }
+            result = CompareCommands.Produce(compareProject, CliProductVersion(), compareFrom, compareTo, asJson);
+            break;
+
         case "jobs":
             if (positionals.Count == 0)
                 return Usage(JobsUsage(), asJson);
@@ -571,6 +581,9 @@ static string ReportUsage() =>
     "Usage: motif report --project <fwdata> --assessment <assessmentId> --kind <kind> [--word <w>] " +
     "[--text <t>] [--json] OR motif report --list-kinds [--json]";
 
+static string CompareUsage() =>
+    "Usage: motif compare --project <fwdata> --from <assessmentId> --to <assessmentId> [--json]";
+
 static string JobsUsage() =>
     "Usage: motif jobs show <jobId> --project <fwdata> [--json] OR motif jobs list --all [--json] OR " +
     "motif jobs cancel <jobId> --project <fwdata> [--json] OR motif jobs requeue <jobId> --project <fwdata> " +
@@ -637,6 +650,9 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine("Reports (a presentation of an Assessment's stored evidence; --kind is a registry):");
     writer.WriteLine("  " + ReportUsage());
     writer.WriteLine();
+    writer.WriteLine("Comparison (joins two Assessments on the word; stores and prints the difference):");
+    writer.WriteLine("  " + CompareUsage());
+    writer.WriteLine();
     writer.WriteLine("Corpus (text Motif measures against; never part of the FieldWorks project):");
     writer.WriteLine(
         "  add-corpus --project <fwdata> --id <id> --description <text> --tokeniser <name> " +
@@ -660,7 +676,7 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine("  " + JobsMoveUsage());
     writer.WriteLine();
     writer.WriteLine("Global options: --json  (structured output; supported by " +
-        "open/analyses/list/show/dry-run/trial/apply/log/config/corpora/show-corpus/jobs/report)");
+        "open/analyses/list/show/dry-run/trial/apply/log/config/corpora/show-corpus/jobs/report/compare)");
 }
 
 /// <summary>Whether the caller said anything at all about what a licence permits.</summary>

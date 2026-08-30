@@ -33,6 +33,7 @@ public static class ReportCommands
     {
         new CoverageReportProducer(),
         new CorrectnessReportProducer(),
+        new DifferenceReportProducer(),
     });
 
     // No IAssessor is registered: every kind above renders from stored rows and never resolves one.

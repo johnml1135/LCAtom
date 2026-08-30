@@ -124,6 +124,10 @@ The composite: one scratch, one Baseline load, producing a Dry Run **and** the c
 
 ---
 
+**Resolved in Task 5.** `WordQueryResolver` exists and `TrialJobHandler` calls it, so a Trial now measures
+the declared Selection. The note is kept below as written, because the reasoning in it is why the resolver
+had to land before Task 6 rather than after.
+
 **Carried forward from Task 4, and it must be answered before Task 6 compares anything.** A scope declares
 its words as a *query* — the default being "all words carrying a manual analysis" — and **nothing resolves
 that query yet**. A Trial currently measures every non-empty wordform in the project, which is broader than

@@ -139,3 +139,78 @@ public sealed class CorrectnessReportProducer : IReportProducer
         return new RenderedReport(KindName, text);
     }
 }
+
+/// <summary>
+/// Reads the ScopeJson shape <c>CompareCommands</c> writes for a <c>Difference</c> Assessment — the two
+/// input Assessments' ids and word counts, and the tokeniser warning, none of which travels on
+/// <see cref="ReportableAssessment"/> itself.
+/// </summary>
+internal static class DifferenceScopeJsonReader
+{
+    /// <exception cref="ReportRefusalException">The recorded scope could not be read.</exception>
+    public static DifferenceScopeWireShape Read(string scopeJson, string reportKind)
+    {
+        DifferenceScopeWireShape? shape;
+        try
+        {
+            shape = System.Text.Json.JsonSerializer.Deserialize<DifferenceScopeWireShape>(scopeJson);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            shape = null;
+        }
+        return shape ?? throw new ReportRefusalException(
+            reportKind, "the Assessment's recorded comparison scope could not be read.");
+    }
+
+    internal sealed record DifferenceScopeWireShape(
+        [property: JsonPropertyName("fromAssessmentId")] string FromAssessmentId,
+        [property: JsonPropertyName("toAssessmentId")] string ToAssessmentId,
+        [property: JsonPropertyName("fromWordCount")] int FromWordCount,
+        [property: JsonPropertyName("toWordCount")] int ToWordCount,
+        [property: JsonPropertyName("sharedWordCount")] int SharedWordCount,
+        [property: JsonPropertyName("tokeniserMismatch")] bool TokeniserMismatch,
+        [property: JsonPropertyName("tokeniserWarning")] string? TokeniserWarning);
+}
+
+/// <summary>
+/// A comparison between two Assessments, rendered from a <c>Difference</c> Assessment's own stored rows —
+/// what <c>compare</c> produced and stored, never recomputed from the two inputs it was made from. Each
+/// stored word is one <see cref="WordChange"/> that survived the join; a word that behaved identically on
+/// both sides was never written and so never appears here either.
+/// </summary>
+public sealed class DifferenceReportProducer : IReportProducer
+{
+    /// <summary>The registry name this kind is asked for under.</summary>
+    public const string KindName = "difference";
+
+    /// <inheritdoc />
+    public string Kind => KindName;
+
+    /// <inheritdoc />
+    public string Description => "A comparison between two Assessments, joined on the word.";
+
+    /// <inheritdoc />
+    public RenderedReport Produce(ReportableAssessment assessment, ReportQuery query, IAssessorCatalog assessors)
+    {
+        ArgumentNullException.ThrowIfNull(assessment);
+        if (!string.Equals(assessment.Kind, "Difference", StringComparison.Ordinal))
+        {
+            throw new ReportRefusalException(KindName,
+                $"this Assessment is a '{assessment.Kind}' measurement; a difference report needs one " +
+                "collected as 'Difference' (a comparison between two Assessments), which this scope did " +
+                "not collect.");
+        }
+
+        var meta = DifferenceScopeJsonReader.Read(assessment.ScopeJson, KindName);
+        var text = new System.Text.StringBuilder();
+        text.AppendLine($"Comparing {meta.FromAssessmentId} -> {meta.ToAssessmentId}");
+        text.AppendLine(
+            $"  Words: {meta.FromWordCount} vs {meta.ToWordCount}, {meta.SharedWordCount} shared, " +
+            $"{assessment.Words.Count} changed");
+        if (meta.TokeniserMismatch) text.AppendLine("  WARNING: " + meta.TokeniserWarning);
+        foreach (var word in assessment.Words.OrderBy(w => w.Word, StringComparer.Ordinal))
+            text.AppendLine($"    {word.Word}: {word.Outcome}");
+        return new RenderedReport(KindName, text.ToString());
+    }
+}
