@@ -41,26 +41,6 @@ public sealed class SqliteAssessmentStore
         _databasePath = Path.GetFullPath(databasePath);
     }
 
-    public bool Exists(string assessmentId)
-    {
-        using var connection = SqliteMotifDatabase.OpenConnection(_databasePath);
-        using var command = connection.CreateCommand();
-        command.CommandText = "SELECT 1 FROM Assessments WHERE AssessmentId = $id LIMIT 1;";
-        command.Parameters.AddWithValue("$id", assessmentId);
-        return command.ExecuteScalar() is not null;
-    }
-
-    public IReadOnlyList<string> List()
-    {
-        using var connection = SqliteMotifDatabase.OpenConnection(_databasePath);
-        using var command = connection.CreateCommand();
-        command.CommandText = "SELECT AssessmentId FROM Assessments ORDER BY AssessmentId;";
-
-        var ids = new List<string>();
-        using var reader = command.ExecuteReader();
-        while (reader.Read()) ids.Add(reader.GetString(0));
-        return ids;
-    }
 
     /// <summary>A SQL <c>COUNT(*)</c> on <c>AssessedWords</c> — no row is turned into an <see cref="AssessedWord"/>.</summary>
     public int CountWords(string assessmentId)
@@ -84,49 +64,6 @@ public sealed class SqliteAssessmentStore
             """;
         command.Parameters.AddWithValue("$id", assessmentId);
         return Convert.ToInt32(command.ExecuteScalar());
-    }
-
-    public void Pin(string assessmentId, string pinnedBy)
-    {
-        if (string.IsNullOrWhiteSpace(pinnedBy)) throw new ArgumentException("Required.", nameof(pinnedBy));
-
-        using var connection = SqliteMotifDatabase.OpenConnection(_databasePath);
-        using var command = connection.CreateCommand();
-        command.CommandText = """
-            INSERT INTO AssessmentPins (AssessmentId, PinnedBy, PinnedUtc) VALUES ($id, $pinnedBy, $utc)
-            ON CONFLICT(AssessmentId, PinnedBy) DO NOTHING;
-            """;
-        command.Parameters.AddWithValue("$id", assessmentId);
-        command.Parameters.AddWithValue("$pinnedBy", pinnedBy);
-        command.Parameters.AddWithValue("$utc", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
-        command.ExecuteNonQuery();
-    }
-
-    public void Unpin(string assessmentId, string pinnedBy)
-    {
-        using var connection = SqliteMotifDatabase.OpenConnection(_databasePath);
-        using var command = connection.CreateCommand();
-        command.CommandText = "DELETE FROM AssessmentPins WHERE AssessmentId = $id AND PinnedBy = $pinnedBy;";
-        command.Parameters.AddWithValue("$id", assessmentId);
-        command.Parameters.AddWithValue("$pinnedBy", pinnedBy);
-        command.ExecuteNonQuery();
-    }
-
-    /// <summary>The pruning candidate query (ADR 0036's open pruning question) — finds; never deletes.</summary>
-    public IReadOnlyList<string> ListUnpinnedAssessmentIds()
-    {
-        using var connection = SqliteMotifDatabase.OpenConnection(_databasePath);
-        using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT AssessmentId FROM Assessments a
-            WHERE NOT EXISTS (SELECT 1 FROM AssessmentPins p WHERE p.AssessmentId = a.AssessmentId)
-            ORDER BY AssessmentId;
-            """;
-
-        var ids = new List<string>();
-        using var reader = command.ExecuteReader();
-        while (reader.Read()) ids.Add(reader.GetString(0));
-        return ids;
     }
 
 

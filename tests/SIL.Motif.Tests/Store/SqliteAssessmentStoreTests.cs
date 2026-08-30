@@ -151,34 +151,4 @@ public sealed class SqliteAssessmentStoreTests : IDisposable
 
         Assert.Throws<System.Text.Json.JsonException>(() => store.Load(id));
     }
-
-    [Fact]
-    public void UnpinnedAssessmentsAreFoundByQuery_NothingDeletesThem()
-    {
-        var store = Store();
-        var pinned = Seed("assessment/pinned", Word("mbali", "Analysed", Analysis("d1", "m1")));
-        var unpinned = Seed("assessment/unpinned", Word("nyumba", "Analysed", Analysis("d2", "m1")));
-
-        store.Pin(pinned, "proposal-42");
-
-        Assert.Equal(new[] { unpinned }, store.ListUnpinnedAssessmentIds());
-
-        // Unpinning removes the record of dependency; it does not touch the Assessment row itself.
-        store.Unpin(pinned, "proposal-42");
-        Assert.Equal(new[] { pinned, unpinned }.OrderBy(x => x, StringComparer.Ordinal),
-            store.ListUnpinnedAssessmentIds().OrderBy(x => x, StringComparer.Ordinal));
-        Assert.True(store.Exists(pinned));
-    }
-
-    [Fact]
-    public void PinningTheSamePairTwiceIsANoOp()
-    {
-        var store = Store();
-        var id = Seed("assessment/pin-twice", Word("mbali", "Analysed", Analysis("d1", "m1")));
-
-        store.Pin(id, "proposal-1");
-        store.Pin(id, "proposal-1");   // must not throw a primary-key conflict
-
-        Assert.Empty(store.ListUnpinnedAssessmentIds());
-    }
 }
