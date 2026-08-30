@@ -1418,7 +1418,8 @@ public static class Commands
     }
 
     private static CorrectnessAssessment ToCorrectnessAssessment(AssessmentRecord record) => new(
-        record.AssessmentId, record.Assessor, record.TokeniserName, record.TokeniserVersion, record.ScopeJson,
+        record.AssessmentId, record.Assessor, record.TokeniserName, record.TokeniserVersion,
+        ScopeCodec.ReadTrial(record.ScopeJson, RegressionChecker.RequiredKind),
         record.Corpus, record.GrammarSourceSha256, record.Words ?? Array.Empty<AssessedWord>());
 
     private static (FailureReason? Reason, ApplyProjection? Projection, string? Error) BuildApplyProjection(

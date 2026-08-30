@@ -1,40 +1,24 @@
-using System.Text.Json.Serialization;
 using SIL.Motif.Host.Corpus;
 using SIL.Motif.Host.Parser;
 
 namespace SIL.Motif.Host.Assess;
 
 /// <summary>
-/// Reads the <c>ScopeJson</c> shape <c>TrialJobHandler</c> writes, just enough to rebuild a
-/// <see cref="BatchAnalysis"/> for <see cref="GrammarCoverageFigure.Compute(BatchAnalysis, CorpusDescriptor, string)"/>.
+/// Resolves a Trial scope's opaque <see cref="StoredScope.Trial.Engine"/> name into the <see cref="ParserEngine"/>
+/// a <see cref="BatchAnalysis"/> needs — PanGloss's own vocabulary, never <see cref="ScopeCodec"/>'s concern.
 /// </summary>
-internal static class ScopeJsonReader
+internal static class ScopeEngine
 {
-    /// <exception cref="ReportRefusalException">The scope's engine name or per-word limit cannot be read.</exception>
-    public static (ParserEngine Engine, int? PerWordLimitMs) ReadEngineAndLimit(string scopeJson, string reportKind)
+    /// <exception cref="ReportRefusalException">The name is not one PanGloss's Assessor ever writes.</exception>
+    public static ParserEngine Resolve(string engine, string reportKind)
     {
-        ScopeWireShape? shape;
-        try
-        {
-            shape = System.Text.Json.JsonSerializer.Deserialize<ScopeWireShape>(scopeJson);
-        }
-        catch (System.Text.Json.JsonException)
-        {
-            shape = null;
-        }
-        if (shape is null)
-            throw new ReportRefusalException(reportKind, "the Assessment's recorded scope could not be read.");
-        if (string.IsNullOrWhiteSpace(shape.Engine) || !PanGlossEngineNames.TryParse(shape.Engine, out var engine))
+        if (string.IsNullOrWhiteSpace(engine) || !PanGlossEngineNames.TryParse(engine, out var parsed))
         {
             throw new ReportRefusalException(reportKind,
-                $"the Assessment's recorded scope names an engine ('{shape.Engine}') this report cannot interpret.");
+                $"the Assessment's recorded scope names an engine ('{engine}') this report cannot interpret.");
         }
-        return (engine, (int)shape.PerWordLimitMs);
+        return parsed;
     }
-
-    private sealed record ScopeWireShape(
-        [property: JsonPropertyName("engine")] string? Engine,
-        [property: JsonPropertyName("perWordLimitMs")] long PerWordLimitMs);
 }
 
 /// <summary>Converts a stored per-word outcome string back to the enum it was written from.</summary>
@@ -79,10 +63,12 @@ public sealed class CoverageReportProducer : IReportProducer
                 "as 'ParseTime' (per-word outcome under a timing pass), which this scope did not collect.");
         }
 
-        var (engine, perWordLimitMs) = ScopeJsonReader.ReadEngineAndLimit(assessment.ScopeJson, KindName);
+        var scope = ScopeCodec.ReadTrial(assessment.ScopeJson, KindName);
+        var engine = ScopeEngine.Resolve(scope.Engine, KindName);
         var words = assessment.Words.Select((word, index) => new WordAnalysis(
             index, word.Word, 0, StoredWordOutcome.Parse(word.Outcome, KindName), string.Empty)).ToList();
-        var batch = new BatchAnalysis(words, engine, perWordLimitMs, string.Empty, Array.Empty<string>());
+        var batch = new BatchAnalysis(
+            words, engine, (int)scope.PerWordLimit.TotalMilliseconds, string.Empty, Array.Empty<string>());
         var corpus = new CorpusDescriptor(assessment.CorpusId, assessment.CorpusWords, assessment.CorpusSha256);
         var figure = GrammarCoverageFigure.Compute(batch, corpus, assessment.GrammarSourceSha256);
         return new RenderedReport(KindName, figure.Describe(assessment.CorpusSha256, assessment.GrammarSourceSha256));
@@ -98,17 +84,18 @@ public sealed class CoverageReportProducer : IReportProducer
 /// </summary>
 internal static class CorrectnessCoverage
 {
-    /// <exception cref="ReportRefusalException">The scope's engine name or per-word limit cannot be read.</exception>
+    /// <exception cref="ReportRefusalException">The scope's engine name cannot be read.</exception>
     public static GrammarCoverageFigure Compute(
-        IReadOnlyList<AssessedWord> words, string scopeJson, CorpusDescriptor corpus, string grammarSourceSha256,
-        string reportKind)
+        IReadOnlyList<AssessedWord> words, StoredScope.Trial scope, CorpusDescriptor corpus,
+        string grammarSourceSha256, string reportKind)
     {
-        var (engine, perWordLimitMs) = ScopeJsonReader.ReadEngineAndLimit(scopeJson, reportKind);
+        var engine = ScopeEngine.Resolve(scope.Engine, reportKind);
         var analysed = words.Select((word, index) => new WordAnalysis(
             index, word.Word, 0,
             word.Analyses.Count > 0 ? WordOutcome.Analysed : WordOutcome.NoAnalysis,
             word.Analyses.Count > 0 ? word.Analyses[0].IdentityDigest : string.Empty)).ToList();
-        var batch = new BatchAnalysis(analysed, engine, perWordLimitMs, string.Empty, Array.Empty<string>());
+        var batch = new BatchAnalysis(
+            analysed, engine, (int)scope.PerWordLimit.TotalMilliseconds, string.Empty, Array.Empty<string>());
         return GrammarCoverageFigure.Compute(batch, corpus, grammarSourceSha256);
     }
 }
@@ -149,45 +136,13 @@ public sealed class CorrectnessReportProducer : IReportProducer
         }
 
         var corpus = new CorpusDescriptor(assessment.CorpusId, assessment.CorpusWords, assessment.CorpusSha256);
+        var scope = ScopeCodec.ReadTrial(assessment.ScopeJson, KindName);
         var figure = CorrectnessCoverage.Compute(
-            assessment.Words, assessment.ScopeJson, corpus, assessment.GrammarSourceSha256, KindName);
+            assessment.Words, scope, corpus, assessment.GrammarSourceSha256, KindName);
         var text = "Correctness against manual analysis — " +
             figure.Describe(assessment.CorpusSha256, assessment.GrammarSourceSha256);
         return new RenderedReport(KindName, text);
     }
-}
-
-/// <summary>
-/// Reads the ScopeJson shape <c>CompareCommands</c> writes for a <c>Difference</c> Assessment — the two
-/// input Assessments' ids and word counts, and the tokeniser warning, none of which travels on
-/// <see cref="ReportableAssessment"/> itself.
-/// </summary>
-internal static class DifferenceScopeJsonReader
-{
-    /// <exception cref="ReportRefusalException">The recorded scope could not be read.</exception>
-    public static DifferenceScopeWireShape Read(string scopeJson, string reportKind)
-    {
-        DifferenceScopeWireShape? shape;
-        try
-        {
-            shape = System.Text.Json.JsonSerializer.Deserialize<DifferenceScopeWireShape>(scopeJson);
-        }
-        catch (System.Text.Json.JsonException)
-        {
-            shape = null;
-        }
-        return shape ?? throw new ReportRefusalException(
-            reportKind, "the Assessment's recorded comparison scope could not be read.");
-    }
-
-    internal sealed record DifferenceScopeWireShape(
-        [property: JsonPropertyName("fromAssessmentId")] string FromAssessmentId,
-        [property: JsonPropertyName("toAssessmentId")] string ToAssessmentId,
-        [property: JsonPropertyName("fromWordCount")] int FromWordCount,
-        [property: JsonPropertyName("toWordCount")] int ToWordCount,
-        [property: JsonPropertyName("sharedWordCount")] int SharedWordCount,
-        [property: JsonPropertyName("tokeniserMismatch")] bool TokeniserMismatch,
-        [property: JsonPropertyName("tokeniserWarning")] string? TokeniserWarning);
 }
 
 /// <summary>
@@ -219,7 +174,7 @@ public sealed class DifferenceReportProducer : IReportProducer
                 "not collect.");
         }
 
-        var meta = DifferenceScopeJsonReader.Read(assessment.ScopeJson, KindName);
+        var meta = ScopeCodec.ReadDifference(assessment.ScopeJson, KindName);
         var text = new System.Text.StringBuilder();
         text.AppendLine($"Comparing {meta.FromAssessmentId} -> {meta.ToAssessmentId}");
         text.AppendLine(

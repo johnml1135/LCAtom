@@ -3,9 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
-using System.Text.Json.Serialization;
-using SIL.Motif.Contract;
 using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Responses;
 using SIL.Motif.Host.Assess;
@@ -68,10 +65,10 @@ public static class CompareCommands
             }
 
             var assessmentId = CanonicalId.Mint("assessment/").Value;
-            var scopeJson = JsonSerializer.Serialize(new ScopeWire(
+            var scopeJson = ScopeCodec.Write(new StoredScope.Difference(
                 fromAssessmentId, toAssessmentId, comparison.FromWordCount, comparison.ToWordCount,
                 comparison.SharedWords.Count, from.GrammarSourceSha256, to.GrammarSourceSha256,
-                comparison.TokeniserMismatch, comparison.TokeniserWarning), MotifJson.CreateOptions());
+                comparison.TokeniserMismatch, comparison.TokeniserWarning));
             var words = comparison.Changes
                 .Select(change => new AssessedWord(
                     change.Word, $"{change.Kind}:{change.FromOutcome}->{change.ToOutcome}",
@@ -135,15 +132,4 @@ public static class CompareCommands
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(json));
         return "sha256:" + Convert.ToHexString(hash).ToLowerInvariant();
     }
-
-    private sealed record ScopeWire(
-        [property: JsonPropertyName("fromAssessmentId")] string FromAssessmentId,
-        [property: JsonPropertyName("toAssessmentId")] string ToAssessmentId,
-        [property: JsonPropertyName("fromWordCount")] int FromWordCount,
-        [property: JsonPropertyName("toWordCount")] int ToWordCount,
-        [property: JsonPropertyName("sharedWordCount")] int SharedWordCount,
-        [property: JsonPropertyName("fromGrammarSourceSha256")] string FromGrammarSourceSha256,
-        [property: JsonPropertyName("toGrammarSourceSha256")] string ToGrammarSourceSha256,
-        [property: JsonPropertyName("tokeniserMismatch")] bool TokeniserMismatch,
-        [property: JsonPropertyName("tokeniserWarning")] string? TokeniserWarning);
 }

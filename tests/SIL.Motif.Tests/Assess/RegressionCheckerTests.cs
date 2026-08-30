@@ -96,6 +96,7 @@ public sealed class RegressionCheckerTests
             .ToArray();
         return new CorrectnessAssessment(
             assessmentId, assessor, "none", "1",
-            """{"engine":"fast","perWordLimitMs":1000}""", corpus, GrammarSha, assessedWords);
+            new StoredScope.Trial("all", Array.Empty<string>(), "fast", Array.Empty<AssessmentKind>(), TimeSpan.FromSeconds(1)),
+            corpus, GrammarSha, assessedWords);
     }
 }

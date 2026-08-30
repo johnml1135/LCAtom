@@ -237,9 +237,8 @@ internal sealed class TrialJobHandler
         AssessmentScopeConfiguration scopeConfiguration, string assessorName, BaselineToken baselineToken)
     {
         // The query is what the scope was told to do; the words are only what it resolved to on this run.
-        var scopeJson = JsonSerializer.Serialize(new ScopeWire(scopeConfiguration.Query, scope.Words, scope.Engine,
-            scope.Collect.Select(kind => kind.ToString()).ToArray(), (long)scope.PerWordLimit.TotalMilliseconds),
-            MotifJson.CreateOptions());
+        var scopeJson = ScopeCodec.Write(new StoredScope.Trial(
+            scopeConfiguration.Query, scope.Words, scope.Engine, scope.Collect, scope.PerWordLimit));
         var scopeDigest = Digest(scopeJson);
         var baselineTokenJson = JsonSerializer.Serialize(baselineToken, MotifJson.CreateOptions());
 
@@ -344,13 +343,6 @@ internal sealed class TrialJobHandler
         var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(json));
         return "sha256:" + Convert.ToHexString(hash).ToLowerInvariant();
     }
-
-    private sealed record ScopeWire(
-        [property: JsonPropertyName("query")] string Query,
-        [property: JsonPropertyName("words")] IReadOnlyList<string> Words,
-        [property: JsonPropertyName("engine")] string Engine,
-        [property: JsonPropertyName("collect")] IReadOnlyList<string> Collect,
-        [property: JsonPropertyName("perWordLimitMs")] long PerWordLimitMs);
 
     private sealed record TrialCompletion(
         [property: JsonPropertyName("baselineToken")] BaselineToken BaselineToken,
