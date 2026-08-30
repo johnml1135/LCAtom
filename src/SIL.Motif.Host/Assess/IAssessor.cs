@@ -1,3 +1,5 @@
+using SIL.Motif.Host.Parser;
+
 namespace SIL.Motif.Host.Assess;
 
 /// <summary>
@@ -75,21 +77,42 @@ public sealed record AssessmentScope
 }
 
 /// <summary>
-/// One Assessment in raw form (ADR 0042's amendment on Reports): what an Assessor returned for one kind,
-/// before any presentation is computed from it.
+/// The closed set of shapes an Assessment's raw material can take (ADR 0042's amendment on Reports: an
+/// Assessor returns raw form — <i>"a SQLite database, analyses of specific words"</i>). Sealed to a private
+/// constructor so only the three nested shapes can ever exist, the same discipline <see cref="AssessmentKind"/>
+/// applies by being an enum: a caller can exhaustively switch over which one a kind produced.
+/// </summary>
+public abstract record AssessmentRaw
+{
+    private AssessmentRaw() { }
+
+    /// <summary>A file the Assessor itself owns the format of (ADR 0041 decision 9, ADR 0042 decision 8).</summary>
+    /// <param name="Path">Where the file lives.</param>
+    /// <param name="Digest">
+    /// The digest of what was actually written, hashed from the bytes on disk rather than trusted from the
+    /// Assessor's exit code — the same discipline <c>BaselineRefresh</c> applies to a published bundle.
+    /// </param>
+    public sealed record FileCache(string Path, string Digest) : AssessmentRaw;
+
+    /// <summary>GUID-keyed analyses of specific words — what Correctness, and a future Difference or Completion, compare on.</summary>
+    public sealed record WordMeasurements(IReadOnlyList<AssessedWord> Words) : AssessmentRaw;
+
+    /// <summary>A full batch run: per-word elapsed time and outcome, over the words a scope named.</summary>
+    public sealed record Batch(BatchAnalysis Analysis) : AssessmentRaw;
+}
+
+/// <summary>
+/// One Assessment in raw form: what an Assessor returned for one kind, before any presentation is computed
+/// from it.
 /// </summary>
 /// <param name="Kind">Which kind this is.</param>
-/// <param name="CachePath">
-/// The path to a file the Assessor itself owns the format of, when this kind's raw material lives in one
-/// (ADR 0041 decision 9, ADR 0042 decision 8) — for example PanGloss's stats cache. <c>null</c> when this
-/// kind's raw material needs no such file.
+/// <param name="GrammarSourceSha256">
+/// The grammar's identity, taken from the Assessor's own report rather than hashed independently — the same
+/// discipline <see cref="GrammarCoverageFigure"/> already follows, and what Task 2's <c>Assessments</c> table
+/// needs recorded against every row.
 /// </param>
-/// <param name="CacheDigest">
-/// The digest of what was actually written to <see cref="CachePath"/> at production time, hashed from the
-/// bytes on disk rather than trusted from the Assessor's exit code — the same discipline
-/// <c>BaselineRefresh</c> applies to a published bundle. <c>null</c> exactly when <see cref="CachePath"/> is.
-/// </param>
-public sealed record ProducedAssessment(AssessmentKind Kind, string? CachePath, string? CacheDigest);
+/// <param name="Raw">The measurement itself, in the shape that kind of Assessment takes.</param>
+public sealed record ProducedAssessment(AssessmentKind Kind, string GrammarSourceSha256, AssessmentRaw Raw);
 
 /// <summary>
 /// Raised when an Assessor will not produce a requested kind. Carries the kind and, in
@@ -115,16 +138,17 @@ public sealed class AssessorRefusalException : Exception
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The one property that shapes everything here: an Assessor declares which kinds it can produce for a
-/// given scope, before producing any of them.</b> The declaration is scope-dependent rather than fixed,
-/// because what a scope collected constrains what can honestly be reported back — a scope whose
-/// <see cref="AssessmentScope.Collect"/> never asked for <see cref="AssessmentKind.ObjectTiming"/> never ran
-/// the pass that would have produced it, so it must not be declared producible after the fact.
+/// <b>The one property that shapes everything here: an Assessor declares, up front and independent of any
+/// scope, which kinds it can ever produce — and asking for anything outside that is a loud refusal naming
+/// the kind and the reason.</b> <see cref="SupportedKinds"/> answers "what can this Assessor do at all"; a
+/// caller never has to diff it against a scope's <see cref="AssessmentScope.Collect"/> to predict what
+/// <see cref="ProduceAsync"/> will do, because the two can never disagree.
 /// </para>
 /// <para>
-/// That declaration is what lets a Report later refuse with <i>this scope did not collect per-object
-/// counters</i> — naming the reason — rather than returning zeros, which is indistinguishable from a grammar
-/// whose rules cost nothing.
+/// That is the mechanism ADR 0042 decision 4 needs: a caller learns <i>this Assessor does not produce
+/// X</i>, naming the reason, rather than a partial answer or a zero indistinguishable from a grammar whose
+/// rules cost nothing. A Report reading a stored Assessment later answers from what was actually collected
+/// and recorded, not by asking the Assessor a second time — its binary may by then be gone.
 /// </para>
 /// </remarks>
 public interface IAssessor
@@ -132,25 +156,19 @@ public interface IAssessor
     /// <summary>This Assessor's name, as cited on every Assessment it produces and resolved through a catalog.</summary>
     string Name { get; }
 
-    /// <summary>
-    /// The kinds this Assessor can produce for <paramref name="scope"/> — not necessarily every kind it can
-    /// ever produce under some other scope.
-    /// </summary>
-    IReadOnlyList<AssessmentKind> KindsFor(AssessmentScope scope);
+    /// <summary>The kinds this Assessor can ever produce, independent of any particular scope.</summary>
+    IReadOnlyList<AssessmentKind> SupportedKinds { get; }
 
     /// <summary>
     /// Produces one Assessment per kind in <paramref name="scope"/>'s <see cref="AssessmentScope.Collect"/>
     /// (or this Assessor's own default kinds, when it is empty).
     /// </summary>
     /// <param name="scope">What this run was told to do.</param>
-    /// <param name="exportedCandidate">
-    /// A directory holding exactly the grammar to measure, already saved and needing no open cache — the
-    /// same shape <see cref="SIL.Motif.Host.Parser.IPanGlossCandidateExporter"/> produces.
-    /// </param>
+    /// <param name="exportedCandidate">A directory holding exactly the grammar to measure, already saved and needing no open cache.</param>
     /// <exception cref="AssessorRefusalException">
-    /// <paramref name="scope"/> asks for a kind not in <see cref="KindsFor"/> for it, thrown before
-    /// producing anything so a caller never receives a partial answer for a request it could not fully
-    /// satisfy (pinned by `AskingForAnUndeclaredKind_RefusesNamingTheKindAndTheReason`).
+    /// <paramref name="scope"/> asks for a kind not in <see cref="SupportedKinds"/>, thrown before producing
+    /// anything so a caller never receives a partial answer for a request it could not fully satisfy
+    /// (pinned by `AskingForAnUndeclaredKind_RefusesNamingTheKindAndTheReason`).
     /// </exception>
     Task<IReadOnlyList<ProducedAssessment>> ProduceAsync(
         AssessmentScope scope, string exportedCandidate, CancellationToken cancellationToken);

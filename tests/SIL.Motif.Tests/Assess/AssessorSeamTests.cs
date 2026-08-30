@@ -49,4 +49,20 @@ public sealed class AssessorSeamTests
         await Assert.ThrowsAsync<AssessorRefusalException>(() => assessor.ProduceAsync(
             Scope(AssessmentKind.ParseTime, AssessmentKind.Correctness), "unused", CancellationToken.None));
     }
+
+    [Fact]
+    public async Task SupportedKindsAndProduceAsyncNeverDisagree()
+    {
+        var assessor = new FakeAssessor("fake", [AssessmentKind.ParseTime, AssessmentKind.Correctness]);
+
+        // Collecting exactly SupportedKinds must succeed, whatever a scope's Collect happens to be.
+        var produced = await assessor.ProduceAsync(
+            Scope(assessor.SupportedKinds.ToArray()), "unused", CancellationToken.None);
+        Assert.Equal(assessor.SupportedKinds, produced.Select(p => p.Kind));
+
+        // Collecting anything outside SupportedKinds must refuse — never silently filtered out.
+        var outside = Enum.GetValues<AssessmentKind>().Except(assessor.SupportedKinds).First();
+        await Assert.ThrowsAsync<AssessorRefusalException>(
+            () => assessor.ProduceAsync(Scope(outside), "unused", CancellationToken.None));
+    }
 }

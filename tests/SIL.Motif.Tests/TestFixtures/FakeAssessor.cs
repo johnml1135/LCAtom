@@ -9,6 +9,8 @@ namespace SIL.Motif.Tests.TestFixtures;
 /// </summary>
 internal sealed class FakeAssessor : IAssessor
 {
+    private const string FakeGrammarSha256 = "sha256:" + "ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff";
+
     private readonly IReadOnlyList<AssessmentKind> _declaredKinds;
 
     public FakeAssessor(string name, IReadOnlyList<AssessmentKind> declaredKinds)
@@ -19,7 +21,7 @@ internal sealed class FakeAssessor : IAssessor
 
     public string Name { get; }
 
-    public IReadOnlyList<AssessmentKind> KindsFor(AssessmentScope scope) => _declaredKinds;
+    public IReadOnlyList<AssessmentKind> SupportedKinds => _declaredKinds;
 
     public Task<IReadOnlyList<ProducedAssessment>> ProduceAsync(
         AssessmentScope scope, string exportedCandidate, CancellationToken cancellationToken)
@@ -31,7 +33,9 @@ internal sealed class FakeAssessor : IAssessor
                 throw new AssessorRefusalException(Name, kind, "the fake Assessor was not configured to declare this kind.");
         }
 
-        IReadOnlyList<ProducedAssessment> produced = wanted.Select(kind => new ProducedAssessment(kind, null, null)).ToList();
+        IReadOnlyList<ProducedAssessment> produced = wanted
+            .Select(kind => new ProducedAssessment(kind, FakeGrammarSha256, new AssessmentRaw.WordMeasurements([])))
+            .ToList();
         return Task.FromResult(produced);
     }
 }

@@ -144,6 +144,12 @@ public sealed class PanGlossStatsProcess : IPanGlossStatsRunner
 /// are never declared either: both compare two Assessments, which is the comparison mechanism's job, not
 /// one Assessor call's.
 /// </para>
+/// <para>
+/// <see cref="ProduceAsync"/> always runs the GUID-keyed assess pass first, whatever was asked for: it is
+/// the only route that carries the grammar's own hash (<see cref="AssessReport.GrammarSourceSha256"/>),
+/// which every produced kind must cite and which this type never derives on its own. That report's own
+/// words double as <see cref="AssessmentKind.Correctness"/>'s raw material when it was asked for.
+/// </para>
 /// </remarks>
 public sealed class PanGlossAssessor : IAssessor
 {
@@ -188,12 +194,7 @@ public sealed class PanGlossAssessor : IAssessor
     public string Name => AssessorName;
 
     /// <inheritdoc />
-    public IReadOnlyList<AssessmentKind> KindsFor(AssessmentScope scope)
-    {
-        ArgumentNullException.ThrowIfNull(scope);
-        var wanted = scope.Collect.Count == 0 ? DefaultCollected : scope.Collect;
-        return wanted.Where(Supported.Contains).Distinct().ToList();
-    }
+    public IReadOnlyList<AssessmentKind> SupportedKinds => Supported;
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<ProducedAssessment>> ProduceAsync(
@@ -217,14 +218,17 @@ public sealed class PanGlossAssessor : IAssessor
         }
 
         var grammarSourcePath = LocateGrammarSource(exportedCandidate);
+
+        // Every produced kind cites this hash, and only the assess pass carries it — never derived here.
+        var report = await _reportRunner.RunAsync(exportedCandidate, cancellationToken).ConfigureAwait(false);
         var results = new List<ProducedAssessment>();
 
-        AssessReport? report = null;
-        if (wanted.Contains(AssessmentKind.Correctness) || wanted.Contains(AssessmentKind.ObjectTiming))
-            report = await _reportRunner.RunAsync(exportedCandidate, cancellationToken).ConfigureAwait(false);
-
         if (wanted.Contains(AssessmentKind.Correctness))
-            results.Add(new ProducedAssessment(AssessmentKind.Correctness, null, null));
+        {
+            results.Add(new ProducedAssessment(
+                AssessmentKind.Correctness, report.GrammarSourceSha256,
+                new AssessmentRaw.WordMeasurements(report.Words)));
+        }
 
         if (wanted.Contains(AssessmentKind.ParseTime))
         {
@@ -235,16 +239,19 @@ public sealed class PanGlossAssessor : IAssessor
                 throw new InvalidOperationException(
                     $"{AssessorName} could not measure parse time: {runResult.Refusal!.Detail}");
             }
-            results.Add(new ProducedAssessment(AssessmentKind.ParseTime, null, null));
+            results.Add(new ProducedAssessment(
+                AssessmentKind.ParseTime, report.GrammarSourceSha256, new AssessmentRaw.Batch(runResult.Analysis!)));
         }
 
         if (wanted.Contains(AssessmentKind.ObjectTiming))
         {
-            var cachePath = _cachePaths.PathFor(report!.GrammarSourceSha256, AssessorName, scope.Engine);
+            var cachePath = _cachePaths.PathFor(report.GrammarSourceSha256, AssessorName, scope.Engine);
             await _statsRunner.RunBatchAsync(
                 grammarSourcePath, scope.Words, engine, scope.PerWordLimit, cachePath, cancellationToken)
                 .ConfigureAwait(false);
-            results.Add(new ProducedAssessment(AssessmentKind.ObjectTiming, cachePath, DigestOfFile(cachePath)));
+            results.Add(new ProducedAssessment(
+                AssessmentKind.ObjectTiming, report.GrammarSourceSha256,
+                new AssessmentRaw.FileCache(cachePath, DigestOfFile(cachePath))));
         }
 
         return results;

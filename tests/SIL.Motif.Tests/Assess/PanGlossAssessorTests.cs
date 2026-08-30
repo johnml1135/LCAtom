@@ -50,8 +50,10 @@ public sealed class PanGlossAssessorTests : IDisposable
 
         var expectedPath = _cachePaths.PathFor(GrammarSha256, PanGlossAssessor.AssessorName, "fast");
         Assert.Equal(AssessmentKind.ObjectTiming, produced.Kind);
-        Assert.Equal(expectedPath, produced.CachePath);
-        Assert.Equal(ExpectedDigest(cacheBytes), produced.CacheDigest);
+        Assert.Equal(GrammarSha256, produced.GrammarSourceSha256);
+        var raw = Assert.IsType<AssessmentRaw.FileCache>(produced.Raw);
+        Assert.Equal(expectedPath, raw.Path);
+        Assert.Equal(ExpectedDigest(cacheBytes), raw.Digest);
         Assert.True(File.Exists(expectedPath));
     }
 
@@ -72,28 +74,85 @@ public sealed class PanGlossAssessorTests : IDisposable
         var second = Assert.Single(await otherAssessor.ProduceAsync(
             Scope(AssessmentKind.ObjectTiming), _exportedCandidate, CancellationToken.None));
 
-        Assert.NotEqual(first.CachePath, second.CachePath);
+        Assert.NotEqual(
+            ((AssessmentRaw.FileCache)first.Raw).Path,
+            ((AssessmentRaw.FileCache)second.Raw).Path);
     }
 
     [Fact]
-    public void KindsFor_DefaultsToParseTimeAndCorrectness_WhenTheScopeCollectsNothingSpecific()
+    public async Task ProduceAsync_ReturnsWordMeasurementsForCorrectness_WithoutDiscardingTheReport()
     {
-        var assessor = NeverRunningAssessor();
+        var report = Report();
+        var assessor = new PanGlossAssessor(
+            _cachePaths, new FakeBatchParser(null), new FakeReportRunner(report), new FakeStatsRunner([]));
 
-        var kinds = assessor.KindsFor(Scope());
+        var produced = Assert.Single(await assessor.ProduceAsync(
+            Scope(AssessmentKind.Correctness), _exportedCandidate, CancellationToken.None));
 
-        Assert.Equal(new[] { AssessmentKind.ParseTime, AssessmentKind.Correctness }, kinds);
+        Assert.Equal(GrammarSha256, produced.GrammarSourceSha256);
+        var raw = Assert.IsType<AssessmentRaw.WordMeasurements>(produced.Raw);
+        Assert.Same(report.Words, raw.Words);
     }
 
     [Fact]
-    public void KindsFor_NeverDeclaresEngineSizeDifferenceOrCompletion()
+    public async Task ProduceAsync_ReturnsTheBatchForParseTime_WithoutDiscardingIt()
+    {
+        var batch = new BatchAnalysis(
+            Words: [new WordAnalysis(0, "motifa", 12, WordOutcome.Analysed, "sig")],
+            Engine: ParserEngine.FstPrunedByHermitCrab,
+            PerWordTimeoutMs: 1000,
+            ProjectPath: "unused",
+            Warnings: []);
+        var assessor = new PanGlossAssessor(
+            _cachePaths, new FakeBatchParser(new ParserRunResult(batch, null)),
+            new FakeReportRunner(Report()), new FakeStatsRunner([]));
+
+        var produced = Assert.Single(await assessor.ProduceAsync(
+            Scope(AssessmentKind.ParseTime), _exportedCandidate, CancellationToken.None));
+
+        Assert.Equal(GrammarSha256, produced.GrammarSourceSha256);
+        var raw = Assert.IsType<AssessmentRaw.Batch>(produced.Raw);
+        Assert.Same(batch, raw.Analysis);
+    }
+
+    [Fact]
+    public async Task ProduceAsync_DefaultsToParseTimeAndCorrectness_WhenTheScopeCollectsNothingSpecific()
+    {
+        var batch = new BatchAnalysis(
+            Words: [new WordAnalysis(0, "motifa", 12, WordOutcome.Analysed, "sig")],
+            Engine: ParserEngine.FstPrunedByHermitCrab,
+            PerWordTimeoutMs: 1000,
+            ProjectPath: "unused",
+            Warnings: []);
+        var assessor = new PanGlossAssessor(
+            _cachePaths, new FakeBatchParser(new ParserRunResult(batch, null)),
+            new FakeReportRunner(Report()), new FakeStatsRunner([]));
+
+        var produced = await assessor.ProduceAsync(Scope(), _exportedCandidate, CancellationToken.None);
+
+        Assert.Equal(
+            new HashSet<AssessmentKind> { AssessmentKind.ParseTime, AssessmentKind.Correctness },
+            produced.Select(p => p.Kind).ToHashSet());
+    }
+
+    [Fact]
+    public void SupportedKinds_IsExactlyParseTimeCorrectnessAndObjectTiming()
     {
         var assessor = NeverRunningAssessor();
 
-        var kinds = assessor.KindsFor(Scope(
-            AssessmentKind.EngineSize, AssessmentKind.Difference, AssessmentKind.Completion));
+        Assert.Equal(
+            new[] { AssessmentKind.ParseTime, AssessmentKind.Correctness, AssessmentKind.ObjectTiming },
+            assessor.SupportedKinds);
+    }
 
-        Assert.Empty(kinds);
+    [Fact]
+    public void SupportedKinds_NeverContainsEngineSizeDifferenceOrCompletion()
+    {
+        var assessor = NeverRunningAssessor();
+
+        Assert.DoesNotContain(AssessmentKind.EngineSize, assessor.SupportedKinds);
+        Assert.DoesNotContain(AssessmentKind.Difference, assessor.SupportedKinds);
+        Assert.DoesNotContain(AssessmentKind.Completion, assessor.SupportedKinds);
     }
 
     [Fact]
@@ -160,7 +219,7 @@ public sealed class PanGlossAssessorTests : IDisposable
         }
     }
 
-    // Never actually asked to run in these tests; ParseTime is not among the collected kinds they exercise.
+    // Throws unless a scope collecting ParseTime actually needs it, per test.
     private sealed class FakeBatchParser(ParserRunResult? result) : PanGlossParser("unused")
     {
         public override ParserRunResult AnalyseBatch(
