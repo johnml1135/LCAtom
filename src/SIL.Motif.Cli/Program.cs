@@ -415,6 +415,24 @@ try
             if (result.ExitCode == 0) RunnerKick.After();
             break;
 
+        case "config":
+            if (positionals.Count == 0)
+                return Usage(ConfigUsage(), asJson);
+            switch (positionals[0])
+            {
+                case "show":
+                    if (positionals.Count != 1 || !flags.TryGetValue("project", out var configProject))
+                        return Usage(ConfigUsage(), asJson);
+                    result = asJson
+                        ? ConfigCommands.ShowJson(configProject, CliProductVersion())
+                        : ConfigCommands.Show(configProject, CliProductVersion());
+                    break;
+
+                default:
+                    return Usage(ConfigUsage(), asJson);
+            }
+            break;
+
         case "jobs":
             if (positionals.Count == 0)
                 return Usage(JobsUsage(), asJson);
@@ -509,6 +527,8 @@ static int Usage(string message, bool asJson = false, bool withUsageBanner = fal
     return FailureEnvelope.ExitCodeFor(FailureReason.InvalidArgument);
 }
 
+static string ConfigUsage() => "Usage: motif config show --project <fwdata> [--json]";
+
 static string JobsUsage() =>
     "Usage: motif jobs show <jobId> --project <fwdata> [--json] OR motif jobs list --all [--json] OR " +
     "motif jobs cancel <jobId> --project <fwdata> [--json] OR motif jobs requeue <jobId> --project <fwdata> " +
@@ -568,6 +588,9 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine("  apply <proposalId> --project <fwdata> --user <name> [--json]");
     writer.WriteLine("  log --project <fwdata> [--json]");
     writer.WriteLine();
+    writer.WriteLine("Configuration (the declared Assessment scopes and policy beside the project):");
+    writer.WriteLine("  " + ConfigUsage());
+    writer.WriteLine();
     writer.WriteLine("Corpus (text Motif measures against; never part of the FieldWorks project):");
     writer.WriteLine(
         "  add-corpus --project <fwdata> --id <id> --description <text> --tokeniser <name> " +
@@ -591,7 +614,7 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine("  " + JobsMoveUsage());
     writer.WriteLine();
     writer.WriteLine("Global options: --json  (structured output; supported by " +
-        "open/analyses/list/show/dry-run/apply/log/corpora/show-corpus/jobs)");
+        "open/analyses/list/show/dry-run/apply/log/config/corpora/show-corpus/jobs)");
 }
 
 /// <summary>Whether the caller said anything at all about what a licence permits.</summary>

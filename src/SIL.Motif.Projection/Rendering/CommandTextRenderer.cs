@@ -231,6 +231,25 @@ public static class CommandTextRenderer
         return sb.ToString();
     }
 
+    public static string Render(ProjectConfigurationProjection projection)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"Regression gate: {(projection.GateOnRegression ? "on" : "off")}");
+        sb.AppendLine($"Purge on apply:  {(projection.PurgeOnApply ? "on" : "off")}");
+        sb.AppendLine($"Scopes ({projection.Scopes.Count}):");
+        foreach (var scope in projection.Scopes)
+        {
+            sb.AppendLine($"  {scope.Name}");
+            sb.AppendLine($"    query:          {scope.Query}");
+            sb.AppendLine($"    assessor:       {scope.Assessor}");
+            sb.AppendLine($"    engine:         {scope.Engine}");
+            sb.AppendLine(
+                $"    collect:        {(scope.Collect.Count == 0 ? "(assessor default)" : string.Join(", ", scope.Collect))}");
+            sb.AppendLine($"    per-word limit: {scope.PerWordLimitMs} ms");
+        }
+        return sb.ToString();
+    }
+
     private static void AppendEffects(StringBuilder sb, IReadOnlyList<EffectView> effects)
     {
         foreach (var effect in effects)
