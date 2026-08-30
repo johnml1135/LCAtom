@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 using SIL.LCModel;
 using SIL.Motif.Contract;
@@ -144,51 +144,17 @@ internal sealed class TrialJobHandler
         // Reported while queued behind the lane; the lane's own dispatch resumes this directly into Running.
         claim.Transition(JobStatus.WaitingForBaseline);
 
-        DryRunModel? dryRun = null;
-        AssessmentScope? scope = null;
-        Selection? selection = null;
-        string? exportedDirectory = null;
         var scratchRoot = AllocateScratchRoot();
-        Exception? laneFailure = null;
+        CandidateRun candidate;
         try
         {
-            await lane.EnqueueAsync(ProjectWorkItem.CandidateExport(async (_, laneToken) =>
-            {
-                claim.Transition(JobStatus.Running);
-                var (appliedProposalIds, scratch) = await _openScratch(baseline.FwDataPath, scratchRoot, laneToken)
-                    .ConfigureAwait(false);
-                try
-                {
-                    var plan = _proposals.PlanPrerequisites(proposal, appliedProposalIds);
-                    dryRun = await _runDryRun(scratch, plan, laneToken).ConfigureAwait(false);
-
-                    var publishedJson = DryRunJobHandler.BuildPublishedDryRunJson(dryRun);
-                    claim.PublishDryRun(publishedJson);
-
-                    var cache = scratch?.PeekCache();
-                    var words = cache is null
-                        ? Array.Empty<string>()
-                        : WordQueryResolver.Resolve(scopeConfiguration.Query, cache).ToArray();
-                    selection = Selection.Create(scopeConfiguration.Name, words);
-                    scope = new AssessmentScope(words, scopeConfiguration.Engine,
-                        ParseCollect(scopeConfiguration.Collect), scopeConfiguration.PerWordLimit);
-                    exportedDirectory = await _prepareForAssessment(cache, laneToken).ConfigureAwait(false);
-                }
-                finally
-                {
-                    scratch?.Dispose();
-                }
-            }), cancellationToken).ConfigureAwait(false);
+            candidate = await RunCandidateAsync(claim, lane, proposal, scopeConfiguration, baseline.FwDataPath,
+                scratchRoot, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            laneFailure = exception;
-        }
-
-        if (laneFailure is not null)
-        {
             TryDeleteDirectory(scratchRoot);
-            var detail = JsonSerializer.Serialize(new { detail = laneFailure.Message });
+            var detail = JsonSerializer.Serialize(new { detail = exception.Message });
             // A successful terminal status may not carry a failure category, so only Failed gets one here.
             return claim.Job.DryRunPublished
                 ? new JobOutcome(JobStatus.CompletedWithAssessmentFailure, JobFailureCategory.None, detail)
@@ -204,10 +170,10 @@ internal sealed class TrialJobHandler
 
         try
         {
-            var produced = await assessor.ProduceAsync(scope!, exportedDirectory!, cancellationToken)
+            var produced = await assessor.ProduceAsync(candidate.Scope, candidate.ExportedDirectory, cancellationToken)
                 .ConfigureAwait(false);
-            var assessmentIds = RecordAll(produced, proposal, dryRun!, selection!, scope!, scopeConfiguration,
-                assessor.Name, baseline.Token);
+            var assessmentIds = RecordAll(produced, proposal, candidate.DryRun, candidate.Selection, candidate.Scope,
+                scopeConfiguration, assessor.Name, baseline.Token);
             var completionJson = JsonSerializer.Serialize(
                 new TrialCompletion(baseline.Token, assessmentIds), MotifJson.CreateOptions());
             return new JobOutcome(JobStatus.Completed, JobFailureCategory.None, completionJson);
@@ -225,6 +191,45 @@ internal sealed class TrialJobHandler
         {
             TryDeleteDirectory(scratchRoot);
         }
+    }
+
+    // What one attempt on a throwaway copy produces; assembled on the lane, read off it.
+    private sealed record CandidateRun(DryRunModel DryRun, AssessmentScope Scope, Selection Selection,
+        string ExportedDirectory);
+
+    private async Task<CandidateRun> RunCandidateAsync(ClaimedJob claim, ProjectLane lane,
+        Contract.Model.Proposal proposal, AssessmentScopeConfiguration scopeConfiguration, string baselineFwDataPath,
+        string scratchRoot, CancellationToken cancellationToken)
+    {
+        CandidateRun? candidate = null;
+        await lane.EnqueueAsync(ProjectWorkItem.CandidateExport(async (_, laneToken) =>
+        {
+            claim.Transition(JobStatus.Running);
+            var (appliedProposalIds, scratch) = await _openScratch(baselineFwDataPath, scratchRoot, laneToken)
+                .ConfigureAwait(false);
+            try
+            {
+                var plan = _proposals.PlanPrerequisites(proposal, appliedProposalIds);
+                var dryRun = await _runDryRun(scratch, plan, laneToken).ConfigureAwait(false);
+                claim.PublishDryRun(DryRunJobHandler.BuildPublishedDryRunJson(dryRun));
+
+                var cache = scratch?.PeekCache();
+                var words = cache is null
+                    ? Array.Empty<string>()
+                    : WordQueryResolver.Resolve(scopeConfiguration.Query, cache).ToArray();
+                var scope = new AssessmentScope(words, scopeConfiguration.Engine,
+                    ParseCollect(scopeConfiguration.Collect), scopeConfiguration.PerWordLimit);
+                candidate = new CandidateRun(dryRun, scope, Selection.Create(scopeConfiguration.Name, words),
+                    await _prepareForAssessment(cache, laneToken).ConfigureAwait(false));
+            }
+            finally
+            {
+                scratch?.Dispose();
+            }
+        }), cancellationToken).ConfigureAwait(false);
+
+        // The lane either runs the work item to completion or rethrows, so this is set by here.
+        return candidate ?? throw new InvalidOperationException("The lane produced no candidate.");
     }
 
     private IReadOnlyList<string> RecordAll(IReadOnlyList<ProducedAssessment> produced, Contract.Model.Proposal proposal,
