@@ -283,7 +283,7 @@ internal static class Program
             new BaselineRefreshBarrier(locator => new FwDataProjectLoader().LoadCache(locator.FullFwDataPath)),
             (cache, token) => publish.RefreshAsync(cache, project, token));
         var proposals = new ProposalRepository(runtime.Database);
-        var dryRun = new DryRunJobHandler(runtime.Jobs, runtime.Baselines, proposals, lanes, _ => null,
+        var dryRun = new DryRunJobHandler(runtime.Baselines, proposals, lanes, _ => null,
             (fwDataPath, _) =>
             {
                 // One open of the published Baseline: peeked here for the applied log, consumed later to run.
@@ -297,11 +297,11 @@ internal static class Program
         var handlers = new Dictionary<string, JobRunnerLoop.Handler>(StringComparer.Ordinal)
         {
             [BaselineRefreshKind] = (_, token) => refresh.RunAsync(project, token),
-            [DryRunKind] = (job, token) => dryRun.RunAsync(job.JobId, project, token),
+            [DryRunKind] = (job, token) => dryRun.RunAsync(job, project, token),
         };
 
         if (TryBuildTrialHandler(runtime, proposals, lanes, options) is { } trial)
-            handlers[TrialJobHandler.TrialKind] = (job, token) => trial.RunAsync(job.JobId, project, token);
+            handlers[TrialJobHandler.TrialKind] = (job, token) => trial.RunAsync(job, project, token);
 
         return new JobRunnerLoop(new JobClaims(runtime.Database), runtime.WorkspaceKey, ownerId: ownerId,
             lease: options.Lease, poll: TimeSpan.Zero, handlers: handlers);
@@ -323,7 +323,7 @@ internal static class Program
         }
 
         var loader = new FwDataProjectLoader();
-        return new TrialJobHandler(runtime.Jobs, runtime.Baselines, proposals, lanes,
+        return new TrialJobHandler(runtime.Baselines, proposals, lanes,
             new ProjectConfigurationReader(), catalog, new AssessmentRepository(runtime.Database),
             (fwDataPath, scratchRoot, _) =>
             {

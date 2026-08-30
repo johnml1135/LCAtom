@@ -255,12 +255,9 @@ public sealed class TrialJobHandlerTests : IDisposable
 
     private JobRecord RunAndFinish(TrialJobHandler handler, string jobId)
     {
-        var outcome = handler.RunAsync(jobId, _project, CancellationToken.None).GetAwaiter().GetResult();
-        if (outcome is not null)
-        {
-            var current = _jobs.Get(jobId)!;
-            _jobs.Transition(jobId, outcome.Status, current.Version, outcome.Category, outcome.ResultJson);
-        }
+        var claim = ClaimedJob.Of(_jobs, jobId);
+        var outcome = handler.RunAsync(claim, _project, CancellationToken.None).GetAwaiter().GetResult();
+        if (outcome is not null) claim.Transition(outcome.Status, outcome.Category, outcome.ResultJson);
         return _jobs.Get(jobId)!;
     }
 
@@ -268,7 +265,7 @@ public sealed class TrialJobHandlerTests : IDisposable
     {
         var catalog = new AssessorCatalog(new[] { assessor });
         var factory = new ScratchCacheFactory(_loader);
-        return new TrialJobHandler(_jobs, _baselines, _proposals, lanes,
+        return new TrialJobHandler(_baselines, _proposals, lanes,
             new ProjectConfigurationReader(), catalog, _assessments,
             (fwDataPath, scratchRoot, _) =>
             {

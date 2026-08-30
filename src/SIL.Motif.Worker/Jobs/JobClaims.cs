@@ -121,6 +121,9 @@ public sealed class JobClaims
     /// <remarks>This is what the loop's heartbeat polls to cancel a running handler's token.</remarks>
     public bool IsCancellationRequested(string jobId) => _jobs.Get(jobId)?.CancellationRequested ?? false;
 
+    /// <summary>Wraps an already-claimed row so a handler can drive it without ever seeing its version.</summary>
+    internal ClaimedJob Wrap(JobRecord claimed) => new(_jobs, claimed);
+
     /// <summary>Pushes one held job lease forward, refusing a token that no longer owns the row.</summary>
     /// <remarks>
     /// The token, not the owner identity, is what authorises this. A runner can stall past its lease, lose

@@ -54,7 +54,7 @@ internal static class DryRunJobRunner
 
             using var lanes = new ProjectLaneRegistry(_ => baselines.GetCurrent(workspaceKey)!.Token);
             var proposals = new ProposalRepository(database);
-            var handler = new DryRunJobHandler(new JobRepository(database), baselines, proposals, lanes, _ => null,
+            var handler = new DryRunJobHandler(baselines, proposals, lanes, _ => null,
                 (candidatePath, _) =>
                 {
                     // One open of the published Baseline: peeked here for the applied log, consumed later to run.
@@ -68,7 +68,7 @@ internal static class DryRunJobRunner
                 TimeSpan.FromMinutes(1), TimeSpan.Zero,
                 new Dictionary<string, JobRunnerLoop.Handler>(StringComparer.Ordinal)
                 {
-                    [JobCommands.DryRunKind] = (job, token) => handler.RunAsync(job.JobId, project, token),
+                    [JobCommands.DryRunKind] = (job, token) => handler.RunAsync(job, project, token),
                 });
             loop.RunUntilIdleAsync(CancellationToken.None).GetAwaiter().GetResult();
         }

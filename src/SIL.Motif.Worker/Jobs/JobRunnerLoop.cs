@@ -30,7 +30,7 @@ public sealed class JobRunnerLoop
     /// that terminal status. Returning <c>null</c> means the handler already left the row exactly where
     /// it belongs — terminal or not — and the loop must not touch it again.
     /// </summary>
-    public delegate Task<JobOutcome?> Handler(JobRecord job, CancellationToken cancellationToken);
+    public delegate Task<JobOutcome?> Handler(ClaimedJob job, CancellationToken cancellationToken);
 
     private static readonly TimeSpan HeartbeatShare = TimeSpan.FromSeconds(1);
     private readonly JobClaims _claims;
@@ -95,7 +95,7 @@ public sealed class JobRunnerLoop
         var heartbeat = HeartbeatAsync(claimed, beating.Token, linked);
         try
         {
-            var outcome = await handler(claimed, linked.Token).ConfigureAwait(false);
+            var outcome = await handler(_claims.Wrap(claimed), linked.Token).ConfigureAwait(false);
             if (outcome is not null) Finish(claimed, outcome.Status, outcome.Category, outcome.ResultJson);
         }
         catch (OperationCanceledException)

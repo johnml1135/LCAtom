@@ -67,7 +67,6 @@ internal sealed class TrialJobHandler
     /// <summary>The durable job kind this handler drives.</summary>
     internal const string TrialKind = "trial";
 
-    private readonly JobRepository _jobs;
     private readonly BaselineRepository _baselines;
     private readonly ProposalRepository _proposals;
     private readonly ProjectLaneRegistry _lanes;
@@ -79,7 +78,6 @@ internal sealed class TrialJobHandler
     private readonly Func<DryRunScratch?, PrerequisiteExecutionPlan, CancellationToken, Task<DryRunModel>> _runDryRun;
     private readonly Func<LcmCache?, CancellationToken, Task<string>> _prepareForAssessment;
 
-    /// <param name="jobs">This project's job store.</param>
     /// <param name="baselines">This project's published-Baseline store.</param>
     /// <param name="proposals">
     /// This project's Proposal store, used only to resolve prerequisites (<see cref="ProposalRepository.PlanPrerequisites"/>)
@@ -98,7 +96,7 @@ internal sealed class TrialJobHandler
     /// Saves the mutated scratch in place and returns the directory an Assessor can read it from. Never
     /// opens the Baseline again.
     /// </param>
-    internal TrialJobHandler(JobRepository jobs, BaselineRepository baselines, ProposalRepository proposals,
+    internal TrialJobHandler(BaselineRepository baselines, ProposalRepository proposals,
         ProjectLaneRegistry lanes, IProjectConfigurationReader configuration, IAssessorCatalog assessors,
         IAssessmentRepository assessments,
         Func<string, string, CancellationToken,
@@ -106,7 +104,6 @@ internal sealed class TrialJobHandler
         Func<DryRunScratch?, PrerequisiteExecutionPlan, CancellationToken, Task<DryRunModel>> runDryRun,
         Func<LcmCache?, CancellationToken, Task<string>> prepareForAssessment)
     {
-        _jobs = jobs ?? throw new ArgumentNullException(nameof(jobs));
         _baselines = baselines ?? throw new ArgumentNullException(nameof(baselines));
         _proposals = proposals ?? throw new ArgumentNullException(nameof(proposals));
         _lanes = lanes ?? throw new ArgumentNullException(nameof(lanes));
@@ -119,25 +116,25 @@ internal sealed class TrialJobHandler
     }
 
     /// <summary>Runs one claimed Trial job through to a terminal outcome, or parks it waiting for a Baseline.</summary>
-    internal async Task<JobOutcome?> RunAsync(string jobId, ProjectLocator project, CancellationToken cancellationToken)
+    internal async Task<JobOutcome?> RunAsync(ClaimedJob claim, ProjectLocator project, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(project);
-        var job = _jobs.Get(jobId) ?? throw new InvalidOperationException("The Trial job does not exist.");
-        if (job.Status != JobStatus.Running)
+        ArgumentNullException.ThrowIfNull(claim);
+        if (claim.Job.Status != JobStatus.Running)
             throw new InvalidOperationException("A Trial must already be claimed by a runner.");
         var workspaceKey = ProjectWorkspaceKey.Compute(project);
-        if (!StringComparer.Ordinal.Equals(job.Kind, TrialKind) ||
-            !StringComparer.Ordinal.Equals(job.ProjectKey, workspaceKey))
+        if (!StringComparer.Ordinal.Equals(claim.Job.Kind, TrialKind) ||
+            !StringComparer.Ordinal.Equals(claim.Job.ProjectKey, workspaceKey))
             throw new InvalidOperationException("The job does not address this project's Trial.");
 
         var baseline = _baselines.GetCurrent(workspaceKey);
         if (baseline is null)
         {
-            _jobs.Transition(job, JobStatus.WaitingForBaseline);
+            claim.Transition(JobStatus.WaitingForBaseline);
             return null;
         }
 
-        var input = TrialJobInput.Parse(job.InputJson);
+        var input = TrialJobInput.Parse(claim.Job.InputJson);
         var proposal = ProposalJsonParser.Parse(input.ProposalJson);
         var configuration = _configuration.Read(project);
         var scopeConfiguration = ResolveScope(configuration, input.Scope);
@@ -145,7 +142,7 @@ internal sealed class TrialJobHandler
         var lane = _lanes.GetOrCreate(workspaceKey);
 
         // Reported while queued behind the lane; the lane's own dispatch resumes this directly into Running.
-        _jobs.Transition(job, JobStatus.WaitingForBaseline);
+        claim.Transition(JobStatus.WaitingForBaseline);
 
         DryRunModel? dryRun = null;
         AssessmentScope? scope = null;
@@ -157,7 +154,7 @@ internal sealed class TrialJobHandler
         {
             await lane.EnqueueAsync(ProjectWorkItem.CandidateExport(async (_, laneToken) =>
             {
-                _jobs.Transition(_jobs.Get(jobId)!, JobStatus.Running);
+                claim.Transition(JobStatus.Running);
                 var (appliedProposalIds, scratch) = await _openScratch(baseline.FwDataPath, scratchRoot, laneToken)
                     .ConfigureAwait(false);
                 try
@@ -166,8 +163,7 @@ internal sealed class TrialJobHandler
                     dryRun = await _runDryRun(scratch, plan, laneToken).ConfigureAwait(false);
 
                     var publishedJson = DryRunJobHandler.BuildPublishedDryRunJson(dryRun);
-                    var beforePublish = _jobs.Get(jobId)!;
-                    _jobs.PublishDryRun(jobId, publishedJson, beforePublish.Version);
+                    claim.PublishDryRun(publishedJson);
 
                     var cache = scratch?.PeekCache();
                     var words = cache is null
@@ -192,10 +188,9 @@ internal sealed class TrialJobHandler
         if (laneFailure is not null)
         {
             TryDeleteDirectory(scratchRoot);
-            var current = _jobs.Get(jobId)!;
             var detail = JsonSerializer.Serialize(new { detail = laneFailure.Message });
             // A successful terminal status may not carry a failure category, so only Failed gets one here.
-            return current.DryRunPublished
+            return claim.Job.DryRunPublished
                 ? new JobOutcome(JobStatus.CompletedWithAssessmentFailure, JobFailureCategory.None, detail)
                 : new JobOutcome(JobStatus.Failed, JobFailureCategory.Unknown, detail);
         }

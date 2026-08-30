@@ -24,7 +24,6 @@ namespace SIL.Motif.Worker.Jobs;
 /// </summary>
 internal sealed class DryRunJobHandler
 {
-    private readonly JobRepository _jobs;
     private readonly BaselineRepository _baselines;
     private readonly ProposalRepository _proposals;
     private readonly ProjectLaneRegistry _lanes;
@@ -32,7 +31,6 @@ internal sealed class DryRunJobHandler
     private readonly Func<string, CancellationToken, Task<(IReadOnlyCollection<Guid> AppliedProposalIds, DryRunScratch? Scratch)>> _openScratch;
     private readonly Func<DryRunScratch?, PrerequisiteExecutionPlan, CancellationToken, Task<DryRunModel>> _runDryRun;
 
-    /// <param name="jobs">This project's job store.</param>
     /// <param name="baselines">This project's published-Baseline store.</param>
     /// <param name="proposals">
     /// This project's Proposal store, used only to resolve the requested Proposal's prerequisite
@@ -51,12 +49,11 @@ internal sealed class DryRunJobHandler
     /// touches a real cache can return none.
     /// </param>
     /// <param name="runDryRun">Runs the resolved plan against the scratch <paramref name="openScratch"/> opened.</param>
-    internal DryRunJobHandler(JobRepository jobs, BaselineRepository baselines, ProposalRepository proposals,
+    internal DryRunJobHandler(BaselineRepository baselines, ProposalRepository proposals,
         ProjectLaneRegistry lanes, Func<string, ProjectFreshnessTracker?> freshnessTrackers,
         Func<string, CancellationToken, Task<(IReadOnlyCollection<Guid> AppliedProposalIds, DryRunScratch? Scratch)>> openScratch,
         Func<DryRunScratch?, PrerequisiteExecutionPlan, CancellationToken, Task<DryRunModel>> runDryRun)
     {
-        _jobs = jobs ?? throw new ArgumentNullException(nameof(jobs));
         _baselines = baselines ?? throw new ArgumentNullException(nameof(baselines));
         _proposals = proposals ?? throw new ArgumentNullException(nameof(proposals));
         _lanes = lanes ?? throw new ArgumentNullException(nameof(lanes));
@@ -71,34 +68,34 @@ internal sealed class DryRunJobHandler
     /// is left exactly there and this returns <c>null</c>, since <see cref="JobClaims.Claim"/> only ever
     /// reclaims a <c>queued</c> or lease-expired <c>running</c> row — nothing moves a parked row again.
     /// </summary>
-    internal async Task<JobOutcome?> RunAsync(string jobId, ProjectLocator project, CancellationToken cancellationToken)
+    internal async Task<JobOutcome?> RunAsync(ClaimedJob claim, ProjectLocator project, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(project);
-        var job = _jobs.Get(jobId) ?? throw new InvalidOperationException("The Dry Run job does not exist.");
-        if (job.Status != JobStatus.Running)
+        ArgumentNullException.ThrowIfNull(claim);
+        if (claim.Job.Status != JobStatus.Running)
             throw new InvalidOperationException("A Dry Run must already be claimed by a runner.");
         var workspaceKey = ProjectWorkspaceKey.Compute(project);
-        if (!StringComparer.Ordinal.Equals(job.Kind, "dry-run") ||
-            !StringComparer.Ordinal.Equals(job.ProjectKey, workspaceKey))
+        if (!StringComparer.Ordinal.Equals(claim.Job.Kind, "dry-run") ||
+            !StringComparer.Ordinal.Equals(claim.Job.ProjectKey, workspaceKey))
             throw new InvalidOperationException("The job does not address this project's Dry Run.");
 
         var baseline = _baselines.GetCurrent(workspaceKey);
         if (baseline is null)
         {
-            _jobs.Transition(job, JobStatus.WaitingForBaseline);
+            claim.Transition(JobStatus.WaitingForBaseline);
             return null;
         }
 
-        var proposal = ProposalJsonParser.Parse(job.InputJson);
+        var proposal = ProposalJsonParser.Parse(claim.Job.InputJson);
         var lane = _lanes.GetOrCreate(workspaceKey);
 
         // Reported while queued behind the lane; the lane's own dispatch resumes this directly into Running.
-        _jobs.Transition(job, JobStatus.WaitingForBaseline);
+        claim.Transition(JobStatus.WaitingForBaseline);
 
         DryRunModel? dryRun = null;
         await lane.EnqueueAsync(ProjectWorkItem.DryRun(async (_, laneToken) =>
         {
-            _jobs.Transition(_jobs.Get(jobId)!, JobStatus.Running);
+            claim.Transition(JobStatus.Running);
             var (appliedProposalIds, scratch) = await _openScratch(baseline.FwDataPath, laneToken)
                 .ConfigureAwait(false);
             try
@@ -119,8 +116,7 @@ internal sealed class DryRunJobHandler
 
         var freshness = _freshnessTrackers(workspaceKey)?.Check(baseline.Token) ?? BaselineFreshness.CurrentnessNotChecked;
         var publishedJson = BuildPublishedDryRunJson(dryRun!);
-        var beforePublish = _jobs.Get(jobId)!;
-        _jobs.PublishDryRun(jobId, publishedJson, beforePublish.Version);
+        claim.PublishDryRun(publishedJson);
         var completionJson = JsonSerializer.Serialize(
             new DryRunCompletion(baseline.Token, baseline.Token.CapturedUtc, ToWire(freshness)),
             MotifJson.CreateOptions());
