@@ -142,13 +142,13 @@ public static class Commands
     public static CommandResult Analyses(
         string fwDataPath,
         string assessmentId,
-        string currentCorpusSha256,
+        string currentSelectionSha256,
         string currentGrammarSourceSha256,
         UsageLog? usage = null)
     {
         RecordAssessmentAnalysisUsage(usage);
         var (reason, projection, error) = BuildAssessmentAnalysisProjection(
-            fwDataPath, assessmentId, currentCorpusSha256, currentGrammarSourceSha256);
+            fwDataPath, assessmentId, currentSelectionSha256, currentGrammarSourceSha256);
         return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : Refused(reason, error!);
     }
 
@@ -156,13 +156,13 @@ public static class Commands
     public static CommandResult AnalysesJson(
         string fwDataPath,
         string assessmentId,
-        string currentCorpusSha256,
+        string currentSelectionSha256,
         string currentGrammarSourceSha256,
         UsageLog? usage = null)
     {
         RecordAssessmentAnalysisUsage(usage);
         var (reason, projection, error) = BuildAssessmentAnalysisProjection(
-            fwDataPath, assessmentId, currentCorpusSha256, currentGrammarSourceSha256);
+            fwDataPath, assessmentId, currentSelectionSha256, currentGrammarSourceSha256);
         return projection is not null
             ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
             : Refused(reason, error!);
@@ -175,7 +175,7 @@ public static class Commands
             {
                 UsageArgumentShape.Text("fwDataPath"),
                 UsageArgumentShape.Text("assessmentId"),
-                UsageArgumentShape.Text("currentCorpusSha256"),
+                UsageArgumentShape.Text("currentSelectionSha256"),
                 UsageArgumentShape.Text("currentGrammarSourceSha256"),
             });
 
@@ -183,13 +183,14 @@ public static class Commands
         BuildAssessmentAnalysisProjection(
             string fwDataPath,
             string assessmentId,
-            string currentCorpusSha256,
+            string currentSelectionSha256,
             string currentGrammarSourceSha256)
     {
         try
         {
-            Sha256Value.RequireCanonical(assessmentId, nameof(assessmentId));
-            Sha256Value.RequireCanonical(currentCorpusSha256, nameof(currentCorpusSha256));
+            if (!CanonicalId.TryParse(assessmentId, out _))
+                throw new ArgumentException("A canonical assessment id is required.", nameof(assessmentId));
+            Sha256Value.RequireCanonical(currentSelectionSha256, nameof(currentSelectionSha256));
             Sha256Value.RequireCanonical(currentGrammarSourceSha256, nameof(currentGrammarSourceSha256));
 
             var fullPath = ResolveProjectPath(fwDataPath);
@@ -208,7 +209,7 @@ public static class Commands
             return (
                 0,
                 AnalysisAggregateProjectionQuery.Read(
-                    cache, assessment, currentCorpusSha256, currentGrammarSourceSha256),
+                    cache, assessment, currentSelectionSha256, currentGrammarSourceSha256),
                 null);
         }
         catch (Exception ex)

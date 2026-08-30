@@ -9,6 +9,7 @@ using SIL.Motif.Host.Corpus;
 using SIL.Motif.Host.Parser;
 using SIL.Motif.Host.Store;
 using SIL.Motif.Projection.Usage;
+using SIL.Motif.Contract.Ids;
 using SIL.Motif.Tests.TestFixtures;
 using SIL.Motif.Worker;
 using SIL.Motif.Worker.Store;
@@ -62,11 +63,11 @@ public sealed class AnalysisCommandDispatchTests : IDisposable
             new AssessReport(
                 Array.Empty<AssessedWord>(), "outcome", "semantic", Hash('c'), "model", "pipeline", 0),
             Selection.Create("dispatch-corpus", Array.Empty<string>()));
-        var assessmentId = new SqliteAssessmentStore(AssessmentDatabasePath()).Save(assessment);
+        var assessmentId = SeededAssessment.Record(_fwDataPath, assessment, CanonicalId.Mint("assessment/").Value);
 
         var result = Run(
             $"analyses --project \"{_fwDataPath}\" --assessment \"{assessmentId}\" " +
-            $"--current-corpus-sha256 \"{assessment.Selection.Sha256}\" " +
+            $"--current-selection-sha256 \"{assessment.Selection.Sha256}\" " +
             $"--current-grammar-sha256 \"{assessment.Report.GrammarSourceSha256}\" --json");
 
         Assert.Equal(0, result.ExitCode);
@@ -78,7 +79,7 @@ public sealed class AnalysisCommandDispatchTests : IDisposable
             {
                 "fwDataPath:text",
                 "assessmentId:text",
-                "currentCorpusSha256:text",
+                "currentSelectionSha256:text",
                 "currentGrammarSourceSha256:text",
             },
             entry.ArgumentShape);
@@ -86,15 +87,15 @@ public sealed class AnalysisCommandDispatchTests : IDisposable
 
     [Theory]
     [InlineData("--assessment assessment-only")]
-    [InlineData("--assessment assessment --current-corpus-sha256 corpus-only")]
-    [InlineData("--current-corpus-sha256 corpus --current-grammar-sha256 grammar")]
+    [InlineData("--assessment assessment --current-selection-sha256 corpus-only")]
+    [InlineData("--current-selection-sha256 corpus --current-grammar-sha256 grammar")]
     public void PartialAssessmentFlagGroupReturnsUsage(string partialFlags)
     {
         var result = Run($"analyses --project \"{_fwDataPath}\" {partialFlags}");
 
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("--assessment", result.Error);
-        Assert.Contains("--current-corpus-sha256", result.Error);
+        Assert.Contains("--current-selection-sha256", result.Error);
         Assert.Contains("--current-grammar-sha256", result.Error);
     }
 
@@ -102,9 +103,9 @@ public sealed class AnalysisCommandDispatchTests : IDisposable
     [InlineData("--assessment")]
     [InlineData("--assessment true")]
     [InlineData("--assessment sha256:abc")]
-    [InlineData("--assessment sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")]
-    [InlineData("--current-corpus-sha256")]
-    [InlineData("--current-corpus-sha256 sha256:abc")]
+    [InlineData("--assessment too-short")]
+    [InlineData("--current-selection-sha256")]
+    [InlineData("--current-selection-sha256 sha256:abc")]
     [InlineData("--current-grammar-sha256")]
     [InlineData("--current-grammar-sha256 sha256:ABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCD")]
     public void MalformedAssessmentGroupValuesReturnUsage(string malformedFlag)
@@ -112,18 +113,18 @@ public sealed class AnalysisCommandDispatchTests : IDisposable
         var assessment = malformedFlag.StartsWith("--assessment", StringComparison.Ordinal)
             ? malformedFlag
             : $"--assessment {Hash('a')}";
-        var corpus = malformedFlag.StartsWith("--current-corpus", StringComparison.Ordinal)
+        var selection = malformedFlag.StartsWith("--current-selection", StringComparison.Ordinal)
             ? malformedFlag
-            : $"--current-corpus-sha256 {Hash('b')}";
+            : $"--current-selection-sha256 {Hash('b')}";
         var grammar = malformedFlag.StartsWith("--current-grammar", StringComparison.Ordinal)
             ? malformedFlag
             : $"--current-grammar-sha256 {Hash('c')}";
 
-        var result = Run($"analyses --project \"{_fwDataPath}\" {assessment} {corpus} {grammar}");
+        var result = Run($"analyses --project \"{_fwDataPath}\" {assessment} {selection} {grammar}");
 
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("--assessment", result.Error);
-        Assert.Contains("--current-corpus-sha256", result.Error);
+        Assert.Contains("--current-selection-sha256", result.Error);
         Assert.Contains("--current-grammar-sha256", result.Error);
     }
 

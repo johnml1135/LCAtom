@@ -3,67 +3,47 @@ using System.IO;
 using System.Linq;
 using Microsoft.Data.Sqlite;
 using SIL.Motif.Contract.Projects;
-using SIL.Motif.Worker.Store;
-using SIL.Motif.Contract.Ids;
 using SIL.Motif.Host.Analysis;
 using SIL.Motif.Host.Corpus;
 using SIL.Motif.Host.Parser;
 using SIL.Motif.Host.Store;
+using SIL.Motif.Worker.Store;
 using Xunit;
 
 namespace SIL.Motif.Tests.Store;
 
 /// <summary>
-/// <see cref="SqliteAssessmentStore"/> round-trips a <see cref="StoredAssessment"/> through the embedded
-/// database ADR 0036 decision 6 assigns it to, and proves its aggregate reads
-/// (<see cref="IAssessmentStore.CountWords"/>, <see cref="IAssessmentStore.CountAnalyses"/>) are a SQL
-/// <c>COUNT(*)</c> rather than "load the whole Assessment and count the list" — the two would agree on every
-/// well-formed Assessment, so the proof needs a case where they would visibly disagree.
+/// <see cref="SqliteAssessmentStore"/> is the read side of the Assessments table: the worker writes through
+/// <see cref="AssessmentRepository"/> and <c>motif analyses</c> reads back through this type, from the one
+/// project database. Every case here therefore seeds the way production does, because the store once had a
+/// writer of its own and the two drifted apart without a test noticing.
+/// <para>
+/// <see cref="SqliteAssessmentStore.CountWords"/> and <see cref="SqliteAssessmentStore.CountAnalyses"/> are a
+/// SQL <c>COUNT(*)</c> rather than "load the whole Assessment and count the list" — the two would agree on
+/// every well-formed Assessment, so the proof needs a case where they would visibly disagree.
+/// </para>
 /// </summary>
 public sealed class SqliteAssessmentStoreTests : IDisposable
 {
-    private readonly string _root = Path.Combine(Path.GetTempPath(), "motif-sqlite-assessment-tests", Guid.NewGuid().ToString("N"));
+    private readonly string _root = Path.Combine(
+        Path.GetTempPath(), "motif-sqlite-assessment-tests", Guid.NewGuid().ToString("N"));
+    private readonly MotifDatabase _database;
+
+    public SqliteAssessmentStoreTests()
+    {
+        Directory.CreateDirectory(_root);
+        _database = MotifDatabase.OpenOwned(
+            DatabasePath,
+            new ProjectLocator(Path.Combine(_root, "project.fwdata"), "project"),
+            MotifSchema.CurrentSchema,
+            new Version(1, 0));
+    }
 
     public void Dispose()
     {
+        _database.Dispose();
         if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
         GC.SuppressFinalize(this);
-    }
-
-    [Fact]
-    public void ReadsAnAssessmentTheWorkerWroteIntoAMigratedDatabase()
-    {
-        // `motif analyses` reads through this store what the worker wrote through the repository, from one file.
-        Directory.CreateDirectory(_root);
-        var project = new ProjectLocator(Path.Combine(_root, "migrated.fwdata"), "migrated");
-        using var database = MotifDatabase.OpenOwned(
-            DatabasePath, project, MotifSchema.CurrentSchema, new Version(1, 0));
-        var selection = Selection.Create("reach-test", ["mbali"]);
-        new AssessmentRepository(database).Record(new NewAssessmentRecord(
-            AssessmentId: "assessment-read-back",
-            ProposalId: null,
-            ProposalIntentDigest: null,
-            Assessor: "pangloss",
-            Kind: "ParseTime",
-            ScopeJson: "{}",
-            ScopeDigest: "sha256:scope",
-            TokeniserName: "none",
-            TokeniserVersion: "1",
-            BaselineToken: "{}",
-            Selection: selection,
-            OutcomeDigest: "sha256:outcome",
-            SemanticDigest: "sha256:semantic",
-            GrammarSourceSha256: "sha256:grammar",
-            ModelFingerprint: "fp",
-            Pipeline: "pipeline",
-            DiagnosticCount: 0,
-            Words: [Word("mbali", "Analysed")]));
-
-        var loaded = new SqliteAssessmentStore(DatabasePath).Load("assessment-read-back");
-
-        Assert.NotNull(loaded);
-        Assert.Equal(selection.Name, loaded!.Selection.Name);
-        Assert.Equal(selection.Sha256, loaded.Selection.Sha256);
     }
 
     private string DatabasePath => Path.Combine(_root, "motif.db");
@@ -76,46 +56,59 @@ public sealed class SqliteAssessmentStoreTests : IDisposable
     private static AssessedWord Word(string word, string outcome, params ParsedAnalysis[] analyses) =>
         new(word, outcome, analyses);
 
-    private static StoredAssessment Assessment(params AssessedWord[] words)
-    {
-        var selection = Selection.Create(
-            "reach-test",
-            words.Select(w => w.Word),
-            new CorpusProvenance(
-                new CorpusOrigin("Testlang selection", null, new DateTimeOffset(2026, 8, 9, 0, 0, 0, TimeSpan.Zero), "internal"),
-                new TokenisationRecord("whitespace-and-punctuation", "1", "")));
+    private static Selection SelectionOf(params AssessedWord[] words) => Selection.Create(
+        "reach-test",
+        words.Select(w => w.Word),
+        new CorpusProvenance(
+            new CorpusOrigin(
+                "Testlang selection", null, new DateTimeOffset(2026, 8, 9, 0, 0, 0, TimeSpan.Zero), "internal"),
+            new TokenisationRecord("whitespace-and-punctuation", "1", "")));
 
-        var report = new AssessReport(
-            Words: words,
+    private string Seed(string assessmentId, params AssessedWord[] words)
+    {
+        new AssessmentRepository(_database).Record(new NewAssessmentRecord(
+            AssessmentId: assessmentId,
+            ProposalId: null,
+            ProposalIntentDigest: null,
+            Assessor: "pangloss",
+            Kind: "ParseTime",
+            ScopeJson: "{}",
+            ScopeDigest: "sha256:scope",
+            TokeniserName: "whitespace-and-punctuation",
+            TokeniserVersion: "1",
+            BaselineToken: "{}",
+            Selection: SelectionOf(words),
             OutcomeDigest: "outcome-" + words.Length,
             SemanticDigest: "semantic-digest",
             GrammarSourceSha256: "sha256:" + new string('a', 64),
             ModelFingerprint: "model-fingerprint",
             Pipeline: "foma-confirm",
-            DiagnosticCount: 3);
-
-        return new StoredAssessment(report, selection);
+            DiagnosticCount: 3,
+            Words: words));
+        return assessmentId;
     }
 
     [Fact]
-    public void AnAssessmentRoundTripsThroughTheDatabase_EveryFieldAndOrderIntact()
+    public void LoadReadsBackWhatTheWorkerWroteWithEveryFieldAndOrderIntact()
     {
-        var store = Store();
-        var assessment = Assessment(
+        var words = new[]
+        {
             Word("mbali", "Analysed", Analysis("d1", "m1", "m2"), Analysis("d2", "m3")),
-            Word("nyumba", "NoAnalysis"));
+            Word("nyumba", "NoAnalysis"),
+        };
+        var id = Seed("assessment/round-trip", words);
+        var selection = SelectionOf(words);
 
-        var id = store.Save(assessment);
-        var loaded = store.Load(id);
+        var loaded = Store().Load(id);
 
         Assert.NotNull(loaded);
-        Assert.Equal(assessment.Report.OutcomeDigest, loaded!.Report.OutcomeDigest);
-        Assert.Equal(assessment.Report.GrammarSourceSha256, loaded.Report.GrammarSourceSha256);
-        Assert.Equal(assessment.Report.DiagnosticCount, loaded.Report.DiagnosticCount);
-        Assert.Equal(assessment.Selection.Name, loaded.Selection.Name);
-        Assert.Equal(assessment.Selection.Sha256, loaded.Selection.Sha256);
-        Assert.Equal(assessment.Selection.Words, loaded.Selection.Words);
-        Assert.Equal(assessment.Selection.Provenance!.Origin.Description, loaded.Selection.Provenance!.Origin.Description);
+        Assert.Equal("outcome-2", loaded!.Report.OutcomeDigest);
+        Assert.Equal("sha256:" + new string('a', 64), loaded.Report.GrammarSourceSha256);
+        Assert.Equal(3, loaded.Report.DiagnosticCount);
+        Assert.Equal(selection.Name, loaded.Selection.Name);
+        Assert.Equal(selection.Sha256, loaded.Selection.Sha256);
+        Assert.Equal(selection.Words, loaded.Selection.Words);
+        Assert.Equal("Testlang selection", loaded.Selection.Provenance!.Origin.Description);
 
         Assert.Equal(2, loaded.Report.Words.Count);
         Assert.Equal("mbali", loaded.Report.Words[0].Word);
@@ -134,34 +127,21 @@ public sealed class SqliteAssessmentStoreTests : IDisposable
     }
 
     [Fact]
-    public void IdentityIsContent_SoSavingTheSameAssessmentTwiceCollapsesOntoOneRow()
-    {
-        var store = Store();
-        var assessment = Assessment(Word("mbali", "Analysed", Analysis("d1", "m1")));
-
-        var first = store.Save(assessment);
-        var second = store.Save(assessment);
-
-        Assert.Equal(first, second);
-        Assert.Equal(new[] { first }, store.List());
-        Assert.Equal(1, store.CountWords(first));
-    }
-
-    [Fact]
     public void CountWordsAndCountAnalyses_AreAggregatesThatSurviveAPoisonedAnalysisRow()
     {
-        var store = Store();
-        var assessment = Assessment(
+        var id = Seed(
+            "assessment/counts",
             Word("mbali", "Analysed", Analysis("d1", "m1")),
             Word("nyumba", "Analysed", Analysis("d2", "m2"), Analysis("d3", "m3")));
-        var id = store.Save(assessment);
+        var store = Store();
 
-        // Corrupt one analysis's JSON directly, bypassing the store's writer: COUNT(*) must not notice.
+        // Corrupt one analysis's JSON directly, bypassing the writer: COUNT(*) must not notice.
         using (var connection = new SqliteConnection($"Data Source={DatabasePath};Pooling=False"))
         {
             connection.Open();
             using var command = connection.CreateCommand();
-            command.CommandText = "UPDATE ParsedAnalyses SET MorphemeGuidsJson = 'not-json{{{' WHERE IdentityDigest = 'd3';";
+            command.CommandText =
+                "UPDATE ParsedAnalyses SET MorphemeGuidsJson = 'not-json{{{' WHERE IdentityDigest = 'd3';";
             command.ExecuteNonQuery();
         }
 
@@ -176,8 +156,8 @@ public sealed class SqliteAssessmentStoreTests : IDisposable
     public void UnpinnedAssessmentsAreFoundByQuery_NothingDeletesThem()
     {
         var store = Store();
-        var pinned = store.Save(Assessment(Word("mbali", "Analysed", Analysis("d1", "m1"))));
-        var unpinned = store.Save(Assessment(Word("nyumba", "Analysed", Analysis("d2", "m1"))));
+        var pinned = Seed("assessment/pinned", Word("mbali", "Analysed", Analysis("d1", "m1")));
+        var unpinned = Seed("assessment/unpinned", Word("nyumba", "Analysed", Analysis("d2", "m1")));
 
         store.Pin(pinned, "proposal-42");
 
@@ -194,7 +174,7 @@ public sealed class SqliteAssessmentStoreTests : IDisposable
     public void PinningTheSamePairTwiceIsANoOp()
     {
         var store = Store();
-        var id = store.Save(Assessment(Word("mbali", "Analysed", Analysis("d1", "m1"))));
+        var id = Seed("assessment/pin-twice", Word("mbali", "Analysed", Analysis("d1", "m1")));
 
         store.Pin(id, "proposal-1");
         store.Pin(id, "proposal-1");   // must not throw a primary-key conflict

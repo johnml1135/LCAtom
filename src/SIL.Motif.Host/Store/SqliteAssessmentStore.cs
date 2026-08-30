@@ -29,7 +29,7 @@ namespace SIL.Motif.Host.Store;
 /// <see cref="AssessedWord.Analyses"/> started with.
 /// </para>
 /// </remarks>
-public sealed class SqliteAssessmentStore : IAssessmentStore
+public sealed class SqliteAssessmentStore
 {
     private readonly string _databasePath;
 
@@ -129,123 +129,7 @@ public sealed class SqliteAssessmentStore : IAssessmentStore
         return ids;
     }
 
-    public string Save(StoredAssessment assessment)
-    {
-        ArgumentNullException.ThrowIfNull(assessment);
-        var assessmentId = AssessmentIdentity.ComputeId(assessment);
 
-        using var connection = SqliteMotifDatabase.OpenConnection(_databasePath);
-        using var transaction = connection.BeginTransaction();
-
-        DeleteExisting(connection, transaction, assessmentId);
-        InsertAssessmentRow(connection, transaction, assessmentId, assessment);
-        InsertWordsAndAnalyses(connection, transaction, assessmentId, assessment.Report.Words);
-
-        transaction.Commit();
-        return assessmentId;
-    }
-
-    private static void DeleteExisting(SqliteConnection connection, SqliteTransaction transaction, string assessmentId)
-    {
-        using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
-            DELETE FROM ParsedAnalyses
-                WHERE AssessedWordId IN (SELECT AssessedWordId FROM AssessedWords WHERE AssessmentId = $id);
-            DELETE FROM AssessedWords WHERE AssessmentId = $id;
-            DELETE FROM AssessmentPins WHERE AssessmentId = $id;
-            DELETE FROM Assessments WHERE AssessmentId = $id;
-            """;
-        command.Parameters.AddWithValue("$id", assessmentId);
-        command.ExecuteNonQuery();
-    }
-
-    private static void InsertAssessmentRow(
-        SqliteConnection connection, SqliteTransaction transaction, string assessmentId, StoredAssessment assessment)
-    {
-        using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
-            INSERT INTO Assessments
-                (AssessmentId, SelectionName, SelectionWordsJson, SelectionSha256, SelectionProvenanceJson,
-                 OutcomeDigest, SemanticDigest, GrammarSourceSha256, ModelFingerprint, Pipeline,
-                 DiagnosticCount, SavedUtc)
-            VALUES
-                ($id, $selectionName, $selectionWords, $selectionSha, $selectionProvenance,
-                 $outcomeDigest, $semanticDigest, $grammarSha, $modelFingerprint, $pipeline,
-                 $diagnosticCount, $savedUtc);
-            """;
-        command.Parameters.AddWithValue("$id", assessmentId);
-        command.Parameters.AddWithValue("$selectionName", assessment.Selection.Name);
-        command.Parameters.AddWithValue("$selectionWords", JsonSerializer.Serialize(assessment.Selection.Words));
-        command.Parameters.AddWithValue("$selectionSha", assessment.Selection.Sha256);
-        command.Parameters.AddWithValue(
-            "$selectionProvenance",
-            assessment.Selection.Provenance is null ? DBNull.Value : JsonSerializer.Serialize(assessment.Selection.Provenance));
-        command.Parameters.AddWithValue("$outcomeDigest", assessment.Report.OutcomeDigest);
-        command.Parameters.AddWithValue("$semanticDigest", assessment.Report.SemanticDigest);
-        command.Parameters.AddWithValue("$grammarSha", assessment.Report.GrammarSourceSha256);
-        command.Parameters.AddWithValue("$modelFingerprint", assessment.Report.ModelFingerprint);
-        command.Parameters.AddWithValue("$pipeline", assessment.Report.Pipeline);
-        command.Parameters.AddWithValue("$diagnosticCount", assessment.Report.DiagnosticCount);
-        command.Parameters.AddWithValue("$savedUtc", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
-        command.ExecuteNonQuery();
-    }
-
-    private static void InsertWordsAndAnalyses(
-        SqliteConnection connection, SqliteTransaction transaction, string assessmentId, IReadOnlyList<AssessedWord> words)
-    {
-        using var insertWord = connection.CreateCommand();
-        insertWord.Transaction = transaction;
-        insertWord.CommandText = """
-            INSERT INTO AssessedWords (AssessmentId, OrdinalIndex, Word, Outcome) VALUES ($id, $ordinal, $word, $outcome);
-            """;
-        var assessmentIdParam = insertWord.Parameters.AddWithValue("$id", assessmentId);
-        var wordOrdinalParam = insertWord.Parameters.Add("$ordinal", SqliteType.Integer);
-        var wordTextParam = insertWord.Parameters.Add("$word", SqliteType.Text);
-        var wordOutcomeParam = insertWord.Parameters.Add("$outcome", SqliteType.Text);
-
-        using var lastRowId = connection.CreateCommand();
-        lastRowId.Transaction = transaction;
-        lastRowId.CommandText = "SELECT last_insert_rowid();";
-
-        using var insertAnalysis = connection.CreateCommand();
-        insertAnalysis.Transaction = transaction;
-        insertAnalysis.CommandText = """
-            INSERT INTO ParsedAnalyses (AssessedWordId, OrdinalIndex, CategoryGuid, MorphemeGuidsJson, RootIndex, IdentityDigest)
-            VALUES ($wordId, $ordinal, $category, $morphemes, $rootIndex, $identity);
-            """;
-        var analysisWordIdParam = insertAnalysis.Parameters.Add("$wordId", SqliteType.Integer);
-        var analysisOrdinalParam = insertAnalysis.Parameters.Add("$ordinal", SqliteType.Integer);
-        var analysisCategoryParam = insertAnalysis.Parameters.Add("$category", SqliteType.Text);
-        var analysisMorphemesParam = insertAnalysis.Parameters.Add("$morphemes", SqliteType.Text);
-        var analysisRootIndexParam = insertAnalysis.Parameters.Add("$rootIndex", SqliteType.Integer);
-        var analysisIdentityParam = insertAnalysis.Parameters.Add("$identity", SqliteType.Text);
-
-        for (var wordIndex = 0; wordIndex < words.Count; wordIndex++)
-        {
-            var word = words[wordIndex];
-            assessmentIdParam.Value = assessmentId;
-            wordOrdinalParam.Value = wordIndex;
-            wordTextParam.Value = word.Word;
-            wordOutcomeParam.Value = word.Outcome;
-            insertWord.ExecuteNonQuery();
-
-            var assessedWordId = (long)lastRowId.ExecuteScalar()!;
-
-            for (var analysisIndex = 0; analysisIndex < word.Analyses.Count; analysisIndex++)
-            {
-                var analysis = word.Analyses[analysisIndex];
-                analysisWordIdParam.Value = assessedWordId;
-                analysisOrdinalParam.Value = analysisIndex;
-                analysisCategoryParam.Value = (object?)analysis.CategoryGuid ?? DBNull.Value;
-                analysisMorphemesParam.Value = JsonSerializer.Serialize(analysis.MorphemeGuids);
-                analysisRootIndexParam.Value = analysis.RootIndex;
-                analysisIdentityParam.Value = analysis.IdentityDigest;
-                insertAnalysis.ExecuteNonQuery();
-            }
-        }
-    }
 
     public StoredAssessment? Load(string assessmentId)
     {

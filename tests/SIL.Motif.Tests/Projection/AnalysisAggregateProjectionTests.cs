@@ -133,8 +133,8 @@ public sealed class AnalysisAggregateProjectionTests
             response, Hash('9'), Hash('8'));
 
         Assert.Contains("still describes the current project", current.AssessmentState);
-        Assert.Contains("corpus 'corpus-one'", current.AssessmentState);
-        Assert.Contains("corpus has changed", stale.AssessmentState);
+        Assert.Contains("selection 'corpus-one'", current.AssessmentState);
+        Assert.Contains("selection has changed", stale.AssessmentState);
         Assert.Contains("grammar has changed", stale.AssessmentState);
         Assert.Contains("state that no longer exists", stale.AssessmentState);
     }

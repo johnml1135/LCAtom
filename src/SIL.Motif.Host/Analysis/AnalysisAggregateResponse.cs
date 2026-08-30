@@ -66,9 +66,9 @@ public sealed record AnalysisAggregateResponse
     /// when <see cref="Assessment"/> is <c>null</c> — nothing recorded cannot be "current"; call
     /// <see cref="DescribeAssessmentState"/> to render that case in its own words rather than as a stale one.
     /// </summary>
-    public bool IsCurrent(string currentCorpusSha256, string currentGrammarSourceSha256) =>
+    public bool IsCurrent(string currentSelectionSha256, string currentGrammarSourceSha256) =>
         Assessment is not null
-        && string.Equals(Assessment.SelectionSha256, currentCorpusSha256, StringComparison.Ordinal)
+        && string.Equals(Assessment.SelectionSha256, currentSelectionSha256, StringComparison.Ordinal)
         && string.Equals(Assessment.GrammarSourceSha256, currentGrammarSourceSha256, StringComparison.Ordinal);
 
     /// <summary>
@@ -86,7 +86,7 @@ public sealed record AnalysisAggregateResponse
     /// paraphrased into a present-tense claim.
     /// </para>
     /// </remarks>
-    public string DescribeAssessmentState(string currentCorpusSha256, string currentGrammarSourceSha256)
+    public string DescribeAssessmentState(string currentSelectionSha256, string currentGrammarSourceSha256)
     {
         if (Assessment is null)
         {
@@ -95,18 +95,18 @@ public sealed record AnalysisAggregateResponse
                    "step, not part of reading this aggregate.";
         }
 
-        var subject = $"corpus '{Assessment.SelectionName}' ({Short(Assessment.SelectionSha256)}) " +
+        var subject = $"selection '{Assessment.SelectionName}' ({Short(Assessment.SelectionSha256)}) " +
                       $"under grammar {Short(Assessment.GrammarSourceSha256)}";
 
-        if (IsCurrent(currentCorpusSha256, currentGrammarSourceSha256))
+        if (IsCurrent(currentSelectionSha256, currentGrammarSourceSha256))
         {
             return $"The automatic analyses above are from the assessment over {subject}, which still " +
                    "describes the current project.";
         }
 
         var moved = new List<string>();
-        if (!string.Equals(Assessment.SelectionSha256, currentCorpusSha256, StringComparison.Ordinal))
-            moved.Add($"the corpus has changed (now {Short(currentCorpusSha256)})");
+        if (!string.Equals(Assessment.SelectionSha256, currentSelectionSha256, StringComparison.Ordinal))
+            moved.Add($"the selection has changed (now {Short(currentSelectionSha256)})");
         if (!string.Equals(Assessment.GrammarSourceSha256, currentGrammarSourceSha256, StringComparison.Ordinal))
             moved.Add($"the grammar has changed (now {Short(currentGrammarSourceSha256)})");
 

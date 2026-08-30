@@ -12,6 +12,9 @@ namespace SIL.Motif.Tests.Worker;
 
 public sealed class ProjectRuntimeTests : IDisposable
 {
+    // These waits are for the thread pool to hand out a thread, not for anything under test; be patient.
+    private static readonly TimeSpan Patience = TimeSpan.FromSeconds(30);
+
     private readonly string _root = Path.Combine(Path.GetTempPath(), "motif-runtime-" + Guid.NewGuid().ToString("N"));
     private readonly FixedClock _clock = new("2026-08-23T12:00:00Z");
 
@@ -105,10 +108,10 @@ public sealed class ProjectRuntimeTests : IDisposable
         Assert.False(exclusive.IsCompleted);
         Assert.False(laterShared.IsCompleted);
         first.Dispose();
-        using var exclusiveLease = await exclusive.WaitAsync(TimeSpan.FromSeconds(1));
+        using var exclusiveLease = await exclusive.WaitAsync(Patience);
         Assert.False(laterShared.IsCompleted);
         exclusiveLease.Dispose();
-        using var laterSharedLease = await laterShared.WaitAsync(TimeSpan.FromSeconds(1));
+        using var laterSharedLease = await laterShared.WaitAsync(Patience);
     }
 
     [Fact]
@@ -122,10 +125,10 @@ public sealed class ProjectRuntimeTests : IDisposable
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelled);
         var later = gate.AcquireOperationAsync(CancellationToken.None);
         held.Dispose();
-        using var laterLease = await later.WaitAsync(TimeSpan.FromSeconds(1));
+        using var laterLease = await later.WaitAsync(Patience);
         laterLease.Dispose();
         var dispose = Task.Run(gate.Dispose);
-        await dispose.WaitAsync(TimeSpan.FromSeconds(1));
+        await dispose.WaitAsync(Patience);
         await Assert.ThrowsAsync<ObjectDisposedException>(() => gate.AcquireOperationAsync(CancellationToken.None));
     }
 
@@ -162,7 +165,7 @@ public sealed class ProjectRuntimeTests : IDisposable
         var blockingShared = gate.AcquireOperationAsync(CancellationToken.None);
         Assert.False(blockingShared.IsCompleted);
         exclusive.Dispose();
-        using var sharedLease = await blockingShared.WaitAsync(TimeSpan.FromSeconds(1));
+        using var sharedLease = await blockingShared.WaitAsync(Patience);
     }
 
     [Fact]
@@ -176,7 +179,7 @@ public sealed class ProjectRuntimeTests : IDisposable
         await Task.Delay(50);
         Assert.False(disposing.IsCompleted);
         lease.Dispose();
-        await disposing.WaitAsync(TimeSpan.FromSeconds(1));
+        await disposing.WaitAsync(Patience);
         Assert.Equal(ProjectRuntimeAdmission.Disposed, runtime.Admission);
     }
 
@@ -195,18 +198,18 @@ public sealed class ProjectRuntimeTests : IDisposable
             if (key == firstKey)
             {
                 entered.Set();
-                release.Wait(TimeSpan.FromSeconds(5));
+                release.Wait(Patience);
             }
             return new WorkerRecoveryCoordinator(new WorkerRecovery(jobs, _clock),
                 new WorkspaceCleaner(ownership));
         }, new ProjectRuntimeActivity(), () => _clock.UtcNow);
 
         var openingFirst = Task.Run(() => registry.GetOrOpen(first));
-        Assert.True(entered.Wait(TimeSpan.FromSeconds(1)));
+        Assert.True(entered.Wait(Patience));
         var openingSecond = Task.Run(() => registry.GetOrOpen(second));
-        await openingSecond.WaitAsync(TimeSpan.FromSeconds(1));
+        await openingSecond.WaitAsync(Patience);
         release.Set();
-        await openingFirst.WaitAsync(TimeSpan.FromSeconds(1));
+        await openingFirst.WaitAsync(Patience);
     }
 
     [Fact]
@@ -220,18 +223,18 @@ public sealed class ProjectRuntimeTests : IDisposable
         using var registry = new ProjectRuntimeRegistry(catalog, (jobs, key) =>
         {
             entered.Set();
-            release.Wait(TimeSpan.FromSeconds(5));
+            release.Wait(Patience);
             return new WorkerRecoveryCoordinator(new WorkerRecovery(jobs, _clock),
                 new WorkspaceCleaner(ownership));
         }, new ProjectRuntimeActivity(), () => _clock.UtcNow);
 
         var opening = Task.Run(() => registry.GetOrOpen(project));
-        Assert.True(entered.Wait(TimeSpan.FromSeconds(1)));
+        Assert.True(entered.Wait(Patience));
         var disposing = Task.Run(registry.Dispose);
         Assert.Throws<ObjectDisposedException>(() => registry.GetOrOpen(project));
         release.Set();
-        var opened = await opening.WaitAsync(TimeSpan.FromSeconds(2));
-        await disposing.WaitAsync(TimeSpan.FromSeconds(2));
+        var opened = await opening.WaitAsync(Patience);
+        await disposing.WaitAsync(Patience);
         Assert.Equal(ProjectRuntimeAdmission.Disposed, opened.Admission);
         Assert.False(registry.TryGet(ProjectWorkspaceKey.Compute(project), out _));
     }

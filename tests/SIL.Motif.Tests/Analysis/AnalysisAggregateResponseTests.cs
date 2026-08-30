@@ -126,10 +126,10 @@ public class AnalysisAggregateResponseTests
         Assert.Contains("the grammar has changed", grammarMoved);
         Assert.Contains("888888888888", grammarMoved); // names what it moved to
         Assert.Contains("no longer exists", grammarMoved);
-        Assert.DoesNotContain("the corpus has changed", grammarMoved);
+        Assert.DoesNotContain("the selection has changed", grammarMoved);
 
         var bothMoved = response.DescribeAssessmentState(Hash('9'), Hash('8'));
-        Assert.Contains("the corpus has changed", bothMoved);
+        Assert.Contains("the selection has changed", bothMoved);
         Assert.Contains("the grammar has changed", bothMoved);
     }
 }

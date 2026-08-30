@@ -5,6 +5,7 @@ using System.IO;
 using System.Threading;
 using SIL.Motif.Cli;
 using SIL.Motif.Contract.Canonicalization;
+using SIL.Motif.Contract.Ids;
 using SIL.Motif.Contract.Projects;
 using SIL.Motif.Host.Store;
 using SIL.Motif.Projection.Usage;
@@ -48,16 +49,16 @@ try
             if (!flags.TryGetValue("project", out var analysesProject))
                 return Usage(AnalysesUsage(), asJson);
             var hasAssessment = flags.TryGetValue("assessment", out var assessmentId);
-            var hasCurrentCorpus = flags.TryGetValue("current-corpus-sha256", out var currentCorpusSha256);
+            var hasCurrentSelection = flags.TryGetValue("current-selection-sha256", out var currentSelectionSha256);
             var hasCurrentGrammar = flags.TryGetValue("current-grammar-sha256", out var currentGrammarSha256);
-            if ((hasAssessment || hasCurrentCorpus || hasCurrentGrammar)
-                && !(hasAssessment && hasCurrentCorpus && hasCurrentGrammar))
+            if ((hasAssessment || hasCurrentSelection || hasCurrentGrammar)
+                && !(hasAssessment && hasCurrentSelection && hasCurrentGrammar))
             {
                 return Usage(AnalysesUsage(), asJson);
             }
             if (hasAssessment
-                && (!Sha256Value.IsCanonical(assessmentId)
-                    || !Sha256Value.IsCanonical(currentCorpusSha256)
+                && (!CanonicalId.TryParse(assessmentId, out _)
+                    || !Sha256Value.IsCanonical(currentSelectionSha256)
                     || !Sha256Value.IsCanonical(currentGrammarSha256)))
             {
                 return Usage(AnalysesUsage(), asJson);
@@ -65,9 +66,9 @@ try
             result = hasAssessment
                 ? asJson
                     ? Commands.AnalysesJson(
-                        analysesProject, assessmentId!, currentCorpusSha256!, currentGrammarSha256!, usage)
+                        analysesProject, assessmentId!, currentSelectionSha256!, currentGrammarSha256!, usage)
                     : Commands.Analyses(
-                        analysesProject, assessmentId!, currentCorpusSha256!, currentGrammarSha256!, usage)
+                        analysesProject, assessmentId!, currentSelectionSha256!, currentGrammarSha256!, usage)
                 : asJson
                     ? Commands.AnalysesJson(analysesProject, usage)
                     : Commands.Analyses(analysesProject, usage);
@@ -606,7 +607,7 @@ static string JobsMoveUsage() =>
 
 static string AnalysesUsage() =>
     "Usage: motif analyses --project <fwdata> [--json] OR motif analyses --project <fwdata> " +
-    "--assessment <assessmentId> --current-corpus-sha256 <sha256> " +
+    "--assessment <assessmentId> --current-selection-sha256 <sha256> " +
     "--current-grammar-sha256 <sha256> [--json]";
 
 static void PrintUsage(TextWriter writer)
@@ -617,7 +618,7 @@ static void PrintUsage(TextWriter writer)
     writer.WriteLine("  open <fwdata> [--json]");
     writer.WriteLine("  analyses --project <fwdata> [--json]");
     writer.WriteLine(
-        "  analyses --project <fwdata> --assessment <assessmentId> --current-corpus-sha256 <sha256> " +
+        "  analyses --project <fwdata> --assessment <assessmentId> --current-selection-sha256 <sha256> " +
         "--current-grammar-sha256 <sha256> [--json]");
     writer.WriteLine("  new --project <fwdata> --draft <name> [--label <text>]");
     writer.WriteLine(

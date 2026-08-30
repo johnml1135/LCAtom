@@ -92,7 +92,7 @@ public static class ReportCommands
             var evidenceJson = JsonSerializer.Serialize(new
             {
                 assessmentId,
-                corpusSha256 = record.Selection.Sha256,
+                selectionSha256 = record.Selection.Sha256,
                 grammarSourceSha256 = record.GrammarSourceSha256,
             }, MotifJson.CreateOptions());
             new ReportRepository(database).Save(new ReportRecord(

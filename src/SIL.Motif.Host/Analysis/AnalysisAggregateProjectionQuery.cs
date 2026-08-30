@@ -13,26 +13,26 @@ public static class AnalysisAggregateProjectionQuery
     public static AnalysisAggregateProjection Read(
         LcmCache cache,
         StoredAssessment assessment,
-        string currentCorpusSha256,
+        string currentSelectionSha256,
         string currentGrammarSourceSha256)
     {
         ArgumentNullException.ThrowIfNull(cache);
         ArgumentNullException.ThrowIfNull(assessment);
         return Build(
             AnalysisAggregateReader.Read(cache, assessment),
-            currentCorpusSha256,
+            currentSelectionSha256,
             currentGrammarSourceSha256);
     }
 
     public static AnalysisAggregateProjection Build(
         AnalysisAggregateResponse response,
-        string currentCorpusSha256,
+        string currentSelectionSha256,
         string currentGrammarSourceSha256)
     {
         ArgumentNullException.ThrowIfNull(response);
         if (response.Assessment is { } assessment)
         {
-            Sha256Value.RequireCanonical(currentCorpusSha256, nameof(currentCorpusSha256));
+            Sha256Value.RequireCanonical(currentSelectionSha256, nameof(currentSelectionSha256));
             Sha256Value.RequireCanonical(currentGrammarSourceSha256, nameof(currentGrammarSourceSha256));
             Sha256Value.RequireCanonical(assessment.SelectionSha256, nameof(assessment.SelectionSha256));
             Sha256Value.RequireCanonical(
@@ -74,7 +74,7 @@ public static class AnalysisAggregateProjectionQuery
                 response.UnanalysedReach.Describe());
 
         return new AnalysisAggregateProjection(
-            response.DescribeAssessmentState(currentCorpusSha256, currentGrammarSourceSha256),
+            response.DescribeAssessmentState(currentSelectionSha256, currentGrammarSourceSha256),
             wordForms,
             reach);
     }

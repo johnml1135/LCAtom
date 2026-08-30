@@ -238,7 +238,7 @@ the Report can say whether the Assessment is current or stale without running th
 ```powershell
 motif analyses --project C:\path\to\project.fwdata `
   --assessment <assessmentId> `
-  --current-corpus-sha256 <sha256> `
+  --current-selection-sha256 <sha256> `
   --current-grammar-sha256 <sha256> `
   [--store <dir>] [--json]
 ```

@@ -64,8 +64,8 @@ public sealed record GrammarCoverageFigure(
     /// <summary>
     /// Whether this figure still describes the current world.
     /// </summary>
-    public bool IsCurrent(string currentCorpusSha256, string currentGrammarSourceSha256) =>
-        string.Equals(SelectionSha256, currentCorpusSha256, StringComparison.Ordinal)
+    public bool IsCurrent(string currentSelectionSha256, string currentGrammarSourceSha256) =>
+        string.Equals(SelectionSha256, currentSelectionSha256, StringComparison.Ordinal)
         && string.Equals(GrammarSourceSha256, currentGrammarSourceSha256, StringComparison.Ordinal);
 
     /// <summary>
@@ -91,10 +91,10 @@ public sealed record GrammarCoverageFigure(
     /// is exact, provided the state it describes is named.
     /// </para>
     /// </remarks>
-    public string Describe(string currentCorpusSha256, string currentGrammarSourceSha256)
+    public string Describe(string currentSelectionSha256, string currentGrammarSourceSha256)
     {
         var subject = $"selection '{SelectionName}' ({Short(SelectionSha256)}) under grammar {Short(GrammarSourceSha256)}";
-        var current = IsCurrent(currentCorpusSha256, currentGrammarSourceSha256);
+        var current = IsCurrent(currentSelectionSha256, currentGrammarSourceSha256);
 
         // The tense is chosen once, here, and threaded through — not patched into finished prose afterwards.
         var verb = current
@@ -116,8 +116,8 @@ public sealed record GrammarCoverageFigure(
         if (current) return $"For {subject}, {measure}.";
 
         var moved = new List<string>();
-        if (!string.Equals(SelectionSha256, currentCorpusSha256, StringComparison.Ordinal))
-            moved.Add($"the selection has changed (now {Short(currentCorpusSha256)})");
+        if (!string.Equals(SelectionSha256, currentSelectionSha256, StringComparison.Ordinal))
+            moved.Add($"the selection has changed (now {Short(currentSelectionSha256)})");
         if (!string.Equals(GrammarSourceSha256, currentGrammarSourceSha256, StringComparison.Ordinal))
             moved.Add($"the grammar has changed (now {Short(currentGrammarSourceSha256)})");
 

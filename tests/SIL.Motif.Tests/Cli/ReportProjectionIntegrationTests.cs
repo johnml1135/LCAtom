@@ -13,6 +13,7 @@ using SIL.LCModel.Core.Text;
 using SIL.LCModel.Infrastructure;
 using SIL.Motif.Projection.Usage;
 using SIL.Motif.Tests.Projection;
+using SIL.Motif.Contract.Ids;
 using SIL.Motif.Tests.TestFixtures;
 using Xunit;
 
@@ -95,7 +96,7 @@ public sealed class ReportProjectionIntegrationTests
                 "pipeline",
                 0),
             Selection.Create("corpus-one", Array.Empty<string>()));
-        var assessmentId = new SqliteAssessmentStore(AssessmentDatabasePath()).Save(assessment);
+        var assessmentId = SeededAssessment.Record(_fwDataPath, assessment, CanonicalId.Mint("assessment/").Value);
         var usage = new UsageLog();
 
         var text = Commands.Analyses(
@@ -114,7 +115,7 @@ public sealed class ReportProjectionIntegrationTests
         Assert.Equal(0, text.ExitCode);
         Assert.Equal(0, json.ExitCode);
         Assert.Contains("still describes the current project", text.Output);
-        Assert.Contains("corpus has changed", json.Output);
+        Assert.Contains("selection has changed", json.Output);
         Assert.Contains("\"unanalysedCount\": 0", json.Output);
         Assert.Contains("\"parsedCount\": 0", json.Output);
         Assert.All(usage.Entries, entry => Assert.Equal(
@@ -122,7 +123,7 @@ public sealed class ReportProjectionIntegrationTests
             {
                 "fwDataPath:text",
                 "assessmentId:text",
-                "currentCorpusSha256:text",
+                "currentSelectionSha256:text",
                 "currentGrammarSourceSha256:text",
             },
             entry.ArgumentShape));
@@ -150,17 +151,18 @@ public sealed class ReportProjectionIntegrationTests
     [InlineData("sha256:0000000000000000000000000000000000000000000000000000000000000000", "sha256:1111111111111111111111111111111111111111111111111111111111111111", "SHA256:2222222222222222222222222222222222222222222222222222222222222222")]
     public void AssessmentCommandsRejectMalformedIdentifiers(
         string assessmentId,
-        string currentCorpusSha256,
+        string currentSelectionSha256,
         string currentGrammarSha256)
     {
         var result = Commands.Analyses(
             _fwDataPath,
             assessmentId,
-            currentCorpusSha256,
+            currentSelectionSha256,
             currentGrammarSha256);
 
         Assert.NotEqual(0, result.ExitCode);
-        Assert.Contains("sha256:", result.Output);
+        // Each malformed field is rejected by name; an assessment id and a digest have different shapes.
+        Assert.Contains("is required", result.Output, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -196,7 +198,7 @@ public sealed class ReportProjectionIntegrationTests
             Selection.Create(
                 "real-join",
                 new[] { "zzAssessmentParsed", "zzAssessmentEmpty" }));
-        var assessmentId = new SqliteAssessmentStore(AssessmentDatabasePath()).Save(assessment);
+        var assessmentId = SeededAssessment.Record(_fwDataPath, assessment, CanonicalId.Mint("assessment/").Value);
 
         var result = Commands.AnalysesJson(
             _fwDataPath,
