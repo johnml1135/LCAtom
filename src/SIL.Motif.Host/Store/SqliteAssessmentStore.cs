@@ -167,20 +167,20 @@ public sealed class SqliteAssessmentStore : IAssessmentStore
         command.Transaction = transaction;
         command.CommandText = """
             INSERT INTO Assessments
-                (AssessmentId, CorpusId, CorpusWordsJson, CorpusSha256, CorpusProvenanceJson,
+                (AssessmentId, SelectionName, SelectionWordsJson, SelectionSha256, SelectionProvenanceJson,
                  OutcomeDigest, SemanticDigest, GrammarSourceSha256, ModelFingerprint, Pipeline,
                  DiagnosticCount, SavedUtc)
             VALUES
-                ($id, $corpusId, $corpusWords, $corpusSha, $corpusProvenance,
+                ($id, $selectionName, $selectionWords, $selectionSha, $selectionProvenance,
                  $outcomeDigest, $semanticDigest, $grammarSha, $modelFingerprint, $pipeline,
                  $diagnosticCount, $savedUtc);
             """;
         command.Parameters.AddWithValue("$id", assessmentId);
-        command.Parameters.AddWithValue("$corpusId", assessment.Selection.Name);
-        command.Parameters.AddWithValue("$corpusWords", JsonSerializer.Serialize(assessment.Selection.Words));
-        command.Parameters.AddWithValue("$corpusSha", assessment.Selection.Sha256);
+        command.Parameters.AddWithValue("$selectionName", assessment.Selection.Name);
+        command.Parameters.AddWithValue("$selectionWords", JsonSerializer.Serialize(assessment.Selection.Words));
+        command.Parameters.AddWithValue("$selectionSha", assessment.Selection.Sha256);
         command.Parameters.AddWithValue(
-            "$corpusProvenance",
+            "$selectionProvenance",
             assessment.Selection.Provenance is null ? DBNull.Value : JsonSerializer.Serialize(assessment.Selection.Provenance));
         command.Parameters.AddWithValue("$outcomeDigest", assessment.Report.OutcomeDigest);
         command.Parameters.AddWithValue("$semanticDigest", assessment.Report.SemanticDigest);
@@ -265,16 +265,16 @@ public sealed class SqliteAssessmentStore : IAssessmentStore
             Pipeline: header.Pipeline,
             DiagnosticCount: header.DiagnosticCount);
 
-        var selection = new Selection(header.CorpusId, header.CorpusWords, header.CorpusSha256, header.CorpusProvenance);
+        var selection = new Selection(header.SelectionName, header.SelectionWords, header.SelectionSha256, header.SelectionProvenance);
 
         return new StoredAssessment(report, selection);
     }
 
     private sealed record AssessmentHeader(
-        string CorpusId,
-        IReadOnlyList<string> CorpusWords,
-        string CorpusSha256,
-        CorpusProvenance? CorpusProvenance,
+        string SelectionName,
+        IReadOnlyList<string> SelectionWords,
+        string SelectionSha256,
+        CorpusProvenance? SelectionProvenance,
         string OutcomeDigest,
         string SemanticDigest,
         string GrammarSourceSha256,
@@ -286,7 +286,7 @@ public sealed class SqliteAssessmentStore : IAssessmentStore
     {
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT CorpusId, CorpusWordsJson, CorpusSha256, CorpusProvenanceJson,
+            SELECT SelectionName, SelectionWordsJson, SelectionSha256, SelectionProvenanceJson,
                    OutcomeDigest, SemanticDigest, GrammarSourceSha256, ModelFingerprint, Pipeline, DiagnosticCount
             FROM Assessments WHERE AssessmentId = $id;
             """;
@@ -295,10 +295,10 @@ public sealed class SqliteAssessmentStore : IAssessmentStore
         if (!reader.Read()) return null;
 
         return new AssessmentHeader(
-            CorpusId: reader.GetString(0),
-            CorpusWords: JsonSerializer.Deserialize<List<string>>(reader.GetString(1))!,
-            CorpusSha256: reader.GetString(2),
-            CorpusProvenance: reader.IsDBNull(3) ? null : JsonSerializer.Deserialize<CorpusProvenance>(reader.GetString(3)),
+            SelectionName: reader.GetString(0),
+            SelectionWords: JsonSerializer.Deserialize<List<string>>(reader.GetString(1))!,
+            SelectionSha256: reader.GetString(2),
+            SelectionProvenance: reader.IsDBNull(3) ? null : JsonSerializer.Deserialize<CorpusProvenance>(reader.GetString(3)),
             OutcomeDigest: reader.GetString(4),
             SemanticDigest: reader.GetString(5),
             GrammarSourceSha256: reader.GetString(6),

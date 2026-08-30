@@ -181,7 +181,7 @@ public static class MotifSchema
     internal static void EnsureLegacyTables(SqliteConnection connection)
     {
         using var command = connection.CreateCommand();
-        command.CommandText = CorpusAndAssessmentDdl;
+        command.CommandText = StoreOnlyDdl;
         command.ExecuteNonQuery();
     }
 
@@ -1124,7 +1124,7 @@ public static class MotifSchema
         command.ExecuteNonQuery();
     }
 
-    private const string CorpusAndAssessmentDdl = """
+    private const string CorpusDdl = """
         CREATE TABLE IF NOT EXISTS Corpora (
             CorpusId TEXT PRIMARY KEY,
             ProvenanceJson TEXT NOT NULL
@@ -1145,6 +1145,10 @@ public static class MotifSchema
             PRIMARY KEY (CorpusId, DocumentId)
         );
 
+        """;
+
+    // Frozen: what generation 2 created. Generation 11 renames these columns, so this must not follow it.
+    private const string AssessmentsDdlGenerationTwo = """
         CREATE TABLE IF NOT EXISTS Assessments (
             AssessmentId TEXT PRIMARY KEY,
             CorpusId TEXT NOT NULL,
@@ -1160,6 +1164,28 @@ public static class MotifSchema
             SavedUtc TEXT NOT NULL
         );
 
+        """;
+
+    // A database no worker has migrated still has to answer the column names generation 11 leaves behind.
+    private const string AssessmentsDdlForStoreOnlyDatabases = """
+        CREATE TABLE IF NOT EXISTS Assessments (
+            AssessmentId TEXT PRIMARY KEY,
+            SelectionName TEXT NOT NULL,
+            SelectionWordsJson TEXT NOT NULL,
+            SelectionSha256 TEXT NOT NULL,
+            SelectionProvenanceJson TEXT NULL,
+            OutcomeDigest TEXT NOT NULL,
+            SemanticDigest TEXT NOT NULL,
+            GrammarSourceSha256 TEXT NOT NULL,
+            ModelFingerprint TEXT NOT NULL,
+            Pipeline TEXT NOT NULL,
+            DiagnosticCount INTEGER NOT NULL,
+            SavedUtc TEXT NOT NULL
+        );
+
+        """;
+
+    private const string AssessmentSupportDdl = """
         CREATE TABLE IF NOT EXISTS AssessedWords (
             AssessedWordId INTEGER PRIMARY KEY AUTOINCREMENT,
             AssessmentId TEXT NOT NULL REFERENCES Assessments(AssessmentId),
@@ -1188,6 +1214,11 @@ public static class MotifSchema
         );
         """;
 
+    private const string CorpusAndAssessmentDdl =
+        CorpusDdl + AssessmentsDdlGenerationTwo + AssessmentSupportDdl;
+
+    private const string StoreOnlyDdl =
+        CorpusDdl + AssessmentsDdlForStoreOnlyDatabases + AssessmentSupportDdl;
     private const string ProposalWorkflowDdl = """
         CREATE TABLE IF NOT EXISTS Proposals (
             ProposalId TEXT PRIMARY KEY,

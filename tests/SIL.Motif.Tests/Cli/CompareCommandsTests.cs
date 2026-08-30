@@ -142,7 +142,7 @@ public sealed class CompareCommandsTests : IDisposable
     private string RecordAssessment(string assessor, string kind, string tokeniserName, string tokeniserVersion,
         params (string Word, bool Analysed)[] words)
     {
-        var corpus = Selection.Create("test", words.Select(w => w.Word));
+        var selection = Selection.Create("test", words.Select(w => w.Word));
         var assessmentId = CanonicalId.Mint("assessment/").Value;
         var assessedWords = words
             .Select(w => new AssessedWord(
@@ -165,7 +165,7 @@ public sealed class CompareCommandsTests : IDisposable
                 TokeniserName: tokeniserName,
                 TokeniserVersion: tokeniserVersion,
                 BaselineToken: "{}",
-                Selection: corpus,
+                Selection: selection,
                 OutcomeDigest: "sha256:" + new string('b', 64),
                 SemanticDigest: "sha256:" + new string('c', 64),
                 GrammarSourceSha256: GrammarSha,

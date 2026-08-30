@@ -41,6 +41,7 @@ public sealed class AnalysisCommandDispatchTests : IDisposable
     private string AssessmentDatabasePath() => ProjectDatabaseCatalog.DatabasePathFor(
         new ProjectLocator(_fwDataPath, Path.GetFileNameWithoutExtension(_fwDataPath)));
 
+
     [Fact]
     public void AnalysesJsonFlagDispatchesToStructuredOutputAndRecordsUsageShape()
     {

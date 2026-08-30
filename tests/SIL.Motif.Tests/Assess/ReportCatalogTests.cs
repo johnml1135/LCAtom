@@ -124,10 +124,10 @@ public sealed class ReportProducerTests
         {
             new AssessedWord("motifa", "timed-out", Array.Empty<ParsedAnalysis>()),
         };
-        var corpus = Selection.Create("test", words.Select(w => w.Word));
+        var selection = Selection.Create("test", words.Select(w => w.Word));
         var assessment = new ReportableAssessment(
             "assessment/1", "pangloss", "ParseTime", ScopeJson,
-            corpus.Name, corpus.Words, corpus.Sha256, GrammarSha, words);
+            selection.Name, selection.Words, selection.Sha256, GrammarSha, words);
 
         var rendered = new CoverageReportProducer().Produce(assessment, new ReportQuery(), NoAssessorRegistered);
 
@@ -144,9 +144,9 @@ public sealed class ReportProducerTests
                     ? new[] { new ParsedAnalysis(null, Array.Empty<string>(), 0, "digest") }
                     : Array.Empty<ParsedAnalysis>()))
             .ToArray();
-        var corpus = Selection.Create("test", words.Select(w => w.Word));
+        var selection = Selection.Create("test", words.Select(w => w.Word));
         return new ReportableAssessment(
             "assessment/1", "pangloss", kind, ScopeJson,
-            corpus.Name, corpus.Words, corpus.Sha256, GrammarSha, assessedWords);
+            selection.Name, selection.Words, selection.Sha256, GrammarSha, assessedWords);
     }
 }

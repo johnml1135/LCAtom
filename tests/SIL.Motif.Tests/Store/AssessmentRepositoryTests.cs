@@ -212,7 +212,7 @@ public sealed class AssessmentRepositoryTests : IDisposable
         string assessmentId, CanonicalId? proposalId, string? proposalIntentDigest, string kind,
         IReadOnlyList<AssessedWord>? words = null)
     {
-        var corpus = Selection.Create("corpus-1", ["bo", "za"]);
+        var selection = Selection.Create("selection-1", ["bo", "za"]);
         return new NewAssessmentRecord(
             AssessmentId: assessmentId,
             ProposalId: proposalId,
@@ -224,7 +224,7 @@ public sealed class AssessmentRepositoryTests : IDisposable
             TokeniserName: "whitespace",
             TokeniserVersion: "1",
             BaselineToken: "{\"baseline\":true}",
-            Selection: corpus,
+            Selection: selection,
             OutcomeDigest: "sha256:outcome",
             SemanticDigest: "sha256:semantic",
             GrammarSourceSha256: "sha256:grammar",

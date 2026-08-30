@@ -18,17 +18,17 @@ public sealed class GrammarCoverageProvenanceTests
     [Fact]
     public void TheFigureCitesTheCorpusAndGrammarItWasComputedFrom()
     {
-        var corpus = Selection.Create("corpus/sample", ["motifa", "zzznotaword"]);
+        var selection = Selection.Create("selection/sample", ["motifa", "zzznotaword"]);
         var report = AssessReportParser.Parse(ReportJson);
         var batch = new BatchAnalysis(
             [new WordAnalysis(0, "motifa", 3, WordOutcome.Analysed, "sig-1"),
              new WordAnalysis(1, "zzznotaword", 2, WordOutcome.NoAnalysis, "sig-2")],
             ParserEngine.FstPrunedByHermitCrab, 5000, @"C:\projects\sample.fwdata", []);
 
-        var figure = GrammarCoverageFigure.Compute(batch, corpus, report);
+        var figure = GrammarCoverageFigure.Compute(batch, selection, report);
 
-        Assert.Equal(corpus.Name, figure.SelectionName);
-        Assert.Equal(corpus.Sha256, figure.SelectionSha256);
+        Assert.Equal(selection.Name, figure.SelectionName);
+        Assert.Equal(selection.Sha256, figure.SelectionSha256);
         // The grammar identity comes from the parser's own hash rather than anything Motif computed.
         Assert.Equal(report.GrammarSourceSha256, figure.GrammarSourceSha256);
         Assert.Equal(ParserEngine.FstPrunedByHermitCrab, figure.Engine);
@@ -38,17 +38,17 @@ public sealed class GrammarCoverageProvenanceTests
     [Fact]
     public void EveryWordIsAccountedForAndTheFractionStaysWithinItsDenominator()
     {
-        var corpus = Selection.Create("corpus/sample", ["a", "b", "c"]);
+        var selection = Selection.Create("selection/sample", ["a", "b", "c"]);
         var batch = new BatchAnalysis(
             [new WordAnalysis(0, "a", 1, WordOutcome.Analysed, "s"),
              new WordAnalysis(1, "b", 1, WordOutcome.NoAnalysis, "s"),
              new WordAnalysis(2, "c", 1, WordOutcome.TimedOut, "s")],
             ParserEngine.FstPrunedByHermitCrab, 5000, @"C:\projects\sample.fwdata", []);
 
-        var figure = GrammarCoverageFigure.Compute(batch, corpus, AssessReportParser.Parse(ReportJson));
+        var figure = GrammarCoverageFigure.Compute(batch, selection, AssessReportParser.Parse(ReportJson));
 
-        Assert.Equal(corpus.Words.Count, batch.Analysed + batch.NoAnalysis + batch.TimedOut + batch.Skipped);
-        Assert.True(figure.Adjudicated <= corpus.Words.Count);
+        Assert.Equal(selection.Words.Count, batch.Analysed + batch.NoAnalysis + batch.TimedOut + batch.Skipped);
+        Assert.True(figure.Adjudicated <= selection.Words.Count);
         // A timed-out word means the figure can only be a floor, and must say so.
         Assert.True(figure.IsLowerBound);
         Assert.InRange(figure.Fraction!.Value, 0.0, 1.0);

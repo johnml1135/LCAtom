@@ -2,6 +2,9 @@ using System;
 using System.IO;
 using System.Linq;
 using Microsoft.Data.Sqlite;
+using SIL.Motif.Contract.Projects;
+using SIL.Motif.Worker.Store;
+using SIL.Motif.Contract.Ids;
 using SIL.Motif.Host.Analysis;
 using SIL.Motif.Host.Corpus;
 using SIL.Motif.Host.Parser;
@@ -27,7 +30,44 @@ public sealed class SqliteAssessmentStoreTests : IDisposable
         GC.SuppressFinalize(this);
     }
 
+    [Fact]
+    public void ReadsAnAssessmentTheWorkerWroteIntoAMigratedDatabase()
+    {
+        // `motif analyses` reads through this store what the worker wrote through the repository, from one file.
+        Directory.CreateDirectory(_root);
+        var project = new ProjectLocator(Path.Combine(_root, "migrated.fwdata"), "migrated");
+        using var database = MotifDatabase.OpenOwned(
+            DatabasePath, project, MotifSchema.CurrentSchema, new Version(1, 0));
+        var selection = Selection.Create("reach-test", ["mbali"]);
+        new AssessmentRepository(database).Record(new NewAssessmentRecord(
+            AssessmentId: "assessment-read-back",
+            ProposalId: null,
+            ProposalIntentDigest: null,
+            Assessor: "pangloss",
+            Kind: "ParseTime",
+            ScopeJson: "{}",
+            ScopeDigest: "sha256:scope",
+            TokeniserName: "none",
+            TokeniserVersion: "1",
+            BaselineToken: "{}",
+            Selection: selection,
+            OutcomeDigest: "sha256:outcome",
+            SemanticDigest: "sha256:semantic",
+            GrammarSourceSha256: "sha256:grammar",
+            ModelFingerprint: "fp",
+            Pipeline: "pipeline",
+            DiagnosticCount: 0,
+            Words: [Word("mbali", "Analysed")]));
+
+        var loaded = new SqliteAssessmentStore(DatabasePath).Load("assessment-read-back");
+
+        Assert.NotNull(loaded);
+        Assert.Equal(selection.Name, loaded!.Selection.Name);
+        Assert.Equal(selection.Sha256, loaded.Selection.Sha256);
+    }
+
     private string DatabasePath => Path.Combine(_root, "motif.db");
+
     private SqliteAssessmentStore Store() => new(DatabasePath);
 
     private static ParsedAnalysis Analysis(string digest, params string[] morphemes) =>
@@ -38,11 +78,11 @@ public sealed class SqliteAssessmentStoreTests : IDisposable
 
     private static StoredAssessment Assessment(params AssessedWord[] words)
     {
-        var corpus = Selection.Create(
+        var selection = Selection.Create(
             "reach-test",
             words.Select(w => w.Word),
             new CorpusProvenance(
-                new CorpusOrigin("Testlang corpus", null, new DateTimeOffset(2026, 8, 9, 0, 0, 0, TimeSpan.Zero), "internal"),
+                new CorpusOrigin("Testlang selection", null, new DateTimeOffset(2026, 8, 9, 0, 0, 0, TimeSpan.Zero), "internal"),
                 new TokenisationRecord("whitespace-and-punctuation", "1", "")));
 
         var report = new AssessReport(
@@ -54,7 +94,7 @@ public sealed class SqliteAssessmentStoreTests : IDisposable
             Pipeline: "foma-confirm",
             DiagnosticCount: 3);
 
-        return new StoredAssessment(report, corpus);
+        return new StoredAssessment(report, selection);
     }
 
     [Fact]

@@ -71,7 +71,7 @@ public static class CompareCommands
                     change.Word, $"{change.Kind}:{change.FromOutcome}->{change.ToOutcome}",
                     Array.Empty<ParsedAnalysis>()))
                 .ToArray();
-            var corpus = Selection.Create(
+            var selection = Selection.Create(
                 $"difference:{fromAssessmentId}..{toAssessmentId}", comparison.SharedWords);
             var (tokeniserName, tokeniserVersion) = comparison.TokeniserMismatch
                 ? ("mixed", "mixed")
@@ -88,7 +88,7 @@ public static class CompareCommands
                 TokeniserName: tokeniserName,
                 TokeniserVersion: tokeniserVersion,
                 BaselineToken: "{\"from\":" + from.BaselineToken + ",\"to\":" + to.BaselineToken + "}",
-                Selection: corpus,
+                Selection: selection,
                 OutcomeDigest: Digest(scopeJson),
                 SemanticDigest: Digest(string.Join('\n', words.Select(w => w.Word + "|" + w.Outcome))),
                 GrammarSourceSha256: string.Empty,

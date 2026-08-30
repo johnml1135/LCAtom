@@ -65,8 +65,8 @@ public sealed class CoverageReportProducer : IReportProducer
             index, word.Word, 0, StoredWordOutcome.Parse(word.Outcome, KindName), string.Empty)).ToList();
         var batch = new BatchAnalysis(
             words, engine, (int)scope.PerWordLimit.TotalMilliseconds, string.Empty, Array.Empty<string>());
-        var corpus = new Selection(assessment.SelectionName, assessment.SelectionWords, assessment.SelectionSha256);
-        var figure = GrammarCoverageFigure.Compute(batch, corpus, assessment.GrammarSourceSha256);
+        var selection = new Selection(assessment.SelectionName, assessment.SelectionWords, assessment.SelectionSha256);
+        var figure = GrammarCoverageFigure.Compute(batch, selection, assessment.GrammarSourceSha256);
         return new RenderedReport(KindName, figure.Describe(assessment.SelectionSha256, assessment.GrammarSourceSha256));
     }
 }
@@ -82,7 +82,7 @@ internal static class CorrectnessCoverage
 {
     /// <exception cref="ReportRefusalException">The scope's engine name cannot be read.</exception>
     public static GrammarCoverageFigure Compute(
-        IReadOnlyList<AssessedWord> words, StoredScope.Trial scope, Selection corpus,
+        IReadOnlyList<AssessedWord> words, StoredScope.Trial scope, Selection selection,
         string grammarSourceSha256, string reportKind)
     {
         var engine = ScopeEngine.Resolve(scope.Engine, reportKind);
@@ -92,7 +92,7 @@ internal static class CorrectnessCoverage
             word.Analyses.Count > 0 ? word.Analyses[0].IdentityDigest : string.Empty)).ToList();
         var batch = new BatchAnalysis(
             analysed, engine, (int)scope.PerWordLimit.TotalMilliseconds, string.Empty, Array.Empty<string>());
-        return GrammarCoverageFigure.Compute(batch, corpus, grammarSourceSha256);
+        return GrammarCoverageFigure.Compute(batch, selection, grammarSourceSha256);
     }
 }
 
@@ -131,10 +131,10 @@ public sealed class CorrectnessReportProducer : IReportProducer
                 "not collect.");
         }
 
-        var corpus = new Selection(assessment.SelectionName, assessment.SelectionWords, assessment.SelectionSha256);
+        var selection = new Selection(assessment.SelectionName, assessment.SelectionWords, assessment.SelectionSha256);
         var scope = ScopeCodec.ReadTrial(assessment.ScopeJson, KindName);
         var figure = CorrectnessCoverage.Compute(
-            assessment.Words, scope, corpus, assessment.GrammarSourceSha256, KindName);
+            assessment.Words, scope, selection, assessment.GrammarSourceSha256, KindName);
         var text = "Correctness against manual analysis — " +
             figure.Describe(assessment.SelectionSha256, assessment.GrammarSourceSha256);
         return new RenderedReport(KindName, text);

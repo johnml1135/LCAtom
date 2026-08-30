@@ -30,9 +30,9 @@ public class GrammarCoverageFigureTests
             ("nkazi", WordOutcome.NoAnalysis),
             ("munthu", WordOutcome.TimedOut),
             ("anthu", WordOutcome.Skipped));
-        var corpus = Selection.Create("test-corpus", batch.Words.Select(w => w.Word));
+        var selection = Selection.Create("test-selection", batch.Words.Select(w => w.Word));
 
-        var figure = GrammarCoverageFigure.Compute(batch, corpus, "sha256:" + new string('a', 64));
+        var figure = GrammarCoverageFigure.Compute(batch, selection, "sha256:" + new string('a', 64));
 
         // Denominator is analysed (2) + no-analysis (1) = 3, not the 5 rows in the batch.
         Assert.Equal(3, figure.Adjudicated);
@@ -45,9 +45,9 @@ public class GrammarCoverageFigureTests
     public void Compute_MarksLowerBoundWhenAnyWordTimedOut()
     {
         var batch = Batch(("mbali", WordOutcome.Analysed), ("ya", WordOutcome.TimedOut));
-        var corpus = Selection.Create("test-corpus", new[] { "mbali", "ya" });
+        var selection = Selection.Create("test-selection", new[] { "mbali", "ya" });
 
-        var figure = GrammarCoverageFigure.Compute(batch, corpus, "sha256:" + new string('a', 64));
+        var figure = GrammarCoverageFigure.Compute(batch, selection, "sha256:" + new string('a', 64));
 
         Assert.True(figure.IsLowerBound);
     }
@@ -56,9 +56,9 @@ public class GrammarCoverageFigureTests
     public void Compute_NotALowerBoundWhenNoWordTimedOut()
     {
         var batch = Batch(("mbali", WordOutcome.Analysed), ("ya", WordOutcome.NoAnalysis));
-        var corpus = Selection.Create("test-corpus", new[] { "mbali", "ya" });
+        var selection = Selection.Create("test-selection", new[] { "mbali", "ya" });
 
-        var figure = GrammarCoverageFigure.Compute(batch, corpus, "sha256:" + new string('a', 64));
+        var figure = GrammarCoverageFigure.Compute(batch, selection, "sha256:" + new string('a', 64));
 
         Assert.False(figure.IsLowerBound);
         Assert.Equal(0, figure.TimedOutCount);
@@ -69,9 +69,9 @@ public class GrammarCoverageFigureTests
     {
         // Nothing was judged against the grammar (all timed out/skipped): no percentage — not 0%, not 100%.
         var batch = Batch(("mbali", WordOutcome.TimedOut), ("ya", WordOutcome.Skipped));
-        var corpus = Selection.Create("test-corpus", new[] { "mbali", "ya" });
+        var selection = Selection.Create("test-selection", new[] { "mbali", "ya" });
 
-        var figure = GrammarCoverageFigure.Compute(batch, corpus, "sha256:" + new string('a', 64));
+        var figure = GrammarCoverageFigure.Compute(batch, selection, "sha256:" + new string('a', 64));
 
         Assert.Equal(0, figure.Adjudicated);
         Assert.Null(figure.Fraction);
@@ -82,13 +82,13 @@ public class GrammarCoverageFigureTests
     public void Compute_CitesTheFullProvenanceSetAdr0032Requires()
     {
         var batch = Batch(("mbali", WordOutcome.Analysed));
-        var corpus = Selection.Create("test-corpus-3", new[] { "mbali" });
+        var selection = Selection.Create("test-selection-3", new[] { "mbali" });
         var grammarHash = "sha256:" + new string('b', 64);
 
-        var figure = GrammarCoverageFigure.Compute(batch, corpus, grammarHash);
+        var figure = GrammarCoverageFigure.Compute(batch, selection, grammarHash);
 
-        Assert.Equal(corpus.Name, figure.SelectionName);
-        Assert.Equal(corpus.Sha256, figure.SelectionSha256);
+        Assert.Equal(selection.Name, figure.SelectionName);
+        Assert.Equal(selection.Sha256, figure.SelectionSha256);
         Assert.Equal(grammarHash, figure.GrammarSourceSha256);
         Assert.Equal(ParserEngine.FstPrunedByHermitCrab, figure.Engine);
         Assert.Equal(5000, figure.PerWordTimeoutMs);
@@ -99,19 +99,19 @@ public class GrammarCoverageFigureTests
     public void Compute_ThrowsWhenTheBatchsWordsDoNotMatchTheCorpus()
     {
         var batch = Batch(("mbali", WordOutcome.Analysed), ("ya", WordOutcome.Analysed));
-        var corpus = Selection.Create("test-corpus", new[] { "mbali", "somethingElse" });
+        var selection = Selection.Create("test-selection", new[] { "mbali", "somethingElse" });
 
         var ex = Assert.Throws<ArgumentException>(
-            () => GrammarCoverageFigure.Compute(batch, corpus, "sha256:" + new string('a', 64)));
+            () => GrammarCoverageFigure.Compute(batch, selection, "sha256:" + new string('a', 64)));
 
-        Assert.Contains("test-corpus", ex.Message);
+        Assert.Contains("test-selection", ex.Message);
     }
 
     [Fact]
     public void Compute_TheAssessReportOverload_PullsTheGrammarHashFromTheReport()
     {
         var batch = Batch(("mbali", WordOutcome.Analysed));
-        var corpus = Selection.Create("test-corpus", new[] { "mbali" });
+        var selection = Selection.Create("test-selection", new[] { "mbali" });
         var report = new AssessReport(
             Words: Array.Empty<AssessedWord>(),
             OutcomeDigest: "irrelevant",
@@ -121,7 +121,7 @@ public class GrammarCoverageFigureTests
             Pipeline: "foma-confirm",
             DiagnosticCount: 0);
 
-        var figure = GrammarCoverageFigure.Compute(batch, corpus, report);
+        var figure = GrammarCoverageFigure.Compute(batch, selection, report);
 
         Assert.Equal(report.GrammarSourceSha256, figure.GrammarSourceSha256);
     }
@@ -135,7 +135,7 @@ public class GrammarCoverageFigureTests
             analysed, adjudicated);
 
     /// <summary>
-    /// A figure cannot be rendered without saying what the current corpus and grammar are.
+    /// A figure cannot be rendered without saying what the current selection and grammar are.
     /// </summary>
     /// <remarks>
     /// There is no parameterless <c>Describe</c>, and that omission is the enforcement: the rule "a report
@@ -151,12 +151,12 @@ public class GrammarCoverageFigureTests
         foreach (var sentence in new[]
                  {
                      figure.Describe("sha256:aaaaaaaaaaaabbbb", "sha256:ccccccccccccdddd"), // current
-                     figure.Describe("sha256:9999999999990000", "sha256:ccccccccccccdddd"), // corpus moved
+                     figure.Describe("sha256:9999999999990000", "sha256:ccccccccccccdddd"), // selection moved
                      figure.Describe("sha256:aaaaaaaaaaaabbbb", "sha256:8888888888887777"), // grammar moved
                  })
         {
             Assert.Contains("tst-wikipedia", sentence);
-            Assert.Contains("aaaaaaaaaaaa", sentence);   // the corpus this was measured over
+            Assert.Contains("aaaaaaaaaaaa", sentence);   // the selection this was measured over
             Assert.Contains("cccccccccccc", sentence);   // the grammar this was measured under
         }
     }
@@ -186,11 +186,11 @@ public class GrammarCoverageFigureTests
         Assert.Contains("coverage was 62.0", grammarMoved);
         Assert.Contains("the grammar has changed", grammarMoved);
         Assert.Contains("888888888888", grammarMoved);          // names what it moved to
-        Assert.DoesNotContain("the corpus has changed", grammarMoved);
+        Assert.DoesNotContain("the selection has changed", grammarMoved);
 
         // Both moved: both are named, so a reader knows the figure is doubly detached.
         var bothMoved = figure.Describe("sha256:9999999999990000", "sha256:8888888888887777");
-        Assert.Contains("the corpus has changed", bothMoved);
+        Assert.Contains("the selection has changed", bothMoved);
         Assert.Contains("the grammar has changed", bothMoved);
     }
 

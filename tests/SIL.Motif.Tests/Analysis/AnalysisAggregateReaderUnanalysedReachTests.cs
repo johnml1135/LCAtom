@@ -70,8 +70,8 @@ public sealed class AnalysisAggregateReaderUnanalysedReachTests : IDisposable
             ModelFingerprint: "irrelevant",
             Pipeline: "foma-confirm",
             DiagnosticCount: 0);
-        var corpus = Selection.Create("reach-test", words.Select(w => w.Word));
-        return new StoredAssessment(report, corpus);
+        var selection = Selection.Create("reach-test", words.Select(w => w.Word));
+        return new StoredAssessment(report, selection);
     }
 
     [Fact]
