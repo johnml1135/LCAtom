@@ -1,6 +1,8 @@
 using System.IO.Compression;
 using System.Text.Json;
 using SIL.LCModel;
+using SIL.LCModel.Core.Text;
+using SIL.LCModel.Infrastructure;
 using SIL.Motif.Contract.Baselines;
 using SIL.Motif.Contract.Canonicalization;
 using SIL.Motif.Contract.Ids;
@@ -55,6 +57,7 @@ public sealed class TrialJobHandlerTests : IDisposable
         try
         {
             _seed = SeededProject.Seed(master);
+            SeedWordformsForSelectionTests(master);
             _loader.Save(master);
 
             _publishedRoot = Path.Combine(_root, "published");
@@ -190,6 +193,47 @@ public sealed class TrialJobHandlerTests : IDisposable
         // The first is still readable, byte-for-byte the same header it was recorded with.
         var firstStillThere = _assessments.Get(firstAssessmentId);
         Assert.Equal(proposalId, firstStillThere.ProposalId);
+    }
+
+    [Fact]
+    public void ATrialsRecordedSelectionCarriesOnlyWordsWithAManualAnalysis()
+    {
+        using var lanes = new ProjectLaneRegistry(_ => _token);
+        var handler = BuildHandler(lanes, new FakeAssessor("pangloss", [AssessmentKind.Correctness]));
+        var proposalId = CanonicalId.Mint("proposal/");
+        var proposalJson = BuildSetGlossProposalJson(proposalId, _seed.FirstSenseId, "selection text");
+        SaveCommittedProposal(proposalId, proposalJson);
+
+        var job = CreateTrialJob(proposalJson);
+        var completed = RunAndFinish(handler, job.JobId);
+
+        Assert.Equal(JobStatus.Completed, completed.Status);
+        var recorded = Assert.Single(_assessments.ListByProposal(proposalId));
+        Assert.Contains(AnalysedWordform, recorded.Corpus.Words);
+        Assert.DoesNotContain(UnanalysedWordform, recorded.Corpus.Words);
+
+        // The words are what this run resolved to; the query is what the scope was told, and both are kept.
+        Assert.Contains("\"query\"", recorded.ScopeJson, StringComparison.Ordinal);
+        Assert.Contains(AssessmentScopeConfiguration.DefaultQueryText, recorded.ScopeJson, StringComparison.Ordinal);
+    }
+
+    // One wordform carries a human-approved analysis; the other has none, and a resolved Selection excludes it.
+    private const string AnalysedWordform = "zzmotiftrialanalysed";
+    private const string UnanalysedWordform = "zzmotiftrialunanalysed";
+
+    private static void SeedWordformsForSelectionTests(LcmCache cache)
+    {
+        NonUndoableUnitOfWorkHelper.Do(cache.ActionHandlerAccessor, () =>
+        {
+            var analysed = cache.ServiceLocator.GetInstance<IWfiWordformFactory>()
+                .Create(TsStringUtils.MakeString(AnalysedWordform, cache.DefaultVernWs));
+            var analysis = cache.ServiceLocator.GetInstance<IWfiAnalysisFactory>().Create();
+            analysed.AnalysesOC.Add(analysis);
+            cache.LangProject.DefaultUserAgent.SetEvaluation(analysis, Opinions.approves);
+
+            cache.ServiceLocator.GetInstance<IWfiWordformFactory>()
+                .Create(TsStringUtils.MakeString(UnanalysedWordform, cache.DefaultVernWs));
+        });
     }
 
     private void SaveCommittedProposal(CanonicalId proposalId, string proposalJson)

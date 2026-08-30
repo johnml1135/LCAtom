@@ -61,3 +61,22 @@ public static class ParserEngineFlags
         _ => throw new ArgumentOutOfRangeException(nameof(engine), engine, "Unknown parser engine."),
     };
 }
+
+/// <summary>
+/// Maps an Assessment scope's engine name — PanGloss's own vocabulary, <c>"fast"</c> and <c>"accurate"</c> —
+/// to a <see cref="ParserEngine"/>. Shared by <see cref="SIL.Motif.Host.Assess.PanGlossAssessor"/>, which
+/// produces Assessments under this vocabulary, and any later reader of a stored Assessment's scope that
+/// needs the same name resolved back, so the two never drift apart.
+/// </summary>
+public static class PanGlossEngineNames
+{
+    private static readonly IReadOnlyDictionary<string, ParserEngine> ByName =
+        new Dictionary<string, ParserEngine>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["fast"] = ParserEngine.FstPrunedByHermitCrab,
+            ["accurate"] = ParserEngine.HermitCrabOnly,
+        };
+
+    /// <summary>Resolves a scope's <c>Engine</c> name; <c>false</c> when it names no engine PanGloss has.</summary>
+    public static bool TryParse(string name, out ParserEngine engine) => ByName.TryGetValue(name, out engine);
+}

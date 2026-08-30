@@ -159,13 +159,6 @@ public sealed class PanGlossAssessor : IAssessor
     /// <summary>The name this Assessor is registered and cited under.</summary>
     public const string AssessorName = "pangloss";
 
-    private static readonly IReadOnlyDictionary<string, ParserEngine> EnginesByName =
-        new Dictionary<string, ParserEngine>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["fast"] = ParserEngine.FstPrunedByHermitCrab,
-            ["accurate"] = ParserEngine.HermitCrabOnly,
-        };
-
     private static readonly IReadOnlyList<AssessmentKind> Supported =
         [AssessmentKind.ParseTime, AssessmentKind.Correctness, AssessmentKind.ObjectTiming];
 
@@ -214,7 +207,7 @@ public sealed class PanGlossAssessor : IAssessor
                 throw new AssessorRefusalException(AssessorName, kind, ReasonNotProduced(kind));
         }
 
-        if (!EnginesByName.TryGetValue(scope.Engine, out var engine))
+        if (!PanGlossEngineNames.TryParse(scope.Engine, out var engine))
         {
             throw new ArgumentException(
                 $"'{scope.Engine}' does not name an engine {AssessorName} recognizes.", nameof(scope));

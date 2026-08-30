@@ -172,7 +172,7 @@ internal sealed class TrialJobHandler
                     var cache = scratch?.PeekCache();
                     var words = cache is null
                         ? Array.Empty<string>()
-                        : LcmWordformCorpus.ExtractForms(cache).ToArray();
+                        : WordQueryResolver.Resolve(scopeConfiguration.Query, cache).ToArray();
                     corpus = CorpusDescriptor.Create(scopeConfiguration.Name, words);
                     scope = new AssessmentScope(words, scopeConfiguration.Engine,
                         ParseCollect(scopeConfiguration.Collect), scopeConfiguration.PerWordLimit);
@@ -236,7 +236,8 @@ internal sealed class TrialJobHandler
         DryRunModel dryRun, CorpusDescriptor corpus, AssessmentScope scope,
         AssessmentScopeConfiguration scopeConfiguration, string assessorName, BaselineToken baselineToken)
     {
-        var scopeJson = JsonSerializer.Serialize(new ScopeWire(scope.Words, scope.Engine,
+        // The query is what the scope was told to do; the words are only what it resolved to on this run.
+        var scopeJson = JsonSerializer.Serialize(new ScopeWire(scopeConfiguration.Query, scope.Words, scope.Engine,
             scope.Collect.Select(kind => kind.ToString()).ToArray(), (long)scope.PerWordLimit.TotalMilliseconds),
             MotifJson.CreateOptions());
         var scopeDigest = Digest(scopeJson);
@@ -345,6 +346,7 @@ internal sealed class TrialJobHandler
     }
 
     private sealed record ScopeWire(
+        [property: JsonPropertyName("query")] string Query,
         [property: JsonPropertyName("words")] IReadOnlyList<string> Words,
         [property: JsonPropertyName("engine")] string Engine,
         [property: JsonPropertyName("collect")] IReadOnlyList<string> Collect,
