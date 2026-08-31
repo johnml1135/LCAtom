@@ -127,6 +127,14 @@ one-sided version while removing the `using` block along with the comment above 
     read on, the body is for whoever implements or audits it. A status line like "Slice A built;
     the poisoning guard now fires for real" fails the rule — it names machinery only.
 
+18. **No migration code before 1.0.** Motif is pre-alpha: there is no database, no file, and no
+    on-disk shape in the world worth preserving, and every line written to carry an old one forward
+    is a line paid for with nothing. A stored shape is either the current one or it is refused with
+    an error telling the developer to delete it and let Motif recreate it. This applies to schema
+    generations, format upgraders, back-compat readers, and deprecated flags kept as aliases — a
+    rename is a rename, not a rename plus a bridge. Revisit this at 1.0, when someone outside this
+    repository first has data that matters.
+
 ## Compatibility targets
 
 **One runtime: `net10.0`.** `net8.0` is not a target anywhere in this repository, and since

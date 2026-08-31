@@ -38,9 +38,10 @@ public static class AssessmentKindNames
 {
     /// <summary>
     /// The spelling this kind is written under in the store's <c>Kind</c> column. It is the enum member's
-    /// own name, so <b>renaming a member is a data migration rather than a rename</b>: rows written under
-    /// the old spelling stop matching, and a Report that gated on the kind starts refusing Assessments it
-    /// used to answer for. Add a member freely; rename one only with a migration beside it.
+    /// own name, so <b>renaming a member silently orphans every row already written</b>: they stop matching,
+    /// and a Report that gated on the kind starts refusing Assessments it used to answer for. Add a member
+    /// freely. Before 1.0 the fix for a rename is to delete the database and re-measure, never a migration
+    /// (AGENTS.md rule 18).
     /// </summary>
     public static string ToStoredKind(this AssessmentKind kind) => kind.ToString();
 

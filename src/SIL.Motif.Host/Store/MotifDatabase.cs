@@ -7,7 +7,7 @@ namespace SIL.Motif.Host.Store;
 /// <remarks>
 /// A thin wrapper over <see cref="MotifSqliteStore"/>: this type owns only what is specific to a project
 /// database — validating <see cref="ProjectLocator"/> and worker-version arguments, and the
-/// <see cref="MotifSchema"/> descriptor those arguments feed. The open-and-migrate ceremony, connection
+/// <see cref="MotifSchema"/> descriptor those arguments feed. The open-and-create ceremony, connection
 /// lifecycle, and failure translation it delegates to are shared with <see cref="MachineDatabase"/>.
 /// </remarks>
 public sealed class MotifDatabase : IDisposable
@@ -17,11 +17,12 @@ public sealed class MotifDatabase : IDisposable
     private MotifDatabase(MotifSqliteStore store) => _store = store;
 
     /// <summary>
-    /// Opens and owns a project database, applying only migrations this worker understands.
+    /// Opens a project database, creating it if absent. An existing database at any other schema is
+    /// refused rather than migrated: pre-1.0 Motif has no upgrade path.
     /// </summary>
     /// <param name="path">The sibling Motif database path.</param>
     /// <param name="project">The project locator that must match persisted metadata.</param>
-    /// <param name="supportedSchema">The highest schema generation this worker supports.</param>
+    /// <param name="supportedSchema">The schema generation this worker requires; usually <see cref="MotifSchema.CurrentSchema"/>.</param>
     /// <param name="workerVersion">The worker version used for compatibility checks.</param>
     /// <returns>An owned database boundary whose connections are configured for worker use.</returns>
     /// <exception cref="InvalidDataException">The file identity, metadata, or project binding is invalid.</exception>
@@ -30,22 +31,7 @@ public sealed class MotifDatabase : IDisposable
         string path,
         ProjectLocator project,
         int supportedSchema,
-        Version workerVersion) => OpenOwnedCore(path, project, supportedSchema, workerVersion, null);
-
-    internal static MotifDatabase OpenOwnedForTesting(
-        string path,
-        ProjectLocator project,
-        int supportedSchema,
-        Version workerVersion,
-        Action<int> afterMigrationStep) =>
-        OpenOwnedCore(path, project, supportedSchema, workerVersion, afterMigrationStep);
-
-    private static MotifDatabase OpenOwnedCore(
-        string path,
-        ProjectLocator project,
-        int supportedSchema,
-        Version workerVersion,
-        Action<int>? afterMigrationStep)
+        Version workerVersion)
     {
         if (string.IsNullOrWhiteSpace(path)) throw new ArgumentException("A database path is required.", nameof(path));
         ArgumentNullException.ThrowIfNull(project);
@@ -68,9 +54,8 @@ public sealed class MotifDatabase : IDisposable
             ApplicationId = MotifSchema.ApplicationId,
             CurrentSchema = supportedSchema,
             ValidateSchema = MotifSchema.ValidateSchema,
-            Migrate = (connection, transaction, currentSchema, targetSchema) =>
-                MotifSchema.Migrate(connection, transaction, currentSchema, targetSchema, project, afterMigrationStep),
-            BeforeMigration = (connection, _) =>
+            Create = (connection, transaction) => MotifSchema.Create(connection, transaction, project),
+            BeforeOpen = connection =>
             {
                 var metadata = MotifSchema.ReadMetadata(connection);
                 EnsureLocatorMatches(metadata.Project, project);

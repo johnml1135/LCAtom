@@ -4,15 +4,15 @@ using Microsoft.Data.Sqlite;
 namespace SIL.Motif.Host.Store;
 
 /// <summary>
-/// What one schema supplies so <see cref="MotifSqliteStore"/> can open, migrate and validate a database
+/// What one schema supplies so <see cref="MotifSqliteStore"/> can open, create and validate a database
 /// whose shape it does not itself know.
 /// </summary>
 /// <remarks>
-/// <see cref="ValidateSchema"/> and <see cref="Migrate"/> close over whatever else that schema's migration
-/// ladder needs — <see cref="MotifSchema.Migrate"/> closes over the requesting <c>ProjectLocator</c>, for
-/// instance — so this descriptor only has to carry the four things that are not already fixed at the call
-/// site: the application id, the schema generation being opened to, schema validation and the migration
-/// ladder, and an optional extra check on an existing database's identity before migration proceeds.
+/// <see cref="ValidateSchema"/> and <see cref="Create"/> close over whatever else that schema needs —
+/// <see cref="MotifSchema.Create"/> closes over the requesting <c>ProjectLocator</c>, for instance — so
+/// this descriptor only has to carry the four things that are not already fixed at the call site: the
+/// application id, the schema this build requires, schema validation and one-step creation, and an
+/// optional extra check on an existing database's identity before it is handed back.
 /// </remarks>
 internal sealed class MotifSqliteStoreDescriptor
 {
@@ -22,25 +22,25 @@ internal sealed class MotifSqliteStoreDescriptor
     /// <summary>The SQLite <c>application_id</c> this schema's databases are stamped with.</summary>
     public required int ApplicationId { get; init; }
 
-    /// <summary>The schema generation this open call migrates to.</summary>
+    /// <summary>The schema this build requires: an empty file is created at it, anything else is refused.</summary>
     public required int CurrentSchema { get; init; }
 
-    /// <summary>Validates that an existing schema generation has the shape this build expects.</summary>
-    public required Action<SqliteConnection, int, SqliteTransaction?> ValidateSchema { get; init; }
+    /// <summary>Validates that an existing database has exactly <see cref="CurrentSchema"/>'s shape.</summary>
+    public required Action<SqliteConnection, SqliteTransaction?> ValidateSchema { get; init; }
 
-    /// <summary>Applies every migration step from the database's current generation up to <see cref="CurrentSchema"/>.</summary>
-    public required Action<SqliteConnection, SqliteTransaction?, int, int> Migrate { get; init; }
+    /// <summary>Builds every table, index and identity row a brand-new database needs, in one step.</summary>
+    public required Action<SqliteConnection, SqliteTransaction?> Create { get; init; }
 
     /// <summary>
-    /// Runs once schema validation passes on an existing, non-empty database, before migration begins.
-    /// <see cref="MotifSchema"/> uses this to reject a database registered to a different project or too
-    /// old a worker; <see cref="MachineSchema"/> has nothing to check here and leaves it null.
+    /// Runs once schema validation passes on an existing database, before it is handed back. <see
+    /// cref="MotifSchema"/> uses this to reject a database registered to a different project or too old a
+    /// worker; <see cref="MachineSchema"/> has nothing to check here and leaves it null.
     /// </summary>
-    public Action<SqliteConnection, int>? BeforeMigration { get; init; }
+    public Action<SqliteConnection>? BeforeOpen { get; init; }
 }
 
 /// <summary>
-/// The open-and-migrate ceremony and connection lifecycle shared by every database Motif owns — a
+/// The open-and-create ceremony and connection lifecycle shared by every database Motif owns — a
 /// project's Motif database and the machine store alike. <see cref="MotifDatabase"/> and
 /// <see cref="MachineDatabase"/> are thin wrappers around this: each supplies its own
 /// <see cref="MotifSqliteStoreDescriptor"/> and keeps its own public factory and argument checks, and this
@@ -48,17 +48,18 @@ internal sealed class MotifSqliteStoreDescriptor
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Opening does not claim the database.</b> The ownership lock is taken only while a migration is
-/// pending, not for the object's whole lifetime, because a migration is the one operation two processes
+/// <b>Opening does not claim the database.</b> The ownership lock is taken only while a fresh database is
+/// being created, not for the object's whole lifetime, because creation is the one operation two processes
 /// must never interleave — everything else is ordinary concurrent SQLite that WAL and row versions already
 /// make safe. A lock held for the whole lifetime would mean whichever process opened first excluded every
 /// other one entirely, which is exactly what lets a <c>motif</c> invocation and the job runner (or two
 /// invocations of either) stay open at once.
 /// </para>
 /// <para>
-/// Migration itself runs inside <c>BEGIN IMMEDIATE</c>/<c>COMMIT</c>, with an explicit <c>ROLLBACK</c> on
-/// failure, so a process that dies mid-migration leaves the file at its prior schema generation rather
-/// than a half-applied one — the next opener sees an ordinary, un-migrated database and tries again.
+/// Creation itself runs inside <c>BEGIN IMMEDIATE</c>/<c>COMMIT</c>, with an explicit <c>ROLLBACK</c> on
+/// failure, so a process that dies mid-creation leaves the file empty rather than half built — the next
+/// opener sees an ordinary, uncreated database and tries again. An existing database is never migrated:
+/// it is either exactly <see cref="MotifSqliteStoreDescriptor.CurrentSchema"/> or it is refused.
 /// </para>
 /// </remarks>
 internal sealed class MotifSqliteStore : IDisposable
@@ -85,8 +86,8 @@ internal sealed class MotifSqliteStore : IDisposable
         FileStream? ownership = null;
         try
         {
-            // Taken only when there is a migration to guard, so readers never contend.
-            if (NeedsMigration(fullPath, descriptor.CurrentSchema)) ownership = AcquireOwnership(fullPath);
+            // Taken only when there is a fresh database to create, so readers never contend.
+            if (NeedsCreation(fullPath)) ownership = AcquireOwnership(fullPath);
             using var connection = OpenInspectionConnection(fullPath);
             var applicationId = PragmaInt(connection, "application_id");
             var schema = PragmaInt(connection, "user_version");
@@ -106,24 +107,35 @@ internal sealed class MotifSqliteStore : IDisposable
             if (schema == 0 && hasTables)
                 throw new InvalidDataException($"The existing database has no registered {descriptor.Name} schema.");
 
-            if (schema > 0)
-            {
-                descriptor.ValidateSchema(connection, schema, null);
-                descriptor.BeforeMigration?.Invoke(connection, schema);
-            }
+            // Pre-1.0 Motif never migrates: a stored schema below this build's is refused, not upgraded.
+            if (schema != 0 && schema != descriptor.CurrentSchema)
+                throw new NotSupportedException(
+                    $"The {descriptor.Name} at '{fullPath}' is schema {schema}, but this build requires " +
+                    $"exactly schema {descriptor.CurrentSchema}. Motif does not migrate before 1.0 — delete " +
+                    "the database file and let Motif recreate it.");
 
-            Execute(connection, "BEGIN IMMEDIATE;");
-            try
+            if (schema == 0)
             {
-                if (applicationId == 0) SetApplicationId(connection, descriptor.ApplicationId);
-                descriptor.Migrate(connection, null, schema, descriptor.CurrentSchema);
-                Execute(connection, "COMMIT;");
+                Execute(connection, "BEGIN IMMEDIATE;");
+                try
+                {
+                    SetApplicationId(connection, descriptor.ApplicationId);
+                    descriptor.Create(connection, null);
+                    descriptor.ValidateSchema(connection, null);
+                    SetUserVersion(connection, null, descriptor.CurrentSchema);
+                    Execute(connection, "COMMIT;");
+                }
+                catch
+                {
+                    try { Execute(connection, "ROLLBACK;"); }
+                    catch (SqliteException) { }
+                    throw;
+                }
             }
-            catch
+            else
             {
-                try { Execute(connection, "ROLLBACK;"); }
-                catch (SqliteException) { }
-                throw;
+                descriptor.ValidateSchema(connection, null);
+                descriptor.BeforeOpen?.Invoke(connection);
             }
 
             SqliteConnections.EnableWal(connection);
@@ -219,7 +231,7 @@ internal sealed class MotifSqliteStore : IDisposable
     {
         var connectionString = new SqliteConnectionStringBuilder
         {
-            // Opening the main file through a URI enables read-only URI ATTACH for migrations.
+            // Opening the main file through a URI enables read-only URI ATTACH elsewhere in this process.
             DataSource = new Uri(path).AbsoluteUri,
             Pooling = false,
             Mode = SqliteOpenMode.ReadWriteCreate
@@ -276,14 +288,14 @@ internal sealed class MotifSqliteStore : IDisposable
         }
     }
 
-    /// True when the file is absent or its schema generation is behind what this build applies.
-    private static bool NeedsMigration(string path, int currentSchema)
+    /// True when the file is absent or empty, so it still needs its schema created.
+    private static bool NeedsCreation(string path)
     {
         if (!File.Exists(path)) return true;
         try
         {
             using var connection = OpenInspectionConnection(path);
-            return PragmaInt(connection, "user_version") < currentSchema;
+            return PragmaInt(connection, "user_version") == 0;
         }
         catch (SqliteException)
         {
@@ -354,6 +366,14 @@ internal sealed class MotifSqliteStore : IDisposable
         using var command = connection.CreateCommand();
         command.CommandText = $"PRAGMA {pragma};";
         return Convert.ToInt32(command.ExecuteScalar());
+    }
+
+    private static void SetUserVersion(SqliteConnection connection, SqliteTransaction? transaction, int version)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = $"PRAGMA user_version = {version};";
+        command.ExecuteNonQuery();
     }
 
     private static void Execute(SqliteConnection connection, string sql)

@@ -30,7 +30,7 @@ public sealed record RunnerBuildMetadata
 
     [JsonPropertyOrder(0)] public string ProductVersion { get; }
 
-    /// <summary>The newest schema generation this build can open; older generations it migrates.</summary>
+    /// <summary>The schema generation this build requires; anything else, older or newer, is refused.</summary>
     [JsonPropertyOrder(1)] public int SupportedSchema { get; }
 
     /// <summary>Renders the exact bytes an installed runner publishes beside its executable.</summary>

@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using SIL.Motif.Contract.Projects;
 using SIL.Motif.Host.Store;
 using Xunit;
@@ -32,6 +33,29 @@ public sealed class SchemaVersionGateTests : IDisposable
     }
 
     [Fact]
+    public void ADatabaseStampedWithADifferentSchemaIsRefusedRatherThanMigrated()
+    {
+        var path = Path.Combine(_root, "stale.motif.db");
+        var locator = new ProjectLocator(Path.Combine(_root, "stale.fwdata"), "stale");
+        using (MotifDatabase.OpenOwned(path, locator, MotifSchema.CurrentSchema, new Version(1, 0))) { }
+        using (var connection = new SqliteConnection($"Data Source={path};Pooling=False"))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = $"PRAGMA user_version = {MotifSchema.CurrentSchema - 1};";
+            command.ExecuteNonQuery();
+        }
+
+        var refusal = Assert.Throws<NotSupportedException>(() =>
+            MotifDatabase.OpenOwned(path, locator, MotifSchema.CurrentSchema, new Version(1, 0)));
+
+        // Pre-1.0 Motif has no upgrade path, so the remedy is deletion, not a version number to chase.
+        Assert.Contains("delete", refusal.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(path, refusal.Message, StringComparison.Ordinal);
+        Assert.Equal(MotifSchema.CurrentSchema - 1, PragmaUserVersion(path));
+    }
+
+    [Fact]
     public void AddingTheLeaseGenerationDidNotRaiseTheCompatibilityFloor()
     {
         var path = Path.Combine(_root, "floor.motif.db");
@@ -45,6 +69,15 @@ public sealed class SchemaVersionGateTests : IDisposable
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT MinimumWorkerVersion FROM MotifMetadata WHERE Id = 1;";
         Assert.Equal("1.0", command.ExecuteScalar() as string);
+    }
+
+    private static int PragmaUserVersion(string path)
+    {
+        using var connection = new SqliteConnection($"Data Source={path};Pooling=False");
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA user_version;";
+        return Convert.ToInt32(command.ExecuteScalar());
     }
 
     public void Dispose()

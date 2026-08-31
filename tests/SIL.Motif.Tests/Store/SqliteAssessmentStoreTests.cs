@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using System.Linq;
-using Microsoft.Data.Sqlite;
 using SIL.Motif.Contract.Projects;
 using SIL.Motif.Host.Analysis;
 using SIL.Motif.Host.Corpus;
@@ -17,11 +16,6 @@ namespace SIL.Motif.Tests.Store;
 /// <see cref="AssessmentRepository"/> and <c>motif analyses</c> reads back through this type, from the one
 /// project database. Every case here therefore seeds the way production does, because the store once had a
 /// writer of its own and the two drifted apart without a test noticing.
-/// <para>
-/// <see cref="SqliteAssessmentStore.CountWords"/> and <see cref="SqliteAssessmentStore.CountAnalyses"/> are a
-/// SQL <c>COUNT(*)</c> rather than "load the whole Assessment and count the list" — the two would agree on
-/// every well-formed Assessment, so the proof needs a case where they would visibly disagree.
-/// </para>
 /// </summary>
 public sealed class SqliteAssessmentStoreTests : IDisposable
 {
@@ -124,31 +118,5 @@ public sealed class SqliteAssessmentStoreTests : IDisposable
     public void LoadingAMissingAssessmentReturnsNull()
     {
         Assert.Null(Store().Load("sha256:" + new string('0', 64)));
-    }
-
-    [Fact]
-    public void CountWordsAndCountAnalyses_AreAggregatesThatSurviveAPoisonedAnalysisRow()
-    {
-        var id = Seed(
-            "assessment/counts",
-            Word("mbali", "Analysed", Analysis("d1", "m1")),
-            Word("nyumba", "Analysed", Analysis("d2", "m2"), Analysis("d3", "m3")));
-        var store = Store();
-
-        // Corrupt one analysis's JSON directly, bypassing the writer: COUNT(*) must not notice.
-        using (var connection = new SqliteConnection($"Data Source={DatabasePath};Pooling=False"))
-        {
-            connection.Open();
-            using var command = connection.CreateCommand();
-            command.CommandText =
-                "UPDATE ParsedAnalyses SET MorphemeGuidsJson = 'not-json{{{' WHERE IdentityDigest = 'd3';";
-            command.ExecuteNonQuery();
-        }
-
-        // The proof: loading the whole Assessment to count would hit this row and throw; SQL COUNT does not.
-        Assert.Equal(2, store.CountWords(id));
-        Assert.Equal(3, store.CountAnalyses(id));
-
-        Assert.Throws<System.Text.Json.JsonException>(() => store.Load(id));
     }
 }

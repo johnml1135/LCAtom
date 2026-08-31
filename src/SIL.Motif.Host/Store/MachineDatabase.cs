@@ -6,7 +6,7 @@ namespace SIL.Motif.Host.Store;
 /// <remarks>
 /// One machine store exists per logged-in user, in the worker root, holding <c>KnownProjects</c> and
 /// <c>Usage</c> — nothing that belongs to any one project. A thin wrapper over
-/// <see cref="MotifSqliteStore"/>, sharing its open-and-migrate ceremony and connection lifecycle with
+/// <see cref="MotifSqliteStore"/>, sharing its open-and-create ceremony and connection lifecycle with
 /// <see cref="MotifDatabase"/>; this type owns only the <see cref="MachineSchema"/> descriptor and its own
 /// path resolution.
 /// </remarks>
@@ -16,7 +16,7 @@ public sealed class MachineDatabase : IDisposable
 
     private MachineDatabase(MotifSqliteStore store) => _store = store;
 
-    /// <summary>Opens and owns the machine store at <c>&lt;root&gt;/motif.db</c>, migrating it if needed.</summary>
+    /// <summary>Opens and owns the machine store at <c>&lt;root&gt;/motif.db</c>, creating it if absent.</summary>
     /// <param name="root">The worker root this installation uses for the logged-in user.</param>
     /// <returns>An owned database boundary whose connections are configured for worker use.</returns>
     /// <exception cref="InvalidDataException">The file identity or schema generation is invalid.</exception>
@@ -32,8 +32,7 @@ public sealed class MachineDatabase : IDisposable
             ApplicationId = MachineSchema.ApplicationId,
             CurrentSchema = MachineSchema.CurrentSchema,
             ValidateSchema = MachineSchema.ValidateSchema,
-            Migrate = (connection, transaction, currentSchema, targetSchema) =>
-                MachineSchema.Migrate(connection, transaction, currentSchema, targetSchema)
+            Create = MachineSchema.Create
         };
         return new MachineDatabase(MotifSqliteStore.Open(path, descriptor));
     }

@@ -11,24 +11,14 @@ using SIL.Motif.Host.Parser;
 namespace SIL.Motif.Host.Store;
 
 /// <summary>
-/// Stores Assessments in the embedded database ADR 0036 decision 6 assigns them to.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>Normalised, not blobbed.</b> Each <see cref="AssessedWord"/> and each of its
-/// <see cref="ParsedAnalysis"/>es is its own row (<c>AssessedWords</c>, <c>ParsedAnalyses</c>), so
-/// <see cref="CountWords"/> and <see cref="CountAnalyses"/> are a SQL <c>COUNT(*)</c> that never constructs a
-/// <see cref="StoredAssessment"/>, never deserialises a morpheme list, and never touches the corpus's word
-/// set — an Assessment at the plan's ~64 MB/100,000-word-form scale answers "how many word forms" in the same
-/// cost as one at ten. <see cref="Load"/> is the one operation that reads all of it, because that is what a
-/// caller asking for the whole Assessment means.
-/// </para>
+/// Reads one Assessment back out of the project database. The worker writes them through
+/// <c>AssessmentRepository</c>; this is the side <c>motif analyses</c> uses, and it is the whole of it.
 /// <para>
 /// Word order and analysis order are preserved with an explicit ordinal column apiece rather than relying on
-/// SQLite's row order, so a round trip returns the exact list <see cref="AssessReport.Words"/> and
-/// <see cref="AssessedWord.Analyses"/> started with.
+/// SQLite's row order, so a read returns the exact list <see cref="AssessReport.Words"/> and
+/// <see cref="AssessedWord.Analyses"/> were written with.
 /// </para>
-/// </remarks>
+/// </summary>
 public sealed class SqliteAssessmentStore
 {
     private readonly string _databasePath;
@@ -41,30 +31,6 @@ public sealed class SqliteAssessmentStore
         _databasePath = Path.GetFullPath(databasePath);
     }
 
-
-    /// <summary>A SQL <c>COUNT(*)</c> on <c>AssessedWords</c> — no row is turned into an <see cref="AssessedWord"/>.</summary>
-    public int CountWords(string assessmentId)
-    {
-        using var connection = SqliteMotifDatabase.OpenConnection(_databasePath);
-        using var command = connection.CreateCommand();
-        command.CommandText = "SELECT COUNT(*) FROM AssessedWords WHERE AssessmentId = $id;";
-        command.Parameters.AddWithValue("$id", assessmentId);
-        return Convert.ToInt32(command.ExecuteScalar());
-    }
-
-    /// <summary>A SQL <c>COUNT(*)</c> on <c>ParsedAnalyses</c> — no morpheme list is deserialised.</summary>
-    public int CountAnalyses(string assessmentId)
-    {
-        using var connection = SqliteMotifDatabase.OpenConnection(_databasePath);
-        using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT COUNT(*) FROM ParsedAnalyses pa
-            JOIN AssessedWords aw ON aw.AssessedWordId = pa.AssessedWordId
-            WHERE aw.AssessmentId = $id;
-            """;
-        command.Parameters.AddWithValue("$id", assessmentId);
-        return Convert.ToInt32(command.ExecuteScalar());
-    }
 
 
 

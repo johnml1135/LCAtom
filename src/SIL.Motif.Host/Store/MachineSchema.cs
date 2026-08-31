@@ -2,47 +2,35 @@ using Microsoft.Data.Sqlite;
 
 namespace SIL.Motif.Host.Store;
 
-/// <summary>Owns the ordered SQLite schema migrations for Motif's machine store.</summary>
+/// <summary>Owns the single, current SQLite schema for Motif's machine store.</summary>
 /// <remarks>
 /// The machine store is a second, unrelated database: it holds <c>KnownProjects</c> and <c>Usage</c>, and
-/// nothing about any one project. Its schema generation, DDL and <see cref="ApplicationId"/> are entirely
-/// separate from <see cref="MotifSchema"/>'s so the two files can never be mistaken for one another,
-/// pinned by <c>OpeningAProjectDatabaseAsAMachineDatabaseIsRefused</c> and
-/// <c>OpeningAMachineDatabaseAsAProjectDatabaseIsRefused</c>.
+/// nothing about any one project. Its schema, DDL and <see cref="ApplicationId"/> are entirely separate
+/// from <see cref="MotifSchema"/>'s so the two files can never be mistaken for one another, pinned by
+/// <c>OpeningAProjectDatabaseAsAMachineDatabaseIsRefused</c> and
+/// <c>OpeningAMachineDatabaseAsAProjectDatabaseIsRefused</c>. Like <see cref="MotifSchema"/>, an existing
+/// database at any other schema is refused rather than migrated.
 /// </remarks>
 public static class MachineSchema
 {
     /// <summary>SQLite application identifier written to machine-store databases: ASCII "MACH".</summary>
     public const int ApplicationId = 0x4D414348;
 
-    /// <summary>The newest ordered schema generation implemented by this assembly.</summary>
+    /// <summary>The schema this assembly creates and requires.</summary>
     public const int CurrentSchema = 1;
 
-    internal static void Migrate(SqliteConnection connection, SqliteTransaction? transaction, int currentSchema, int targetSchema)
+    /// <summary>Builds every table this store needs, in one step.</summary>
+    internal static void Create(SqliteConnection connection, SqliteTransaction? transaction)
     {
-        for (var schema = currentSchema + 1; schema <= targetSchema; schema++)
-        {
-            switch (schema)
-            {
-                case 1:
-                    CreateGenerationOneTables(connection, transaction);
-                    break;
-                default:
-                    throw new NotSupportedException($"Machine schema {schema} is not known to this worker.");
-            }
-
-            ValidateSchema(connection, schema, transaction);
-            SetUserVersion(connection, transaction, schema);
-        }
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = SchemaDdl;
+        command.ExecuteNonQuery();
     }
 
-    internal static void ValidateSchema(SqliteConnection connection, int schema, SqliteTransaction? transaction = null)
+    internal static void ValidateSchema(SqliteConnection connection, SqliteTransaction? transaction = null)
     {
-        var expectedTables = schema switch
-        {
-            1 => new HashSet<string>(StringComparer.Ordinal) { "KnownProjects", "Usage" },
-            _ => throw new NotSupportedException($"Machine schema {schema} is not known to this worker.")
-        };
+        var expectedTables = new HashSet<string>(StringComparer.Ordinal) { "KnownProjects", "Usage" };
 
         using (var objects = connection.CreateCommand())
         {
@@ -55,20 +43,12 @@ public static class MachineSchema
                 var type = reader.GetString(0);
                 var name = reader.GetString(1);
                 if (type == "table" && expectedTables.Contains(name)) continue;
-                throw new InvalidDataException($"Machine schema {schema} contains unexpected {type} {name}.");
+                throw new InvalidDataException($"Machine schema contains unexpected {type} {name}.");
             }
         }
 
         foreach (var table in expectedTables)
             ValidateTable(connection, transaction, table, ColumnsFor(table));
-    }
-
-    private static void CreateGenerationOneTables(SqliteConnection connection, SqliteTransaction? transaction)
-    {
-        using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = GenerationOneDdl;
-        command.ExecuteNonQuery();
     }
 
     private static void ValidateTable(
@@ -122,15 +102,7 @@ public static class MachineSchema
             PrimaryKey == expected.PrimaryKey;
     }
 
-    private static void SetUserVersion(SqliteConnection connection, SqliteTransaction? transaction, int version)
-    {
-        using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = $"PRAGMA user_version = {version};";
-        command.ExecuteNonQuery();
-    }
-
-    private const string GenerationOneDdl = """
+    private const string SchemaDdl = """
         CREATE TABLE IF NOT EXISTS KnownProjects (
             WorkspaceKey TEXT PRIMARY KEY,
             FullFwDataPath TEXT NOT NULL,
