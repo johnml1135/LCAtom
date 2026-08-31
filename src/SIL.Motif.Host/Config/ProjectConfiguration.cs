@@ -105,7 +105,7 @@ public sealed record ProjectConfiguration
     /// <summary>The documented configuration for a project with no <c>.motif.toml</c>.</summary>
     public static ProjectConfiguration Defaults() => new(
         new[] { AssessmentScopeConfiguration.Default() },
-        gateOnRegression: false,
+        gateOnRegression: true,
         purgeOnApply: true);
 }
 

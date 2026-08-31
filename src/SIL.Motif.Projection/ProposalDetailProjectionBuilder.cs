@@ -19,12 +19,8 @@ public static class ProposalDetailProjectionBuilder
             DependsOn: op.DependsOn.Select(d => d.OperationId.Value).ToList(),
             AfterJson: op.After?.GetRawText())).ToList();
 
-        var decision = manifest.Decision is { } d
-            ? new DecisionView(d.Outcome, d.ActorType, d.ActorId, d.Comment, d.TimestampUtc)
-            : null;
-
         return new ProposalDetailProjection(
             proposalId, manifest.Status, manifest.Label, manifest.Comment, manifest.CurrentIntentDigest, operations,
-            decision, manifest.SupersededBy, envelope.Extensions?.GetRawText());
+            manifest.SupersededBy, envelope.Extensions?.GetRawText());
     }
 }

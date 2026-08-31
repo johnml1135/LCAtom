@@ -26,16 +26,5 @@ public static class ProposalRecordMapping
         Anchor = record.AnchorJson is null
             ? null
             : JsonSerializer.Deserialize<BoundDryRunAnchor>(record.AnchorJson, AnchorJsonOptions),
-        Decision = record.Decision is null
-            ? null
-            : new Decision
-            {
-                Outcome = record.Decision.Outcome,
-                ActorType = record.Decision.ActorType,
-                ActorId = record.Decision.ActorId,
-                Comment = record.Decision.Comment,
-                BoundIntentDigest = record.Decision.IntentDigest,
-                TimestampUtc = record.Decision.TimestampUtc,
-            },
     };
 }

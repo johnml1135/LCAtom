@@ -44,15 +44,6 @@ public static class CommandTextRenderer
         sb.AppendLine($"  comment:             {projection.Comment}");
         if (projection.CurrentIntentDigest is not null)
             sb.AppendLine($"  currentIntentDigest: {projection.CurrentIntentDigest}");
-        if (projection.Decision is { } decision)
-        {
-            sb.AppendLine($"  decision:            {decision.Outcome}");
-            sb.AppendLine($"    actorType:         {decision.ActorType}");
-            sb.AppendLine($"    actorId:           {decision.ActorId}");
-            if (decision.Comment is not null)
-                sb.AppendLine($"    comment:           {decision.Comment}");
-            sb.AppendLine($"    at:                {decision.TimestampUtc}");
-        }
         if (projection.SupersededBy is not null)
             sb.AppendLine($"  supersededBy:        {projection.SupersededBy}");
         if (projection.ExtensionsJson is not null)

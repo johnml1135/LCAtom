@@ -31,7 +31,7 @@ public sealed class ConfigCommandArgvTests : IDisposable
         Assert.Equal(0, result.ExitCode);
         Assert.Equal(string.Empty, result.Error);
         using var document = JsonDocument.Parse(result.Output);
-        Assert.False(document.RootElement.GetProperty("gateOnRegression").GetBoolean());
+        Assert.True(document.RootElement.GetProperty("gateOnRegression").GetBoolean());
         Assert.True(document.RootElement.GetProperty("purgeOnApply").GetBoolean());
         var scopes = document.RootElement.GetProperty("scopes");
         Assert.Equal(1, scopes.GetArrayLength());
@@ -49,7 +49,7 @@ public sealed class ConfigCommandArgvTests : IDisposable
 
         Assert.Equal(0, result.ExitCode);
         Assert.Equal(string.Empty, result.Error);
-        Assert.Contains("Regression gate: off", result.Output, StringComparison.Ordinal);
+        Assert.Contains("Regression gate: on", result.Output, StringComparison.Ordinal);
         Assert.Contains("Purge on apply:  on", result.Output, StringComparison.Ordinal);
         Assert.Contains("default", result.Output, StringComparison.Ordinal);
     }

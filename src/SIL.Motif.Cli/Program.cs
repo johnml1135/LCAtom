@@ -239,34 +239,10 @@ try
             result = Commands.Defer(deferProject, CliProductVersion(), positionals[0]);
             break;
 
-        case "approve":
-            if (!flags.TryGetValue("project", out var approveProject) ||
-                positionals.Count != 1 ||
-                !flags.TryGetValue("actor-type", out var approveActorType) ||
-                !flags.TryGetValue("actor-id", out var approveActorId))
-            {
-                return Usage(
-                    "Usage: motif approve --project <fwdata> <proposalId> --actor-type human|ai --actor-id <name> " +
-                    "[--comment <text>]", asJson);
-            }
-            result = Commands.Approve(
-                approveProject, CliProductVersion(), positionals[0], approveActorType, approveActorId,
-                flags.GetValueOrDefault("comment"));
-            break;
-
         case "reject":
-            if (!flags.TryGetValue("project", out var rejectProject) ||
-                positionals.Count != 1 ||
-                !flags.TryGetValue("actor-type", out var rejectActorType) ||
-                !flags.TryGetValue("actor-id", out var rejectActorId))
-            {
-                return Usage(
-                    "Usage: motif reject --project <fwdata> <proposalId> --actor-type human|ai --actor-id <name> " +
-                    "[--comment <text>]", asJson);
-            }
-            result = Commands.Reject(
-                rejectProject, CliProductVersion(), positionals[0], rejectActorType, rejectActorId,
-                flags.GetValueOrDefault("comment"));
+            if (!flags.TryGetValue("project", out var rejectProject) || positionals.Count != 1)
+                return Usage("Usage: motif reject --project <fwdata> <proposalId>", asJson);
+            result = Commands.Reject(rejectProject, CliProductVersion(), positionals[0]);
             break;
 
         case "supersede":
@@ -341,14 +317,14 @@ try
             {
                 return Usage(
                     "Usage: motif apply <proposalId> --project <fwdata> --user <name> " +
-                    "[--override-comment <text>] [--json]", asJson);
+                    "[--force] [--json]", asJson);
             }
-            flags.TryGetValue("override-comment", out var applyOverrideComment);
+            var applyForce = flags.ContainsKey("force");
             result = asJson
                 ? Commands.ApplyJson(applyProject, CliProductVersion(), positionals[0], applyUser,
-                    applyOverrideComment, usage)
+                    applyForce, usage)
                 : Commands.Apply(applyProject, CliProductVersion(), positionals[0], applyUser,
-                    applyOverrideComment, usage);
+                    applyForce, usage);
             break;
 
         case "log":
@@ -645,16 +621,13 @@ static void PrintUsage(TextWriter writer)
         "  split --project <fwdata> <proposalId> <draftName>=<opId>[,<opId>...] " +
         "[<draftName>=<opId>[,<opId>...] ...] [--force]");
     writer.WriteLine("  defer --project <fwdata> <proposalId>");
-    writer.WriteLine(
-        "  approve --project <fwdata> <proposalId> --actor-type human|ai --actor-id <name> [--comment <text>]");
-    writer.WriteLine(
-        "  reject --project <fwdata> <proposalId> --actor-type human|ai --actor-id <name> [--comment <text>]");
+    writer.WriteLine("  reject --project <fwdata> <proposalId>");
     writer.WriteLine("  supersede --project <fwdata> <proposalId> <supersededByProposalId>");
     writer.WriteLine("  list --project <fwdata> [--json]");
     writer.WriteLine("  show --project <fwdata> <proposalId> [--json]");
     writer.WriteLine("  dry-run --project <fwdata> <proposalId> [--wait] [--json]");
     writer.WriteLine("  trial --project <fwdata> <proposalId> [--scope <name>] [--wait] [--json]");
-    writer.WriteLine("  apply <proposalId> --project <fwdata> --user <name> [--json]");
+    writer.WriteLine("  apply <proposalId> --project <fwdata> --user <name> [--force] [--json]");
     writer.WriteLine("  log --project <fwdata> [--json]");
     writer.WriteLine();
     writer.WriteLine("Configuration (the declared Assessment scopes and policy beside the project):");

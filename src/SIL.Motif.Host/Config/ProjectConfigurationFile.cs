@@ -115,7 +115,7 @@ public static class ProjectConfigurationFile
             throw new ProjectConfigurationException(
                 $"{path}: scope name '{duplicate.Key}' is declared more than once.");
 
-        return new ProjectConfiguration(scopes, gate ?? false, purge ?? true);
+        return new ProjectConfiguration(scopes, gate ?? true, purge ?? true);
     }
 
     /// <summary>Renders a resolved configuration back to the same TOML shape <see cref="Parse"/> reads.</summary>

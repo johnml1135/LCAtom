@@ -26,13 +26,11 @@ public sealed class ProposalRepositoryTests : IDisposable
             "proposed", "label", "comment", null);
 
         repository.SaveRevision(revision);
-        repository.SaveDecision(new DecisionRecord(
-            id, revision.IntentDigest, "approved", "human", "linguist", "ok", "2026-08-22T00:00:00Z"));
 
         var result = repository.Get(id);
         Assert.NotNull(result);
         Assert.Equal(revision.ProposalJson, result!.ProposalJson);
-        Assert.Equal("approved", result.Status);
+        Assert.Equal("proposed", result.Status);
         Assert.Single(repository.List(new ProposalListFilter()));
     }
 
@@ -47,9 +45,9 @@ public sealed class ProposalRepositoryTests : IDisposable
         repository.SaveRevision(new ProposalRevisionRecord(id, "sha256:first", "{\"proposalId\":\"" + id.Value + "\"}", "proposed", null, null, null));
         Assert.Throws<InvalidDataException>(() => repository.SaveRevision(new ProposalRevisionRecord(
             id, "sha256:first", "{\"proposalId\":\"different\"}", "proposed", null, null, null)));
-        repository.SaveDecision(new DecisionRecord(id, "sha256:first", "approved", "human", "a", null, "2026-08-22T00:00:00Z"));
+        repository.SetStatus(id, "deferred", supersededBy: null);
         Assert.Empty(repository.List(new ProposalListFilter("proposed")));
-        Assert.Single(repository.List(new ProposalListFilter("approved")));
+        Assert.Single(repository.List(new ProposalListFilter("deferred")));
         Assert.Throws<KeyNotFoundException>(() => repository.Get(CanonicalId.Mint("proposal/")));
     }
 
@@ -256,8 +254,6 @@ public sealed class ProposalRepositoryTests : IDisposable
         var id = CanonicalId.Mint("proposal/");
         repository.SaveRevision(new ProposalRevisionRecord(
             id, "sha256:committed", "{\"proposalId\":\"" + id.Value + "\"}", "proposed", null, null, null));
-        repository.SaveDecision(new DecisionRecord(
-            id, "sha256:committed", "approved", "human", "linguist", null, "2026-08-27T00:00:00Z"));
         repository.ReopenAsDraft(id, "reopened", "{\"draft\":true}");
 
         var wasReopened = repository.DiscardDraft("reopened");
@@ -269,8 +265,6 @@ public sealed class ProposalRepositoryTests : IDisposable
         Assert.Equal("sha256:committed", record.IntentDigest);
         Assert.Equal("{\"proposalId\":\"" + id.Value + "\"}", record.ProposalJson);
         Assert.Null(record.DraftName);
-        Assert.NotNull(record.Decision);
-        Assert.Equal("approved", record.Decision!.Outcome);
         // The name is free again, not merely absent from a listing: a fresh CreateDraft must succeed.
         repository.CreateDraft("reopened", CanonicalId.Mint("proposal/"), "{\"draft\":true}");
         Assert.True(repository.DraftNameExists("reopened"));

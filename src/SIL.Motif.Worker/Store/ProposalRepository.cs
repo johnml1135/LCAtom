@@ -24,8 +24,6 @@ public interface IProposalRepository
     IReadOnlyList<ProposalRecord> List(ProposalListFilter filter);
     /// <summary>Stores one immutable revision and moves its Proposal pointer to that revision.</summary>
     void SaveRevision(ProposalRevisionRecord revision);
-    /// <summary>Stores a Decision bound to one exact Proposal revision.</summary>
-    void SaveDecision(DecisionRecord decision);
     /// <summary>
     /// Creates a Draft: a Proposal identified by <paramref name="proposalId"/> with <c>DraftName</c> set and
     /// no committed revision yet — <c>CurrentIntentDigest</c> stays <c>NULL</c> until <see cref="Finalize"/>.
@@ -72,13 +70,8 @@ public interface IProposalRepository
     /// </summary>
     /// <exception cref="KeyNotFoundException">No finalized Proposal is recorded under this id.</exception>
     ProposalRecord GetForTransition(CanonicalId proposalId);
-    /// <summary>
-    /// Moves a Proposal to <paramref name="status"/>, records <paramref name="supersededBy"/>, and, when
-    /// <paramref name="clearDecision"/> is set, deletes any Decision bound to its current revision — a
-    /// Decision is scoped to the content it was recorded against, so a transition that is not itself a
-    /// new Decision must not leave a stale one visible.
-    /// </summary>
-    void SetStatus(CanonicalId proposalId, string status, string? supersededBy, bool clearDecision);
+    /// <summary>Moves a Proposal to a new status, naming the replacement when it is superseded.</summary>
+    void SetStatus(CanonicalId proposalId, string status, string? supersededBy);
     /// <summary>Sets a Proposal's status to <c>applied</c>, touching nothing else on the row.</summary>
     void MarkApplied(CanonicalId proposalId);
     /// <summary>Whether a Draft is currently registered under this name.</summary>
@@ -97,7 +90,7 @@ public interface IProposalRepository
     /// immediate reuse. A Draft <see cref="ReopenAsDraft"/> produced keeps its source Proposal's
     /// <c>CurrentIntentDigest</c>, so only <c>DraftName</c> and <c>DraftJson</c> are cleared — the exact
     /// inverse of what <see cref="ReopenAsDraft"/> set — leaving the Proposal exactly as committed, with
-    /// its <c>ProposalRevisions</c> and <c>Decisions</c> untouched.
+    /// its <c>ProposalRevisions</c> untouched.
     /// </summary>
     /// <returns>
     /// <c>true</c> when the discarded Draft had been reopened from a finalized Proposal, which is left
@@ -114,7 +107,7 @@ public interface IProposalRepository
 /// </summary>
 public sealed record ProposalRecord(
     CanonicalId ProposalId, string? IntentDigest, string? ProposalJson, string Status, string? Label,
-    string? Comment, string? SupersededBy, DecisionRecord? Decision = null, byte[]? ProposalJsonBytes = null,
+    string? Comment, string? SupersededBy, byte[]? ProposalJsonBytes = null,
     string? AnchorJson = null, string? ArchivedUtc = null, string? DraftName = null);
 
 /// <summary>An immutable Proposal revision, retaining the exact source JSON bytes.</summary>
@@ -122,10 +115,6 @@ public sealed record ProposalRevisionRecord(
     CanonicalId ProposalId, string IntentDigest, string ProposalJson, string Status, string? Label,
     string? Comment, string? SupersededBy, string? CreatedUtc = null, byte[]? ProposalJsonBytes = null);
 
-/// <summary>A review Decision bound to a Proposal intent digest.</summary>
-public sealed record DecisionRecord(
-    CanonicalId ProposalId, string IntentDigest, string Outcome, string ActorType, string ActorId,
-    string? Comment, string TimestampUtc);
 
 /// <summary>Selection options for current Proposal rows.</summary>
 public sealed record ProposalListFilter(string? Status = null, bool IncludeArchived = false);
@@ -151,11 +140,9 @@ public sealed class ProposalRepository : IProposalRepository
         command.CommandText = """
             SELECT p.ProposalId, p.CurrentIntentDigest, r.ProposalJson,
                    p.Status, p.Label, p.Comment, p.SupersededBy,
-                   d.Outcome, d.ActorType, d.ActorId, d.Comment, d.TimestampUtc, d.IntentDigest, p.AnchorJson, p.ArchivedUtc,
-                   p.DraftName, p.DraftJson
+                   p.AnchorJson, p.ArchivedUtc, p.DraftName, p.DraftJson
             FROM Proposals p LEFT JOIN ProposalRevisions r ON r.ProposalId = p.ProposalId
                 AND r.IntentDigest = p.CurrentIntentDigest
-            LEFT JOIN Decisions d ON d.ProposalId = p.ProposalId AND d.IntentDigest = p.CurrentIntentDigest
             WHERE p.ProposalId = $id;
             """;
         command.Parameters.AddWithValue("$id", proposalId.Value);
@@ -176,11 +163,9 @@ public sealed class ProposalRepository : IProposalRepository
         command.CommandText = """
             SELECT p.ProposalId, p.CurrentIntentDigest, r.ProposalJson,
                    p.Status, p.Label, p.Comment, p.SupersededBy,
-                   d.Outcome, d.ActorType, d.ActorId, d.Comment, d.TimestampUtc, d.IntentDigest, p.AnchorJson, p.ArchivedUtc,
-                   p.DraftName, p.DraftJson
+                   p.AnchorJson, p.ArchivedUtc, p.DraftName, p.DraftJson
             FROM Proposals p LEFT JOIN ProposalRevisions r ON r.ProposalId = p.ProposalId
                 AND r.IntentDigest = p.CurrentIntentDigest
-            LEFT JOIN Decisions d ON d.ProposalId = p.ProposalId AND d.IntentDigest = p.CurrentIntentDigest
             WHERE ($status IS NULL OR p.Status = $status)
             """ + archived + " ORDER BY p.ProposalId;";
         command.Parameters.AddWithValue("$status", (object?)filter.Status ?? DBNull.Value);
@@ -257,52 +242,6 @@ public sealed class ProposalRepository : IProposalRepository
     }
 
     /// <inheritdoc />
-    public void SaveDecision(DecisionRecord decision)
-    {
-        if (string.IsNullOrWhiteSpace(decision.IntentDigest) || string.IsNullOrWhiteSpace(decision.Outcome) ||
-            string.IsNullOrWhiteSpace(decision.ActorType) || string.IsNullOrWhiteSpace(decision.ActorId) ||
-            string.IsNullOrWhiteSpace(decision.TimestampUtc))
-            throw new ArgumentException("Decision identity, actor, outcome, and timestamp are required.", nameof(decision));
-        using var connection = _database.OpenConnection();
-        using var transaction = connection.BeginTransaction();
-        using (var revision = connection.CreateCommand())
-        {
-            revision.Transaction = transaction;
-            revision.CommandText = "SELECT 1 FROM ProposalRevisions WHERE ProposalId = $id AND IntentDigest = $digest;";
-            revision.Parameters.AddWithValue("$id", decision.ProposalId.Value);
-            revision.Parameters.AddWithValue("$digest", decision.IntentDigest);
-            if (revision.ExecuteScalar() is null)
-                throw new InvalidDataException("A Decision must bind to an existing Proposal revision.");
-        }
-        using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
-            INSERT INTO Decisions (ProposalId, IntentDigest, Outcome, ActorType, ActorId, Comment, TimestampUtc)
-            VALUES ($id, $digest, $outcome, $actorType, $actorId, $comment, $timestamp)
-            ON CONFLICT(ProposalId, IntentDigest) DO UPDATE SET Outcome = excluded.Outcome,
-                ActorType = excluded.ActorType, ActorId = excluded.ActorId, Comment = excluded.Comment,
-                TimestampUtc = excluded.TimestampUtc;
-            """;
-        command.Parameters.AddWithValue("$id", decision.ProposalId.Value);
-        command.Parameters.AddWithValue("$digest", decision.IntentDigest);
-        command.Parameters.AddWithValue("$outcome", decision.Outcome);
-        command.Parameters.AddWithValue("$actorType", decision.ActorType);
-        command.Parameters.AddWithValue("$actorId", decision.ActorId);
-        command.Parameters.AddWithValue("$comment", (object?)decision.Comment ?? DBNull.Value);
-        command.Parameters.AddWithValue("$timestamp", decision.TimestampUtc);
-        command.ExecuteNonQuery();
-        using var status = connection.CreateCommand();
-        status.Transaction = transaction;
-        status.CommandText = "UPDATE Proposals SET Status = $status, SupersededBy = NULL, ArchivedUtc = CASE WHEN " +
-            "$status IN ('applied','rejected','superseded','withdrawn') THEN COALESCE(ArchivedUtc, $archived) " +
-            "ELSE NULL END WHERE ProposalId = $id AND CurrentIntentDigest = $digest;";
-        status.Parameters.AddWithValue("$status", decision.Outcome);
-        status.Parameters.AddWithValue("$id", decision.ProposalId.Value);
-        status.Parameters.AddWithValue("$digest", decision.IntentDigest);
-        status.Parameters.AddWithValue("$archived", _clock.UtcNow.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
-        status.ExecuteNonQuery();
-        transaction.Commit();
-    }
 
     public IReadOnlyList<ProposalRecord> ListArchived(DateTimeOffset now, TimeRetentionPolicy? policy = null)
     {
@@ -324,7 +263,7 @@ public sealed class ProposalRepository : IProposalRepository
             var status = check.ExecuteScalar() as string;
             if (status is null || !IsTerminal(status)) throw new InvalidOperationException("Only terminal Proposals may be archived.");
         }
-        foreach (var sql in new[] { "DELETE FROM Decisions WHERE ProposalId = $id;", "DELETE FROM Receipts WHERE ProposalId = $id;",
+        foreach (var sql in new[] { "DELETE FROM Receipts WHERE ProposalId = $id;",
             "DELETE FROM Reports WHERE ProposalId = $id;", "DELETE FROM ProposalRevisions WHERE ProposalId = $id;" })
         {
             using var command = connection.CreateCommand();
@@ -522,7 +461,7 @@ public sealed class ProposalRepository : IProposalRepository
                 $"not the bound '{digest}' (store inconsistency).");
         }
 
-        var record = new ProposalRecord(proposalId, digest, json, status, label, comment, supersededBy, null, bytes, anchorJson);
+        var record = new ProposalRecord(proposalId, digest, json, status, label, comment, supersededBy, bytes, anchorJson);
         return (record, envelope);
     }
 
@@ -579,21 +518,10 @@ public sealed class ProposalRepository : IProposalRepository
     }
 
     /// <inheritdoc />
-    public void SetStatus(CanonicalId proposalId, string status, string? supersededBy, bool clearDecision)
+    public void SetStatus(CanonicalId proposalId, string status, string? supersededBy)
     {
         using var connection = _database.OpenConnection();
         using var transaction = connection.BeginTransaction();
-        if (clearDecision)
-        {
-            using var clear = connection.CreateCommand();
-            clear.Transaction = transaction;
-            clear.CommandText = """
-                DELETE FROM Decisions WHERE ProposalId = $id AND IntentDigest =
-                    (SELECT CurrentIntentDigest FROM Proposals WHERE ProposalId = $id);
-                """;
-            clear.Parameters.AddWithValue("$id", proposalId.Value);
-            clear.ExecuteNonQuery();
-        }
         using var update = connection.CreateCommand();
         update.Transaction = transaction;
         update.CommandText = "UPDATE Proposals SET Status = $status, SupersededBy = $superseded WHERE ProposalId = $id;";
@@ -700,7 +628,7 @@ public sealed class ProposalRepository : IProposalRepository
         var proposalId = CanonicalId.Parse(reader.GetString(0));
         return new ProposalRecord(proposalId, null, reader.IsDBNull(8) ? null : reader.GetString(8), reader.GetString(1),
             reader.IsDBNull(2) ? null : reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetString(3),
-            reader.IsDBNull(4) ? null : reader.GetString(4), null, null,
+            reader.IsDBNull(4) ? null : reader.GetString(4), null,
             reader.IsDBNull(5) ? null : reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetString(6),
             reader.IsDBNull(7) ? null : reader.GetString(7));
     }
@@ -708,18 +636,14 @@ public sealed class ProposalRepository : IProposalRepository
     private static ProposalRecord ReadRecord(SqliteDataReader reader)
     {
         var proposalId = CanonicalId.Parse(reader.GetString(0));
-        DecisionRecord? decision = reader.IsDBNull(7)
-            ? null
-            : new DecisionRecord(proposalId, reader.GetString(12), reader.GetString(7), reader.GetString(8),
-                reader.GetString(9), reader.IsDBNull(10) ? null : reader.GetString(10), reader.GetString(11));
-        var draftName = reader.IsDBNull(15) ? null : reader.GetString(15);
+        var draftName = reader.IsDBNull(9) ? null : reader.GetString(9);
         var intentDigest = reader.IsDBNull(1) ? null : reader.GetString(1);
         string? json;
         byte[]? bytes = null;
         if (draftName is not null)
         {
             // A draft has no committed revision yet; its content is the working DraftJson, not a BLOB.
-            json = reader.IsDBNull(16) ? null : reader.GetString(16);
+            json = reader.IsDBNull(10) ? null : reader.GetString(10);
         }
         else
         {
@@ -737,8 +661,8 @@ public sealed class ProposalRepository : IProposalRepository
         }
         return new ProposalRecord(proposalId, intentDigest, json, reader.GetString(3),
             reader.IsDBNull(4) ? null : reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5),
-            reader.IsDBNull(6) ? null : reader.GetString(6), decision, bytes,
-            reader.IsDBNull(13) ? null : reader.GetString(13), reader.IsDBNull(14) ? null : reader.GetString(14),
+            reader.IsDBNull(6) ? null : reader.GetString(6), bytes,
+            reader.IsDBNull(7) ? null : reader.GetString(7), reader.IsDBNull(8) ? null : reader.GetString(8),
             draftName);
     }
 

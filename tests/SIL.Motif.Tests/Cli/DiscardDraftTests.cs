@@ -87,7 +87,6 @@ public sealed class DiscardDraftTests : IDisposable
         var finalize = Commands.Finalize(Project, ProductVersion, "d");
         Assert.Equal(0, finalize.ExitCode);
         var proposalId = ExtractProposalId(finalize.Output);
-        Assert.Equal(0, Commands.Approve(Project, ProductVersion, proposalId, "human", "linguist").ExitCode);
         var before = OpenRepository().Get(CanonicalId.Parse(proposalId));
         Assert.Equal(0, Commands.Reopen(Project, ProductVersion, "reopened", proposalId).ExitCode);
 
@@ -102,12 +101,10 @@ public sealed class DiscardDraftTests : IDisposable
         Assert.False(repository.DraftNameExists("reopened"));
         var after = repository.Get(CanonicalId.Parse(proposalId));
         Assert.Null(after.DraftName);
-        // Every committed revision and Decision behind it is exactly as it was before the reopen.
+        // Every committed revision behind it is exactly as it was before the reopen.
         Assert.Equal(before.IntentDigest, after.IntentDigest);
         Assert.Equal(before.ProposalJson, after.ProposalJson);
         Assert.Equal(before.Status, after.Status);
-        Assert.NotNull(after.Decision);
-        Assert.Equal("approved", after.Decision!.Outcome);
 
         // The name is free again, not merely absent from a listing: a fresh 'new' under it succeeds.
         Assert.Equal(0, Commands.New(Project, ProductVersion, "reopened", null).ExitCode);

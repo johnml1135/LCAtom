@@ -78,17 +78,49 @@ public sealed class ApplyPromotionGatingAndSweepTests
     }
 
     [Fact]
-    public void RegressionByDefault_DoesNotGate_ApplyProceedsWithoutAnOverride()
+    public void RegressionByDefault_Gates_SoAnUnconfiguredProjectIsStillProtected()
     {
         var proposalId = FinalizeAndTrial("regression-default", "regression default gloss");
         var intentDigest = GetRecord(proposalId).IntentDigest!;
         PromotePrevious(("alpha", true));
-        var candidateId = RecordAssessment(proposalId, intentDigest, "Correctness", ("alpha", false));
+        RecordAssessment(proposalId, intentDigest, "Correctness", ("alpha", false));
 
         var result = Commands.Apply(_fwDataPath, ProductVersion, proposalId, "tester");
 
-        Assert.Equal(0, result.ExitCode);
-        Assert.Equal(candidateId, GetCurrentAssessmentId());
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains("not ready to apply", result.Output);
+        Assert.Equal("proposed", GetRecord(proposalId).Status);
+    }
+
+    [Fact]
+    public void ApplyWithNoAssessmentAtAll_IsRefused_BecauseNothingHasMeasuredWhatItWouldDo()
+    {
+        var proposalId = FinalizeAndTrial("unmeasured", "unmeasured gloss");
+
+        var refused = Commands.Apply(_fwDataPath, ProductVersion, proposalId, "tester");
+
+        Assert.NotEqual(0, refused.ExitCode);
+        Assert.Contains("no Assessment covers its current content", refused.Output);
+        Assert.Equal("proposed", GetRecord(proposalId).Status);
+
+        Assert.Equal(0, Commands.Apply(_fwDataPath, ProductVersion, proposalId, "tester", force: true).ExitCode);
+        Assert.Equal("applied", GetRecord(proposalId).Status);
+    }
+
+    [Fact]
+    public void ApplyIsRefusedWhenTheAssessmentMeasuredADifferentProjectStateThanTheCurrentOne()
+    {
+        var proposalId = FinalizeAndTrial("stale", "stale gloss");
+        var intentDigest = GetRecord(proposalId).IntentDigest!;
+        PromotePrevious(("alpha", true));
+        RecordAssessment(proposalId, intentDigest, "Correctness", baselineToken: """{"snapshot":"moved"}""",
+            words: ("alpha", true));
+
+        var result = Commands.Apply(_fwDataPath, ProductVersion, proposalId, "tester");
+
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains("not been re-run since the project moved", result.Output);
+        Assert.Equal("proposed", GetRecord(proposalId).Status);
     }
 
     [Fact]
@@ -111,7 +143,7 @@ public sealed class ApplyPromotionGatingAndSweepTests
     }
 
     [Fact]
-    public void RegressionGated_WithAnOverrideComment_AppliesAndRecordsTheOverrideAsADecision()
+    public void RegressionGated_WithForce_AppliesAnyway()
     {
         WriteConfiguration(gateOnRegression: true, purgeOnApply: true);
         var proposalId = FinalizeAndTrial("regression-gated-override", "regression gated override gloss");
@@ -119,17 +151,10 @@ public sealed class ApplyPromotionGatingAndSweepTests
         PromotePrevious(("alpha", true));
         var candidateId = RecordAssessment(proposalId, intentDigest, "Correctness", ("alpha", false));
 
-        var result = Commands.Apply(
-            _fwDataPath, ProductVersion, proposalId, "tester", overrideComment: "known false positive, checked by hand");
+        var result = Commands.Apply(_fwDataPath, ProductVersion, proposalId, "tester", force: true);
 
         Assert.Equal(0, result.ExitCode);
-        var record = GetRecord(proposalId);
-        Assert.Equal("applied", record.Status);
-        Assert.NotNull(record.Decision);
-        Assert.Equal("human", record.Decision!.ActorType);
-        Assert.Equal("tester", record.Decision.ActorId);
-        Assert.Contains("known false positive", record.Decision.Comment, StringComparison.Ordinal);
-        Assert.Contains("alpha", record.Decision.Comment, StringComparison.Ordinal);
+        Assert.Equal("applied", GetRecord(proposalId).Status);
         Assert.Equal(candidateId, GetCurrentAssessmentId());
     }
 
@@ -176,7 +201,12 @@ public sealed class ApplyPromotionGatingAndSweepTests
     }
 
     private string RecordAssessment(
-        string? proposalId, string? intentDigest, string kind, params (string Word, bool Analysed)[] words)
+        string? proposalId, string? intentDigest, string kind, params (string Word, bool Analysed)[] words) =>
+        RecordAssessment(proposalId, intentDigest, kind, "{}", words);
+
+    private string RecordAssessment(
+        string? proposalId, string? intentDigest, string kind, string baselineToken,
+        params (string Word, bool Analysed)[] words)
     {
         var selection = Selection.Create("test", words.Select(w => w.Word));
         var assessmentId = CanonicalId.Mint("assessment/").Value;
@@ -199,7 +229,7 @@ public sealed class ApplyPromotionGatingAndSweepTests
             ScopeDigest: "sha256:" + new string('a', 64),
             TokeniserName: "none",
             TokeniserVersion: "1",
-            BaselineToken: "{}",
+            BaselineToken: baselineToken,
             Selection: selection,
             OutcomeDigest: "sha256:" + new string('b', 64),
             SemanticDigest: "sha256:" + new string('c', 64),

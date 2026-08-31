@@ -109,7 +109,7 @@ public sealed class ProposalWorkflowTests
         AssertGlossOnDisk(senseGuid, wsTag, originalGloss);
 
         // --- apply: real commit + save ---
-        var applyResult = Commands.Apply(_fwDataPath, ProductVersion, proposalId, applier);
+        var applyResult = Commands.Apply(_fwDataPath, ProductVersion, proposalId, applier, force: true);
         Assert.Equal(0, applyResult.ExitCode);
         Assert.Contains("Applied Proposal", applyResult.Output);
         Assert.Contains($"\"{originalGloss}\" -> \"{newGloss}\"", applyResult.Output);
@@ -131,7 +131,7 @@ public sealed class ProposalWorkflowTests
         Assert.Contains("1 Motif entry", logResult.Output);
 
         // --- apply again: idempotent, no duplicate log entry, no re-mutation ---
-        var secondApplyResult = Commands.Apply(_fwDataPath, ProductVersion, proposalId, applier);
+        var secondApplyResult = Commands.Apply(_fwDataPath, ProductVersion, proposalId, applier, force: true);
         Assert.Equal(0, secondApplyResult.ExitCode);
         Assert.Contains("already applied", secondApplyResult.Output, StringComparison.OrdinalIgnoreCase);
 
@@ -191,7 +191,7 @@ public sealed class ProposalWorkflowTests
         File.SetAttributes(dbPath, FileAttributes.ReadOnly);
         try
         {
-            var applyResult = Commands.Apply(_fwDataPath, ProductVersion, proposalId, applier);
+            var applyResult = Commands.Apply(_fwDataPath, ProductVersion, proposalId, applier, force: true);
 
             Assert.NotEqual(0, applyResult.ExitCode);
             Assert.Contains("proposal store failed", applyResult.Output, StringComparison.OrdinalIgnoreCase);

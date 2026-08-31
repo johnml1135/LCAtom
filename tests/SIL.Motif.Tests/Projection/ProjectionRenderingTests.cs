@@ -182,18 +182,16 @@ public sealed class ProjectionRenderingTests
     {
         var projection = new ProposalDetailProjection(
             ProposalId: "agent_AAECAwQFBgcICQoLDA0ODw",
-            Status: "approved",
+            Status: "proposed",
             Label: "Revise gloss",
             Comment: "because the old one was wrong",
             CurrentIntentDigest: "sha256:" + new string('a', 64),
-            Operations: System.Array.Empty<ProposalOperationView>(),
-            Decision: new DecisionView("approved", "human", "a-linguist", "looks correct", "20260101T000000Z"));
+            Operations: System.Array.Empty<ProposalOperationView>());
 
         var text = CommandTextRenderer.Render(projection);
         var json = ProjectionJson.Serialize(projection);
 
-        Assert.Contains("approved", text);
-        Assert.Contains("a-linguist", text);
+        Assert.Contains("proposed", text);
         FigureAudit.AssertEveryTextFigureAppearsInJson(text, json);
     }
 

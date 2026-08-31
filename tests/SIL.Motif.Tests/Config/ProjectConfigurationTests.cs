@@ -28,7 +28,7 @@ public sealed class ProjectConfigurationTests : IDisposable
     {
         var configuration = new ProjectConfigurationReader().Read(Project());
 
-        Assert.False(configuration.GateOnRegression);
+        Assert.True(configuration.GateOnRegression);
         Assert.True(configuration.PurgeOnApply);
         var scope = Assert.Single(configuration.Scopes);
         Assert.Equal(AssessmentScopeConfiguration.DefaultName, scope.Name);
@@ -148,7 +148,7 @@ public sealed class ProjectConfigurationTests : IDisposable
 
         var configuration = new ProjectConfigurationReader().Read(Project("Only.fwdata"));
 
-        Assert.False(configuration.GateOnRegression);
+        Assert.True(configuration.GateOnRegression);
         Assert.False(configuration.PurgeOnApply);
         var scope = Assert.Single(configuration.Scopes);
         Assert.Equal(AssessmentScopeConfiguration.DefaultName, scope.Name);

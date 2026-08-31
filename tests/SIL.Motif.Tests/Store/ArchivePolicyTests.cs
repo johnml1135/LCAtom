@@ -40,9 +40,7 @@ public sealed class ArchivePolicyTests
             var repository = new ProposalRepository(database,
                 new FixedClock("2026-08-23T12:00:00Z"));
             repository.SaveRevision(new ProposalRevisionRecord(id, "sha256:archive",
-                "{\"proposalId\":\"" + id.Value + "\"}", "proposed", null, null, null));
-            repository.SaveDecision(new DecisionRecord(id, "sha256:archive", "applied", "human", "a", null,
-                "2026-08-23T12:00:00Z"));
+                "{\"proposalId\":\"" + id.Value + "\"}", "applied", null, null, null));
             Assert.Equal("2026-08-23T12:00:00.0000000+00:00", repository.Get(id).ArchivedUtc);
             using (var connection = database.OpenConnection())
             using (var command = connection.CreateCommand())

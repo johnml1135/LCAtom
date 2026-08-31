@@ -789,35 +789,20 @@ public static class Commands
         });
     }
 
-    private static readonly string[] DeferrableFrom = { ManifestStatus.Proposed, ManifestStatus.Approved };
-    private static readonly string[] ApprovableFrom = { ManifestStatus.Proposed, ManifestStatus.Deferred };
-    private static readonly string[] RejectableFrom =
-        { ManifestStatus.Proposed, ManifestStatus.Deferred, ManifestStatus.Approved };
+    private static readonly string[] DeferrableFrom = { ManifestStatus.Proposed };
+    private static readonly string[] RejectableFrom = { ManifestStatus.Proposed, ManifestStatus.Deferred };
     private static readonly string[] SupersedableFrom =
-        { ManifestStatus.Proposed, ManifestStatus.Deferred, ManifestStatus.Approved, ManifestStatus.Rejected };
+        { ManifestStatus.Proposed, ManifestStatus.Deferred, ManifestStatus.Rejected };
 
     /// <summary>Moves a Proposal to <c>deferred</c>: still wanted, not currently applicable (ADR 0031 decision 4).</summary>
     public static CommandResult Defer(string fwDataPath, string productVersion, string proposalId) =>
         TransitionStatus(fwDataPath, productVersion, proposalId, ManifestStatus.Deferred, DeferrableFrom,
-            (repository, id, _) => repository.SetStatus(id, ManifestStatus.Deferred, supersededBy: null, clearDecision: true));
+            (repository, id, _) => repository.SetStatus(id, ManifestStatus.Deferred, supersededBy: null));
 
-    /// <summary>
-    /// Records an <c>approved</c> Decision against a Proposal's exact current content. The actor type
-    /// is never inferred — ADR 0031 decision 7 requires the record always show whether a human or an
-    /// AI made the call.
-    /// </summary>
-    public static CommandResult Approve(
-        string fwDataPath, string productVersion, string proposalId, string actorType, string actorId,
-        string? comment = null) =>
-        Decide(fwDataPath, productVersion, proposalId, DecisionOutcome.Approved, ManifestStatus.Approved,
-            ApprovableFrom, actorType, actorId, comment);
-
-    /// <summary>Records a <c>rejected</c> Decision against a Proposal's exact current content.</summary>
-    public static CommandResult Reject(
-        string fwDataPath, string productVersion, string proposalId, string actorType, string actorId,
-        string? comment = null) =>
-        Decide(fwDataPath, productVersion, proposalId, DecisionOutcome.Rejected, ManifestStatus.Rejected,
-            RejectableFrom, actorType, actorId, comment);
+    /// <summary>Moves a Proposal to <c>rejected</c>: not wanted, as opposed to wanted later.</summary>
+    public static CommandResult Reject(string fwDataPath, string productVersion, string proposalId) =>
+        TransitionStatus(fwDataPath, productVersion, proposalId, ManifestStatus.Rejected, RejectableFrom,
+            (repository, id, _) => repository.SetStatus(id, ManifestStatus.Rejected, supersededBy: null));
 
     /// <summary>Marks a Proposal <c>superseded</c> by another, naming which one replaced it.</summary>
     public static CommandResult Supersede(
@@ -835,27 +820,7 @@ public static class Commands
 
         return TransitionStatus(fwDataPath, productVersion, proposalId, ManifestStatus.Superseded, SupersedableFrom,
             (repository, id, _) =>
-                repository.SetStatus(id, ManifestStatus.Superseded, supersededById, clearDecision: true));
-    }
-
-    private static CommandResult Decide(
-        string fwDataPath, string productVersion, string proposalId, string outcome, string newStatus,
-        string[] allowedFrom, string actorType, string actorId, string? comment)
-    {
-        if (actorType != DecisionActorType.Human && actorType != DecisionActorType.Ai)
-        {
-            return Fail(
-                $"actorType must be '{DecisionActorType.Human}' or '{DecisionActorType.Ai}' — an AI actor " +
-                "must never be recorded as if it were a human, or the reverse (ADR 0031 decision 7).");
-        }
-
-        if (string.IsNullOrWhiteSpace(actorId))
-            return Invalid("actorId must not be empty — a Decision must name who made it.");
-
-        return TransitionStatus(fwDataPath, productVersion, proposalId, newStatus, allowedFrom,
-            (repository, id, record) => repository.SaveDecision(new DecisionRecord(
-                id, record.IntentDigest!, outcome, actorType, actorId, comment,
-                SIL.Motif.Model.AppliedLog.AppliedLogFormat.FormatTimestamp(DateTime.UtcNow))));
+                repository.SetStatus(id, ManifestStatus.Superseded, supersededById));
     }
 
     /// <summary>Moves a Proposal to a new status, refusing if its current status is not an allowed origin.</summary>
@@ -1380,30 +1345,59 @@ public static class Commands
     /// reload the project rather than reuse it after a failed apply.
     /// </remarks>
     public static CommandResult Apply(
-        string fwDataPath, string productVersion, string proposalId, string user, string? overrideComment = null,
+        string fwDataPath, string productVersion, string proposalId, string user, bool force = false,
         UsageLog? usage = null)
     {
         RecordApplyUsage(usage, "fwDataPath", "proposalId", "user");
         return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, project) =>
         {
-            var (reason, projection, error) = BuildApplyProjection(database, project, proposalId, user, overrideComment);
+            var (reason, projection, error) = BuildApplyProjection(database, project, proposalId, user, force);
             return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : Refused(reason, error!);
         });
     }
 
     /// <summary>The <c>apply</c> report as JSON — the same <see cref="ApplyProjection"/> <see cref="Apply(string,string,string,string,string,UsageLog)"/> renders as text.</summary>
     public static CommandResult ApplyJson(
-        string fwDataPath, string productVersion, string proposalId, string user, string? overrideComment = null,
+        string fwDataPath, string productVersion, string proposalId, string user, bool force = false,
         UsageLog? usage = null)
     {
         RecordApplyUsage(usage, "fwDataPath", "proposalId", "user");
         return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, project) =>
         {
-            var (reason, projection, error) = BuildApplyProjection(database, project, proposalId, user, overrideComment);
+            var (reason, projection, error) = BuildApplyProjection(database, project, proposalId, user, force);
             return projection is not null
                 ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
                 : Refused(reason, error!);
         });
+    }
+
+    /// <summary>Why a Proposal is not ready to apply. Empty means apply; anything here needs --force.</summary>
+    private static IReadOnlyList<string> ApplyReadiness(
+        AssessmentRepository assessments, AssessmentRecord? candidate, ProjectConfiguration configuration)
+    {
+        if (candidate is null)
+            return new[] { "no Assessment covers its current content, so nothing has measured what it would do" };
+
+        var reasons = new List<string>();
+        var current = assessments.GetCurrent();
+
+        // Two Assessments only mean anything against each other when they measured the same project state.
+        if (current is not null &&
+            !string.Equals(current.BaselineToken, candidate.BaselineToken, StringComparison.Ordinal))
+        {
+            reasons.Add(
+                "its Assessment was measured against a different project state than the current one, so it has " +
+                "not been re-run since the project moved");
+        }
+
+        if (configuration.GateOnRegression && current is not null &&
+            string.Equals(current.Kind, RegressionChecker.RequiredKind, StringComparison.Ordinal))
+        {
+            var finding = RegressionChecker.Check(current.ToCorrectness(), candidate.ToCorrectness());
+            if (finding.IsRegression) reasons.Add($"it would be a regression: {finding.Describe()}");
+        }
+
+        return reasons;
     }
 
     /// <summary>The latest <c>Correctness</c> Assessment recorded against this exact revision, if any.</summary>
@@ -1419,7 +1413,7 @@ public static class Commands
     }
 
     private static (FailureReason? Reason, ApplyProjection? Projection, string? Error) BuildApplyProjection(
-        MotifDatabase database, ProjectLocator project, string proposalId, string user, string? overrideComment = null)
+        MotifDatabase database, ProjectLocator project, string proposalId, string user, bool force = false)
     {
         LcmCache? cache = null;
         try
@@ -1444,30 +1438,13 @@ public static class Commands
                 ? null
                 : FindCandidateAssessment(assessments, canonicalId, manifest.CurrentIntentDigest);
 
-            // Gates only when configured, checked before loading the project, same as the anchor check above.
-            if (candidate is not null && configuration.GateOnRegression)
+            // Checked before loading the project, same as the anchor check above.
+            var notReady = ApplyReadiness(assessments, candidate, configuration);
+            if (notReady.Count > 0 && !force)
             {
-                var previous = assessments.GetCurrent();
-                var finding = previous is not null &&
-                    string.Equals(previous.Kind, RegressionChecker.RequiredKind, StringComparison.Ordinal)
-                    ? RegressionChecker.Check(previous.ToCorrectness(), candidate.ToCorrectness())
-                    : null;
-
-                if (finding is { IsRegression: true })
-                {
-                    if (string.IsNullOrWhiteSpace(overrideComment))
-                    {
-                        return (FailureReason.Refused, null, FailText(
-                            $"Applying Proposal {id} would be a regression: {finding.Describe()}. Provide an " +
-                            "override comment to apply anyway; the override is recorded as a Decision."));
-                    }
-
-                    // Surfaced even though overridden: it is often the manual analysis that was wrong.
-                    repository.SaveDecision(new DecisionRecord(
-                        canonicalId, manifest.CurrentIntentDigest!, DecisionOutcome.Approved, DecisionActorType.Human,
-                        user, $"Regression override ({finding.Describe()}): {overrideComment}",
-                        SIL.Motif.Model.AppliedLog.AppliedLogFormat.FormatTimestamp(DateTime.UtcNow)));
-                }
+                return (FailureReason.Refused, null, FailText(
+                    $"Proposal {id} is not ready to apply: {string.Join("; ", notReady)}. Run " +
+                    $"'trial {id} --project <fwdata>' and let it finish, or pass --force to apply anyway."));
             }
 
             var loader = new FwDataProjectLoader();

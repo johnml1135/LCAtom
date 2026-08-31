@@ -112,8 +112,14 @@ _Avoid_: run, attempt, test, experiment, evaluation
 
 **Preflight**:
 The final non-mutating comparison against the live model immediately before Apply. It proves that the
-approved evidence still matches the project; it is not the earlier, reusable Dry Run.
+measured evidence still matches the project; it is not the earlier, reusable Dry Run.
 _Avoid_: dry run, assessment, validation pass
+
+**Readiness**:
+Whether a Proposal has been measured well enough to apply: an Assessment covers its current content, that
+Assessment measured the project state the Apply would land on, and it shows no regression. Readiness is
+computed from evidence, never granted by a person, and `--force` applies in spite of it.
+_Avoid_: approval, sign-off, review, gate
 
 **Drift**:
 The condition where the project has moved since a Dry Run was computed, so the Dry Run no longer
@@ -122,8 +128,8 @@ _Avoid_: staleness, conflict, merge failure
 
 **Apply Authorization**:
 An opaque, one-use, short-lived grant from the Motif worker for exactly one Apply attempt. It binds the
-project, Proposal intent, approved Decision, Dry Run, Baseline, and Assessment disposition; it is neither
-the human Decision nor a general security credential.
+project, Proposal intent, Dry Run, Baseline, and Assessment disposition; it is not a general security
+credential, and it is not anyone's approval — nothing in Motif authorises an Apply.
 _Avoid_: approval, token, permission
 
 **Conflict**:
@@ -173,7 +179,7 @@ _Avoid_: cache, session, connection
 
 **Motif store**:
 Everything Motif keeps about **one language project**, in that project's paired sibling database:
-Proposals, Drafts, Decisions, jobs, Assessments, Reports, Receipts, Corpora, and the applied index.
+Proposals, Drafts, jobs, Assessments, Reports, Receipts, Corpora, and the applied index.
 Content digests still identify immutable intent and evidence, but the storage container is not itself
 content-addressed. There is no merge engine and no replication. Nothing about a project lives anywhere
 else, and nothing that is not about a project lives here — that is the Machine store.

@@ -50,15 +50,6 @@ public sealed class ManifestDocument
     public BoundDryRunAnchor? Anchor { get; set; }
 
     /// <summary>
-    /// The most recent human or AI verdict on <see cref="CurrentIntentDigest"/> (ADR 0031 decision 7):
-    /// present only while <see cref="Status"/> is <see cref="ManifestStatus.Approved"/> or
-    /// <see cref="ManifestStatus.Rejected"/>. <c>null</c> otherwise, including after an amend — a
-    /// Decision is bound to the content it was recorded against, so any content change invalidates it
-    /// the same way it invalidates <see cref="Anchor"/>.
-    /// </summary>
-    public Decision? Decision { get; set; }
-
-    /// <summary>
     /// The <see cref="ProposalId"/> of the Proposal that superseded this one, set only when
     /// <see cref="Status"/> is <see cref="ManifestStatus.Superseded"/>.
     /// </summary>
@@ -66,42 +57,13 @@ public sealed class ManifestDocument
 }
 
 /// <summary>
-/// A recorded verdict on a Proposal's exact content, per ADR 0031 decision 7 — the record must always
-/// show whether an AI or a human made the call, never leave it to be inferred.
-/// </summary>
-public sealed class Decision
-{
-    public string Outcome { get; set; } = "";
-    public string ActorType { get; set; } = "";
-    public string ActorId { get; set; } = "";
-    public string? Comment { get; set; }
-
-    /// <summary>The <c>CurrentIntentDigest</c> this Decision was recorded against; an amend moves the pointer and drops the Decision.</summary>
-    public string BoundIntentDigest { get; set; } = "";
-    public string TimestampUtc { get; set; } = "";
-}
-
-public static class DecisionOutcome
-{
-    public const string Approved = "approved";
-    public const string Rejected = "rejected";
-}
-
-public static class DecisionActorType
-{
-    public const string Human = "human";
-    public const string Ai = "ai";
-}
-
-/// <summary>
-/// The six statuses ADR 0031 decision 3 names. Dependency ("requires another Proposal") is structure,
-/// not a status, and is never represented here.
+/// The five statuses a Proposal can hold. Dependency ("requires another Proposal") is structure, not a
+/// status, and is never represented here. There is no approval: a Proposal is applied, not authorised.
 /// </summary>
 public static class ManifestStatus
 {
     public const string Proposed = "proposed";
     public const string Deferred = "deferred";
-    public const string Approved = "approved";
     public const string Rejected = "rejected";
     public const string Applied = "applied";
     public const string Superseded = "superseded";

@@ -139,3 +139,42 @@ right sense of a single attempt on a throwaway copy, and leaves Dry Run and Asse
 
 The verb is `trial`, matching the noun, as `label`, `comment` and `split` already do. `try` was rejected: it
 reads as an attempt that might fail, and a Trial is a measurement rather than a gamble.
+
+## 2026-08-31 — approval is gone; readiness replaced it
+
+**In plain terms:** a linguist no longer has to approve a change before it can be written into the project.
+Motif applies it when the measurements say it is safe, and says why when they do not. Somebody who disagrees
+with the measurements can still apply, by saying `--force`.
+
+Everything above about `approve`, `approved`, and a Decision bound to an exact revision describes a workflow
+that no longer exists. The seven states are five: **draft**, **proposed**, **rejected**, **deferred**,
+**applied**, **superseded**. `reject` and `defer` survive as triage — not wanted, and wanted later — and
+neither is a verdict anybody signs. Nothing records who agreed with a Proposal, because nothing needs to.
+
+This also answers the open question the section above left standing. It asked whether applying should require
+a Decision bound to the exact revision, noting that the irreversibility argued for a guard and an AI loop
+applying its own proposals argued against. Both were right, and the resolution is that the guard is real but
+it is not a person: **apply refuses unless the evidence is there.**
+
+### What `apply` now refuses, and why each
+
+| Refusal | What it means |
+| --- | --- |
+| No Assessment covers the Proposal's current content | Nothing has measured what this would do. Run `trial`. |
+| The Assessment measured a different project state | It was measured, then the project moved. Re-run `trial`. |
+| It would be a regression | The parser stops matching manual analysis somewhere it used to match. |
+
+The third was already here, as a gate a project could switch on. It is now on by default, because a Proposal
+that breaks analyses a linguist has already confirmed is the case the gate exists for, and leaving it off by
+default meant the protection arrived only for projects that had already thought about it. A project can still
+turn it off in `<project>.motif.toml`.
+
+`--force` overrides all three, and it is one flag rather than three, because a person who has looked at the
+evidence and decided to proceed is making one decision, not three. It replaces `--override-comment`, which
+recorded its reason as an approved Decision — a record with nowhere left to live.
+
+The first two refusals are what "the assessments are not complete" and "we have not re-run after the
+fingerprint changed" came to concretely. The second deserves its wording: it compares the candidate
+Assessment's Baseline token with the current Assessment's, so it fires when the two were measured against
+different project states — which is exactly when comparing them, and therefore the regression check itself,
+would be meaningless.

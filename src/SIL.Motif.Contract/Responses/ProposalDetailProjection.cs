@@ -13,10 +13,6 @@ public sealed record ProposalOperationView(
     IReadOnlyList<string> DependsOn,
     string? AfterJson);
 
-/// <summary>The most recent human or AI verdict on a Proposal, shaped for the <c>show</c> report.</summary>
-public sealed record DecisionView(
-    string Outcome, string ActorType, string ActorId, string? Comment, string TimestampUtc);
-
 /// <summary>The <c>show</c> report: a Proposal's review state and its full operation list.</summary>
 /// <param name="CurrentIntentDigest">
 /// <c>null</c> for a Draft: it has no committed revision yet, so it has no digest.
@@ -28,6 +24,5 @@ public sealed record ProposalDetailProjection(
     string? Comment,
     string? CurrentIntentDigest,
     IReadOnlyList<ProposalOperationView> Operations,
-    DecisionView? Decision = null,
     string? SupersededBy = null,
     string? ExtensionsJson = null);

@@ -153,8 +153,7 @@ public sealed class ReopenAmendTests
     private void SetStatusRaw(string proposalId, string status)
     {
         using var database = ProjectMotifDatabase.Open(_fwDataPath);
-        new ProposalRepository(database).SetStatus(
-            CanonicalId.Parse(proposalId), status, supersededBy: null, clearDecision: false);
+        new ProposalRepository(database).SetStatus(CanonicalId.Parse(proposalId), status, supersededBy: null);
     }
 
     private void ClearLabelAndComment(string proposalId)

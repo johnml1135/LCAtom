@@ -424,3 +424,24 @@ number always cites its corpus, that corpus's hash, the lexicon overlay revision
      ^
      |  may reference a Proposal by its digest — no server required of us
 ```
+
+## Amendments
+
+### 2026-08-31 — decision 7 is superseded: there is no Decision to label
+
+Decision 7 said an AI recommends and a human decision is recorded as a human decision, with the actor type
+never inferred. That rule governed a **Decision** record — an approved-or-rejected verdict bound to one exact
+Proposal revision — and the owner has since removed approval from the product altogether. There is no verdict
+to attribute, so there is nothing for decision 7 to govern.
+
+**In plain terms:** nobody signs off a change any more. A Proposal is applied when the measurements say it is
+safe to apply, and a person who wants to apply it anyway says `--force`.
+
+What replaced it is evidence rather than authority. `apply` refuses when no Assessment covers the Proposal's
+current content, when the Assessment measured a different project state than the one being applied to, or when
+it shows a regression against the project's current Assessment; `--force` overrides all three. The `approve`
+verb, the `approved` status, the `Decisions` table and the `DecisionActorType` human/ai distinction are gone.
+
+The concern behind decision 7 — never letting an AI's judgement pass as a human's — is not abandoned; it is
+relocated to where an actor still appears. `apply` records who applied, in the Receipt and the applied log,
+and that is a fact about who ran the command rather than a claim about who agreed with it.
