@@ -65,10 +65,10 @@ try
             }
             result = hasAssessment
                 ? asJson
-                    ? Commands.AnalysesJson(
-                        analysesProject, assessmentId!, currentSelectionSha256!, currentGrammarSha256!, usage)
-                    : Commands.Analyses(
-                        analysesProject, assessmentId!, currentSelectionSha256!, currentGrammarSha256!, usage)
+                    ? Commands.AnalysesJson(analysesProject, CliProductVersion(),
+                        assessmentId!, currentSelectionSha256!, currentGrammarSha256!, usage)
+                    : Commands.Analyses(analysesProject, CliProductVersion(),
+                        assessmentId!, currentSelectionSha256!, currentGrammarSha256!, usage)
                 : asJson
                     ? Commands.AnalysesJson(analysesProject, usage)
                     : Commands.Analyses(analysesProject, usage);

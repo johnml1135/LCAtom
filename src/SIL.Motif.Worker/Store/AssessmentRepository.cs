@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using SIL.Motif.Contract.Ids;
+using SIL.Motif.Host.Analysis;
 using SIL.Motif.Host.Assess;
 using SIL.Motif.Host.Corpus;
 using SIL.Motif.Host.Parser;
@@ -142,6 +143,13 @@ public static class AssessmentRecordProjections
         record.AssessmentId, record.Assessor, record.TokeniserName, record.TokeniserVersion,
         ScopeCodec.ReadTrial(record.ScopeJson, RegressionChecker.RequiredKind),
         record.Selection, record.GrammarSourceSha256, record.Words ?? Array.Empty<AssessedWord>());
+
+    /// <summary>The parsed report and Selection <c>motif analyses --assessment</c> reads — see <see cref="StoredAssessment"/>.</summary>
+    public static StoredAssessment ToStored(this AssessmentRecord record) => new(
+        new AssessReport(
+            record.Words ?? Array.Empty<AssessedWord>(), record.OutcomeDigest, record.SemanticDigest,
+            record.GrammarSourceSha256, record.ModelFingerprint, record.Pipeline, record.DiagnosticCount),
+        record.Selection);
 }
 
 /// <summary>Reads and writes normalized Assessment tables and the project's current-Assessment pointer.</summary>

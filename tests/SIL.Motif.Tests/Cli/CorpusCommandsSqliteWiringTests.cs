@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using SIL.Motif.Cli;
 using SIL.Motif.Contract.Projects;
+using SIL.Motif.Host.Store;
 using SIL.Motif.Host.Corpus;
 using SIL.Motif.Projection.Usage;
 using SIL.Motif.Tests.Projection;
@@ -39,7 +40,11 @@ public sealed class CorpusCommandsSqliteWiringTests : IDisposable
     public void StoreForReturnsASqliteBackedStore_AndTheCliVerbsRoundTripThroughIt()
     {
         var project = new ProjectLocator(_fwDataPath, "Project");
-        Assert.IsType<SqliteCorpusStore>(CorpusCommands.StoreFor(project));
+        using (var database = MotifDatabase.OpenOwned(
+            ProjectDatabaseCatalog.DatabasePathFor(project), project, MotifSchema.CurrentSchema, new Version(1, 0)))
+        {
+            Assert.IsType<SqliteCorpusStore>(CorpusCommands.StoreFor(database));
+        }
 
         var addResult = CorpusCommands.AddCorpus(
             _fwDataPath, "1.0", "tst-corpus", "Testlang corpus", uri: null, licence: "CC-BY-SA-4.0",

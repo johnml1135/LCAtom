@@ -2,6 +2,8 @@ using System;
 using System.IO;
 using System.Linq;
 using SIL.Motif.Host.Corpus;
+using SIL.Motif.Host.Store;
+using SIL.Motif.Contract.Projects;
 using Xunit;
 
 namespace SIL.Motif.Tests.Store;
@@ -15,13 +17,23 @@ public sealed class SqliteCorpusStoreTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "motif-sqlite-corpus-tests", Guid.NewGuid().ToString("N"));
 
+    private MotifDatabase? _database;
+
+    // The Corpus tables only ever exist inside a project database, so a store needs one to have been opened.
+    private MotifDatabase Database => _database ??= MotifDatabase.OpenOwned(
+        Path.Combine(_root, "motif.db"),
+        new ProjectLocator(Path.Combine(_root, "project.fwdata"), "project"),
+        MotifSchema.CurrentSchema,
+        new Version(1, 0));
+
     public void Dispose()
     {
+        _database?.Dispose();
         if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
         GC.SuppressFinalize(this);
     }
 
-    private SqliteCorpusStore Store() => new(Path.Combine(_root, "motif.db"));
+    private SqliteCorpusStore Store() => new(Database);
 
     private static CorpusProvenance Provenance() => new(
         new CorpusOrigin(

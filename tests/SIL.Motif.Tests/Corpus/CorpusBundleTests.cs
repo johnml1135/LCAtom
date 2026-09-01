@@ -4,6 +4,8 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using SIL.Motif.Host.Corpus;
+using SIL.Motif.Host.Store;
+using SIL.Motif.Contract.Projects;
 using Xunit;
 
 namespace SIL.Motif.Tests.Corpus;
@@ -31,10 +33,20 @@ public class CorpusBundleTests : IDisposable
     private readonly string _root = Path.Combine(
         Path.GetTempPath(), "motif-bundle-tests", Guid.NewGuid().ToString("N"));
 
+    private MotifDatabase? _database;
+
+    // The Corpus tables only ever exist inside a project database, so a store needs one to have been opened.
+    private MotifDatabase Database => _database ??= MotifDatabase.OpenOwned(
+        Path.Combine(_root, "motif.db"),
+        new ProjectLocator(Path.Combine(_root, "project.fwdata"), "project"),
+        MotifSchema.CurrentSchema,
+        new Version(1, 0));
+
     public CorpusBundleTests() => Directory.CreateDirectory(Path.Combine(_root, "handoff"));
 
     public void Dispose()
     {
+        _database?.Dispose();
         if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
         GC.SuppressFinalize(this);
     }
@@ -86,7 +98,7 @@ public class CorpusBundleTests : IDisposable
         WriteText("tstPD.txt", "Nyumba ikulu.\n");
         var bundlePath = WriteBundle(EBibleBundle);
 
-        var store = new SqliteCorpusStore(Path.Combine(_root, "motif.db"));
+        var store = new SqliteCorpusStore(Database);
         var corpus = await new CorpusIngestion(store).AddBundleAsync(CorpusBundle.ReadFile(bundlePath));
 
         Assert.Equal("ebible-tst", corpus.CorpusId);
@@ -218,7 +230,7 @@ public class CorpusBundleTests : IDisposable
         WriteText("tstNT.txt", "x\n");     // tstPD.txt deliberately absent
         var bundlePath = WriteBundle(EBibleBundle);
 
-        var store = new SqliteCorpusStore(Path.Combine(_root, "motif.db"));
+        var store = new SqliteCorpusStore(Database);
         var ingestion = new CorpusIngestion(store);
 
         var ex = await Assert.ThrowsAsync<FileNotFoundException>(() =>

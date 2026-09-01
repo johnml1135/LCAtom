@@ -141,31 +141,39 @@ public static class Commands
 
     public static CommandResult Analyses(
         string fwDataPath,
+        string productVersion,
         string assessmentId,
         string currentSelectionSha256,
         string currentGrammarSourceSha256,
         UsageLog? usage = null)
     {
         RecordAssessmentAnalysisUsage(usage);
-        var (reason, projection, error) = BuildAssessmentAnalysisProjection(
-            fwDataPath, assessmentId, currentSelectionSha256, currentGrammarSourceSha256);
-        return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : Refused(reason, error!);
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, project) =>
+        {
+            var (reason, projection, error) = BuildAssessmentAnalysisProjection(
+                database, project, assessmentId, currentSelectionSha256, currentGrammarSourceSha256);
+            return projection is not null ? Ok(CommandTextRenderer.Render(projection)) : Refused(reason, error!);
+        });
     }
 
     /// <summary>The Assessment-backed <c>analyses</c> report as JSON.</summary>
     public static CommandResult AnalysesJson(
         string fwDataPath,
+        string productVersion,
         string assessmentId,
         string currentSelectionSha256,
         string currentGrammarSourceSha256,
         UsageLog? usage = null)
     {
         RecordAssessmentAnalysisUsage(usage);
-        var (reason, projection, error) = BuildAssessmentAnalysisProjection(
-            fwDataPath, assessmentId, currentSelectionSha256, currentGrammarSourceSha256);
-        return projection is not null
-            ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
-            : Refused(reason, error!);
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, project) =>
+        {
+            var (reason, projection, error) = BuildAssessmentAnalysisProjection(
+                database, project, assessmentId, currentSelectionSha256, currentGrammarSourceSha256);
+            return projection is not null
+                ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
+                : Refused(reason, error!);
+        });
     }
 
     private static void RecordAssessmentAnalysisUsage(UsageLog? usage) =>
@@ -181,7 +189,8 @@ public static class Commands
 
     private static (FailureReason? Reason, AnalysisAggregateProjection? Projection, string? Error)
         BuildAssessmentAnalysisProjection(
-            string fwDataPath,
+            MotifDatabase database,
+            ProjectLocator project,
             string assessmentId,
             string currentSelectionSha256,
             string currentGrammarSourceSha256)
@@ -193,23 +202,23 @@ public static class Commands
             Sha256Value.RequireCanonical(currentSelectionSha256, nameof(currentSelectionSha256));
             Sha256Value.RequireCanonical(currentGrammarSourceSha256, nameof(currentGrammarSourceSha256));
 
-            var fullPath = ResolveProjectPath(fwDataPath);
-            var databasePath = ProjectDatabaseCatalog.DatabasePathFor(
-                new ProjectLocator(fullPath, Path.GetFileNameWithoutExtension(fullPath)));
-            if (!File.Exists(databasePath))
-                return (FailureReason.NotFound, null, FailText($"Assessment '{assessmentId}' was not found in the Motif store."));
-
-            var store = new SqliteAssessmentStore(databasePath);
-            var assessment = store.Load(assessmentId);
-            if (assessment is null)
-                return (FailureReason.NotFound, null, FailText($"Assessment '{assessmentId}' was not found in the Motif store."));
+            AssessmentRecord record;
+            try
+            {
+                record = new AssessmentRepository(database).Get(assessmentId);
+            }
+            catch (KeyNotFoundException)
+            {
+                return (FailureReason.NotFound, null,
+                    FailText($"Assessment '{assessmentId}' was not found in the Motif store."));
+            }
 
             var loader = new FwDataProjectLoader();
-            using var cache = loader.LoadScratchCache(fullPath);
+            using var cache = loader.LoadScratchCache(project.FullFwDataPath);
             return (
                 0,
                 AnalysisAggregateProjectionQuery.Read(
-                    cache, assessment, currentSelectionSha256, currentGrammarSourceSha256),
+                    cache, record.ToStored(), currentSelectionSha256, currentGrammarSourceSha256),
                 null);
         }
         catch (Exception ex)
@@ -506,7 +515,7 @@ public static class Commands
         string fwDataPath, string productVersion, string draftName, string target, string ws, string text,
         string corpusId, string? documentId = null)
     {
-        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, project) =>
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, _) =>
         {
             try
             {
@@ -514,7 +523,7 @@ public static class Commands
                 if (!TryLoadDraft(repository, draftName, out var draft))
                     return Missing(DraftNotFoundMessage(draftName));
 
-                var corpus = CorpusCommands.StoreFor(project).Load(corpusId);
+                var corpus = CorpusCommands.StoreFor(database).Load(corpusId);
                 if (corpus is null)
                     return Fail($"Corpus '{corpusId}' not found. Run 'corpora' to see what is there.");
 

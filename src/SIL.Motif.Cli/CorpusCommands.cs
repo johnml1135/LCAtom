@@ -3,12 +3,11 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
-using SIL.Motif.Contract.Projects;
 using SIL.Motif.Host.Corpus;
+using SIL.Motif.Host.Store;
 using SIL.Motif.Projection;
 using SIL.Motif.Projection.Rendering;
 using SIL.Motif.Projection.Usage;
-using SIL.Motif.Worker.Store;
 
 namespace SIL.Motif.Cli;
 
@@ -29,9 +28,8 @@ namespace SIL.Motif.Cli;
 /// </remarks>
 public static class CorpusCommands
 {
-    /// <summary>The Corpus store for one project — the paired database <c>--project</c> resolves to.</summary>
-    public static ICorpusStore StoreFor(ProjectLocator project) =>
-        new SqliteCorpusStore(ProjectDatabaseCatalog.DatabasePathFor(project));
+    /// <summary>The Corpus store for one project — over the same gated database a verb already opened.</summary>
+    public static ICorpusStore StoreFor(MotifDatabase database) => new SqliteCorpusStore(database);
 
     /// <summary>Create an empty Corpus with its origin and tokenisation recorded.</summary>
     public static CommandResult AddCorpus(
@@ -47,11 +45,11 @@ public static class CorpusCommands
         string? tokeniserNotes,
         DateTimeOffset? retrievedUtc = null)
     {
-        return ProjectStoreCommand.Run(fwDataPath, productVersion, (_, project) =>
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, _) =>
         {
             try
             {
-                var ingestion = new CorpusIngestion(StoreFor(project));
+                var ingestion = new CorpusIngestion(StoreFor(database));
 
                 var provenance = new CorpusProvenance(
                     new CorpusOrigin(description, uri, retrievedUtc ?? DateTimeOffset.UtcNow, licence, capabilities),
@@ -88,11 +86,11 @@ public static class CorpusCommands
         string? licence,
         LicenceCapabilities? capabilities)
     {
-        return ProjectStoreCommand.Run(fwDataPath, productVersion, (_, project) =>
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, _) =>
         {
             try
             {
-                var ingestion = new CorpusIngestion(StoreFor(project));
+                var ingestion = new CorpusIngestion(StoreFor(database));
                 var source = DocumentSource.Parse(fileOrUrl);
 
                 var document = ingestion.AddDocumentAsync(
@@ -119,12 +117,12 @@ public static class CorpusCommands
     /// <summary>Take in a whole handoff bundle written by a fetching tool.</summary>
     public static CommandResult AddBundle(string fwDataPath, string productVersion, string bundlePath)
     {
-        return ProjectStoreCommand.Run(fwDataPath, productVersion, (_, project) =>
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, _) =>
         {
             try
             {
                 var bundle = CorpusBundle.ReadFile(bundlePath);
-                var ingestion = new CorpusIngestion(StoreFor(project));
+                var ingestion = new CorpusIngestion(StoreFor(database));
                 var corpus = ingestion.AddBundleAsync(bundle).GetAwaiter().GetResult();
 
                 var sb = new StringBuilder();
@@ -151,20 +149,20 @@ public static class CorpusCommands
     public static CommandResult ListCorpora(string fwDataPath, string productVersion, UsageLog? usage = null)
     {
         usage?.Record("corpora", new[] { UsageArgumentShape.Text("fwDataPath") });
-        return ProjectStoreCommand.Run(fwDataPath, productVersion, (_, project) =>
-            new CommandResult(0, CommandTextRenderer.Render(BuildCorpusList(project))));
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, _) =>
+            new CommandResult(0, CommandTextRenderer.Render(BuildCorpusList(database))));
     }
 
     /// <summary>The <c>corpora</c> report as JSON, rendered from the same projection as text.</summary>
     public static CommandResult ListCorporaJson(string fwDataPath, string productVersion, UsageLog? usage = null)
     {
         usage?.Record("corpora", new[] { UsageArgumentShape.Text("fwDataPath") });
-        return ProjectStoreCommand.Run(fwDataPath, productVersion, (_, project) =>
-            new CommandResult(0, ProjectionJson.Serialize(BuildCorpusList(project)) + Environment.NewLine));
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, _) =>
+            new CommandResult(0, ProjectionJson.Serialize(BuildCorpusList(database)) + Environment.NewLine));
     }
 
-    private static CorpusListProjection BuildCorpusList(ProjectLocator project)
-        => CorpusProjectionQuery.List(StoreFor(project));
+    private static CorpusListProjection BuildCorpusList(MotifDatabase database)
+        => CorpusProjectionQuery.List(StoreFor(database));
 
     /// <summary>One Corpus in full: provenance, every Document, and what each is licensed for.</summary>
     public static CommandResult ShowCorpus(
@@ -173,9 +171,9 @@ public static class CorpusCommands
         usage?.Record(
             "show-corpus",
             new[] { UsageArgumentShape.Text("fwDataPath"), UsageArgumentShape.Text("corpusId") });
-        return ProjectStoreCommand.Run(fwDataPath, productVersion, (_, project) =>
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, _) =>
         {
-            var (projection, error) = BuildCorpusDetail(project, corpusId);
+            var (projection, error) = BuildCorpusDetail(database, corpusId);
             return projection is not null
                 ? new CommandResult(0, CommandTextRenderer.Render(projection))
                 : new CommandResult(1, error!);
@@ -189,9 +187,9 @@ public static class CorpusCommands
         usage?.Record(
             "show-corpus",
             new[] { UsageArgumentShape.Text("fwDataPath"), UsageArgumentShape.Text("corpusId") });
-        return ProjectStoreCommand.Run(fwDataPath, productVersion, (_, project) =>
+        return ProjectStoreCommand.Run(fwDataPath, productVersion, (database, _) =>
         {
-            var (projection, error) = BuildCorpusDetail(project, corpusId);
+            var (projection, error) = BuildCorpusDetail(database, corpusId);
             return projection is not null
                 ? new CommandResult(0, ProjectionJson.Serialize(projection) + Environment.NewLine)
                 : new CommandResult(1, error!);
@@ -199,9 +197,9 @@ public static class CorpusCommands
     }
 
     private static (CorpusDetailProjection? Projection, string? Error) BuildCorpusDetail(
-        ProjectLocator project, string corpusId)
+        MotifDatabase database, string corpusId)
     {
-        var projection = CorpusProjectionQuery.Detail(StoreFor(project), corpusId);
+        var projection = CorpusProjectionQuery.Detail(StoreFor(database), corpusId);
         return projection is null
             ? (null, $"No corpus '{corpusId}' in store." + Environment.NewLine)
             : (projection, null);

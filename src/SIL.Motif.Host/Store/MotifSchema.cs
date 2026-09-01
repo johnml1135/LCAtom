@@ -26,7 +26,6 @@ public static class MotifSchema
     /// <summary>Builds every table, index and the identity row for a brand-new database, in one step.</summary>
     internal static void Create(SqliteConnection connection, SqliteTransaction? transaction, ProjectLocator project)
     {
-        ValidateExistingTable(connection, transaction, "Corpora", "CorpusId", "ProvenanceJson");
         using (var command = connection.CreateCommand())
         {
             command.Transaction = transaction;
@@ -85,14 +84,6 @@ public static class MotifSchema
             ValidateTable(connection, transaction, table, ColumnsFor(table), ForeignKeysFor(table));
         foreach (var index in expectedIndexes)
             ValidateIndex(connection, transaction, index, IndexColumnsFor(index));
-    }
-
-    // Only the Corpus tables: an Assessment table exists because Create made it, never because of this.
-    internal static void EnsureLegacyTables(SqliteConnection connection)
-    {
-        using var command = connection.CreateCommand();
-        command.CommandText = CorpusDdl;
-        command.ExecuteNonQuery();
     }
 
     internal static (ProjectLocator Project, Version MinimumWorkerVersion) ReadMetadata(
@@ -393,25 +384,6 @@ public static class MotifSchema
         string OnUpdate,
         string OnDelete,
         string Match);
-
-    // Guards the race with EnsureLegacyTables: if the Corpus tables already exist, they must match.
-    private static void ValidateExistingTable(
-        SqliteConnection connection,
-        SqliteTransaction? transaction,
-        string table,
-        params string[] columns)
-    {
-        using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = "SELECT name FROM pragma_table_info($table);";
-        command.Parameters.AddWithValue("$table", table);
-        var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        using var reader = command.ExecuteReader();
-        while (reader.Read()) found.Add(reader.GetString(0));
-        if (found.Count == 0) return;
-        if (columns.Any(column => !found.Contains(column)))
-            throw new InvalidDataException($"Existing Motif table {table} does not match the known schema.");
-    }
 
     private const string MetadataDdl = """
         CREATE TABLE MotifMetadata (

@@ -1,10 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
 using System.Linq;
 using System.Text.Json;
-using Microsoft.Data.Sqlite;
 using SIL.Motif.Host.Store;
 
 namespace SIL.Motif.Host.Corpus;
@@ -28,19 +26,14 @@ namespace SIL.Motif.Host.Corpus;
 /// </remarks>
 public sealed class SqliteCorpusStore : ICorpusStore
 {
-    private readonly string _databasePath;
+    private readonly MotifDatabase _database;
 
-    public SqliteCorpusStore(string databasePath)
-    {
-        if (string.IsNullOrWhiteSpace(databasePath))
-            throw new ArgumentException("A database path is required.", nameof(databasePath));
-
-        _databasePath = Path.GetFullPath(databasePath);
-    }
+    public SqliteCorpusStore(MotifDatabase database) =>
+        _database = database ?? throw new ArgumentNullException(nameof(database));
 
     public bool Exists(string corpusId)
     {
-        using var connection = SqliteMotifDatabase.OpenConnection(_databasePath);
+        using var connection = _database.OpenConnection();
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT 1 FROM Corpora WHERE CorpusId = $id LIMIT 1;";
         command.Parameters.AddWithValue("$id", corpusId);
@@ -50,7 +43,7 @@ public sealed class SqliteCorpusStore : ICorpusStore
     /// <summary>Every corpus id, read from a table with no document text in it — never a scan of the bulk data.</summary>
     public IReadOnlyList<string> List()
     {
-        using var connection = SqliteMotifDatabase.OpenConnection(_databasePath);
+        using var connection = _database.OpenConnection();
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT CorpusId FROM Corpora ORDER BY CorpusId;";
 
@@ -64,7 +57,7 @@ public sealed class SqliteCorpusStore : ICorpusStore
     {
         ArgumentNullException.ThrowIfNull(corpus);
 
-        using var connection = SqliteMotifDatabase.OpenConnection(_databasePath);
+        using var connection = _database.OpenConnection();
         using var transaction = connection.BeginTransaction();
 
         using (var corpusCommand = connection.CreateCommand())
@@ -136,7 +129,7 @@ public sealed class SqliteCorpusStore : ICorpusStore
 
     public StoredCorpus? Load(string corpusId)
     {
-        using var connection = SqliteMotifDatabase.OpenConnection(_databasePath);
+        using var connection = _database.OpenConnection();
 
         string? provenanceJson;
         using (var corpusCommand = connection.CreateCommand())

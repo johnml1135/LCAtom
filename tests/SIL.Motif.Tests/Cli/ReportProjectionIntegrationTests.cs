@@ -101,12 +101,14 @@ public sealed class ReportProjectionIntegrationTests
 
         var text = Commands.Analyses(
             _fwDataPath,
+            ProductVersion,
             assessmentId,
             assessment.Selection.Sha256,
             assessment.Report.GrammarSourceSha256,
             usage);
         var json = Commands.AnalysesJson(
             _fwDataPath,
+            ProductVersion,
             assessmentId,
             Hash('b'),
             assessment.Report.GrammarSourceSha256,
@@ -137,7 +139,7 @@ public sealed class ReportProjectionIntegrationTests
     public void AnalysesReturnsClearErrorWhenNamedAssessmentDoesNotExist()
     {
         // No corpus or proposal verb has touched this scratch project, so its paired database does not exist.
-        var result = Commands.Analyses(_fwDataPath, Hash('0'), Hash('1'), Hash('2'));
+        var result = Commands.Analyses(_fwDataPath, ProductVersion, Hash('0'), Hash('1'), Hash('2'));
 
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains(Hash('0'), result.Output);
@@ -156,6 +158,7 @@ public sealed class ReportProjectionIntegrationTests
     {
         var result = Commands.Analyses(
             _fwDataPath,
+            ProductVersion,
             assessmentId,
             currentSelectionSha256,
             currentGrammarSha256);
@@ -202,6 +205,7 @@ public sealed class ReportProjectionIntegrationTests
 
         var result = Commands.AnalysesJson(
             _fwDataPath,
+            ProductVersion,
             assessmentId,
             assessment.Selection.Sha256,
             assessment.Report.GrammarSourceSha256);

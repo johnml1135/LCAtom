@@ -44,6 +44,37 @@ public sealed class AssessmentRepositoryTests : IDisposable
     }
 
     [Fact]
+    public void GetReturnsEveryFieldWithWordAndAnalysisOrderIntact_WhichIsWhatAnalysesReadsBack()
+    {
+        var repository = NewRepository("round-trip.fwdata", out var database);
+        using var _ = database;
+        var words = new AssessedWord[]
+        {
+            new("mbali", "Analysed",
+            [
+                new ParsedAnalysis("cat-d1", ["m1", "m2"], 0, "d1"),
+                new ParsedAnalysis("cat-d2", ["m3"], 0, "d2"),
+            ]),
+            new("nyumba", "NoAnalysis", []),
+        };
+        repository.Record(NewAssessment("assessment/round-trip", null, null, "ParseTime", words));
+
+        var stored = repository.Get("assessment/round-trip").ToStored();
+
+        Assert.Equal("sha256:outcome", stored.Report.OutcomeDigest);
+        Assert.Equal("sha256:grammar", stored.Report.GrammarSourceSha256);
+        Assert.Equal("selection-1", stored.Selection.Name);
+        Assert.Equal(["bo", "za"], stored.Selection.Words);
+        Assert.Equal(2, stored.Report.Words.Count);
+        Assert.Equal("mbali", stored.Report.Words[0].Word);
+        // Order within a word's analyses, and morpheme order within an analysis, must both survive the store.
+        Assert.Equal(["m1", "m2"], stored.Report.Words[0].Analyses[0].MorphemeGuids);
+        Assert.Equal("d2", stored.Report.Words[0].Analyses[1].IdentityDigest);
+        Assert.Equal("nyumba", stored.Report.Words[1].Word);
+        Assert.Empty(stored.Report.Words[1].Analyses);
+    }
+
+    [Fact]
     public void GetThrowsForAnUnrecordedAssessment()
     {
         var repository = NewRepository("missing.fwdata", out _);
