@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text.Json;
 using SIL.LCModel;
 using SIL.LCModel.Core.Text;
@@ -240,6 +241,109 @@ public sealed class TrialJobHandlerTests : IDisposable
         Assert.Empty(full.Words!);
     }
 
+    [Fact]
+    public void DryRunIsPublishedDurablyBeforeTheCandidateIsPreparedForAssessment()
+    {
+        using var lanes = new ProjectLaneRegistry(_ => _token);
+        var proposalId = CanonicalId.Mint("proposal/");
+        var proposalJson = BuildSetGlossProposalJson(proposalId, _seed.FirstSenseId, "publish-order text");
+        SaveCommittedProposal(proposalId, proposalJson);
+        var job = CreateTrialJob(proposalJson);
+        var publishedBeforePrepare = false;
+
+        var handler = BuildHandler(lanes, new FakeAssessor("pangloss", [AssessmentKind.Correctness]),
+            prepareForAssessment: (cache, ct) =>
+            {
+                publishedBeforePrepare = _jobs.Get(job.JobId)!.DryRunPublished;
+                return DefaultPrepareForAssessment(cache, ct);
+            });
+
+        var completed = RunAndFinish(handler, job.JobId);
+
+        Assert.Equal(JobStatus.Completed, completed.Status);
+        Assert.True(publishedBeforePrepare, "the Dry Run must already be published while the candidate is prepared for Assessment.");
+    }
+
+    [Fact]
+    public void PrepareForAssessmentFailureAfterPublicationYieldsCompletedWithAssessmentFailure()
+    {
+        using var lanes = new ProjectLaneRegistry(_ => _token);
+        var proposalId = CanonicalId.Mint("proposal/");
+        var proposalJson = BuildSetGlossProposalJson(proposalId, _seed.FirstSenseId, "prepare-failure text");
+        SaveCommittedProposal(proposalId, proposalJson);
+        var handler = BuildHandler(lanes, new FakeAssessor("pangloss", [AssessmentKind.Correctness]),
+            prepareForAssessment: (_, _) => throw new IOException("disk full"));
+
+        var job = CreateTrialJob(proposalJson);
+        var completed = RunAndFinish(handler, job.JobId);
+
+        Assert.Equal(JobStatus.CompletedWithAssessmentFailure, completed.Status);
+        Assert.True(completed.DryRunPublished);
+    }
+
+    [Fact]
+    public void AssessorFailureYieldsCompletedWithAssessmentFailureWithTheDryRunRetained()
+    {
+        using var lanes = new ProjectLaneRegistry(_ => _token);
+        var proposalId = CanonicalId.Mint("proposal/");
+        var proposalJson = BuildSetGlossProposalJson(proposalId, _seed.FirstSenseId, "assessor-failure text");
+        SaveCommittedProposal(proposalId, proposalJson);
+        var handler = BuildHandler(lanes, new FakeAssessor("pangloss", [AssessmentKind.Correctness],
+            _ => throw new IOException("pangloss assess exited 1")));
+
+        var job = CreateTrialJob(proposalJson);
+        var completed = RunAndFinish(handler, job.JobId);
+
+        Assert.Equal(JobStatus.CompletedWithAssessmentFailure, completed.Status);
+        Assert.True(completed.DryRunPublished);
+    }
+
+    [Fact]
+    public void CancellationDuringAssessmentRetainsThePublishedDryRunAndCancelsTheJob()
+    {
+        using var lanes = new ProjectLaneRegistry(_ => _token);
+        var proposalId = CanonicalId.Mint("proposal/");
+        var proposalJson = BuildSetGlossProposalJson(proposalId, _seed.FirstSenseId, "cancel-assessment text");
+        SaveCommittedProposal(proposalId, proposalJson);
+        var handler = BuildHandler(lanes, new FakeAssessor("pangloss", [AssessmentKind.Correctness],
+            _ => throw new OperationCanceledException()));
+
+        var job = CreateTrialJob(proposalJson);
+        var completed = RunAndFinish(handler, job.JobId);
+
+        Assert.Equal(JobStatus.Cancelled, completed.Status);
+        Assert.True(completed.DryRunPublished);
+    }
+
+    [Fact]
+    public void ASuccessfulTrialLeavesThePublishedBaselineUnchangedAndNoScratchDirectoryBehind()
+    {
+        using var lanes = new ProjectLaneRegistry(_ => _token);
+        var proposalId = CanonicalId.Mint("proposal/");
+        var proposalJson = BuildSetGlossProposalJson(proposalId, _seed.FirstSenseId, "no-ephemera text");
+        SaveCommittedProposal(proposalId, proposalJson);
+        var fwDataPath = Path.Combine(_publishedRoot, NewLangProjFixture.ProjectName + ".fwdata");
+        var digestBefore = Sha256Of(fwDataPath);
+        string? preparedDirectory = null;
+
+        var handler = BuildHandler(lanes, new FakeAssessor("pangloss", [AssessmentKind.Correctness]),
+            prepareForAssessment: async (cache, ct) =>
+            {
+                var directory = await DefaultPrepareForAssessment(cache, ct);
+                preparedDirectory = directory;
+                return directory;
+            });
+
+        var job = CreateTrialJob(proposalJson);
+        var completed = RunAndFinish(handler, job.JobId);
+
+        Assert.Equal(JobStatus.Completed, completed.Status);
+        Assert.Equal(digestBefore, Sha256Of(fwDataPath));
+        Assert.NotNull(preparedDirectory);
+        Assert.False(Directory.Exists(preparedDirectory),
+            "the scratch directory used for Assessment must not survive a completed Trial.");
+    }
+
     // One wordform carries a human-approved analysis; the other has none, and a resolved Selection excludes it.
     private const string AnalysedWordform = "zzmotiftrialanalysed";
     private const string UnanalysedWordform = "zzmotiftrialunanalysed";
@@ -284,7 +388,8 @@ public sealed class TrialJobHandlerTests : IDisposable
         return _jobs.Get(jobId)!;
     }
 
-    private TrialJobHandler BuildHandler(ProjectLaneRegistry lanes, IAssessor assessor)
+    private TrialJobHandler BuildHandler(ProjectLaneRegistry lanes, IAssessor assessor,
+        Func<LcmCache?, CancellationToken, Task<string>>? prepareForAssessment = null)
     {
         var catalog = new AssessorCatalog(new[] { assessor });
         var factory = new ScratchCacheFactory(_loader);
@@ -299,12 +404,14 @@ public sealed class TrialJobHandlerTests : IDisposable
                 return Task.FromResult<(IReadOnlyCollection<Guid>, DryRunScratch?)>((appliedProposalIds, scratch));
             },
             (scratch, plan, _) => Task.FromResult(ProposalDryRunner.Run(scratch!, plan)),
-            (cache, _) =>
-            {
-                _loader.Save(cache!);
-                var directory = Path.GetDirectoryName(Path.GetFullPath(cache!.ProjectId.Path))!;
-                return Task.FromResult(directory);
-            });
+            prepareForAssessment ?? DefaultPrepareForAssessment);
+    }
+
+    private Task<string> DefaultPrepareForAssessment(LcmCache? cache, CancellationToken _)
+    {
+        _loader.Save(cache!);
+        var directory = Path.GetDirectoryName(Path.GetFullPath(cache!.ProjectId.Path))!;
+        return Task.FromResult(directory);
     }
 
     private static string BuildSetGlossProposalJson(CanonicalId proposalId, Guid targetId, string text)
@@ -326,6 +433,13 @@ public sealed class TrialJobHandlerTests : IDisposable
               ]
             }
             """;
+    }
+
+    private static string Sha256Of(string path)
+    {
+        using var sha = SHA256.Create();
+        using var stream = File.OpenRead(path);
+        return Convert.ToHexString(sha.ComputeHash(stream));
     }
 
     // Counts real saves and scratch opens so a test can prove how many of each a run actually did.

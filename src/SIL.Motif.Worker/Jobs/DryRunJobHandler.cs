@@ -123,7 +123,7 @@ internal sealed class DryRunJobHandler
         return new JobOutcome(JobStatus.CompletedDryRunOnly, JobFailureCategory.None, completionJson);
     }
 
-    /// <summary>The canonical published-Dry-Run wire shape, shared with <see cref="DryRunAssessmentPipeline"/>.</summary>
+    /// <summary>The canonical published-Dry-Run wire shape, shared with <see cref="TrialJobHandler"/>.</summary>
     internal static string BuildPublishedDryRunJson(DryRunModel dryRun) =>
         JsonSerializer.Serialize(BuildPublishedDryRun(dryRun), MotifJson.CreateOptions());
 
