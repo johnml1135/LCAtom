@@ -1380,35 +1380,6 @@ public static class Commands
         });
     }
 
-    /// <summary>Why a Proposal is not ready to apply. Empty means apply; anything here needs --force.</summary>
-    private static IReadOnlyList<string> ApplyReadiness(
-        AssessmentRepository assessments, AssessmentRecord? candidate, ProjectConfiguration configuration)
-    {
-        if (candidate is null)
-            return new[] { "no Assessment covers its current content, so nothing has measured what it would do" };
-
-        var reasons = new List<string>();
-        var current = assessments.GetCurrent();
-
-        // Two Assessments only mean anything against each other when they measured the same project state.
-        if (current is not null &&
-            !string.Equals(current.BaselineToken, candidate.BaselineToken, StringComparison.Ordinal))
-        {
-            reasons.Add(
-                "its Assessment was measured against a different project state than the current one, so it has " +
-                "not been re-run since the project moved");
-        }
-
-        if (configuration.GateOnRegression && current is not null &&
-            string.Equals(current.Kind, RegressionChecker.RequiredKind, StringComparison.Ordinal))
-        {
-            var finding = RegressionChecker.Check(current.ToCorrectness(), candidate.ToCorrectness());
-            if (finding.IsRegression) reasons.Add($"it would be a regression: {finding.Describe()}");
-        }
-
-        return reasons;
-    }
-
     /// <summary>The latest <c>Correctness</c> Assessment recorded against this exact revision, if any.</summary>
     private static AssessmentRecord? FindCandidateAssessment(
         AssessmentRepository assessments, CanonicalId proposalId, string intentDigest)
@@ -1446,9 +1417,16 @@ public static class Commands
             var candidate = manifest.CurrentIntentDigest is null
                 ? null
                 : FindCandidateAssessment(assessments, canonicalId, manifest.CurrentIntentDigest);
+            var current = assessments.GetCurrent();
+            var currentCorrectness = current is not null &&
+                string.Equals(current.Kind, RegressionChecker.RequiredKind, StringComparison.Ordinal)
+                    ? current.ToCorrectness()
+                    : null;
 
             // Checked before loading the project, same as the anchor check above.
-            var notReady = ApplyReadiness(assessments, candidate, configuration);
+            var notReady = Readiness.Assess(
+                candidate?.ToCorrectness(), currentCorrectness, current?.BaselineToken,
+                candidate?.BaselineToken ?? "", configuration.GateOnRegression);
             if (notReady.Count > 0 && !force)
             {
                 return (FailureReason.Refused, null, FailText(
